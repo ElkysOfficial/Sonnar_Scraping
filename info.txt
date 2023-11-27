@@ -1,9 +1,0 @@
-<span title="Estagiário de Desenvolvimento" id="jobTitle-d57ed1027968462a">Estagiário de Desenvolvimento</span></a>
-<span data-testid="company-name" class="css-1x7z1ps eu4oa1w0">Extreme Digital Solutions</span>
-<div class="metadata"><div data-testid="attribute_snippet_testid" class="css-1ihavw2 eu4oa1w0">Estágio / Trainee</div></div>
-<div data-testid="text-location" class="css-t4u72d eu4oa1w0">Remoto</div>
-<div class="job-snippet">
-                            Empresa: Extreme Digital Status: EM ABERTO Código da Vaga: 23121-EDS O QUE VOCÊ FARÁ? Estamos buscando estagiários para atuar na área de tecnologia.
-                            Requisitos: Conhecimento de Excel, Power…
-                          </div>
-                          
