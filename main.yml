@@ -1,0 +1,24 @@
+name: Verificações de Status
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout do Código
+        uses: actions/checkout@v2
+
+      - name: Configurar Ambiente
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt  # Substitua por seu arquivo de requisitos, se aplicável
+          
+      - name: Rodar Testes
+        run: |
+          # Comandos para executar seus testes, por exemplo:
+          python -m main.py
