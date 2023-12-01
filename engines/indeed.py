@@ -1,59 +1,39 @@
-import aiohttp
-import bs4
-import asyncio
+import cloudscraper
+import httpx
+from bs4 import BeautifulSoup
+import pandas as pd
 
 
-async def get_indeed_links() -> list:
-    url_base = 'https://br.indeed.com/jobs?'
-    keywords = ['programador']
-    urls = []
+def indeed_jobs():
+    job_searches = ['python', 'django', 'flask', 'react', 'vue', 'angular', 'java', 'javascript', 'php', 'c#', 'c++', 'c', 'ruby', 'go', 'swift', 'sql', 'mysql', 'mongodb', 'postgresql', 'oracle', 'linux', 'unix', 'windows', 'aws', 'azure', 'docker', 'jenkins', 'ansible', 'puppet', 'elasticsearch', 'kibana', 'logstash', 'grafana', 'zabbix', 'datadog', 'splunk', 'dynatrace', 'appdynamics', 'git', 'github', 'gitlab', 'bitbucket', 'jira', 'confluence', 'slack', 'kafka', 'nginx', 'apache', 'haproxy', 'traefik', 'envoy', 'istio', 'linkerd', 'prometheus', 'grafana', 'kibana', 'elasticsearch', 'logstash', 'datadog', 'new relic', 'splunk', 'sumologic', 'dynatrace', 'appdynamics', 'scrum', 'kanban', 'lean', 'xp', 'sysadmin', 'sysops', 'site reliability engineer', 'site reliability engineering', 'cloud']
 
-    for keyword in keywords:
-        for n_page in range(20):
-            url = f'{url_base}q={keyword}&limit=50&start={n_page * 50}'
-            urls.append(url)
+    base_url = 'https://br.indeed.com/'
+    scraper = cloudscraper.create_scraper()
 
-    return urls
+    for job_search in job_searches:
+      for page in range(3):
+        print(f'Buscando por: {job_search} na página {page}')
+        url = base_url + \
+            f'empregos?q={job_search}&limit=50&start={page*50}&sort=date'
+        response = scraper.get(url)
+        cell = BeautifulSoup(response.text, 'html.parser')
+        cell_list = cell.find('ul', {'class': 'jobsearch-ResultsList'})
+        cells = cell.findAll('div', {'class': 'job_seen_beacon'})
 
+        for cell in cells:
+          title = cell.find('h2', {'class': 'jobTitle'}).text.strip()
+          link = cell.find('a').attrs['data-jk']
+          url = f'https://br.indeed.com/viewjob?jk={link}'
+          company = cell.find('span', {'class': 'css-1x7z1ps eu4oa1w0'}).text.strip()
+          location = cell.find('div', {'data-testid': 'text-location'}).text.strip()
 
-async def scraping_indeed(url) -> list:
-    jobs = []
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/93.0.4577.63 Safari/537.36'}
-
-    async with aiohttp.ClientSession() as session:
-        async with session.get(url, headers=headers) as response:
-            if response.status == 200:
-                html = await response.text()
-                soup = bs4.BeautifulSoup(html, 'html.parser')
-                cards = soup.find_all('div', 'result')
-
-                for card in cards:
-                    job = {}
-                    job['title'] = card.find(
-                        'span#jobTitle-d57ed1027968462a').text.strip()
-                    job['company'] = card.find(
-                        'span.css-1x7z1ps.eu4oa1w0').text.strip()
-                    job['location'] = card.find(
-                        'div.css-t4u72d.eu4oa1w0').text.strip()
-                    job['link'] = 'https://br.indeed.com' + \
-                        card.find('a')['href']
-                    jobs.append(job)
-            else:
-                print(f'Error: {response.status}')
-
-    return jobs
+          print('-'*50)
+          print(f'Título da Vaga: {title}')
+          print(f'Comapania: {company}')
+          print(f'Local: {location}')
+          print(f'Link: {url}')
+          print(f'codigo: {link}')
+          print('-'*50+'\n')
 
 
-async def indeed():
-    urls = await get_indeed_links()
-
-    tasks = [scraping_indeed(url) for url in urls]
-    jobs = await asyncio.gather(*tasks)
-
-    # Deletar código abaixo após testes
-    for job_list in jobs:
-        for job in job_list:
-            print(job)
-
-asyncio.run(indeed())
+indeed_jobs()

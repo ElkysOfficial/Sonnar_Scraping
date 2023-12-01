@@ -1,45 +1,44 @@
-import httpx
-from bs4 import BeautifulSoup
-import asyncio
+import requests
+import time
 
-async def get_geekhunter_jobs() -> list:
+headers = {
+    'Referer': 'https://www.geekhunter.com.br/vagas',
+    'Referrer-Policy': 'strict-origin-when-cross-origin',
+}
 
-    base_url = 'https://www.geekhunter.com.br'
-    jobs = []
+data = {
+    'operationName': 'findShowcaseJobs',
+    'variables': {
+        'showcaseParams': {
+            'order': 'newer',
+            'remoteWork': False,
+            'pagination': {'page': 0, 'perPage': 1000},
+            'salaryRange': {'min': 0, 'max': 100000},
+            'workMode': [],
+            'seniority': [],
+            'focuses': []
+        }
+    },
+    'query': 'query findShowcaseJobs($showcaseParams: SearchJobFilter!) {\n  findShowcaseJobs(showcaseParams: $showcaseParams) {\n    data {\n      id\n      city {\n        id\n        name\n        __typename\n      }\n      technologies {\n        id\n        name\n        urlPath\n        __typename\n      }\n      title\n      focus {\n        id\n        description\n        __typename\n      }\n      slug\n      __typename\n    }\n    __typename\n  }\n}\n'
+}
 
-    async with httpx.AsyncClient() as client:
-        response = await client.get(f'{base_url}/vagas/')
-        soup = BeautifulSoup(response.content, 'html.parser')
+response = requests.post('https://www.geekhunter.com.br/graphql', headers=headers, json=data)
+json_response = response.json()
+resultados = json_response['data']['findShowcaseJobs']['data']
+for idx,resultado in enumerate (resultados,start=1):
+    print(idx)
+    titulo = resultado['title']
+    local = resultado['city']['name'] if resultado['city'] else 'Remoto'
+    stack = ", ".join([tech['name'] for tech in resultado['technologies']])
+    area = resultado['focus']['description'] if resultado['focus'] else 'Não informado'
+    link = f"https://www.geekhunter.com.br/vaga/{resultado['slug']}"
 
-        cells = soup.find_all('div', class_='css-1g6fhjg')
-        for cell in cells:
-            title = cell.find('h3')
-
-            if title == None:
-                continue
-
-            title = title.get_text(strip=True)
-            location = cell.find('p')
-            stack = cell.find('p').find_next_sibling()
-            area = cell.find('p')
-            link = base_url + cell.find('div')['href']
-
-            job = [title, location, stack, area, link]
-
-            jobs.append(job)
-    
-    return jobs
-
-# O código abaixo possui função apenas para teste, não sendo necessário no release
-# O asyncio.run deve ser invocado pelo bot do Discord
-
-resultados = asyncio.run(get_geekhunter_jobs())
-
-for resultado in resultados:
     print('-'*50)
-    print(f'Título da Vaga: {resultado[0]}')
-    print(f'Local: {resultado[1]}')
-    print(f'Stack: {resultado[2]}')
-    print(f'Area: {resultado[3]}')
-    print(f'Link: {resultado[4]}')
+    print(f'Título da Vaga: {titulo}')
+    print(f'Local: {local}')
+    print(f'Stack: {stack}')
+    print(f'Area: {area}')
+    print(f'Link: {link}')
     print('-'*50+'\n')
+
+
