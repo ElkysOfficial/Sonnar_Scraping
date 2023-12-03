@@ -5,6 +5,8 @@ from discord.ext import commands
 
 # Import search engines scrapping functions
 from engines.programathor import get_programathor_jobs
+from engines.geekhunter import get_geekhunter_jobs
+from engines.linkedin import get_linkedin_jobs
 
 # Discord Bot definitions
 intents = discord.Intents.default()
@@ -17,7 +19,11 @@ sent_jobs = []
 
 async def search_jobs():
     '''
-    DOCSTRING
+    Assynchronous function that searches for new jobs every 60 seconds and sends them to the Discord channel.
+    The function searches for vacancies in the following websites:
+    * ProgramaThor
+    * GeekHunter
+    * LinkedIn
     '''
 
     await bot.wait_until_ready()
@@ -25,11 +31,31 @@ async def search_jobs():
     while not bot.is_closed():
 
         # ProgramaThor
-        results_programathor = await get_programathor_jobs()
-        for resultado in results_programathor:
-            if resultado[0] not in sent_jobs:
-                sent_jobs.append(resultado[0])
-                job_info = f'{"-"*100}\n\nTÍTULO DA VAGA: {resultado[1]}\nEMPRESA: {resultado[2]}\nLOCAL: {resultado[3]}\nSTACKS: {", ".join(resultado[4])}\nLINK: {resultado[5]}'
+        results = await get_programathor_jobs()
+        for result in results:
+            if result[0] not in sent_jobs:
+                sent_jobs.append(result[0])
+                job_info = f'{"-"*50}\n\nTÍTULO DA VAGA: {result[1]}\nEMPRESA: {result[2]}\nLOCAL: {result[3]}\nSTACKS: {", ".join(result[4])}\nLINK: {result[5]}'
+                await channel.send(job_info)
+                await asyncio.sleep(60)
+        await asyncio.sleep(60)
+
+        # GeekHunter
+        results = await get_geekhunter_jobs()
+        for result in results:
+            if result[0] not in sent_jobs:
+                sent_jobs.append(result[0])
+                job_info = f'{"-"*50}\n\nTÍTULO DA VAGA: {result[0]}\nLOCAL: {result[1]}\nSTACKS: {", ".join(result[2])}\nAREA: {result[3]}\nLINK: {result[4]}'
+                await channel.send(job_info)
+                await asyncio.sleep(60)
+        await asyncio.sleep(60)
+
+        # LinkedIn
+        results = await get_linkedin_jobs()
+        for result in results:
+            if result[0] not in sent_jobs:
+                sent_jobs.append(result[0])
+                job_info = f'{"-"*50}\n\nTÍTULO DA VAGA: {result[1]}\nEMPRESA: {result[2]}\nLOCAL: {result[3]}\nLINK: {result[4]}'
                 await channel.send(job_info)
                 await asyncio.sleep(60)
         await asyncio.sleep(60)

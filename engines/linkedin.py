@@ -1,11 +1,35 @@
-from jobspy import scrape_jobs
+import httpx
+from bs4 import BeautifulSoup
 
-jobs = scrape_jobs(
-    site_name=["linkedin"],
-    search_term="python",
-    location="Brazil",
-    results_wanted=10,
-)
-print(f"Found {len(jobs)} jobs")
-print(jobs.head())
-jobs.to_csv("jobs.csv", index=False)  # to_xlsx
+async def get_linkedin_jobs() -> list:
+    '''
+    Asynchronous function that returns a list of lists with the following structure:
+
+    [[code, title, company, location, stack, link], [...], [...], ...]
+
+    Each list within the returned list represents a job vacancy published in the LinkedIn website.
+    '''
+
+    jobs = []
+    stacks = ['python', 'javascript', 'java', 'c++', 'c#', 'c', 'php', 'ruby', 'go', 'swift', 'sql', 'mysql', 'postgresql', 'oracle', 'linux', 'unix', 'aws', 'azure', 'docker', 'ansible', 'nginx', 'apache', 'sysadmin', 'sysops', 'cloud']
+
+    for stack in stacks:
+        for page in range(0, 100, 25):
+            async with httpx.AsyncClient() as client:
+                response = await client.get(f'https://br.linkedin.com/jobs/api/seeMoreJobPostings/search?keywords={stack}&location=Brasil&geoId=106057199&start={page}')
+                soup = BeautifulSoup(response.content, 'html.parser')
+
+                cells = soup.find_all('div', class_='base-card')
+                for cell in cells:
+                    # Used to verify if the job was already sent by the Discord bot
+                    code = int(''.join(cell.get('data-entity-urn').split('urn:li:jobPosting:')[1]))
+
+                    title = cell.find('h3').get_text(strip=True)
+                    company = cell.find('h4').get_text(strip=True)
+                    location = cell.find('span', class_='job-search-card__location').get_text(strip=True)
+                    link = cell.find('a', class_='base-card__full-link').get('href')
+
+                    job = [code, title, company, location, link]
+                    jobs.append(job)
+
+    return jobs
