@@ -45,7 +45,7 @@ async def search_jobs():
         for result in results:
             if result[0] not in sent_jobs:
                 sent_jobs.append(result[0])
-                job_info = f'{"-"*50}\n\nTÍTULO DA VAGA: {result[0]}\nLOCAL: {result[1]}\nSTACKS: {", ".join(result[2])}\nAREA: {result[3]}\nLINK: {result[4]}'
+                job_info = f'{"-"*50}\n\nTÍTULO DA VAGA: {result[0]}\nLOCAL: {result[1]}\nSTACKS: {result[2]}\nAREA: {result[3]}\nLINK: {result[4]}'
                 await channel.send(job_info)
                 await asyncio.sleep(60)
         await asyncio.sleep(60)
@@ -64,4 +64,4 @@ async def search_jobs():
 async def on_ready():
     bot.loop.create_task(search_jobs())
 
-bot.run(keyring.get_password('discord', 'token'))
+bot.run(keyring.get_password('bot_vagas', 'token'))
