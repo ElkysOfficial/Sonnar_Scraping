@@ -9,12 +9,10 @@ async def get_geekhunter_jobs() -> list:
     Each list within the returned list represents a job vacancy published in the GeekHunter website.
     '''
     jobs = []
-
     headers = {
         'Referer': 'https://www.geekhunter.com.br/vagas',
         'Referrer-Policy': 'strict-origin-when-cross-origin',
     }
-
     data = {
         'operationName': 'findShowcaseJobs',
         'variables': {
@@ -39,5 +37,5 @@ async def get_geekhunter_jobs() -> list:
 
             job = [title, local, stack, area, link]
             jobs.append(job)
-
+            
     return jobs
