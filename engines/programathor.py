@@ -1,12 +1,10 @@
 import httpx
 from bs4 import BeautifulSoup
 
-
 def check_none(value) -> str:
     '''
     Checks whether the value is None and, if not, returns the stripped text of the value.
     '''
-
     if value == None:
         return 'Não informado'
     else:
