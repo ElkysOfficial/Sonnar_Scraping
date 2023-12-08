@@ -19,7 +19,6 @@ async def get_programathor_jobs() -> list:
 
     Each list within the returned list represents a job vacancy published in the ProgramaThor website.
     '''
-
     base_url = 'https://programathor.com.br'
     jobs = []
 
