@@ -2,7 +2,6 @@ import asyncio
 import cloudscraper
 from bs4 import BeautifulSoup
 
-
 async def get_indeed_jobs():
     jobs = []
     job_searches = ['python', 'javascript', 'java', 'c++', 'c#', 'c', 'php', 'ruby', 'go', 'swift', 'sql', 'mysql', 'postgresql',
