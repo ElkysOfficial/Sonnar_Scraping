@@ -8,7 +8,6 @@ async def get_geekhunter_jobs() -> list:
 
     Each list within the returned list represents a job vacancy published in the GeekHunter website.
     '''
-
     jobs = []
 
     headers = {
