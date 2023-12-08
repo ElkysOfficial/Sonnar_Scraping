@@ -26,7 +26,6 @@ async def get_geekhunter_jobs() -> list:
         },
         'query': 'query findShowcaseJobs($showcaseParams: SearchJobFilter!) {\n  findShowcaseJobs(showcaseParams: $showcaseParams) {\n    data {\n      id\n      city {\n        id\n        name\n        __typename\n      }\n      technologies {\n        id\n        name\n        urlPath\n        __typename\n      }\n      title\n      focus {\n        id\n        description\n        __typename\n      }\n      slug\n      __typename\n    }\n    __typename\n  }\n}\n'
     }
-
     async with httpx.AsyncClient() as client:
         response = await client.post('https://www.geekhunter.com.br/graphql', headers=headers, json=data)
         json_response = response.json()
