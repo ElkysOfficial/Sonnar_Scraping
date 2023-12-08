@@ -9,7 +9,6 @@ async def get_indeed_jobs():
 
     base_url = 'https://br.indeed.com/'
     scraper = cloudscraper.create_scraper()
-
     async def fetch(url):
         loop = asyncio.get_event_loop()
         future = loop.run_in_executor(None, scraper.get, url)
