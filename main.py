@@ -1,3 +1,4 @@
+import keyring
 import hikari
 from hikari import intents
 import asyncio
@@ -7,11 +8,11 @@ from engines.programathor import get_programathor_jobs
 from engines.geekhunter import get_geekhunter_jobs
 from engines.linkedin import get_linkedin_jobs
 
-bot = hikari.GatewayBot('token', intents=intents.Intents.ALL)
-channel_id = 1182746354611662992
-
+token = keyring.get_password('bot_vagas', 'token')
+channel_id = keyring.get_password('bot_vagas', 'channel')
 sent_jobs = []
 
+bot = hikari.GatewayBot(token, intents=intents.Intents.ALL)
 @bot.listen()
 async def on_started(event: hikari.StartedEvent) -> None:
     '''
@@ -21,7 +22,8 @@ async def on_started(event: hikari.StartedEvent) -> None:
     * LinkedIn
     * GeekHunter
     * Indeed
-    '''  
+    '''
+ 
     # GeekHunter
     results = await get_geekhunter_jobs()
     for result in results:
