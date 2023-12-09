@@ -1,7 +1,13 @@
 import httpx
-from bs4 import BeautifulSoup
 
 async def get_gupy_jobs() -> list:
+  '''
+  Asynchronous function that returns a list of lists with the following structure:
+
+  [[code, title, company, location, link], [...], [...], ...]
+
+  Each list within the returned list represents a job vacancy published in the Gupy website.
+  '''
   
   jobs = []
   stacks = ['python', 'javascript', 'java', 'c++', 'c#', 'c', 'php', 'ruby', 'swift', 'sql', 'mysql', 'postgresql', 'oracle', 'linux', 'unix', 'aws', 'azure', 'docker', 'ansible', 'nginx', 'apache', 'sysadmin', 'cloud', 'front-end', 'back-end', 'full-stack', 'cybersegurança', 'devops', 'pentest']
@@ -14,7 +20,7 @@ async def get_gupy_jobs() -> list:
         json_response = response.json()
 
         for job in json_response['data']:
-          code = job['id']
+          code = f'Gupy - {job["id"]}'
           title = job['name']
           company = job['careerPageName']
 
