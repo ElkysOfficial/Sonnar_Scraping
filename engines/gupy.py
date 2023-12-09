@@ -7,7 +7,6 @@ async def get_gupy_jobs() -> list:
   stacks = ['python', 'javascript', 'java', 'c++', 'c#', 'c', 'php', 'ruby', 'swift', 'sql', 'mysql', 'postgresql', 'oracle', 'linux', 'unix', 'aws', 'azure', 'docker', 'ansible', 'nginx', 'apache', 'sysadmin', 'cloud', 'front-end', 'back-end', 'full-stack', 'cybersegurança', 'devops', 'pentest']
  
   for stack in stacks:
-    
     async with httpx.AsyncClient() as client:
       response = await client.get(f'https://portal.api.gupy.io/api/v1/jobs?jobName={stack}&limit=1000')
 
