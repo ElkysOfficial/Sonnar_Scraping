@@ -16,7 +16,7 @@ async def get_indeed_jobs():
         return response
 
     for job_search in job_searches:
-      for page in range(2):
+      for page in range(1):
         url = base_url + f'empregos?q={job_search}&limit=50&start={page*50}&sort=date'
         response = await fetch(url)
         soup = BeautifulSoup(response.text, 'html.parser')
