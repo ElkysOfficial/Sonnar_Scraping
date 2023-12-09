@@ -30,6 +30,7 @@ async def get_vagas_jobs():
 # O asyncio.run deve ser invocado pelo bot do Discord
 
 resultados = asyncio.run(get_vagas_jobs())
+
 for resultado in resultados:
     print('-'*50)
 #     print(f'Código: {resultado[0]}')

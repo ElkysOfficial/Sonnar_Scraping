@@ -41,7 +41,6 @@ async def get_infojobs_jobs() -> list:
 
 # O código abaixo possui função apenas para teste, não sendo necessário no release
 # O asyncio.run deve ser invocado pelo bot do Discord
-
 import asyncio
 resultados = asyncio.run(get_infojobs_jobs())
 
