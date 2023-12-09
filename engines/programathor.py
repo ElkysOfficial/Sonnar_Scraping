@@ -25,37 +25,38 @@ async def get_programathor_jobs() -> list:
     for page in range(1, 21):
         async with httpx.AsyncClient() as client:
             response = await client.get(f'{base_url}/jobs/page/{page}')
-            soup = BeautifulSoup(response.content, 'html.parser')
+            if response.status_code == 200:
+                soup = BeautifulSoup(response.content, 'html.parser')
 
-            cells = soup.find_all('div', class_='cell-list')
-            for cell in cells:
-                title = cell.find('h3')
-                # Checks if the cell is blank or if the job is expired
-                if title == None or title.text.startswith('Vencida'):
-                    continue
+                cells = soup.find_all('div', class_='cell-list')
+                for cell in cells:
+                    title = cell.find('h3')
+                    # Checks if the cell is blank or if the job is expired
+                    if title == None or title.text.startswith('Vencida'):
+                        continue
 
-                # Used to verify if the job was already sent by the Discord bot
-                code = int(''.join(cell.find('a')['href'].split(
-                    '/jobs/')[1].split('-')[0]))
-                title = title.get_text(strip=True)
-                if title.endswith('NOVA'):
-                    # Removes the 'NOVA' string from the title when it's a new job publishing
-                    title = title[:-4]
+                    # Used to verify if the job was already sent by the Discord bot
+                    code = int(''.join(cell.find('a')['href'].split(
+                        '/jobs/')[1].split('-')[0]))
+                    title = title.get_text(strip=True)
+                    if title.endswith('NOVA'):
+                        # Removes the 'NOVA' string from the title when it's a new job publishing
+                        title = title[:-4]
 
-                details = cell.find('div', class_='cell-list-content-icon')
-                company = check_none(details.find('span'))
-                location = check_none(details.find('span').find_next_sibling())
+                    details = cell.find('div', class_='cell-list-content-icon')
+                    company = check_none(details.find('span'))
+                    location = check_none(details.find('span').find_next_sibling())
 
-                all_stacks = cell.select('.tag-list')
-                stack = []
-                for stacks in all_stacks:
-                    stacks = check_none(stacks)
-                    stack.append(stacks)
+                    all_stacks = cell.select('.tag-list')
+                    stack = []
+                    for stacks in all_stacks:
+                        stacks = check_none(stacks)
+                        stack.append(stacks)
 
-                link = base_url + cell.find('a')['href']
+                    link = base_url + cell.find('a')['re
 
-                job = [code, title, company, location, stack, link]
+                    job = [code, title, company, location, stack, link]
 
-                jobs.append(job)
+                    jobs.append(job)
 
     return jobs

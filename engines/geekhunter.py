@@ -26,16 +26,18 @@ async def get_geekhunter_jobs() -> list:
     }
     async with httpx.AsyncClient() as client:
         response = await client.post('https://www.geekhunter.com.br/graphql', headers=headers, json=data)
-        json_response = response.json()
-        results = json_response['data']['findShowcaseJobs']['data']
-        for result in results:
-            title = result['title']
-            local = result['city']['name'] if result['city'] else 'Remoto'
-            stack = ", ".join([tech['name'] for tech in result['technologies']])
-            area = result['focus']['description'] if result['focus'] else 'Não informado'
-            link = f"https://www.geekhunter.com.br/vaga/{result['slug']}"
+        if response.status_code == 200:
+            json_response = response.json()
+            results = json_response['data']['findShowcaseJobs']['data']
 
-            job = [title, local, stack, area, link]
-            jobs.append(job)
+            for result in results:
+                title = result['title']
+                local = result['city']['name'] if result['city'] else 'Remoto'
+                stack = ", ".join([tech['name'] for tech in result['technologies']])
+                area = result['focus']['description'] if result['focus'] else 'Não informado'
+                link = f"https://www.geekhunter.com.br/vaga/{result['slug']}"
+
+                job = [title, local, stack, area, link]
+                jobs.append(job)
             
     return jobs

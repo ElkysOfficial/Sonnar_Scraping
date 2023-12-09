@@ -31,7 +31,7 @@ async def on_started(event: hikari.StartedEvent) -> None:
             sent_jobs.append(result[0])
             job_info = f'{"-"*50}\nTÍTULO DA VAGA: {result[0]}\nLOCAL: {result[1]}\nSTACKS: {result[2]}\nAREA: {result[3]}\nLINK: {result[4]}'
             await bot.rest.create_message(channel_id, job_info)
-            await asyncio.sleep(30)
+            await asyncio.sleep(5)
     await asyncio.sleep(30)
 
     # ProgramaThor
@@ -41,7 +41,7 @@ async def on_started(event: hikari.StartedEvent) -> None:
         sent_jobs.append(result[0])
         job_info = f'{"-"*50}\nTÍTULO DA VAGA: {result[1]}\nEMPRESA: {result[2]}\nLOCAL: {result[3]}\nSTACKS: {", ".join(result[4])}\nLINK: {result[5]}'
         await bot.rest.create_message(channel_id, job_info)
-        await asyncio.sleep(30)
+        await asyncio.sleep(5)
     await asyncio.sleep(30)
 
     # LinkedIn
@@ -51,7 +51,7 @@ async def on_started(event: hikari.StartedEvent) -> None:
             sent_jobs.append(result[0])
             job_info = f'{"-"*50}\nTÍTULO DA VAGA: {result[1]}\nEMPRESA: {result[2]}\nLOCAL: {result[3]}\nLINK: {result[4]}'
             await bot.rest.create_message(channel_id, job_info)
-            await asyncio.sleep(30)
+            await asyncio.sleep(5)
     await asyncio.sleep(30)
 
     # Indeed
@@ -61,7 +61,17 @@ async def on_started(event: hikari.StartedEvent) -> None:
             sent_jobs.append(result[0])
             job_info = f'{"-"*50}\nTÍTULO DA VAGA: {result[1]}\nEMPRESA: {result[3]}\nLOCAL: {result[4]}\nLINK {result[2]}'
             await bot.rest.create_message(channel_id, job_info)
-            await asyncio.sleep(30)
+            await asyncio.sleep(5)
+    await asyncio.sleep(30)\
+    
+    # Gupy
+    results = await get_gupy_jobs()
+    for result in results:
+        if result[0] not in sent_jobs:
+            sent_jobs.append(result[0])
+            job_info = f'{"-"*50}\nTÍTULO DA VAGA: {result[1]}\nEMPRESA: {result[2]}\nLOCAL: {result[3]}\nLINK {result[4]}'
+            await bot.rest.create_message(channel_id, job_info)
+            await asyncio.sleep(5)
     await asyncio.sleep(30)
 
 bot.run()
