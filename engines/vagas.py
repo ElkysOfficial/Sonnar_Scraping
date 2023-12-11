@@ -21,7 +21,11 @@ async def get_vagas_jobs():
       for cell in cells:
         title = cell.find('h2', class_='cargo').text.strip()
         link = cell.find('a').attrs['href']
-        job = [title,link]
+        link = f'https://www.vagas.com.br{link}'
+        company = cell.find('span', class_='emprVaga').text.strip()
+        senioridade = cell.find('span', class_='nivelVaga').text.strip()
+        locate = cell.find('span', class_='vaga-local').text.strip()
+        job = [title,company,senioridade,locate,link]
         jobs.append(job)
 
   return jobs
@@ -34,7 +38,8 @@ for resultado in resultados:
     print('-'*50)
 #     print(f'Código: {resultado[0]}')
     print(f'Título da Vaga: {resultado[0]}')
-#     print(f'Empresa: {resultado[2]}')
-#     print(f'Local: {resultado[3]}')
-    print(f'Link: {resultado[1]}')
-#     print('-'*50+'\n')
+    print(f'Empresa: {resultado[1]}')
+    print(f'Senioridade: {resultado[2]}')
+    print(f'Local: {resultado[3]}')
+    print(f'Link: {resultado[4]}')
+    print('-'*50+'\n')
