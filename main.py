@@ -28,8 +28,9 @@ async def on_started(event: hikari.StartedEvent) -> None:
     * InfoJobs
     * LinkedIn
     * ProgramaThor
-    * Vagas.com
+    * Vagas
     '''
+
     # GeekHunter
     results = await get_geekhunter_jobs()
     for result in results:
@@ -80,7 +81,7 @@ async def on_started(event: hikari.StartedEvent) -> None:
         await asyncio.sleep(30)
     await asyncio.sleep(60)
 
-    # Vagas.com
+    # Vagas
     results = await get_vagas_jobs()
     for result in results:
         if result[0] not in sent_jobs:
@@ -95,7 +96,7 @@ async def on_started(event: hikari.StartedEvent) -> None:
     for result in results:
         if result[0] not in sent_jobs:
             sent_jobs.append(result[0])
-            job_info = f'{"-"*50}\nTÍTULO DA VAGA: {result[1]}\nEMPRESA: {result[3]}\nLOCALIDADE: {result[4]}\nLINK {result[2]}'
+            job_info = f'{"-"*50}\nTÍTULO DA VAGA: {result[1]}\nEMPRESA: {result[2]}\nLOCALIDADE: {result[3]}\nLINK {result[4]}'
             await bot.rest.create_message(channel_id, job_info)
             await asyncio.sleep(30)
     await asyncio.sleep(60)
