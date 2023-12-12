@@ -38,7 +38,7 @@ async def on_started(event: hikari.StartedEvent) -> None:
             sent_jobs.append(result[4])
             job_info = f'{"-"*50}\nTÍTULO DA VAGA: {result[0]}\nLOCALIDADE: {result[1]}\nSTACKS: {result[2]}\nAREA: {result[3]}\nLINK: {result[4]}'
             await bot.rest.create_message(channel_id, job_info)
-            await asyncio.sleep(20)
+            await asyncio.sleep(30)
     await asyncio.sleep(60)
 
     # Gupy
@@ -48,7 +48,7 @@ async def on_started(event: hikari.StartedEvent) -> None:
             sent_jobs.append(result[0])
             job_info = f'{"-"*50}\nTÍTULO DA VAGA: {result[1]}\nEMPRESA: {result[2]}\nLOCALIDADE: {result[3]}\nLINK {result[4]}'
             await bot.rest.create_message(channel_id, job_info)
-            await asyncio.sleep(20)
+            await asyncio.sleep(30)
     await asyncio.sleep(60)
  
     # InfoJobs
