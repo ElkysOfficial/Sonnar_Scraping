@@ -1,98 +1,104 @@
-import discord
+import keyring
+import hikari
+from hikari import intents
 import asyncio
-from discord.ext import commands
-import aiohttp
-import bs4
-import re
-from links.programathor import get_programathor_links
 
-# Definindo Intenções para o Bot
-intents = discord.Intents.default()
-intents.message_content = True
+from engines.geekhunter import get_geekhunter_jobs
+from engines.gupy import get_gupy_jobs
+from engines.indeed import get_indeed_jobs
+from engines.infojobs import get_infojobs_jobs
+from engines.linkedin import get_linkedin_jobs
+from engines.programathor import get_programathor_jobs
+from engines.vagas import get_vagas_jobs
 
-# Criação do Bot
-bot = commands.Bot(command_prefix="!", intents=intents)
+token = keyring.get_password('bot_vagas', 'token')
+channel_id = keyring.get_password('bot_vagas', 'channel')
+sent_jobs = []
 
-# ID do Canal Específico para Envio de Mensagens
-canal_id = 1147029744043442287
+bot = hikari.GatewayBot(token, intents=intents.Intents.ALL)
 
-# Lista para Armazenar Links de Vagas já Enviadas
-vagas_enviadas = []
-
-async def get_html(link: str):
-
+@bot.listen()
+async def on_started(event: hikari.StartedEvent) -> None:
     '''
-    Obtém o HTML de uma página da web a partir de um link.
-    
-    Parâmetros:
-    link (str): URL da página da web a ser obtida.
-    
-    Retorna:
-    str: Conteúdo HTML da página da web.
+    Assynchronous function that searches for new jobs every 60 seconds and sends them to the Discord channel.
+    The function searches for vacancies in the following websites:
+    * GeekHunter
+    * Gupy
+    * Indeed
+    * InfoJobs
+    * LinkedIn
+    * ProgramaThor
+    * Vagas
     '''
 
-    async with aiohttp.ClientSession() as request:
-        async with request.get(link) as resp:
-            resp.raise_for_status()
-            return await resp.text()
+    # GeekHunter
+    results = await get_geekhunter_jobs()
+    for result in results:
+        if result[4] not in sent_jobs:
+            sent_jobs.append(result[4])
+            job_info = f'{"-"*50}\nTÍTULO DA VAGA: {result[0]}\nLOCALIDADE: {result[1]}\nSTACKS: {result[2]}\nAREA: {result[3]}\nLINK: {result[4]}'
+            await bot.rest.create_message(channel_id, job_info)
+            await asyncio.sleep(30)
+    await asyncio.sleep(60)
 
-def get_job_info(html: str):
-    '''
-    Extrai informações da vaga de um conteúdo HTML específico.
+    # Gupy
+    results = await get_gupy_jobs()
+    for result in results:
+        if result[0] not in sent_jobs:
+            sent_jobs.append(result[0])
+            job_info = f'{"-"*50}\nTÍTULO DA VAGA: {result[1]}\nEMPRESA: {result[2]}\nLOCALIDADE: {result[3]}\nLINK {result[4]}'
+            await bot.rest.create_message(channel_id, job_info)
+            await asyncio.sleep(30)
+    await asyncio.sleep(60)
+ 
+    # InfoJobs
+    results = await get_infojobs_jobs()
+    for result in results:
+        if result[0] not in sent_jobs:
+            sent_jobs.append(result[0])
+            job_info = f'{"-"*50}\nTÍTULO DA VAGA: {result[1]}\nEMPRESA: {result[2]}\nLOCALIDADE: {result[3]}\nMODALIDADE: {result[4]}\nLINK: {result[5]}'
+            await bot.rest.create_message(channel_id, job_info)
+            await asyncio.sleep(30)
+    await asyncio.sleep(60)
+
+    # LinkedIn
+    results = await get_linkedin_jobs()
+    for result in results:
+        if result[0] not in sent_jobs:
+            sent_jobs.append(result[0])
+            job_info = f'{"-"*50}\nTÍTULO DA VAGA: {result[1]}\nEMPRESA: {result[2]}\nLOCALIDADE: {result[3]}\nLINK: {result[4]}'
+            await bot.rest.create_message(channel_id, job_info)
+            await asyncio.sleep(30)
+    await asyncio.sleep(60)
+
+    # ProgramaThor
+    results = await get_programathor_jobs()
+    for result in results:
+      if result[0] not in sent_jobs:
+        sent_jobs.append(result[0])
+        job_info = f'{"-"*50}\nTÍTULO DA VAGA: {result[1]}\nEMPRESA: {result[2]}\nLOCALIDADE: {result[3]}\nSTACKS: {", ".join(result[4])}\nLINK: {result[5]}'
+        await bot.rest.create_message(channel_id, job_info)
+        await asyncio.sleep(30)
+    await asyncio.sleep(60)
+
+    # Vagas
+    results = await get_vagas_jobs()
+    for result in results:
+        if result[0] not in sent_jobs:
+            sent_jobs.append(result[0])
+            job_info = f'{"-"*50}\nTÍTULO DA VAGA: {result[0]}\nEMPRESA: {result[1]}\nSENIORIDADE: {result[2]}\nLOCALIDADE: {result[3]}\nLINK {result[4]}'
+            await bot.rest.create_message(channel_id, job_info)
+            await asyncio.sleep(30)
+    await asyncio.sleep(60)
+
+    # Indeed
+    results = await get_indeed_jobs()
+    for result in results:
+        if result[0] not in sent_jobs:
+            sent_jobs.append(result[0])
+            job_info = f'{"-"*50}\nTÍTULO DA VAGA: {result[1]}\nEMPRESA: {result[2]}\nLOCALIDADE: {result[3]}\nLINK {result[4]}'
+            await bot.rest.create_message(channel_id, job_info)
+            await asyncio.sleep(30)
+    await asyncio.sleep(60)
     
-    Parâmetros:
-    html (str): Conteúdo HTML da página da vaga.
-    
-    Retorna:
-    str: Informações da vaga formatadas.
-    '''
-    soup = bs4.BeautifulSoup(html, "html.parser")
-
-    # Extrai informações da empresa, título, descrição da vaga e link
-    company = soup.select_one('.wrapper-content-job-show').get_text().replace('\n', '').strip()
-    title = soup.select_one('.wrapper-header-job-show > .container').get_text().replace('\n', '').strip()
-    job = re.sub('\n\s*\n', '\n\n', soup.select_one('.line-height-2-4').get_text())
-    link = soup.find('meta', {'property': 'og:url'}).get('content')
-
-    result = f"{company}\n{title}\n{job}\n{link}"
-    return result
-
-async def search_and_send_vacancies():
-    """
-    Pesquisa vagas periodicamente e envia para um canal específico.
-    """
-    await bot.wait_until_ready()  # Espera o bot estar pronto
-    
-    channel = bot.get_channel(canal_id)  # Obtém o canal pelo ID
-
-    while not bot.is_closed():
-        tasks = []
-        links = await get_programathor_links()
-
-        # Itera sobre os links das vagas
-        for link in links:
-            if link not in vagas_enviadas:  # Verifica se a vaga já foi enviada
-                vagas_enviadas.append(link)
-                tasks.append(asyncio.create_task(get_html(link)))
-
-        # Espera até que todos os HTMLs sejam obtidos
-        for task in tasks:
-            html = await task
-            job_info = get_job_info(html)
-
-            if job_info:
-                # Divide as informações em pedaços menores para evitar mensagens muito longas
-                chunks = [job_info[i:i+2000] for i in range(0, len(job_info), 2000)]
-                for chunk in chunks:
-                    await channel.send(chunk)
-
-        # Aguarda por 2 minutos antes da próxima busca
-        await asyncio.sleep(120)
-
-# Adiciona a Função de Pesquisa e Envio de Vagas como um Evento
-@bot.event
-async def on_ready():
-    bot.loop.create_task(search_and_send_vacancies())
-
-# Inicializa o Bot com o Token Fornecido
-bot.run('Token')
+bot.run()

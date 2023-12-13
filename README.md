@@ -58,8 +58,11 @@ Para utilizar o Bot de Vagas de Emprego, siga estas etapas:
 
 O projeto foi desenvolvido utilizando Python e as seguintes bibliotecas:
 
-- [discord.py](https://discordpy.readthedocs.io/): Biblioteca para interagir com a API do Discord.
-- [aiohttp](https://docs.aiohttp.org/en/stable/): Biblioteca para requisições HTTP assíncronas.
+- [hikari](https://hikari-py.github.io/hikari/): Biblioteca para criação de bots para Discord.
+- [httpx](https://www.python-httpx.org/): Biblioteca para requisições HTTP.
+- [cloudscraper](https://pypi.org/project/cloudscraper/): Biblioteca para requisições HTTP.
+- [asyncio](https://docs.python.org/3/library/asyncio.html): Biblioteca para programação assíncrona.
+- [keyring](https://pypi.org/project/keyring/): Biblioteca para armazenamento de senhas.
 - [beautifulsoup4](https://www.crummy.com/software/BeautifulSoup/bs4/doc/): Biblioteca para parsing HTML.
 - [re](https://docs.python.org/3/library/re.html): Biblioteca para manipulação de expressões regulares.
 
