@@ -5,7 +5,8 @@ def instalador(pacote:str):
    
    subprocess.check_call([sys.executable, "-m", "pip", "install", pacote])
 
-pacotes = ['keyring', 'requests', 'discord.py', 'aiohttp', 'beautifulsoup4'] 
+
+pacotes = ['keyring', 'hikari', 'cloudscraper', 'httpx', 'beautifulsoup4', 'asyncio']
 
 for pacote in pacotes:
     instalador(pacote)

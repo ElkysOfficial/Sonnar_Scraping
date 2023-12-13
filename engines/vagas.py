@@ -4,7 +4,8 @@ from bs4 import BeautifulSoup
 
 async def get_vagas_jobs():
   jobs = []
-  stacks = ['python', 'javascript']
+  stacks = ['python', 'javascript', 'java', 'c++', 'c#', 'c', 'php', 'ruby', 'sql', 'mysql', 'postgresql', 'oracle', 'linux', 'unix', 'aws',
+            'azure', 'docker', 'ansible', 'nginx', 'apache', 'sysadmin', 'cloud', 'front-end', 'back-end', 'full-stack', 'cybersegurança', 'devops']
   scraper = cloudscraper.create_scraper()
 
   async def fetch(url):
