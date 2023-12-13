@@ -16,8 +16,8 @@ channel_id = keyring.get_password('bot_vagas', 'channel')
 sent_jobs = []
 
 bot = hikari.GatewayBot(token, intents=intents.Intents.ALL)
-@bot.listen()
 
+@bot.listen()
 async def on_started(event: hikari.StartedEvent) -> None:
     '''
     Assynchronous function that searches for new jobs every 60 seconds and sends them to the Discord channel.
