@@ -5,7 +5,6 @@ def instalador(pacote:str):
    
    subprocess.check_call([sys.executable, "-m", "pip", "install", pacote])
 
-
 pacotes = ['keyring', 'hikari', 'cloudscraper', 'httpx', 'beautifulsoup4', 'asyncio']
 
 for pacote in pacotes:

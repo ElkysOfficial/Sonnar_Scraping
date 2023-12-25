@@ -88,7 +88,7 @@ async def on_started(event: hikari.StartedEvent) -> None:
             sent_jobs.append(result[0])
             job_info = f'{"-"*50}\nTÍTULO DA VAGA: {result[0]}\nEMPRESA: {result[1]}\nSENIORIDADE: {result[2]}\nLOCALIDADE: {result[3]}\nLINK {result[4]}'
             await bot.rest.create_message(channel_id, job_info)
-            await asyncio.sleep(30)
+            await asyncio.sleep(1)
     await asyncio.sleep(60)
 
     # Indeed
