@@ -10,7 +10,7 @@ async def get_gupy_jobs() -> list:
   '''
   
   jobs = []
-  stacks = ['python', 'javascript', 'java', 'c++', 'c#', 'php', 'ruby', 'sql', 'mysql', 'postgresql', 'oracle', 'linux', 'unix', 'aws', 'azure', 'docker', 'ansible', 'nginx', 'apache', 'sysadmin', 'cloud', 'front-end', 'back-end', 'full-stack', 'cybersegurança', 'devops', 'pentest']
+  stacks = ['python', 'javascript', 'java', 'php', 'ruby', 'sql', 'mysql', 'postgresql', 'oracle', 'linux', 'unix', 'aws', 'azure', 'docker', 'ansible', 'nginx', 'apache', 'sysadmin', 'cloud', 'front-end', 'back-end', 'full-stack', 'cybersegurança', 'devops', 'pentest']
  
   for stack in stacks:
     async with httpx.AsyncClient() as client:
