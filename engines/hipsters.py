@@ -19,14 +19,6 @@ async def get_hipsters_jobs():
         location = cell.find("span", class_="listing-item__info--item listing-item__info--item-location").get_text(strip=True)
         link = cell.find("a", class_="link").get("href")
 
-        print('-'*50)
-        print(f'TITULO DA VAGA: {title}')
-        print(f'REGIME: {regime}')
-        print(f'EMPRESA: {company}')
-        print(f'LOCALIZAÇÃO: {location}')
-        print(f'LINK: {link}')
-        print('-'*50)
-
         job = [title, regime, company, location, link]
         jobs.append(job)
 
