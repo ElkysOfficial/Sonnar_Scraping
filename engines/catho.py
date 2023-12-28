@@ -2,7 +2,7 @@ from bs4 import BeautifulSoup
 import cloudscraper
 import asyncio
 
-async def get_catho() -> list:
+async def get_catho_jobs() -> list:
 
   jobs = []
 
