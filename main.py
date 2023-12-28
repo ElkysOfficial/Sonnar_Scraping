@@ -3,9 +3,10 @@ import hikari
 from hikari import intents
 import asyncio
 
-from engines.catho import get_catho
+from engines.catho import get_catho_jobs
 from engines.geekhunter import get_geekhunter_jobs
 from engines.gupy import get_gupy_jobs
+from engines.hipsters import get_hipsters_jobs
 from engines.indeed import get_indeed_jobs
 from engines.infojobs import get_infojobs_jobs
 from engines.linkedin import get_linkedin_jobs
@@ -27,6 +28,7 @@ async def on_started(event: hikari.StartedEvent) -> None:
     * Catho
     * GeekHunter
     * Gupy
+    * Hipsters
     * Indeed
     * InfoJobs
     * LinkedIn
@@ -36,7 +38,7 @@ async def on_started(event: hikari.StartedEvent) -> None:
     '''
     
     # Catcho
-    results = await get_catho()
+    results = await get_catho_jobs()
     for result in results:
         if result[0] not in sent_jobs:
             sent_jobs.append(result[0])
@@ -61,6 +63,16 @@ async def on_started(event: hikari.StartedEvent) -> None:
         if result[0] not in sent_jobs:
             sent_jobs.append(result[0])
             job_info = f'{"-"*50}\nTÍTULO DA VAGA: {result[1]}\nEMPRESA: {result[2]}\nLOCALIDADE: {result[3]}\nLINK {result[4]}'
+            await bot.rest.create_message(channel_id, job_info)
+            await asyncio.sleep(30)
+    await asyncio.sleep(60)
+
+    # Hipsters
+    results = await get_hipsters_jobs()
+    for result in results:
+        if result[0] not in sent_jobs:
+            sent_jobs.append(result[0])
+            job_info = f'{"-"*50}\nTÍTULO DA VAGA: {result[1]}\nREGIME: {result[2]}\nEMPRESA: {result[3]}\nLOCALIDADE: {result[4]}\nLINK {result[5]}'
             await bot.rest.create_message(channel_id, job_info)
             await asyncio.sleep(30)
     await asyncio.sleep(60)
