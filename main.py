@@ -10,6 +10,7 @@ from engines.indeed import get_indeed_jobs
 from engines.infojobs import get_infojobs_jobs
 from engines.linkedin import get_linkedin_jobs
 from engines.programathor import get_programathor_jobs
+from engines.remoteok import get_remoteok_jobs
 from engines.vagas import get_vagas_jobs
 
 token = keyring.get_password('bot_vagas', 'token')
@@ -30,18 +31,19 @@ async def on_started(event: hikari.StartedEvent) -> None:
     * InfoJobs
     * LinkedIn
     * ProgramaThor
+    * RemoteOK
     * Vagas
     '''
     
-    # # Catcho
-    # results = await get_catho()
-    # for result in results:
-    #     if result[0] not in sent_jobs:
-    #         sent_jobs.append(result[0])
-    #         job_info = f'{"-"*50}\nTÍTULO DA VAGA: {result[0]}\nEMPRESA: {result[1]}\nLINK {result[2]}'
-    #         await bot.rest.create_message(channel_id, job_info)
-    #         await asyncio.sleep(30)
-    # await asyncio.sleep(60)
+    # Catcho
+    results = await get_catho()
+    for result in results:
+        if result[0] not in sent_jobs:
+            sent_jobs.append(result[0])
+            job_info = f'{"-"*50}\nTÍTULO DA VAGA: {result[0]}\nEMPRESA: {result[1]}\nLINK {result[2]}'
+            await bot.rest.create_message(channel_id, job_info)
+            await asyncio.sleep(30)
+    await asyncio.sleep(60)
 
     # GeekHunter
     results = await get_geekhunter_jobs()
@@ -55,6 +57,16 @@ async def on_started(event: hikari.StartedEvent) -> None:
 
     # Gupy
     results = await get_gupy_jobs()
+    for result in results:
+        if result[0] not in sent_jobs:
+            sent_jobs.append(result[0])
+            job_info = f'{"-"*50}\nTÍTULO DA VAGA: {result[1]}\nEMPRESA: {result[2]}\nLOCALIDADE: {result[3]}\nLINK {result[4]}'
+            await bot.rest.create_message(channel_id, job_info)
+            await asyncio.sleep(30)
+    await asyncio.sleep(60)
+
+    # Indeed
+    results = await get_indeed_jobs()
     for result in results:
         if result[0] not in sent_jobs:
             sent_jobs.append(result[0])
@@ -93,6 +105,16 @@ async def on_started(event: hikari.StartedEvent) -> None:
         await asyncio.sleep(30)
     await asyncio.sleep(60)
 
+    # RemoteOK
+    results = await get_remoteok_jobs()
+    for result in results:
+        if result[0] not in sent_jobs:
+            sent_jobs.append(result[0])
+            job_info = f'{"-"*50}\nTÍTULO DA VAGA: {result[0]}\nEMPRESA: {result[1]}\nLOCALIDADE: {result[2]}\nSTACKS: {result[3]}\nLINK: {result[4]}'
+            await bot.rest.create_message(channel_id, job_info)
+            await asyncio.sleep(30)
+    await asyncio.sleep(60)
+
     # Vagas
     results = await get_vagas_jobs()
     for result in results:
@@ -100,17 +122,7 @@ async def on_started(event: hikari.StartedEvent) -> None:
             sent_jobs.append(result[0])
             job_info = f'{"-"*50}\nTÍTULO DA VAGA: {result[0]}\nEMPRESA: {result[1]}\nSENIORIDADE: {result[2]}\nLOCALIDADE: {result[3]}\nLINK {result[4]}'
             await bot.rest.create_message(channel_id, job_info)
-            await asyncio.sleep(1)
-    await asyncio.sleep(60)
-
-    # Indeed
-    results = await get_indeed_jobs()
-    for result in results:
-        if result[0] not in sent_jobs:
-            sent_jobs.append(result[0])
-            job_info = f'{"-"*50}\nTÍTULO DA VAGA: {result[1]}\nEMPRESA: {result[2]}\nLOCALIDADE: {result[3]}\nLINK {result[4]}'
-            await bot.rest.create_message(channel_id, job_info)
             await asyncio.sleep(30)
     await asyncio.sleep(60)
-    
+
 bot.run()
