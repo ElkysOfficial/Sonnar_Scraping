@@ -15,21 +15,22 @@ async def get_vagas_jobs():
 
   for stack in stacks:
       response = await fetch(f'https://www.vagas.com.br/vagas-de-{stack}')
-
-      soup = BeautifulSoup(response.text, 'html.parser')
-      cells = soup.find_all('li', class_='vaga')
-      for cell in cells:
-        title = cell.find('h2', class_='cargo').text.strip()
-        link = cell.find('a').attrs['href']
-        link = f'https://www.vagas.com.br{link}'
-        company = cell.find('span', class_='emprVaga').text.strip()
-        senioridade = cell.find('span', class_='nivelVaga').text.strip()
-        locate = cell.find('span', class_='vaga-local')
-        if locate is not None:
-           locate = locate.text.strip()
-        else:
-           locate = 'LOCALIDADE NÃO INFORMADA'
-        job = [title,company,senioridade,locate,link]
-        jobs.append(job)
+      
+      if response.status_code == 200:
+        soup = BeautifulSoup(response.text, 'html.parser')
+        cells = soup.find_all('li', class_='vaga')
+        for cell in cells:
+          title = cell.find('h2', class_='cargo').text.strip()
+          link = cell.find('a').attrs['href']
+          link = f'https://www.vagas.com.br{link}'
+          company = cell.find('span', class_='emprVaga').text.strip()
+          senioridade = cell.find('span', class_='nivelVaga').text.strip()
+          locate = cell.find('span', class_='vaga-local')
+          if locate is not None:
+            locate = locate.text.strip()
+          else:
+            locate = 'LOCALIDADE NÃO INFORMADA'
+          job = [title,company,senioridade,locate,link]
+          jobs.append(job)
 
   return jobs
