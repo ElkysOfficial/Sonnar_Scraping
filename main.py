@@ -2,6 +2,7 @@ import keyring
 import hikari
 from hikari import intents
 import asyncio
+import csv
 
 from engines.catho import get_catho_jobs
 from engines.geekhunter import get_geekhunter_jobs
@@ -16,7 +17,13 @@ from engines.vagas import get_vagas_jobs
 
 token = keyring.get_password('bot_vagas', 'token')
 channel_id = keyring.get_password('bot_vagas', 'channel')
-sent_jobs = []
+
+try:
+    with open ('job_vacancies.csv', 'r', newline='', encoding='utf-8') as f:
+        csv_reader = csv.reader(f)
+        sent_jobs = set(row[0] for row in csv_reader)
+except FileNotFoundError:
+    sent_jobs = set()
 
 bot = hikari.GatewayBot(token, intents=intents.Intents.ALL)
 
@@ -38,104 +45,134 @@ async def on_started(event: hikari.StartedEvent) -> None:
     * 
     '''
     
-    # Catcho
+    # Catho
     results = await get_catho_jobs()
-    for result in results:
-        if result[0] not in sent_jobs:
-            sent_jobs.append(result[0])
-            job_info = f'{"-"*50}\nTÍTULO DA VAGA: {result[0]}\nEMPRESA: {result[1]}\nLINK {result[2]}'
-            await bot.rest.create_message(channel_id, job_info)
-            await asyncio.sleep(30)
+    with open ('job_vacancies.csv', 'a+', newline='', encoding='utf-8') as f:
+        csv_writer = csv.writer(f)
+        for result in results:
+            if result[0] not in sent_jobs:
+                sent_jobs.add(result[0])
+                csv_writer.writerow(result)
+                job_info = f'{"-"*50}\nTÍTULO DA VAGA: {result[0]}\nEMPRESA: {result[1]}\nLINK {result[2]}'
+                await bot.rest.create_message(channel_id, job_info)
+                await asyncio.sleep(30)
     await asyncio.sleep(60)
 
     # GeekHunter
     results = await get_geekhunter_jobs()
-    for result in results:
-        if result[4] not in sent_jobs:
-            sent_jobs.append(result[4])
-            job_info = f'{"-"*50}\nTÍTULO DA VAGA: {result[0]}\nLOCALIDADE: {result[1]}\nSTACKS: {result[2]}\nAREA: {result[3]}\nLINK: {result[4]}'
-            await bot.rest.create_message(channel_id, job_info)
-            await asyncio.sleep(30)
+    with open ('job_vacancies.csv', 'a+', newline='', encoding='utf-8') as f:
+        csv_writer = csv.writer(f)
+        for result in results:
+            if result[4] not in sent_jobs:
+                sent_jobs.add(result[4])
+                csv_writer.writerow(result)
+                job_info = f'{"-"*50}\nTÍTULO DA VAGA: {result[0]}\nLOCALIDADE: {result[1]}\nSTACKS: {result[2]}\nAREA: {result[3]}\nLINK: {result[4]}'
+                await bot.rest.create_message(channel_id, job_info)
+                await asyncio.sleep(30)
     await asyncio.sleep(60)
 
     # Gupy
     results = await get_gupy_jobs()
-    for result in results:
-        if result[0] not in sent_jobs:
-            sent_jobs.append(result[0])
-            job_info = f'{"-"*50}\nTÍTULO DA VAGA: {result[1]}\nEMPRESA: {result[2]}\nLOCALIDADE: {result[3]}\nLINK {result[4]}'
-            await bot.rest.create_message(channel_id, job_info)
-            await asyncio.sleep(30)
+    with open ('job_vacancies.csv', 'a+', newline='', encoding='utf-8') as f:
+        csv_writer = csv.writer(f)
+        for result in results:
+            if result[0] not in sent_jobs:
+                sent_jobs.add(result[0])
+                csv_writer.writerow(result)
+                job_info = f'{"-"*50}\nTÍTULO DA VAGA: {result[1]}\nEMPRESA: {result[2]}\nLOCALIDADE: {result[3]}\nLINK {result[4]}'
+                await bot.rest.create_message(channel_id, job_info)
+                await asyncio.sleep(30)
     await asyncio.sleep(60)
 
     # Hipsters
     results = await get_hipsters_jobs()
-    for result in results:
-        if result[0] not in sent_jobs:
-            sent_jobs.append(result[0])
-            job_info = f'{"-"*50}\nTÍTULO DA VAGA: {result[0]}\nREGIME: {result[1]}\nEMPRESA: {result[2]}\nLOCALIDADE: {result[3]}\nLINK: {result[4]}'
-            await bot.rest.create_message(channel_id, job_info)
-            await asyncio.sleep(30)
+    with open ('job_vacancies.csv', 'a+', newline='', encoding='utf-8') as f:
+        csv_writer = csv.writer(f)
+        for result in results:
+            if result[0] not in sent_jobs:
+                sent_jobs.add(result[0])
+                csv_writer.writerow(result)
+                job_info = f'{"-"*50}\nTÍTULO DA VAGA: {result[0]}\nREGIME: {result[1]}\nEMPRESA: {result[2]}\nLOCALIDADE: {result[3]}\nLINK: {result[4]}'
+                await bot.rest.create_message(channel_id, job_info)
+                await asyncio.sleep(30)
     await asyncio.sleep(60)
 
     # Indeed
     results = await get_indeed_jobs()
-    for result in results:
-        if result[0] not in sent_jobs:
-            sent_jobs.append(result[0])
-            job_info = f'{"-"*50}\nTÍTULO DA VAGA: {result[1]}\nEMPRESA: {result[2]}\nLOCALIDADE: {result[3]}\nLINK {result[4]}'
-            await bot.rest.create_message(channel_id, job_info)
-            await asyncio.sleep(30)
+    with open ('job_vacancies.csv', 'a+', newline='', encoding='utf-8') as f:
+        csv_writer = csv.writer(f)
+        for result in results:
+            if result[0] not in sent_jobs:
+                sent_jobs.add(result[0])
+                csv_writer.writerow(result)
+                job_info = f'{"-"*50}\nTÍTULO DA VAGA: {result[1]}\nEMPRESA: {result[2]}\nLOCALIDADE: {result[3]}\nLINK {result[4]}'
+                await bot.rest.create_message(channel_id, job_info)
+                await asyncio.sleep(30)
     await asyncio.sleep(60)
  
     # InfoJobs
     results = await get_infojobs_jobs()
-    for result in results:
-        if result[0] not in sent_jobs:
-            sent_jobs.append(result[0])
-            job_info = f'{"-"*50}\nTÍTULO DA VAGA: {result[1]}\nEMPRESA: {result[2]}\nLOCALIDADE: {result[3]}\nMODALIDADE: {result[4]}\nLINK: {result[5]}'
-            await bot.rest.create_message(channel_id, job_info)
-            await asyncio.sleep(30)
+    with open ('job_vacancies.csv', 'a+', newline='', encoding='utf-8') as f:
+        csv_writer = csv.writer(f)
+        for result in results:
+            if result[0] not in sent_jobs:
+                sent_jobs.add(result[0])
+                csv_writer.writerow(result)
+                job_info = f'{"-"*50}\nTÍTULO DA VAGA: {result[1]}\nEMPRESA: {result[2]}\nLOCALIDADE: {result[3]}\nMODALIDADE: {result[4]}\nLINK: {result[5]}'
+                await bot.rest.create_message(channel_id, job_info)
+                await asyncio.sleep(30)
     await asyncio.sleep(60)
 
     # LinkedIn
     results = await get_linkedin_jobs()
-    for result in results:
-        if result[0] not in sent_jobs:
-            sent_jobs.append(result[0])
-            job_info = f'{"-"*50}\nTÍTULO DA VAGA: {result[1]}\nEMPRESA: {result[2]}\nLOCALIDADE: {result[3]}\nLINK: {result[4]}'
-            await bot.rest.create_message(channel_id, job_info)
-            await asyncio.sleep(30)
+    with open ('job_vacancies.csv', 'a+', newline='', encoding='utf-8') as f:
+        csv_writer = csv.writer(f)
+        for result in results:
+            if result[0] not in sent_jobs:
+                sent_jobs.add(result[0])
+                csv_writer.writerow(result)
+                job_info = f'{"-"*50}\nTÍTULO DA VAGA: {result[1]}\nEMPRESA: {result[2]}\nLOCALIDADE: {result[3]}\nLINK: {result[4]}'
+                await bot.rest.create_message(channel_id, job_info)
+                await asyncio.sleep(30)
     await asyncio.sleep(60)
 
     # ProgramaThor
     results = await get_programathor_jobs()
-    for result in results:
-      if result[0] not in sent_jobs:
-        sent_jobs.append(result[0])
-        job_info = f'{"-"*50}\nTÍTULO DA VAGA: {result[1]}\nEMPRESA: {result[2]}\nLOCALIDADE: {result[3]}\nSTACKS: {", ".join(result[4])}\nLINK: {result[5]}'
-        await bot.rest.create_message(channel_id, job_info)
-        await asyncio.sleep(30)
+    with open ('job_vacancies.csv', 'a+', newline='', encoding='utf-8') as f:
+        csv_writer = csv.writer(f)
+        for result in results:
+            if result[0] not in sent_jobs:
+                sent_jobs.add(result[0])
+                csv_writer.writerow(result)
+                job_info = f'{"-"*50}\nTÍTULO DA VAGA: {result[1]}\nEMPRESA: {result[2]}\nLOCALIDADE: {result[3]}\nSTACKS: {", ".join(result[4])}\nLINK: {result[5]}'
+                await bot.rest.create_message(channel_id, job_info)
+                await asyncio.sleep(30)
     await asyncio.sleep(60)
 
     # RemoteOK
     results = await get_remoteok_jobs()
-    for result in results:
-        if result[0] not in sent_jobs:
-            sent_jobs.append(result[0])
-            job_info = f'{"-"*50}\nTÍTULO DA VAGA: {result[0]}\nEMPRESA: {result[1]}\nLOCALIDADE: {result[2]}\nSTACKS: {result[3]}\nLINK: {result[4]}'
-            await bot.rest.create_message(channel_id, job_info)
-            await asyncio.sleep(30)
+    with open ('job_vacancies.csv', 'a+', newline='', encoding='utf-8') as f:
+        csv_writer = csv.writer(f)
+        for result in results:
+            if result[0] not in sent_jobs:
+                sent_jobs.add(result[0])
+                csv_writer.writerow(result)
+                job_info = f'{"-"*50}\nTÍTULO DA VAGA: {result[0]}\nEMPRESA: {result[1]}\nLOCALIDADE: {result[2]}\nSTACKS: {result[3]}\nLINK: {result[4]}'
+                await bot.rest.create_message(channel_id, job_info)
+                await asyncio.sleep(30)
     await asyncio.sleep(60)
 
     # Vagas
     results = await get_vagas_jobs()
-    for result in results:
-        if result[0] not in sent_jobs:
-            sent_jobs.append(result[0])
-            job_info = f'{"-"*50}\nTÍTULO DA VAGA: {result[0]}\nEMPRESA: {result[1]}\nSENIORIDADE: {result[2]}\nLOCALIDADE: {result[3]}\nLINK {result[4]}'
-            await bot.rest.create_message(channel_id, job_info)
-            await asyncio.sleep(30)
+    with open ('job_vacancies.csv', 'a+', newline='', encoding='utf-8') as f:
+        csv_writer = csv.writer(f)
+        for result in results:
+            if result[0] not in sent_jobs:
+                sent_jobs.add(result[0])
+                csv_writer.writerow(result)
+                job_info = f'{"-"*50}\nTÍTULO DA VAGA: {result[0]}\nEMPRESA: {result[1]}\nSENIORIDADE: {result[2]}\nLOCALIDADE: {result[3]}\nLINK {result[4]}'
+                await bot.rest.create_message(channel_id, job_info)
+                await asyncio.sleep(30)
     await asyncio.sleep(60)
 
 bot.run()
