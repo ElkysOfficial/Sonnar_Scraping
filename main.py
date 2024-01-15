@@ -15,8 +15,8 @@ from engines.programathor import get_programathor_jobs
 from engines.remoteok import get_remoteok_jobs
 from engines.vagas import get_vagas_jobs
 
-token = keyring.get_password('bot_vagas', 'token')
-channel_id = keyring.get_password('bot_vagas', 'channel')
+token = keyring.get_password('discord', 'token')
+channel_id = keyring.get_password('discord', 'server-vagas')
 
 try:
     with open ('job_vacancies.csv', 'r', newline='', encoding='utf-8') as f:
@@ -50,8 +50,8 @@ async def on_started(event: hikari.StartedEvent) -> None:
     with open ('job_vacancies.csv', 'a+', newline='', encoding='utf-8') as f:
         csv_writer = csv.writer(f)
         for result in results:
-            if result[0] not in sent_jobs:
-                sent_jobs.add(result[0])
+            if result[2] not in sent_jobs:
+                sent_jobs.add(result[2])
                 csv_writer.writerow(result)
                 job_info = f'{"-"*50}\nTÍTULO DA VAGA: {result[0]}\nEMPRESA: {result[1]}\nLINK {result[2]}'
                 await bot.rest.create_message(channel_id, job_info)
