@@ -76,8 +76,8 @@ async def on_started(event: hikari.StartedEvent) -> None:
     with open ('job_vacancies.csv', 'a+', newline='', encoding='utf-8') as f:
         csv_writer = csv.writer(f)
         for result in results:
-            if result[0] not in sent_jobs:
-                sent_jobs.add(result[0])
+            if result[4] not in sent_jobs:
+                sent_jobs.add(result[4])
                 csv_writer.writerow(result)
                 job_info = f'{"-"*50}\nTÍTULO DA VAGA: {result[1]}\nEMPRESA: {result[2]}\nLOCALIDADE: {result[3]}\nLINK {result[4]}'
                 await bot.rest.create_message(channel_id, job_info)
@@ -89,8 +89,8 @@ async def on_started(event: hikari.StartedEvent) -> None:
     with open ('job_vacancies.csv', 'a+', newline='', encoding='utf-8') as f:
         csv_writer = csv.writer(f)
         for result in results:
-            if result[0] not in sent_jobs:
-                sent_jobs.add(result[0])
+            if result[4] not in sent_jobs:
+                sent_jobs.add(result[4])
                 csv_writer.writerow(result)
                 job_info = f'{"-"*50}\nTÍTULO DA VAGA: {result[0]}\nREGIME: {result[1]}\nEMPRESA: {result[2]}\nLOCALIDADE: {result[3]}\nLINK: {result[4]}'
                 await bot.rest.create_message(channel_id, job_info)
@@ -102,8 +102,8 @@ async def on_started(event: hikari.StartedEvent) -> None:
     with open ('job_vacancies.csv', 'a+', newline='', encoding='utf-8') as f:
         csv_writer = csv.writer(f)
         for result in results:
-            if result[0] not in sent_jobs:
-                sent_jobs.add(result[0])
+            if result[4] not in sent_jobs:
+                sent_jobs.add(result[4])
                 csv_writer.writerow(result)
                 job_info = f'{"-"*50}\nTÍTULO DA VAGA: {result[1]}\nEMPRESA: {result[2]}\nLOCALIDADE: {result[3]}\nLINK {result[4]}'
                 await bot.rest.create_message(channel_id, job_info)
@@ -115,8 +115,8 @@ async def on_started(event: hikari.StartedEvent) -> None:
     with open ('job_vacancies.csv', 'a+', newline='', encoding='utf-8') as f:
         csv_writer = csv.writer(f)
         for result in results:
-            if result[0] not in sent_jobs:
-                sent_jobs.add(result[0])
+            if result[5] not in sent_jobs:
+                sent_jobs.add(result[5])
                 csv_writer.writerow(result)
                 job_info = f'{"-"*50}\nTÍTULO DA VAGA: {result[1]}\nEMPRESA: {result[2]}\nLOCALIDADE: {result[3]}\nMODALIDADE: {result[4]}\nLINK: {result[5]}'
                 await bot.rest.create_message(channel_id, job_info)
@@ -128,8 +128,8 @@ async def on_started(event: hikari.StartedEvent) -> None:
     with open ('job_vacancies.csv', 'a+', newline='', encoding='utf-8') as f:
         csv_writer = csv.writer(f)
         for result in results:
-            if result[0] not in sent_jobs:
-                sent_jobs.add(result[0])
+            if result[4] not in sent_jobs:
+                sent_jobs.add(result[4])
                 csv_writer.writerow(result)
                 job_info = f'{"-"*50}\nTÍTULO DA VAGA: {result[1]}\nEMPRESA: {result[2]}\nLOCALIDADE: {result[3]}\nLINK: {result[4]}'
                 await bot.rest.create_message(channel_id, job_info)
@@ -141,8 +141,8 @@ async def on_started(event: hikari.StartedEvent) -> None:
     with open ('job_vacancies.csv', 'a+', newline='', encoding='utf-8') as f:
         csv_writer = csv.writer(f)
         for result in results:
-            if result[0] not in sent_jobs:
-                sent_jobs.add(result[0])
+            if result[5] not in sent_jobs:
+                sent_jobs.add(result[5])
                 csv_writer.writerow(result)
                 job_info = f'{"-"*50}\nTÍTULO DA VAGA: {result[1]}\nEMPRESA: {result[2]}\nLOCALIDADE: {result[3]}\nSTACKS: {", ".join(result[4])}\nLINK: {result[5]}'
                 await bot.rest.create_message(channel_id, job_info)
@@ -154,8 +154,8 @@ async def on_started(event: hikari.StartedEvent) -> None:
     with open ('job_vacancies.csv', 'a+', newline='', encoding='utf-8') as f:
         csv_writer = csv.writer(f)
         for result in results:
-            if result[0] not in sent_jobs:
-                sent_jobs.add(result[0])
+            if result[4] not in sent_jobs:
+                sent_jobs.add(result[4])
                 csv_writer.writerow(result)
                 job_info = f'{"-"*50}\nTÍTULO DA VAGA: {result[0]}\nEMPRESA: {result[1]}\nLOCALIDADE: {result[2]}\nSTACKS: {result[3]}\nLINK: {result[4]}'
                 await bot.rest.create_message(channel_id, job_info)
@@ -167,8 +167,8 @@ async def on_started(event: hikari.StartedEvent) -> None:
     with open ('job_vacancies.csv', 'a+', newline='', encoding='utf-8') as f:
         csv_writer = csv.writer(f)
         for result in results:
-            if result[0] not in sent_jobs:
-                sent_jobs.add(result[0])
+            if result[4] not in sent_jobs:
+                sent_jobs.add(result[4])
                 csv_writer.writerow(result)
                 job_info = f'{"-"*50}\nTÍTULO DA VAGA: {result[0]}\nEMPRESA: {result[1]}\nSENIORIDADE: {result[2]}\nLOCALIDADE: {result[3]}\nLINK {result[4]}'
                 await bot.rest.create_message(channel_id, job_info)
