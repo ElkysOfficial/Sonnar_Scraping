@@ -39,3 +39,4 @@ async def get_indeed_jobs() -> list:
                     jobs.append(job)
 
     return jobs
+

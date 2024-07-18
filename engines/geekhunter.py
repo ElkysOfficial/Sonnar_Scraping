@@ -17,6 +17,7 @@ async def get_geekhunter_jobs() -> list:
         'operationName': 'findShowcaseJobs',
         'variables': {
             'showcaseParams': {
+                'companyLocation': [],
                 'order': 'newer',
                 'remoteWork': False,
                 'pagination': {'page': 0, 'perPage': 1000},

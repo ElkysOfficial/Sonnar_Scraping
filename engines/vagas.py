@@ -34,3 +34,4 @@ async def get_vagas_jobs():
           jobs.append(job)
 
   return jobs
+

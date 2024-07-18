@@ -39,3 +39,4 @@ async def get_infojobs_jobs() -> list:
                         jobs.append(job)
 
     return jobs
+

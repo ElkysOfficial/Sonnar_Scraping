@@ -15,19 +15,31 @@ async def get_catho_jobs() -> list:
 
     if response.status_code == 200:
       soup = BeautifulSoup(response.text, 'html.parser')
-      cells = soup.find_all('li', class_='sc-jlGgGc iYWaHE')
+      cells = soup.find_all('li', class_='search-result-custom_jobItem__OGz3a')
       for cell in cells:  
-        title = cell.find('h2', class_='Title__Heading-sc-14fvmc0-0 eoQumQ sc-ejfMa-d bRbtWH')
+        title = cell.find('h2', class_='bACWKm')
         if title == None:
           continue
         title = title.get_text(strip=True)
-        company = cell.find('p', class_='sc-EgOXT ftVpJD')
+        company = cell.find('p', class_='sc-sLsrZ iJixUK')
         if company == None:
             continue
         company = company.get_text(strip=True)
+        if company == 'Empresa ConfidencialPor que?':
+           company = 'Empresa Confidencial'
         link = cell.find('a').attrs['href']
 
         job = [title, company, link]
         jobs.append(job)
 
   return jobs
+
+# Função para executar a coleta e imprimir os resultados
+
+async def main():
+    jobs = await get_catho_jobs()
+    for job in jobs:
+        print(job)
+
+# Executar a função principal
+asyncio.run(main())

@@ -14,7 +14,7 @@ async def get_linkedin_jobs() -> list:
     stacks = ['python', 'javascript', 'java', 'php', 'desenvolvedor c', 'ruby', 'sql', 'mysql', 'postgresql', 'oracle', 'linux', 'unix', 'aws', 'azure', 'docker', 'ansible', 'nginx', 'apache', 'sysadmin', 'cloud', 'front-end', 'back-end', 'full-stack', 'analista ti','cibersegurança', 'devops', 'UX & Desing', 'Data Science', 'Mobile', 'QA', 'SAP', 'Mainframe', 'Analista de Dados', 'Analista de Sistemas', 'Analista de Suporte', 'Analista de Testes', 'Pentest', 'Analista de Infraestrutura', 'Analista de Redes', 'Seguranca da Informacao']
 
     for stack in stacks:
-        for page in range(0, 100, 25):
+        for page in range(0, 100, 10):
             async with httpx.AsyncClient() as client:
                 response = await client.get(f'https://br.linkedin.com/jobs/api/seeMoreJobPostings/search?keywords={stack}&location=Brasil&geoId=106057199&start={page}')
 
@@ -33,5 +33,4 @@ async def get_linkedin_jobs() -> list:
 
                         job = [code, title, company, location, link]
                         jobs.append(job)
-
     return jobs

@@ -55,7 +55,7 @@ async def on_started(event: hikari.StartedEvent) -> None:
                 csv_writer.writerow(result)
             job_info = f'{"-"*50}\nTÍTULO DA VAGA: {result[0]}\nEMPRESA: {result[1]}\nLINK {result[2]}'
             await bot.rest.create_message(channel_id, job_info)
-            await asyncio.sleep(30)
+            await asyncio.sleep(10)
     await asyncio.sleep(60)
 
     # GeekHunter
@@ -68,7 +68,7 @@ async def on_started(event: hikari.StartedEvent) -> None:
                 csv_writer.writerow(result)
             job_info = f'{"-"*50}\nTÍTULO DA VAGA: {result[0]}\nLOCALIDADE: {result[1]}\nSTACKS: {result[2]}\nAREA: {result[3]}\nLINK: {result[4]}'
             await bot.rest.create_message(channel_id, job_info)
-            await asyncio.sleep(30)
+            await asyncio.sleep(10)
     await asyncio.sleep(60)
 
     # Gupy
@@ -81,7 +81,7 @@ async def on_started(event: hikari.StartedEvent) -> None:
                 csv_writer.writerow(result)
             job_info = f'{"-"*50}\nTÍTULO DA VAGA: {result[1]}\nEMPRESA: {result[2]}\nLOCALIDADE: {result[3]}\nLINK {result[4]}'
             await bot.rest.create_message(channel_id, job_info)
-            await asyncio.sleep(30)
+            await asyncio.sleep(10)
     await asyncio.sleep(60)
 
     # Hipsters
@@ -94,7 +94,7 @@ async def on_started(event: hikari.StartedEvent) -> None:
                 csv_writer.writerow(result)
             job_info = f'{"-"*50}\nTÍTULO DA VAGA: {result[0]}\nREGIME: {result[1]}\nEMPRESA: {result[2]}\nLOCALIDADE: {result[3]}\nLINK: {result[4]}'
             await bot.rest.create_message(channel_id, job_info)
-            await asyncio.sleep(30)
+            await asyncio.sleep(10)
     await asyncio.sleep(60)
 
     # Indeed
@@ -107,7 +107,7 @@ async def on_started(event: hikari.StartedEvent) -> None:
                 csv_writer.writerow(result)
             job_info = f'{"-"*50}\nTÍTULO DA VAGA: {result[1]}\nEMPRESA: {result[2]}\nLOCALIDADE: {result[3]}\nLINK {result[4]}'
             await bot.rest.create_message(channel_id, job_info)
-            await asyncio.sleep(30)
+            await asyncio.sleep(10)
     await asyncio.sleep(60)
  
     # InfoJobs
@@ -120,7 +120,7 @@ async def on_started(event: hikari.StartedEvent) -> None:
                 csv_writer.writerow(result)
             job_info = f'{"-"*50}\nTÍTULO DA VAGA: {result[1]}\nEMPRESA: {result[2]}\nLOCALIDADE: {result[3]}\nMODALIDADE: {result[4]}\nLINK: {result[5]}'
             await bot.rest.create_message(channel_id, job_info)
-            await asyncio.sleep(30)
+            await asyncio.sleep(10)
     await asyncio.sleep(60)
 
     # LinkedIn
@@ -133,7 +133,7 @@ async def on_started(event: hikari.StartedEvent) -> None:
                 csv_writer.writerow(result)
             job_info = f'{"-"*50}\nTÍTULO DA VAGA: {result[1]}\nEMPRESA: {result[2]}\nLOCALIDADE: {result[3]}\nLINK: {result[4]}'
             await bot.rest.create_message(channel_id, job_info)
-            await asyncio.sleep(30)
+            await asyncio.sleep(10)
     await asyncio.sleep(60)
 
     # ProgramaThor
@@ -146,7 +146,7 @@ async def on_started(event: hikari.StartedEvent) -> None:
                 csv_writer.writerow(result)
             job_info = f'{"-"*50}\nTÍTULO DA VAGA: {result[1]}\nEMPRESA: {result[2]}\nLOCALIDADE: {result[3]}\nSTACKS: {", ".join(result[4])}\nLINK: {result[5]}'
             await bot.rest.create_message(channel_id, job_info)
-            await asyncio.sleep(30)
+            await asyncio.sleep(10)
     await asyncio.sleep(60)
 
     # RemoteOK
@@ -159,7 +159,7 @@ async def on_started(event: hikari.StartedEvent) -> None:
                 csv_writer.writerow(result)
             job_info = f'{"-"*50}\nTÍTULO DA VAGA: {result[0]}\nEMPRESA: {result[1]}\nLOCALIDADE: {result[2]}\nSTACKS: {result[3]}\nLINK: {result[4]}'
             await bot.rest.create_message(channel_id, job_info)
-            await asyncio.sleep(30)
+            await asyncio.sleep(10)
     await asyncio.sleep(60)
 
     # Vagas
@@ -172,7 +172,7 @@ async def on_started(event: hikari.StartedEvent) -> None:
                 csv_writer.writerow(result)
             job_info = f'{"-"*50}\nTÍTULO DA VAGA: {result[0]}\nEMPRESA: {result[1]}\nSENIORIDADE: {result[2]}\nLOCALIDADE: {result[3]}\nLINK {result[4]}'
             await bot.rest.create_message(channel_id, job_info)
-            await asyncio.sleep(30)
+            await asyncio.sleep(10)
     await asyncio.sleep(60)
 
 bot.run()
