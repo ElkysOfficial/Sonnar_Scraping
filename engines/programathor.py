@@ -38,8 +38,7 @@ async def get_programathor_jobs() -> list:
                     if title.endswith('NOVA'):          # Removes the 'NOVA' string from the title when it's a new job publishing
                         title = title[:-4]
                     
-                    code = ''.join(cell.find('a')['href'].split('/jobs/')[1].split('-')[0])    # Used to verify if the job was already sent by the Discord bot
-                    code = f'ProgramaThor - {code}'
+                    link = f'https://programathor.com.br{cell.find("a")["href"]}'
                     details = cell.find('div', class_='cell-list-content-icon')
                     company = check_none(details.find('span'))
                     location = check_none(details.find('span').find_next_sibling())
@@ -50,9 +49,7 @@ async def get_programathor_jobs() -> list:
                         stacks = check_none(stacks)
                         stack.append(stacks)
 
-                    link = f'https://programathor.com.br{cell.find("a")["href"]}'
-
-                    job = [code, title, company, location, stack, link]
+                    job = [link, title, company, location, stack]
                     jobs.append(job)
 
     return jobs

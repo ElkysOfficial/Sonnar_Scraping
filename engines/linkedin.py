@@ -23,14 +23,12 @@ async def get_linkedin_jobs() -> list:
 
                     cells = soup.find_all('div', class_='base-card')
                     for cell in cells:
-                        code = ''.join(cell.get('data-entity-urn').split('urn:li:jobPosting:')[1])     # Used to verify if the job was already sent by the Discord bot
-                        code = f'LinkedIn - {code}'
-
+                        link = cell.find('a', class_='base-card__full-link').get('href')
                         title = cell.find('h3').get_text(strip=True)
                         company = cell.find('h4').get_text(strip=True)
                         location = cell.find('span', class_='job-search-card__location').get_text(strip=True)
-                        link = cell.find('a', class_='base-card__full-link').get('href')
 
-                        job = [code, title, company, location, link]
+                        job = [link, title, company, location]
                         jobs.append(job)
+                        
     return jobs

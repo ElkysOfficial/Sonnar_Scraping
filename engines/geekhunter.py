@@ -32,13 +32,13 @@ async def get_geekhunter_jobs() -> list:
             results = json_response['data']['findShowcaseJobs']['data']
 
             for result in results:
+                link = f"https://www.geekhunter.com.br/vaga/{result['slug']}"
                 title = result['title']
                 local = result['city']['name'] if result['city'] else 'Remoto'
                 stack = ", ".join([tech['name'] for tech in result['technologies']])
                 area = result['focus']['description'] if result['focus'] else 'Não informado'
-                link = f"https://www.geekhunter.com.br/vaga/{result['slug']}"
 
-                job = [title, local, stack, area, link]
+                job = [link, title, local, stack, area]
                 jobs.append(job)
             
     return jobs

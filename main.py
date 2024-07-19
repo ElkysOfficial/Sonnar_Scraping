@@ -46,133 +46,183 @@ async def on_started(event: hikari.StartedEvent) -> None:
     '''
     
     # Catho
-    results = await get_catho_jobs()
-    for result in results:
-        if result[2] not in sent_jobs:
-            with open ('job_vacancies.csv', 'a+', newline='', encoding='utf-8') as f:
-                csv_writer = csv.writer(f)
-                sent_jobs.add(result[2])
-                csv_writer.writerow(result)
-            job_info = f'{"-"*50}\nTÍTULO DA VAGA: {result[0]}\nEMPRESA: {result[1]}\nLINK {result[2]}'
-            await bot.rest.create_message(channel_id, job_info)
-            await asyncio.sleep(10)
-    await asyncio.sleep(60)
+    try:
+        print('Iniciando buscas em Catho...')
+        results = await get_catho_jobs()
+        for result in results:
+            if result[0] not in sent_jobs:
+                with open ('job_vacancies.csv', 'a+', newline='', encoding='utf-8') as f:
+                    csv_writer = csv.writer(f)
+                    sent_jobs.add(result[0])
+                    csv_writer.writerow(result)
+                job_info = f'{"-"*50}\nTÍTULO DA VAGA: {result[1]}\nEMPRESA: {result[2]}\nLINK {result[0]}'
+                await bot.rest.create_message(channel_id, job_info)
+                await asyncio.sleep(10)
+        await asyncio.sleep(60)
+    except Exception as e:
+        print(f'Erro ao buscar vagas na Catho: {e}')
+        await asyncio.sleep(60)
 
     # GeekHunter
-    results = await get_geekhunter_jobs()
-    for result in results:
-        if result[4] not in sent_jobs:
-            with open ('job_vacancies.csv', 'a+', newline='', encoding='utf-8') as f:
-                csv_writer = csv.writer(f)
-                sent_jobs.add(result[4])
-                csv_writer.writerow(result)
-            job_info = f'{"-"*50}\nTÍTULO DA VAGA: {result[0]}\nLOCALIDADE: {result[1]}\nSTACKS: {result[2]}\nAREA: {result[3]}\nLINK: {result[4]}'
-            await bot.rest.create_message(channel_id, job_info)
-            await asyncio.sleep(10)
-    await asyncio.sleep(60)
+    try:
+        print('Iniciando buscas em GeekHunter...')
+        results = await get_geekhunter_jobs()
+        for result in results:
+            if result[0] not in sent_jobs:
+                with open ('job_vacancies.csv', 'a+', newline='', encoding='utf-8') as f:
+                    csv_writer = csv.writer(f)
+                    sent_jobs.add(result[0])
+                    csv_writer.writerow(result)
+                job_info = f'{"-"*50}\nTÍTULO DA VAGA: {result[1]}\nLOCALIDADE: {result[2]}\nSTACKS: {result[3]}\nAREA: {result[4]}\nLINK: {result[0]}'
+                await bot.rest.create_message(channel_id, job_info)
+                await asyncio.sleep(10)
+        await asyncio.sleep(60)
+    except Exception as e:
+        print(f'Erro ao buscar vagas na GeekHunter: {e}')
+        await asyncio.sleep(60)
 
     # Gupy
-    results = await get_gupy_jobs()
-    for result in results:
-        if result[4] not in sent_jobs:
-            with open ('job_vacancies.csv', 'a+', newline='', encoding='utf-8') as f:
-                csv_writer = csv.writer(f)
-                sent_jobs.add(result[4])
-                csv_writer.writerow(result)
-            job_info = f'{"-"*50}\nTÍTULO DA VAGA: {result[1]}\nEMPRESA: {result[2]}\nLOCALIDADE: {result[3]}\nLINK {result[4]}'
-            await bot.rest.create_message(channel_id, job_info)
-            await asyncio.sleep(10)
-    await asyncio.sleep(60)
+    try:
+        print('Iniciando buscas em Gupy...')
+        results = await get_gupy_jobs()
+        for result in results:
+            if result[0] not in sent_jobs:
+                with open ('job_vacancies.csv', 'a+', newline='', encoding='utf-8') as f:
+                    csv_writer = csv.writer(f)
+                    sent_jobs.add(result[0])
+                    csv_writer.writerow(result)
+                job_info = f'{"-"*50}\nTÍTULO DA VAGA: {result[1]}\nEMPRESA: {result[2]}\nLOCALIDADE: {result[3]}\nLINK {result[0]}'
+                await bot.rest.create_message(channel_id, job_info)
+                await asyncio.sleep(10)
+        await asyncio.sleep(60)
+    except Exception as e:
+        print(f'Erro ao buscar vagas na Gupy: {e}')
+        await asyncio.sleep(60)
 
     # Hipsters
-    results = await get_hipsters_jobs()
-    for result in results:
-        if result[4] not in sent_jobs:
-            with open ('job_vacancies.csv', 'a+', newline='', encoding='utf-8') as f:
-                csv_writer = csv.writer(f)
-                sent_jobs.add(result[4])
-                csv_writer.writerow(result)
-            job_info = f'{"-"*50}\nTÍTULO DA VAGA: {result[0]}\nREGIME: {result[1]}\nEMPRESA: {result[2]}\nLOCALIDADE: {result[3]}\nLINK: {result[4]}'
-            await bot.rest.create_message(channel_id, job_info)
-            await asyncio.sleep(10)
-    await asyncio.sleep(60)
+    try:
+        print('Iniciando buscas em Hipsters...')
+        results = await get_hipsters_jobs()
+        for result in results:
+            if result[0] not in sent_jobs:
+                with open ('job_vacancies.csv', 'a+', newline='', encoding='utf-8') as f:
+                    csv_writer = csv.writer(f)
+                    sent_jobs.add(result[0])
+                    csv_writer.writerow(result)
+                job_info = f'{"-"*50}\nTÍTULO DA VAGA: {result[1]}\nREGIME: {result[2]}\nEMPRESA: {result[3]}\nLOCALIDADE: {result[4]}\nLINK: {result[0]}'
+                await bot.rest.create_message(channel_id, job_info)
+                await asyncio.sleep(10)
+        await asyncio.sleep(60)
+    except Exception as e:
+        print(f'Erro ao buscar vagas na Hipsters: {e}')
+        await asyncio.sleep(60)
 
     # Indeed
-    results = await get_indeed_jobs()
-    for result in results:
-        if result[4] not in sent_jobs:
-            with open ('job_vacancies.csv', 'a+', newline='', encoding='utf-8') as f:
-                csv_writer = csv.writer(f)
-                sent_jobs.add(result[4])
-                csv_writer.writerow(result)
-            job_info = f'{"-"*50}\nTÍTULO DA VAGA: {result[1]}\nEMPRESA: {result[2]}\nLOCALIDADE: {result[3]}\nLINK {result[4]}'
-            await bot.rest.create_message(channel_id, job_info)
-            await asyncio.sleep(10)
-    await asyncio.sleep(60)
+    try:
+        print('Iniciando buscas em Indeed...')
+        results = await get_indeed_jobs()
+        for result in results:
+            if result[0] not in sent_jobs:
+                with open ('job_vacancies.csv', 'a+', newline='', encoding='utf-8') as f:
+                    csv_writer = csv.writer(f)
+                    sent_jobs.add(result[0])
+                    csv_writer.writerow(result)
+                job_info = f'{"-"*50}\nTÍTULO DA VAGA: {result[1]}\nEMPRESA: {result[2]}\nLOCALIDADE: {result[3]}\nLINK {result[0]}'
+                await bot.rest.create_message(channel_id, job_info)
+                await asyncio.sleep(10)
+        await asyncio.sleep(60)
+    except Exception as e:
+        print(f'Erro ao buscar vagas no Indeed: {e}')
+        await asyncio.sleep(60)
  
     # InfoJobs
-    results = await get_infojobs_jobs()
-    for result in results:
-        if result[5] not in sent_jobs:
-            with open ('job_vacancies.csv', 'a+', newline='', encoding='utf-8') as f:
-                csv_writer = csv.writer(f)
-                sent_jobs.add(result[5])
-                csv_writer.writerow(result)
-            job_info = f'{"-"*50}\nTÍTULO DA VAGA: {result[1]}\nEMPRESA: {result[2]}\nLOCALIDADE: {result[3]}\nMODALIDADE: {result[4]}\nLINK: {result[5]}'
-            await bot.rest.create_message(channel_id, job_info)
-            await asyncio.sleep(10)
-    await asyncio.sleep(60)
+    try:
+        print('Iniciando buscas em InfoJobs...')
+        results = await get_infojobs_jobs()
+        for result in results:
+            if result[0] not in sent_jobs:
+                with open ('job_vacancies.csv', 'a+', newline='', encoding='utf-8') as f:
+                    csv_writer = csv.writer(f)
+                    sent_jobs.add(result[0])
+                    csv_writer.writerow(result)
+                job_info = f'{"-"*50}\nTÍTULO DA VAGA: {result[1]}\nEMPRESA: {result[2]}\nLOCALIDADE: {result[3]}\nMODALIDADE: {result[4]}\nLINK: {result[0]}'
+                await bot.rest.create_message(channel_id, job_info)
+                await asyncio.sleep(10)
+        await asyncio.sleep(60)
+    except Exception as e:
+        print(f'Erro ao buscar vagas no InfoJobs: {e}')
+        await asyncio.sleep(60)
 
     # LinkedIn
-    results = await get_linkedin_jobs()
-    for result in results:
-        if result[4] not in sent_jobs:
-            with open ('job_vacancies.csv', 'a+', newline='', encoding='utf-8') as f:
-                csv_writer = csv.writer(f)
-                sent_jobs.add(result[4])
-                csv_writer.writerow(result)
-            job_info = f'{"-"*50}\nTÍTULO DA VAGA: {result[1]}\nEMPRESA: {result[2]}\nLOCALIDADE: {result[3]}\nLINK: {result[4]}'
-            await bot.rest.create_message(channel_id, job_info)
-            await asyncio.sleep(10)
-    await asyncio.sleep(60)
+    try:
+        print('Iniciando buscas no LinkedIn...')
+        results = await get_linkedin_jobs()
+        for result in results:
+            if result[0] not in sent_jobs:
+                with open ('job_vacancies.csv', 'a+', newline='', encoding='utf-8') as f:
+                    csv_writer = csv.writer(f)
+                    sent_jobs.add(result[0])
+                    csv_writer.writerow(result)
+                job_info = f'{"-"*50}\nTÍTULO DA VAGA: {result[1]}\nEMPRESA: {result[2]}\nLOCALIDADE: {result[3]}\nLINK: {result[0]}'
+                await bot.rest.create_message(channel_id, job_info)
+                await asyncio.sleep(10)
+        await asyncio.sleep(60)
+    except Exception as e:
+        print(f'Erro ao buscar vagas no LinkedIn: {e}')
+        await asyncio.sleep(60)
 
     # ProgramaThor
-    results = await get_programathor_jobs()
-    for result in results:
-        if result[5] not in sent_jobs:
-            with open ('job_vacancies.csv', 'a+', newline='', encoding='utf-8') as f:
-                csv_writer = csv.writer(f)
-                sent_jobs.add(result[5])
-                csv_writer.writerow(result)
-            job_info = f'{"-"*50}\nTÍTULO DA VAGA: {result[1]}\nEMPRESA: {result[2]}\nLOCALIDADE: {result[3]}\nSTACKS: {", ".join(result[4])}\nLINK: {result[5]}'
-            await bot.rest.create_message(channel_id, job_info)
-            await asyncio.sleep(10)
-    await asyncio.sleep(60)
+    try:
+        print('Iniciando buscas no ProgramaThor...')
+        results = await get_programathor_jobs()
+        for result in results:
+            if result[0] not in sent_jobs:
+                with open ('job_vacancies.csv', 'a+', newline='', encoding='utf-8') as f:
+                    csv_writer = csv.writer(f)
+                    sent_jobs.add(result[0])
+                    csv_writer.writerow(result)
+                job_info = f'{"-"*50}\nTÍTULO DA VAGA: {result[1]}\nEMPRESA: {result[2]}\nLOCALIDADE: {result[3]}\nSTACKS: {", ".join(result[4])}\nLINK: {result[0]}'
+                await bot.rest.create_message(channel_id, job_info)
+                await asyncio.sleep(10)
+        await asyncio.sleep(60)
+    except Exception as e:
+        print(f'Erro ao buscar vagas no ProgramaThor: {e}')
+        await asyncio.sleep(60)
 
     # RemoteOK
-    results = await get_remoteok_jobs()
-    for result in results:
-        if result[4] not in sent_jobs:
-            with open ('job_vacancies.csv', 'a+', newline='', encoding='utf-8') as f:
-                csv_writer = csv.writer(f)
-                sent_jobs.add(result[4])
-                csv_writer.writerow(result)
-            job_info = f'{"-"*50}\nTÍTULO DA VAGA: {result[0]}\nEMPRESA: {result[1]}\nLOCALIDADE: {result[2]}\nSTACKS: {result[3]}\nLINK: {result[4]}'
-            await bot.rest.create_message(channel_id, job_info)
-            await asyncio.sleep(10)
-    await asyncio.sleep(60)
+    try:
+        print('Iniciando buscas no RemoteOK...')
+        results = await get_remoteok_jobs()
+        for result in results:
+            if result[0] not in sent_jobs:
+                with open ('job_vacancies.csv', 'a+', newline='', encoding='utf-8') as f:
+                    csv_writer = csv.writer(f)
+                    sent_jobs.add(result[0])
+                    csv_writer.writerow(result)
+                job_info = f'{"-"*50}\nTÍTULO DA VAGA: {result[1]}\nEMPRESA: {result[2]}\nLOCALIDADE: {result[3]}\nSTACKS: {result[4]}\nLINK: {result[0]}'
+                await bot.rest.create_message(channel_id, job_info)
+                await asyncio.sleep(10)
+        await asyncio.sleep(60)
+    except Exception as e:
+        print(f'Erro ao buscar vagas no RemoteOK: {e}')
+        await asyncio.sleep(60)
 
     # Vagas
-    results = await get_vagas_jobs()
-    for result in results:
-        if result[4] not in sent_jobs:
-            with open ('job_vacancies.csv', 'a+', newline='', encoding='utf-8') as f:
-                csv_writer = csv.writer(f)
-                sent_jobs.add(result[4])
-                csv_writer.writerow(result)
-            job_info = f'{"-"*50}\nTÍTULO DA VAGA: {result[0]}\nEMPRESA: {result[1]}\nSENIORIDADE: {result[2]}\nLOCALIDADE: {result[3]}\nLINK {result[4]}'
-            await bot.rest.create_message(channel_id, job_info)
-            await asyncio.sleep(10)
-    await asyncio.sleep(60)
+    try:
+        print('Iniciando buscas no Vagas...')
+        results = await get_vagas_jobs()
+        for result in results:
+            if result[0] not in sent_jobs:
+                with open ('job_vacancies.csv', 'a+', newline='', encoding='utf-8') as f:
+                    csv_writer = csv.writer(f)
+                    sent_jobs.add(result[0])
+                    csv_writer.writerow(result)
+                job_info = f'{"-"*50}\nTÍTULO DA VAGA: {result[1]}\nEMPRESA: {result[2]}\nSENIORIDADE: {result[3]}\nLOCALIDADE: {result[4]}\nLINK {result[0]}'
+                await bot.rest.create_message(channel_id, job_info)
+                await asyncio.sleep(10)
+        await asyncio.sleep(60)
+    except Exception as e:
+        print(f'Erro ao buscar vagas no Vagas: {e}')
+        await asyncio.sleep(60)
 
 bot.run()

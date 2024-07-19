@@ -19,7 +19,7 @@ async def get_gupy_jobs() -> list:
         json_response = response.json()
 
         for job in json_response['data']:
-          code = f'Gupy - {job["id"]}'
+          link = job['jobUrl']
           title = job['name']
           company = job['careerPageName']
 
@@ -28,9 +28,7 @@ async def get_gupy_jobs() -> list:
           else:
             location = f'{job['city']} - {job['state']}'
           
-          link = job['jobUrl']
-          
-          job = [code, title, company, location, link]
+          job = [link, title, company, location]
 
           jobs.append(job)
 

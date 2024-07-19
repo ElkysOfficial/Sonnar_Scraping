@@ -25,18 +25,16 @@ async def get_indeed_jobs() -> list:
                 
                 cells = soup.find_all('div', class_='job_seen_beacon')
                 for cell in cells:
+                    link = f'https://br.indeed.com/viewjob?jk={cell.find('a').attrs['data-jk']}'
                     title = cell.find('h2', class_='jobTitle').text.strip()
-                    code = cell.find('a').attrs['data-jk']
                     company = cell.find('span', class_='css-1x7z1ps eu4oa1w0')
                     if company is not None:
                         company = company.text.strip()
                     else:
                         company = "Não disponível"
                     location = cell.find('div', {'data-testid': 'text-location'}).text.strip()
-                    link = f'https://br.indeed.com/viewjob?jk={code}'
 
-                    job = [code, title, company, location, link]
+                    job = [link, title, company, location]
                     jobs.append(job)
 
     return jobs
-

@@ -28,15 +28,12 @@ async def get_infojobs_jobs() -> list:
                             continue
                         title = title.get_text(strip=True)
 
-                        code = cell.find('div')['data-id']
-                        code = f'InfoJobs - {code}'
+                        link = f'https://www.infojobs.com.br{cell.find("div")["data-href"]}'
                         company = cell.find('div', class_='text-body').get_text(strip=True)
                         location = cell.find('div', class_='mr-24').get_text(strip=True).split(',')[0]
                         mode = cell.find('div', class_='caption').get_text(strip=True)
-                        link = f'https://www.infojobs.com.br{cell.find("div")["data-href"]}'
 
-                        job = [code, title, company, location, mode, link]
+                        job = [link, title, company, location, mode]
                         jobs.append(job)
 
     return jobs
-

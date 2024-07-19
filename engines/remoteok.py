@@ -25,14 +25,12 @@ async def get_remoteok_jobs() -> list:
         stack = ' - '.join(stack_list)
         cells = cell.find_all('td', class_='company position company_and_position')
         for cell in cells:
+          link = f'https://remoteok.com{cell.find('a', class_='preventLink').attrs['href']}'
           title = cell.find('a', class_='preventLink').get_text(strip=True)
-          url = cell.find('a', class_='preventLink').attrs['href']
-          link = f'https://remoteok.com{url}'
           company = cell.find('span', class_='companyLink').get_text(strip=True)
           locate = cell.find('div', class_='location').get_text(strip=True)
 
-          job = [title, company, locate, stack, link]
+          job = [link, title, company, locate, stack]
           jobs.append(job)
-
 
   return jobs

@@ -9,22 +9,19 @@ async def get_hipsters_jobs():
 
   for stack in stacks:
     async with httpx.AsyncClient() as client:
-      response = await client.post(f'https://hipsters.jobs/jobs/?q={stack}&l=')
+      response = await client.post(f'https://hipsters.jobs/jobs/?q={stack}')
       
       if response.status_code == 200:
         soup = BeautifulSoup(response.text, "html.parser")
         cells = soup.find_all("article", class_="media well listing-item listing-item__jobs")
         for cell in cells:
+          link = cell.find("a", class_="link").get("href")
           title = cell.find("div", class_="media-heading listing-item__title").get_text(strip=True)
           regime = cell.find("span", class_="listing-item__employment-type").get_text(strip=True)
           company = cell.find("span", class_="listing-item__info--item listing-item__info--item-company").get_text(strip=True)
           location = cell.find("span", class_="listing-item__info--item listing-item__info--item-location").get_text(strip=True)
-          link = cell.find("a", class_="link").get("href")
 
-          job = [title, regime, company, location, link]
+          job = [link, title, regime, company, location]
           jobs.append(job)
 
   return jobs
-
-
-
