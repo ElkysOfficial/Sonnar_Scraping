@@ -33,12 +33,28 @@ async def get_geekhunter_jobs() -> list:
 
             for result in results:
                 link = f"https://www.geekhunter.com.br/vaga/{result['slug']}"
-                title = result['title']
-                local = result['city']['name'] if result['city'] else 'Remoto'
-                stack = ", ".join([tech['name'] for tech in result['technologies']])
-                area = result['focus']['description'] if result['focus'] else 'Não informado'
+                jobTitle = result['title']
 
-                job = [link, title, local, stack, area]
+                # INSERIR A BUSCA DOS CAMPOS ABAIXO:
+                company = ''
+
+                location = result['city']['name'] if result['city'] else 'Remoto'
+
+                # INSERIR A BUSCA DOS CAMPOS ABAIXO:
+                workType = ''
+                hiringRegime = ''
+                typeOfJourney = ''
+                salary = ''
+
+                desiredQualifications = ", ".join([tech['name'] for tech in result['technologies']])
+
+                # INSERIR A BUSCA DOS CAMPOS ABAIXO:
+                dateOfPublication = ''
+                levelOfExperience = ''
+
+                # area = result['focus']['description'] if result['focus'] else 'Não informado'
+
+                job = [link, jobTitle, company, location, workType, hiringRegime, typeOfJourney, salary, desiredQualifications, dateOfPublication, levelOfExperience]
                 jobs.append(job)
             
     return jobs

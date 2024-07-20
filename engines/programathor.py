@@ -15,7 +15,7 @@ async def get_programathor_jobs() -> list:
     '''
     Asynchronous function that returns a list of lists with the following structure:
 
-    [[code, title, company, location, stack, link], [...], [...], ...]
+    [[code, jobTitle, company, location, stack, link], [...], [...], ...]
 
     Each list within the returned list represents a job vacancy published in the ProgramaThor website.
     '''
@@ -31,25 +31,35 @@ async def get_programathor_jobs() -> list:
 
                 cells = soup.find_all('div', class_='cell-list')
                 for cell in cells:
-                    title = cell.find('h3')
-                    if title == None or title.text.startswith('Vencida'):       # Checks if the cell is blank or if the job is expired
+                    jobTitle = cell.find('h3')
+                    if jobTitle == None or jobTitle.text.startswith('Vencida'):       # Checks if the cell is blank or if the job is expired
                         continue
-                    title = title.get_text(strip=True)
-                    if title.endswith('NOVA'):          # Removes the 'NOVA' string from the title when it's a new job publishing
-                        title = title[:-4]
+                    jobTitle = jobTitle.get_text(strip=True)
+                    if jobTitle.endswith('NOVA'):          # Removes the 'NOVA' string from the title when it's a new job publishing
+                        jobTitle = jobTitle[:-4]
                     
                     link = f'https://programathor.com.br{cell.find("a")["href"]}'
                     details = cell.find('div', class_='cell-list-content-icon')
                     company = check_none(details.find('span'))
                     location = check_none(details.find('span').find_next_sibling())
+                    
+                    # INSERIR A BUSCA DOS CAMPOS ABAIXO:
+                    workType = ''
+                    hiringRegime = ''
+                    typeOfJourney = ''
+                    salary = ''
 
                     all_stacks = cell.select('.tag-list')
-                    stack = []
+                    desiredQualifications = []
                     for stacks in all_stacks:
                         stacks = check_none(stacks)
-                        stack.append(stacks)
+                        desiredQualifications.append(stacks)
 
-                    job = [link, title, company, location, stack]
+                    # INSERIR A BUSCA DOS CAMPOS ABAIXO:
+                    dateOfPublication = ''
+                    levelOfExperience = ''
+
+                    job = [link, jobTitle, company, location, workType, hiringRegime, typeOfJourney, salary, desiredQualifications, dateOfPublication, levelOfExperience]
                     jobs.append(job)
 
     return jobs
