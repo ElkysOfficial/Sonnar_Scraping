@@ -1,19 +1,16 @@
 import httpx
-import asyncio
-import re
 from bs4 import BeautifulSoup
+from variavel import stacks
 
 async def get_infojobs_links() -> list:
     """
-
+    Coleta links de vagas do InfoJobs com base em stacks.
     """
 
-    jobs = []
-    stacks = ['python', 'javascript', 'java', 'php', 'desenvolvedor c', 'ruby', 'sql', 'mysql', 'postgresql', 'oracle', 'linux', 'unix', 'aws', 'azure', 'docker', 'ansible', 'nginx', 'apache', 'sysadmin', 'cloud', 'front-end', 'back-end', 'full-stack', 'analista ti',
-              'cibersegurança', 'devops', 'UX & Desing', 'Data Science', 'Mobile', 'QA', 'SAP', 'Mainframe', 'Analista de Dados', 'Analista de Sistemas', 'Analista de Suporte', 'Analista de Testes', 'Pentest', 'Analista de Infraestrutura', 'Analista de Redes', 'Seguranca da Informacao']
-
+    links = []
+    
     for stack in stacks:
-        for page in range(1, 2):
+        for page in range(1, 4):
             async with httpx.AsyncClient() as client:
                 response = await client.get(f'https://www.infojobs.com.br/empregos.aspx?palabra={stack}&page={page}&limit=20')
 
@@ -24,19 +21,22 @@ async def get_infojobs_links() -> list:
                     for cell in cells:
                         link = f'https://www.infojobs.com.br{cell["data-href"]}'
 
-                        jobs.append([link])
+                        links.append(link)
 
-    return jobs
+    return links
 
-async def get_infojobs_jobs(link: str) -> dict:
+async def get_infojobs_jobs() -> dict:
     """
-    
+    Extrai dados de cada vaga a partir dos links coletados.
     """
 
     jobs = []  
 
-    async with httpx.AsyncClient() as client:
-        response = await client.get(link)  
+    links = await get_infojobs_links()
+
+    for link in links:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(link)
 
         if response.status_code == 200:
             soup = BeautifulSoup(response.text, 'html.parser')
@@ -52,23 +52,10 @@ async def get_infojobs_jobs(link: str) -> dict:
             hiringregimeDivs = soup.find_all('p')
             if hiringregimeDivs:
                 hiring_regime = hiringregimeDivs[2].get_text(strip=True).replace('Tipo de contrato e Jornada:', '').replace('- Período Integral', '')
-                journey_type = re.sub(r'Tipo de contrato e Jornada:\s*(Efetivo ?– ?CLT)?\s*-?\s*|\s*Outros\s*-?\s*|\s*Prestador de Serviços \(PJ\)\s*-?\s*','', hiringregimeDivs[2].get_text(strip=True))
 
-            qualifications = "" 
             publication_date = soup.find('div', class_='caption text-medium text-nowrap text-right mb-8').get_text(strip=True)
 
-            job = [link, jobTitle, company, location, work_type, hiring_regime,journey_type, salary, qualifications, publication_date]
+            job = [link, jobTitle, company, location, work_type, hiring_regime, salary, publication_date]
             jobs.append(job)
 
-    return jobs 
-
-
-async def main():
-    job_links = await get_infojobs_links()
-    for job_link in job_links:
-        job_details = await get_infojobs_jobs(job_link[0])
-        if job_details:
-            print(job_details)
-
-if __name__ == "__main__":
-    asyncio.run(main())
+    return jobs

@@ -1,31 +1,12 @@
 import httpx
 import asyncio
-import pandas as pd
+from variavel import stacks
 from bs4 import BeautifulSoup
 
 
-async def get_hipsters_jobs():
+async def get_hipsters_links():
 
-    jobs = []
-
-    stacks = ['python', 'javascript', 'java', 'php', 'desenvolvedor c', 'ruby', 'sql', 'mysql', 
-              'postgresql', 'oracle', 'linux', 'unix', 'aws', 'azure', 'docker', 'ansible', 'nginx', 
-              'apache', 'sysadmin', 'cloud', 'front-end', 'back-end', 'full-stack', 'analista ti',
-              'cibersegurança', 'devops', 'UX & Desing', 'Data Science', 'Mobile', 'QA', 'SAP', 
-              'Mainframe', 'Analista de Dados', 'Analista de Sistemas', 'Analista de Suporte', 
-              'Analista de Testes', 'Pentest', 'Analista de Infraestrutura', 'Analista de Redes', 
-              'Seguranca da Informacao']
-
-    experience_levels = ['tech lead', 'senior', 'pleno', 'pl', 'junior',
-                         'gerente de projeto', 'analista', 'sr', 'lead', 
-                         'sênior']
-
-    desired_Qualifications = ['python', 'javascript', 'java', 'php', 'desenvolvedor c', 'ruby', 'sql', 'mysql', 'postgresql', 
-                              'oracle', 'linux', 'unix', 'aws', 'azure', 'docker', 'ansible', 'nginx', 'apache', 'sysadmin', 
-                              'cloud', 'front-end', 'back-end', 'full-stack', 'analista ti','cibersegurança', 'devops', 
-                              'UX & Design', 'Data Science', 'Mobile', 'QA', 'SAP', 'Mainframe', 'Analista de Dados', 
-                              'Analista de Sistemas', 'Analista de Suporte', 'Analista de Testes', 'Pentest', 'Analista de Infraestrutura', 
-                              'Analista de Redes', 'Segurança da Informação']
+    links = []
 
     for stack in stacks:
         async with httpx.AsyncClient() as client:
@@ -36,51 +17,65 @@ async def get_hipsters_jobs():
                 cells = soup.find_all("article", class_="media well listing-item listing-item__jobs")
                 for cell in cells:
                     link = cell.find("a", class_="link").get("href")
-                    jobTitle = cell.find("div", class_="media-heading listing-item__title").get_text(strip=True)
-                    company = cell.find("span", class_="listing-item__info--item listing-item__info--item-company").get_text(strip=True)
-                    location = cell.find("span", class_="listing-item__info--item listing-item__info--item-location").get_text(strip=True)
-                    workType = ""
-                    hiringRegime = cell.find("span", class_="listing-item__employment-type").get_text(strip=True)
-                    typeOfJourney = ""
-                    salary = ""
-                    description = cell.find("div", class_="listing-item__desc").get_text(strip=True)
-                    dateOfPublication = cell.find("div", class_="listing-item__date").get_text(strip=True)
 
-                    # Verificar nível de experiência no jobTitle e description
-                    levelOfExperience = ""
-                    for level in experience_levels:
-                        if level in jobTitle.lower():
-                            levelOfExperience = level
-                            break
-                    if not levelOfExperience:
-                        for level in experience_levels:
-                            if level in description.lower():
-                                levelOfExperience = level
-                                break
+                    links.append(link)
 
-                    # Verificar qualificações desejadas na description
-                    desiredQualifications = []
-                    for desired in desired_Qualifications:
-                        if desired.lower() in description.lower():
-                            desiredQualifications.append(desired)
+    return links
 
-                    desiredQualifications = ", ".join(desiredQualifications)
 
-                    job = [link, jobTitle, company, location, workType, hiringRegime, typeOfJourney,salary, desiredQualifications, dateOfPublication, levelOfExperience]
-                    jobs.append(job)
+async def get_hipsters_jobs() -> list:
+
+    jobs = []
+
+    job_links = await get_hipsters_links()
+
+    for link in job_links:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(link)
+            if response.status_code == 200:
+                soup = BeautifulSoup(response.text, 'html.parser')
+
+                job_title = soup.find('h1', class_='details-header__title').get_text(strip=True)
+                company = soup.find('li', class_='listing-item__info--item listing-item__info--item-company').get_text(strip=True)
+
+                location = soup.find('li', class_='listing-item__info--item listing-item__info--item-location').get_text(strip=True)
+                if location == 'Remoto':
+                    location = ''
+
+                work_type = soup.find('li', class_='listing-item__info--item listing-item__info--item-location').get_text(strip=True)
+                if work_type != 'Remoto':
+                    work_type = ''
+                    
+                hiring_regime = soup.find_all('span', class_='job-type__value')
+                if hiring_regime:
+                    hiring_regime = hiring_regime[0].get_text(strip=True)
+
+                salary = soup.find('div', class_='details-body__content content-text').get_text(strip=True)
+                if salary != 'A combinar':
+                    salary = ''	
+
+                publication_date = soup.find('li', class_='listing-item__info--item listing-item__info--item-date').get_text(strip=True)
+        
+
+        job = [link, job_title, company, location, work_type,hiring_regime, salary, publication_date]
+        jobs.append(job)
 
     return jobs
 
-
 async def main():
     jobs = await get_hipsters_jobs()
-    for job in jobs:
-        print(job)
 
-    # Salvar os dados em um arquivo Excel
-    df = pd.DataFrame(jobs, columns=['LINK', 'TITULO DA VAGA', 'EMPRESA', 'LOCALIDADE', 'MODALIDADE DE TRABALHO',
-                                     'REGIME', 'TIPO DE JORNADA', 'SALÁRIO', 'QUALIFICAÇÕES', 'DATA DE PUBLICAÇÃO', 'NÍVEL DE EXPERIÊNCIA'])
-    df.to_excel('hipsters_jobs.xlsx', index=False)
+    if jobs:
+        print(f"\n{'-' * 50}\nExtracted {len(jobs)} job postings from Infojobs:")
+        for job in jobs:
+            print("\n".join(f"{field}: {value}" for field, value in zip(
+                ["Link", "Título da Vaga", "Empresa", "Localidade", "Modalidade de Trabalho","Regime", "Salário", "Qualificações", "Data de Publicação"],
+                job
+            )))
+            print('-' * 50)
+    else:
+        print("No job postings found.")
+
 
 if __name__ == "__main__":
     asyncio.run(main())

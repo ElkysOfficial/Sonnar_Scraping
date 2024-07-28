@@ -1,4 +1,5 @@
 import httpx
+import asyncio
 from bs4 import BeautifulSoup
 
 def check_none(value) -> str:
@@ -11,7 +12,7 @@ def check_none(value) -> str:
         return value.get_text(strip=True)
 
 
-async def get_programathor_jobs() -> list:
+async def get_programathor_links() -> list:
     '''
     Asynchronous function that returns a list of lists with the following structure:
 
@@ -20,46 +21,84 @@ async def get_programathor_jobs() -> list:
     Each list within the returned list represents a job vacancy published in the ProgramaThor website.
     '''
 
-    jobs = []
+    links = []
 
-    for page in range(1, 21):
+    for page in range(1, 21): 
         async with httpx.AsyncClient() as client:
             response = await client.get(f'https://programathor.com.br/jobs/page/{page}')
 
             if response.status_code == 200:
-                soup = BeautifulSoup(response.content, 'html.parser')
+                soup = BeautifulSoup(response.content,'html.parser')
 
                 cells = soup.find_all('div', class_='cell-list')
                 for cell in cells:
                     jobTitle = cell.find('h3')
-                    if jobTitle == None or jobTitle.text.startswith('Vencida'):       # Checks if the cell is blank or if the job is expired
+                    if jobTitle == None or jobTitle.text.startswith('Vencida'):       
                         continue
                     jobTitle = jobTitle.get_text(strip=True)
-                    if jobTitle.endswith('NOVA'):          # Removes the 'NOVA' string from the title when it's a new job publishing
+                    if jobTitle.endswith('NOVA'):          
                         jobTitle = jobTitle[:-4]
                     
                     link = f'https://programathor.com.br{cell.find("a")["href"]}'
-                    details = cell.find('div', class_='cell-list-content-icon')
-                    company = check_none(details.find('span'))
-                    location = check_none(details.find('span').find_next_sibling())
-                    
-                    # INSERIR A BUSCA DOS CAMPOS ABAIXO:
-                    workType = ''
-                    hiringRegime = ''
-                    typeOfJourney = ''
-                    salary = ''
 
-                    all_stacks = cell.select('.tag-list')
-                    desiredQualifications = []
-                    for stacks in all_stacks:
-                        stacks = check_none(stacks)
-                        desiredQualifications.append(stacks)
+                    links.append(link)
 
-                    # INSERIR A BUSCA DOS CAMPOS ABAIXO:
-                    dateOfPublication = ''
-                    levelOfExperience = ''
+    return links
 
-                    job = [link, jobTitle, company, location, workType, hiringRegime, typeOfJourney, salary, desiredQualifications, dateOfPublication, levelOfExperience]
-                    jobs.append(job)
+
+async def get_programathor_jobs() -> list:
+    jobs = []
+
+    job_links = await get_programathor_links()
+
+    for link in job_links:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(link)
+            if response.status_code == 200:
+                soup = BeautifulSoup(response.content, 'html.parser')
+
+                job_title = soup.find('h1').get_text(strip=True)
+
+                company = soup.select_one('h2 > a').parent.get_text(strip=True)
+
+                location = soup.select_one('div[class="col-sm-7"] p a').get_text(strip=True)
+                if location not in ['Híbrido', 'Home Office (Remoto)']:
+                    pass
+                else:
+                    location = ""
+
+                work_type = soup.select_one('div[class="col-sm-7"] p a').get_text(strip=True)
+                if work_type in ['Híbrido', 'Home Office (Remoto)']:
+                    pass
+                else: 
+                    work_type = ""
+
+                hiring_regime = soup.select_one('div[class="col-sm-5"] > p').parent.get_text(strip=True)
+
+                salary = soup.find_all('div', class_='col-sm-7')
+                if salary:
+                    salary = salary[2].get_text(strip=True).replace('Salário: ', '')
+
+                publication_date = ""
+
+        job = [link, job_title, company, location, work_type,hiring_regime, salary, publication_date]
+        jobs.append(job)
 
     return jobs
+
+async def main():
+    jobs = await get_programathor_jobs()
+
+    if jobs:
+        print(f"\n{'-' * 50}\nExtracted {len(jobs)} job postings from Infojobs:")
+        for job in jobs:
+            print("\n".join(f"{field}: {value}" for field, value in zip(
+                ["Link", "Título da Vaga", "Empresa", "Localidade", "Modalidade de Trabalho","Regime", "Salário", "Data de Publicação"],
+                job
+            )))
+            print('-' * 50)
+    else:
+        print("No job postings found.")
+if __name__ == "__main__":
+    asyncio.run(main())
+   
