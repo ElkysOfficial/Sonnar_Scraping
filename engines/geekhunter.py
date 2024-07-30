@@ -1,4 +1,8 @@
 import httpx
+import asyncio
+from bs4 import BeautifulSoup
+
+stacks = ['react']
 
 async def get_geekhunter_jobs() -> list:
     '''
@@ -20,11 +24,12 @@ async def get_geekhunter_jobs() -> list:
                 'companyLocation': [],
                 'order': 'newer',
                 'remoteWork': False,
-                'pagination': {'page': 0, 'perPage': 1000},
+                'pagination': {'page': 0, 'perPage': 10},
             }
         },
-        'query': 'query findShowcaseJobs($showcaseParams: SearchJobFilter!) {\n  findShowcaseJobs(showcaseParams: $showcaseParams) {\n    data {\n      id\n      city {\n        id\n        name\n        __typename\n      }\n      technologies {\n        id\n        name\n        urlPath\n        __typename\n      }\n      title\n      focus {\n        id\n        description\n        __typename\n      }\n      slug\n      __typename\n    }\n    __typename\n  }\n}\n'
+        'query': 'query findShowcaseJobs($showcaseParams: SearchJobFilter!) {\n  findShowcaseJobs(showcaseParams: $showcaseParams) {\n    data {\n      city {\n        name}\n      cltMaxSalary\n      cltMinSalary\n      createdAt\n      maxSalary\n      pjMaxSalary\n      pjMinSalary\n      usdAnnualSalaryMin\n      usdAnnualSalaryMax\n      remoteWork\n      slug\n      title\n}}\n}\n'
     }
+
     async with httpx.AsyncClient() as client:
         response = await client.post('https://www.geekhunter.com.br/graphql', headers=headers, json=data)
         if response.status_code == 200:
@@ -33,28 +38,41 @@ async def get_geekhunter_jobs() -> list:
 
             for result in results:
                 link = f"https://www.geekhunter.com.br/vaga/{result['slug']}"
+                print(link)
                 jobTitle = result['title']
 
                 # INSERIR A BUSCA DOS CAMPOS ABAIXO:
-                company = ''
+                company = ""
 
                 location = result['city']['name'] if result['city'] else 'Remoto'
 
                 # INSERIR A BUSCA DOS CAMPOS ABAIXO:
-                workType = ''
-                hiringRegime = ''
-                typeOfJourney = ''
-                salary = ''
-
-                desiredQualifications = ", ".join([tech['name'] for tech in result['technologies']])
+                workType = result['remoteWork']
+                if workType:
+                    workType = "Remoto"
+                else:
+                    workType = "Hibrido ou Presencial"
+                
+                if result['cltMaxSalary'] and result['cltMinSalary']:
+                    hiringRegime = 'CLT'
+                    salary = f"R${result['cltMinSalary']} - R${result['cltMaxSalary']}"
+                elif result['pjMaxSalary'] and result['pjMinSalary']:
+                    hiringRegime = 'PJ'
+                    salary = f"R${result['pjMinSalary']} - R${result['pjMaxSalary']}"
+                elif result['usdAnnualSalaryMin'] and result['usdAnnualSalaryMax']:
+                    hiringRegime = 'Internacional'
+                    salary = f"US${result['usdAnnualSalaryMin']} - US${result['usdAnnualSalaryMax']}"
 
                 # INSERIR A BUSCA DOS CAMPOS ABAIXO:
-                dateOfPublication = ''
-                levelOfExperience = ''
-
+                dateOfPublication = f"{result['createdAt'][8:10]}/{result['createdAt'][5:7]}/{result['createdAt'][0:4]}"
+                
                 # area = result['focus']['description'] if result['focus'] else 'Não informado'
-
-                job = [link, jobTitle, company, location, workType, hiringRegime, typeOfJourney, salary, desiredQualifications, dateOfPublication, levelOfExperience]
+                job = [link, jobTitle, company, location, workType, hiringRegime, salary, dateOfPublication]
                 jobs.append(job)
             
     return jobs
+
+async def main():
+    await get_geekhunter_jobs()
+
+asyncio.run(main())

@@ -1,5 +1,4 @@
 import httpx
-import asyncio
 from bs4 import BeautifulSoup
 
 def check_none(value) -> str:
@@ -85,20 +84,3 @@ async def get_programathor_jobs() -> list:
         jobs.append(job)
 
     return jobs
-
-async def main():
-    jobs = await get_programathor_jobs()
-
-    if jobs:
-        print(f"\n{'-' * 50}\nExtracted {len(jobs)} job postings from Infojobs:")
-        for job in jobs:
-            print("\n".join(f"{field}: {value}" for field, value in zip(
-                ["Link", "Título da Vaga", "Empresa", "Localidade", "Modalidade de Trabalho","Regime", "Salário", "Data de Publicação"],
-                job
-            )))
-            print('-' * 50)
-    else:
-        print("No job postings found.")
-if __name__ == "__main__":
-    asyncio.run(main())
-   

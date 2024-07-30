@@ -26,7 +26,6 @@ async def get_vagas_links():
 
   return links
 
-
 async def get_vagas_jobs() -> list:
 
     jobs = []

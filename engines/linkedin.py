@@ -1,4 +1,5 @@
 import httpx
+from variavel import stacks
 from bs4 import BeautifulSoup
 
 async def get_linkedin_jobs() -> list:
@@ -11,8 +12,6 @@ async def get_linkedin_jobs() -> list:
     '''
 
     jobs = []
-    stacks = ['python', 'javascript', 'java', 'php', 'desenvolvedor c', 'ruby', 'sql', 'mysql', 'postgresql', 'oracle', 'linux', 'unix', 'aws', 'azure', 'docker', 'ansible', 'nginx', 'apache', 'sysadmin', 'cloud', 'front-end', 'back-end', 'full-stack', 'analista ti','cibersegurança', 'devops', 'UX & Desing', 'Data Science', 'Mobile', 'QA', 'SAP', 'Mainframe', 'Analista de Dados', 'Analista de Sistemas', 'Analista de Suporte', 'Analista de Testes', 'Pentest', 'Analista de Infraestrutura', 'Analista de Redes', 'Seguranca da Informacao']
-
     for stack in stacks:
         for page in range(0, 100, 10):
             async with httpx.AsyncClient() as client:
@@ -24,11 +23,15 @@ async def get_linkedin_jobs() -> list:
                     cells = soup.find_all('div', class_='base-card')
                     for cell in cells:
                         link = cell.find('a', class_='base-card__full-link').get('href')
-                        title = cell.find('h3').get_text(strip=True)
+                        job_title = cell.find('h3').get_text(strip=True)
                         company = cell.find('h4').get_text(strip=True)
                         location = cell.find('span', class_='job-search-card__location').get_text(strip=True)
 
-                        job = [link, title, company, location]
-                        jobs.append(job)
+                        time_element = cell.find('time', class_='job-search-card__listdate')
+                        dateOfPublication = time_element['datetime'] if time_element else ""
                         
+                        job = [link, job_title, company, location, dateOfPublication]
+                        print(job)
+                        jobs.append(job)
+
     return jobs
