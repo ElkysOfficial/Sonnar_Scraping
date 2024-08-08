@@ -1,6 +1,4 @@
 import httpx
-import asyncio
-from bs4 import BeautifulSoup
 
 stacks = ['react']
 
@@ -24,7 +22,7 @@ async def get_geekhunter_jobs() -> list:
                 'companyLocation': [],
                 'order': 'newer',
                 'remoteWork': False,
-                'pagination': {'page': 0, 'perPage': 10},
+                'pagination': {'page': 0, 'perPage': 1000},
             }
         },
         'query': 'query findShowcaseJobs($showcaseParams: SearchJobFilter!) {\n  findShowcaseJobs(showcaseParams: $showcaseParams) {\n    data {\n      city {\n        name}\n      cltMaxSalary\n      cltMinSalary\n      createdAt\n      maxSalary\n      pjMaxSalary\n      pjMinSalary\n      usdAnnualSalaryMin\n      usdAnnualSalaryMax\n      remoteWork\n      slug\n      title\n}}\n}\n'
@@ -38,8 +36,7 @@ async def get_geekhunter_jobs() -> list:
 
             for result in results:
                 link = f"https://www.geekhunter.com.br/vaga/{result['slug']}"
-                print(link)
-                jobTitle = result['title']
+                job_title = result['title']
 
                 # INSERIR A BUSCA DOS CAMPOS ABAIXO:
                 company = ""
@@ -47,32 +44,27 @@ async def get_geekhunter_jobs() -> list:
                 location = result['city']['name'] if result['city'] else 'Remoto'
 
                 # INSERIR A BUSCA DOS CAMPOS ABAIXO:
-                workType = result['remoteWork']
-                if workType:
-                    workType = "Remoto"
+                work_type = result['remoteWork']
+                if work_type:
+                    work_type = "Remoto"
                 else:
-                    workType = "Hibrido ou Presencial"
+                    work_type = "Hibrido ou Presencial"
                 
                 if result['cltMaxSalary'] and result['cltMinSalary']:
-                    hiringRegime = 'CLT'
+                    hiring_regime = 'CLT'
                     salary = f"R${result['cltMinSalary']} - R${result['cltMaxSalary']}"
                 elif result['pjMaxSalary'] and result['pjMinSalary']:
-                    hiringRegime = 'PJ'
+                    hiring_regime = 'PJ'
                     salary = f"R${result['pjMinSalary']} - R${result['pjMaxSalary']}"
                 elif result['usdAnnualSalaryMin'] and result['usdAnnualSalaryMax']:
-                    hiringRegime = 'Internacional'
+                    hiring_regime = 'Internacional'
                     salary = f"US${result['usdAnnualSalaryMin']} - US${result['usdAnnualSalaryMax']}"
 
                 # INSERIR A BUSCA DOS CAMPOS ABAIXO:
-                dateOfPublication = f"{result['createdAt'][8:10]}/{result['createdAt'][5:7]}/{result['createdAt'][0:4]}"
+                publication_date = f"{result['createdAt'][8:10]}/{result['createdAt'][5:7]}/{result['createdAt'][0:4]}"
                 
                 # area = result['focus']['description'] if result['focus'] else 'Não informado'
-                job = [link, jobTitle, company, location, workType, hiringRegime, salary, dateOfPublication]
+                job = [link, job_title, company, location, work_type, hiring_regime, salary, publication_date]
                 jobs.append(job)
             
     return jobs
-
-async def main():
-    await get_geekhunter_jobs()
-
-asyncio.run(main())

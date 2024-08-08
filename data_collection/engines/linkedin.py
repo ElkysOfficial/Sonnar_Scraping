@@ -26,12 +26,13 @@ async def get_linkedin_jobs() -> list:
                         job_title = cell.find('h3').get_text(strip=True)
                         company = cell.find('h4').get_text(strip=True)
                         location = cell.find('span', class_='job-search-card__location').get_text(strip=True)
-
+                        work_type =""
+                        hiring_regime = ""
+                        salary = ""
                         time_element = cell.find('time', class_='job-search-card__listdate')
-                        dateOfPublication = time_element['datetime'] if time_element else ""
+                        publication_date = time_element['datetime'] if time_element else ""
                         
-                        job = [link, job_title, company, location, dateOfPublication]
-                        print(job)
+                        job = [link, job_title, company, location,work_type, hiring_regime, salary, publication_date]
                         jobs.append(job)
 
     return jobs

@@ -1,0 +1,22 @@
+{
+  "name": "microservico2",
+  "version": "1.0.0",
+  "description": "",
+  "main": "server.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.0.2",
+    "discord.js": "^14.15.3",
+    "express": "^4.19.2",
+    "qs": "^6.13.0"
+  },
+  "devDependencies": {
+    "dayjs": "^1.11.12"
+  }
+}
