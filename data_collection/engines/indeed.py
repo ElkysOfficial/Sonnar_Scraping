@@ -1,6 +1,7 @@
 import cloudscraper
 import asyncio
 import json
+from variavel import stacks
 from bs4 import BeautifulSoup
 from datetime import date, datetime
 
@@ -8,12 +9,11 @@ async def get_indeed_links() -> list:
     """
     Função assíncrona que retorna uma lista de links de vagas do Indeed, com base na stack e número de páginas desejadas.
     """
-    stacks = ['react']
     links = []
-    max_retries = 10
+    max_retries = 5
 
     for stack in stacks:
-        for page in range(2):  # 8
+        for page in range(8):
             scraper = cloudscraper.create_scraper()
             loop = asyncio.get_event_loop()
             retries = 0

@@ -1,11 +1,7 @@
 from bs4 import BeautifulSoup
 import json
 import httpx
-
-stacks = [
-    # Front-End
-    'React']
-
+from variavel import stacks
 
 async def get_careerjet_links() -> list:
     '''
@@ -28,7 +24,7 @@ async def get_careerjet_links() -> list:
 
     for country, url_template in urls.items():
         for stack in stacks:
-            for page in range(1, 2):
+            for page in range(1, 10):
                 print(f'Obtendo empregos no {country} de {stack}, página {page}...')
                 async with httpx.AsyncClient() as client:
                     response = await client.get(url_template.format(stack=stack, page=page))

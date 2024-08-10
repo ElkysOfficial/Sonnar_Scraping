@@ -10,7 +10,7 @@ async def get_bne_links() -> list:
     links = []
     url = "https://www.bne.com.br"
 
-    for page in range(1, 2):
+    for page in range(1, 50):
         scraper = cloudscraper.create_scraper()
         response = await asyncio.to_thread(scraper.get, f'https://www.bne.com.br/vagas-de-emprego-para-desenvolvedor/?Page={page}&Function=desenvolvedor')
         if response.status_code == 200:

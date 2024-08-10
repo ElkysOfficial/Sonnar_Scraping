@@ -2,10 +2,9 @@ from bs4 import BeautifulSoup
 import cloudscraper
 import json
 import asyncio
+from variavel import stacks
 
 async def get_remoteok_links() -> list:
-
-  stacks = ['python']
   links = []
 
   for stack in stacks:

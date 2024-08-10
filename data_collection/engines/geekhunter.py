@@ -1,7 +1,5 @@
 import httpx
 
-stacks = ['react']
-
 async def get_geekhunter_jobs() -> list:
     '''
     Asynchronous function that returns a list of lists with the following structure:

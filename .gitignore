@@ -2,3 +2,6 @@ node_modules
 __pycache__
 job_vacancies.csv
 embeds.json
+.env
+dist
+package-lock.json

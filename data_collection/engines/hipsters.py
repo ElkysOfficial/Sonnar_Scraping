@@ -2,8 +2,7 @@ import httpx
 import json
 from datetime import datetime, date
 from bs4 import BeautifulSoup
-
-stacks = ['java']
+from variavel import stacks
 
 async def get_hipsters_links():
 

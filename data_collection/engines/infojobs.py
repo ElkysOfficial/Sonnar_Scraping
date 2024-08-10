@@ -10,7 +10,7 @@ async def get_infojobs_links() -> list:
     links = []
 
     for stack in stacks:
-        for page in range(1, 2):  # Assuming you only want the first page
+        for page in range(1, 5):
             async with httpx.AsyncClient() as client:
                 response = await client.get(f'https://www.infojobs.com.br/empregos.aspx?palabra={stack}&page={page}&limit=20')
 

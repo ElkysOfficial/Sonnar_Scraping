@@ -8,16 +8,17 @@ from variavel import stacks
 async def get_catho_links() -> list:
     links = []
 
-    max_retries = 15
+    max_retries = 5
 
     for stack in stacks:
-        for page in range(1, 8):
+        for page in range(1, 3):
             print(f"Obtendo empregos de {stack}, página {page}...")
             scraper = cloudscraper.create_scraper()
             loop = asyncio.get_event_loop()
             retries = 0
             while retries < max_retries:
                 response = await loop.run_in_executor(None, scraper.get, f'https://www.catho.com.br/vagas/{stack}/?page={page}')
+                print(response.status_code)
 
                 if response.status_code == 200:
                     soup = BeautifulSoup(response.text, 'html.parser')
