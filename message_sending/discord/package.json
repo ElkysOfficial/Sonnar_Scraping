@@ -4,7 +4,7 @@
     "main": "dist/main.js",
     "scripts": {
         "test": "echo \"Error: no test specified\" && exit 1",
-        "build": "tsc && node dist/main.js"
+        "build": "tsc && node dist/bot.js"
     },
     "author": "Lucelho Silva",
     "license": "ISC",
@@ -31,6 +31,7 @@
         "tslib": "^2.6.2",
         "undici": "^6.13.0",
         "undici-types": "^6.11.1",
+        "uuid": "^10.0.0",
         "web-streams-polyfill": "^3.3.3",
         "ws": "^8.18.0"
     },
