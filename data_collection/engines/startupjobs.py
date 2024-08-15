@@ -9,7 +9,7 @@ async def get_startupjobs_links() -> list:
   links = []
 
   for stack in stacks:
-    for page in range (1,6):
+    for page in range (1,2):
       scraper = cloudscraper.create_scraper()
       loop = asyncio.get_event_loop()
       response = await loop.run_in_executor(None, scraper.get, f'https://startup.jobs/locations/brazil?q={stack}&page={page}')
@@ -22,6 +22,7 @@ async def get_startupjobs_links() -> list:
           if link != "https://startup.jobs{{{path}}}":
               links.append(link)
 
+    print(f'Foram obtidos {len(links)} links')
     return links
   
 asyncio.run(get_startupjobs_links())
@@ -67,23 +68,8 @@ async def get_startupjobs_jobs() -> dict:
 
             job = [link, job_title, company, location, work_type,hiring_regime, salary, publication_date]
             jobs.append(job)
+      
+    print(f'Foram obtidas {len(jobs)} vagas')
     return jobs
-
-
-async def main():
-    jobs = await get_startupjobs_jobs()
-
-    if jobs:
-        print(f'\n{'-' * 50}\nExtracted {len(jobs)} job postings from Infojobs:')
-        for job in jobs:
-            print('\n'.join(f'{field}: {value}' for field, value in zip(
-                ['Link', 'Título da Vaga', 'Empresa', 'Localidade','Modalidade de Trabalho', 'Regime', 'Salário', 'Data de Publicação'],
-                job
-            )))
-            print('-' * 50)
-    else:
-        print('No job postings found.')
-if __name__ == '__main__':
-    asyncio.run(main())
 
 

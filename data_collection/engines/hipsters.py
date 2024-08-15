@@ -9,17 +9,18 @@ async def get_hipsters_links():
     links = []
 
     for stack in stacks:
-        async with httpx.AsyncClient() as client:
-            response = await client.post(f'https://hipsters.jobs/jobs/?q={stack}')
+        for page in range(1, 2):
+            async with httpx.AsyncClient() as client:
+                response = await client.post(f'https://hipsters.jobs/jobs/?q={stack}&p={page}')
 
-            if response.status_code == 200:
-                soup = BeautifulSoup(response.text, "html.parser")
-                cells = soup.find_all("article", class_="media well listing-item listing-item__jobs")
-                for cell in cells:
-                    link = cell.find("a", class_="link").get("href")
+                if response.status_code == 200:
+                    soup = BeautifulSoup(response.text, "html.parser")
+                    cells = soup.find_all("article", class_="media well listing-item listing-item__jobs")
+                    for cell in cells:
+                        link = cell.find("a", class_="link").get("href")
+                        links.append(link)
 
-                    links.append(link)
-
+    print(f'Foram obtidos {len(links)} links')
     return links
 
 async def get_hipsters_jobs() -> list:
@@ -61,5 +62,6 @@ async def get_hipsters_jobs() -> list:
         job = [link, job_title, company, location, work_type,hiring_regime, salary, publication_date]
         jobs.append(job)
 
+    print(f'Foram obtidas {len(jobs)} vagas')
     return jobs
 

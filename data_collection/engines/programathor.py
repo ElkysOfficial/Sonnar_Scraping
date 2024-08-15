@@ -22,7 +22,7 @@ async def get_programathor_links() -> list:
 
     links = []
 
-    for page in range(1, 21): 
+    for page in range(1, 2): 
         async with httpx.AsyncClient() as client:
             response = await client.get(f'https://programathor.com.br/jobs/page/{page}')
 
@@ -42,6 +42,7 @@ async def get_programathor_links() -> list:
 
                     links.append(link)
 
+    print(f'Foram obtidos {len(links)} links')
     return links
 
 
@@ -83,4 +84,5 @@ async def get_programathor_jobs() -> list:
         job = [link, job_title, company, location, work_type,hiring_regime, salary, publication_date]
         jobs.append(job)
 
+    print(f'Foram obtidas {len(jobs)} vagas')
     return jobs

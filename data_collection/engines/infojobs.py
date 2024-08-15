@@ -10,7 +10,7 @@ async def get_infojobs_links() -> list:
     links = []
 
     for stack in stacks:
-        for page in range(1, 5):
+        for page in range(1, 2):
             async with httpx.AsyncClient() as client:
                 response = await client.get(f'https://www.infojobs.com.br/empregos.aspx?palabra={stack}&page={page}&limit=20')
 
@@ -22,6 +22,7 @@ async def get_infojobs_links() -> list:
                         link = f'https://www.infojobs.com.br{cell["data-href"]}'
                         links.append(link)
 
+    print(f'Foram obtidos {len(links)} links')
     return links
 
 
@@ -62,4 +63,6 @@ async def get_infojobs_jobs() -> dict:
 
                 job = [link, jobTitle, company, location, work_type,hiring_regime, salary, publication_date]
                 jobs.append(job)
+                
+    print(f'Foram obtidas {len(jobs)} vagas')
     return jobs

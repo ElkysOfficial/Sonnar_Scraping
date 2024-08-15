@@ -1,18 +1,16 @@
 import asyncio
 import cloudscraper
 import json
-from datetime import date
 from bs4 import BeautifulSoup
-
 
 async def get_bne_links() -> list:
     """Extrai links de vagas de emprego da BNE."""
     links = []
     url = "https://www.bne.com.br"
 
-    for page in range(1, 50):
+    for page in range(1, 100):
         scraper = cloudscraper.create_scraper()
-        response = await asyncio.to_thread(scraper.get, f'https://www.bne.com.br/vagas-de-emprego-para-desenvolvedor/?Page={page}&Function=desenvolvedor')
+        response = await asyncio.to_thread(scraper.get, f'https://www.bne.com.br/vagas-de-emprego-na-area-de-Inform%C3%A1tica?Area=Inform%C3%A1tica&Sort=0&Page={page}')
         if response.status_code == 200:
             soup = BeautifulSoup(response.text, 'html.parser')
             cells = soup.find_all('section', class_='job job__vip__candidacy')
@@ -20,7 +18,48 @@ async def get_bne_links() -> list:
                 link = cell.find('a', class_='is-link').get('href')
                 links.append(url + link)
 
+    print(f'Foram obtidos {len(links)} links')
     return links
+
+
+async def fetch_job_details(link):
+    """Extrai detalhes de uma vaga de emprego a partir de um link."""
+    scraper = cloudscraper.create_scraper()
+    response = await asyncio.to_thread(scraper.get, link)
+    if response.status_code == 200:
+        soup = BeautifulSoup(response.text, 'html.parser')
+
+        data = soup.find_all('script', type='application/ld+json')[3]
+        data = json.loads(data.string)
+
+        if 'title' in data and 'hiringOrganization' in data:
+            job_title = data['title']
+            company = data['hiringOrganization']['name']
+            location = [data['jobLocation']['address']['addressLocality'], str(
+                data['jobLocation']['address']['addressRegion'])]
+
+            try:
+                work_type = 'Home Office' if data['jobLocationType'] == 'TELECOMMUTE' else ""
+            except KeyError:
+                work_type = ""
+
+            if type(data['employmentType']) == list:
+                hiring_regime = {
+                    'CONTRACTOR': 'Autônomo',
+                    'PART_TIME': 'Freelancer',
+                    'INTERN': 'Estágio ou Aprendiz',
+                    'TEMPORARY': 'Temporário'
+                }.get(data['employmentType'][1], 'Efetivo')
+            else:
+                hiring_regime = 'Efetivo'
+
+            salary = soup.select('li')[5].get_text(
+                strip=True).replace('Salário:', '')
+            publication_date = data['datePosted'][:10]
+
+            return [link, job_title, company, location, work_type, hiring_regime, salary, publication_date]
+
+    return None
 
 
 async def get_bne_jobs() -> list:
@@ -28,40 +67,11 @@ async def get_bne_jobs() -> list:
     jobs = []
     job_links = await get_bne_links()
 
-    for link in job_links:
-        scraper = cloudscraper.create_scraper()
-        response = await asyncio.get_event_loop().run_in_executor(None, scraper.get, link)
-        if response.status_code == 200:
-            soup = BeautifulSoup(response.text, 'html.parser')
+    job_details = await asyncio.gather(*[fetch_job_details(link) for link in job_links])
 
-            data = soup.find_all('script', type='application/ld+json')[3]
-            data = json.loads(data.string)
-            if 'title' in data and 'hiringOrganization' in data:
-                job_title = data['title']
+    for job in job_details:
+        if job is not None:
+            jobs.append(job)
 
-                company = data['hiringOrganization']['name']
-
-                location = [data['jobLocation']['address']['addressLocality'],str(data['jobLocation']['address']['addressRegion'])]
-
-                try:
-                    work_type = 'Home Office' if data['jobLocationType'] == 'TELECOMMUTE' else ""
-                except KeyError:
-                    work_type = ""
-
-                if type(data['employmentType']) == list:
-                    hiring_regime = {
-                        'CONTRACTOR': 'Autônomo',
-                        'PART_TIME': 'Freelancer',
-                        'INTERN': 'Estágio ou Aprendiz',
-                        'TEMPORARY': 'Temporário'
-                        }.get(data['employmentType'][1], 'Efetivo')
-                else:
-                    hiring_regime = 'Efetivo'
-
-                salary = soup.select('li')[5].get_text(strip=True).replace('Salário:', '')
-
-                publication_date = data['datePosted'][:10]
-
-                jobs.append([link, job_title, company, location,work_type, hiring_regime, salary, publication_date])
+    print(f'Foram obtidas {len(jobs)} vagas')
     return jobs
-

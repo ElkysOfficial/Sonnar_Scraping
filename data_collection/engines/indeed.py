@@ -10,27 +10,20 @@ async def get_indeed_links() -> list:
     Função assíncrona que retorna uma lista de links de vagas do Indeed, com base na stack e número de páginas desejadas.
     """
     links = []
-    max_retries = 5
 
     for stack in stacks:
-        for page in range(8):
+        for page in range(2):
             scraper = cloudscraper.create_scraper()
             loop = asyncio.get_event_loop()
-            retries = 0
-            while retries < max_retries:
-                response = await loop.run_in_executor(None, scraper.get, f'https://br.indeed.com/empregos?q={stack}&limit=50&start={page*50}&sort=date')
-                if response.status_code == 200:
-                    soup = BeautifulSoup(response.text, 'html.parser')
-                    cells = soup.find_all('div', class_='job_seen_beacon')
-                    for cell in cells:
-                        link = f'https://br.indeed.com/viewjob?jk={
-                            cell.find("a").get("data-jk")}'
-                        links.append(link)
-                    break
-                else:
-                    retries += 1
-                    await asyncio.sleep(5)
-                    print(f"Tentativa {retries}/{max_retries} para a página {page}, código de status: {response.status_code}")
+            response = await loop.run_in_executor(None, scraper.get, f'https://br.indeed.com/empregos?q={stack}&limit=50&start={page*50}&sort=date')
+            if response.status_code == 200:
+                soup = BeautifulSoup(response.text, 'html.parser')
+                cells = soup.find_all('div', class_='job_seen_beacon')
+                for cell in cells:
+                    link = f'https://br.indeed.com/viewjob?jk={
+                        cell.find("a").get("data-jk")}'
+                    links.append(link)
+                break
 
     return links
 
@@ -88,4 +81,5 @@ async def get_indeed_jobs() -> dict:
             job = [link, job_title, company, location, work_type,hiring_regime, salary, publication_date]
             jobs.append(job)
 
+    print(f'Foram obtidas {len(jobs)} vagas')
     return jobs

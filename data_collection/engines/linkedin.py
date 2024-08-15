@@ -35,4 +35,5 @@ async def get_linkedin_jobs() -> list:
                         job = [link, job_title, company, location,work_type, hiring_regime, salary, publication_date]
                         jobs.append(job)
 
+    print(f'Foram obtidas {len(jobs)} vagas')
     return jobs

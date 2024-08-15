@@ -51,4 +51,5 @@ async def get_gupy_jobs() -> list:
 
           jobs.append(job)
 
+  print(f'Foram obtidas {len(jobs)} vagas')
   return jobs

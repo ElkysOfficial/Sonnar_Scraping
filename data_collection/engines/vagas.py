@@ -23,7 +23,8 @@ async def get_vagas_links():
           link = f'https://www.vagas.com.br{cell.find('a').attrs['href']}'
           
           links.append(link)
-
+  
+  print(f'Foram obtidos {len(links)} links')
   return links
 
 async def get_vagas_jobs() -> list:
@@ -71,5 +72,7 @@ async def get_vagas_jobs() -> list:
         job = [link, job_title, company, location, work_type, hiring_regime, salary, publication_date]
         jobs.append(job)
 
+
+    print(f'Foram obtidas {len(jobs)} vagas')
     return jobs
 

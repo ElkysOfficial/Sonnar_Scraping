@@ -14,30 +14,20 @@ async def get_careerjet_links() -> list:
 
     links = []
 
-    urls = {
-        'Brasil': 'https://www.careerjet.com.br/vagas?s={stack}&l=Brasil&p={page}',
-    }
+    for stack in stacks:
+        for page in range(1, 2):
+            async with httpx.AsyncClient() as client:
+                response = await client.get(f'https://www.careerjet.com.br/vagas?s={stack}&l=Brasil&p={page}')
+                if response.status_code == 200:
+                    soup = BeautifulSoup(response.text, 'html.parser')
+                    cells = soup.find_all('article', class_='job clicky')
+                    for cell in cells:
+                        link = cell.find('a').get('href')
+                        link = 'https://www.careerjet.com.br' + link
 
-    base_urls = {
-        'Brasil': 'https://www.careerjet.com.br',
-    }
-
-    for country, url_template in urls.items():
-        for stack in stacks:
-            for page in range(1, 10):
-                print(f'Obtendo empregos no {country} de {stack}, página {page}...')
-                async with httpx.AsyncClient() as client:
-                    response = await client.get(url_template.format(stack=stack, page=page))
-                    if response.status_code == 200:
-                        soup = BeautifulSoup(response.text, 'html.parser')
-                        cells = soup.find_all('article', class_='job clicky')
-                        for cell in cells:
-                            link = cell.find('a').get('href')
-                            base_url = base_urls[country]
-                            link = base_url + link
-
-                            links.append(link)
-
+                        links.append(link)
+                        
+    print(f'Foram obtidos {len(links)} links')
     return links
 
 async def get_careerjet_jobs() -> list:
@@ -100,4 +90,5 @@ async def get_careerjet_jobs() -> list:
         job = [link, job_title, company, location, work_type,hiring_regime, salary, publication_date]
         jobs.append(job)
 
+    print(f'Foram obtidas {len(jobs)} vagas')
     return jobs

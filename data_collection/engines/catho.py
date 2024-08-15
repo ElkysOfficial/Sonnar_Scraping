@@ -8,29 +8,20 @@ from variavel import stacks
 async def get_catho_links() -> list:
     links = []
 
-    max_retries = 5
 
     for stack in stacks:
-        for page in range(1, 3):
-            print(f"Obtendo empregos de {stack}, página {page}...")
+        for page in range(1, 2):
             scraper = cloudscraper.create_scraper()
             loop = asyncio.get_event_loop()
-            retries = 0
-            while retries < max_retries:
-                response = await loop.run_in_executor(None, scraper.get, f'https://www.catho.com.br/vagas/{stack}/?page={page}')
-                print(response.status_code)
+            response = await loop.run_in_executor(None, scraper.get, f'https://www.catho.com.br/vagas/{stack}/?page={page}')
+            if response.status_code == 200:
+                soup = BeautifulSoup(response.text, 'html.parser')
+                cells = soup.find_all('li', class_='search-result-custom_jobItem__OGz3a')
+                for cell in cells:
+                    link = cell.find('a').attrs['href']
+                    links.append(link)
 
-                if response.status_code == 200:
-                    soup = BeautifulSoup(response.text, 'html.parser')
-                    cells = soup.find_all('li', class_='search-result-custom_jobItem__OGz3a')
-                    for cell in cells:
-                        link = cell.find('a').attrs['href']
-                        links.append(link)
-                    break
-                else:
-                    retries += 1
-                    await asyncio.sleep(10)
-                    print(f"Tentativa {retries}/{max_retries} para a página {page}, código de status: {response.status_code}")
+    print(f'Foram obtidos {len(links)} links')
     return links
 
 async def get_catho_jobs() -> list:
@@ -71,4 +62,5 @@ async def get_catho_jobs() -> list:
             job = [link, job_title, company, location, work_type, hiring_regime, salary, publication_date]
             jobs.append(job)
 
+    print(f'Foram obtidas {len(jobs)} vagas')
     return jobs

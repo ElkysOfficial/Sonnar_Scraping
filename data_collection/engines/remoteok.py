@@ -15,10 +15,10 @@ async def get_remoteok_links() -> list:
         soup = BeautifulSoup(response.text, 'html.parser')
         cells = soup.find_all('tr', class_='job')
         for cell in cells:
-          stacks = cell.find_all('a', class_='no-border tooltip-set action-add-tag')
+          lia = cell.find_all('a', class_='no-border tooltip-set action-add-tag')
           stack_list = []
-          for stack in stacks:
-            h3_tag = stack.find('h3')
+          for li in lia:
+            h3_tag = li.find('h3')
             if h3_tag:
               stack_list.append(h3_tag.get_text(strip=True))
           stack = ' - '.join(stack_list)
@@ -29,6 +29,7 @@ async def get_remoteok_links() -> list:
 
             links.append(link)
 
+  print(f'Foram obtidos {len(links)} links')
   return links
 
 
@@ -81,22 +82,6 @@ async def get_remoteok_jobs() -> dict:
 
           job = [link, jobTitle, company, location, work_type,hiring_regime, salary, publication_date]
           jobs.append(job)
+
+    print(f'Foram obtidas {len(jobs)} vagas')
     return jobs
-
-
-async def main():
-    jobs = await get_remoteok_jobs()
-
-    if jobs:
-        print(f'\n{'-' * 50}\nExtracted {len(jobs)} job postings from Infojobs:')
-        for job in jobs:
-            print('\n'.join(f'{field}: {value}' for field, value in zip(
-                ['Link', 'Título da Vaga', 'Empresa', 'Localidade',
-                  'Modalidade de Trabalho', 'Regime', 'Salário', 'Data de Publicação'],
-                job
-            )))
-            print('-' * 50)
-    else:
-        print('No job postings found.')
-if __name__ == '__main__':
-    asyncio.run(main())

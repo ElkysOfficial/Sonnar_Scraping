@@ -17,14 +17,12 @@ from engines.startupjobs import get_startupjobs_jobs
 #implementar trabalhabrasil.py
 from engines.vagas import get_vagas_jobs #falta refatorar
 
-
 sent_jobs = set()  
-getters = cycle([get_bne_jobs, get_careerjet_jobs, get_catho_jobs, get_geekhunter_jobs, get_gupy_jobs, get_hipsters_jobs,
-                get_indeed_jobs, get_infojobs_jobs, get_linkedin_jobs, get_programathor_jobs, get_remoteok_jobs, get_startupjobs_jobs, get_vagas_jobs])
+getters = cycle([get_bne_jobs])
 
 async def send_to_embed_service(job_data):
     try:
-        response = requests.post('http://localhost:3000/jobs',json=job_data,timeout=10)
+        response = requests.post('http://localhost:3000/embeds',json=job_data,timeout=10)
         response.raise_for_status()
         return response.json()
     except requests.RequestException as e:
