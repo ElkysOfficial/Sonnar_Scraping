@@ -1,6 +1,7 @@
 import cloudscraper
 import asyncio
 import json
+import random
 from variavel import stacks
 from bs4 import BeautifulSoup
 from datetime import date, datetime
@@ -14,14 +15,12 @@ async def get_indeed_links() -> list:
     for stack in stacks:
         for page in range(2):
             scraper = cloudscraper.create_scraper()
-            loop = asyncio.get_event_loop()
-            response = await loop.run_in_executor(None, scraper.get, f'https://br.indeed.com/empregos?q={stack}&limit=50&start={page*50}&sort=date')
+            response = await asyncio.to_thread(scraper.get, f'https://br.indeed.com/empregos?q={stack}&limit=50&start={page*50}&sort=date')
             if response.status_code == 200:
                 soup = BeautifulSoup(response.text, 'html.parser')
                 cells = soup.find_all('div', class_='job_seen_beacon')
                 for cell in cells:
-                    link = f'https://br.indeed.com/viewjob?jk={
-                        cell.find("a").get("data-jk")}'
+                    link = f'https://br.indeed.com/viewjob?jk={cell.find("a").get("data-jk")}'
                     links.append(link)
                 break
 
@@ -80,6 +79,8 @@ async def get_indeed_jobs() -> dict:
 
             job = [link, job_title, company, location, work_type,hiring_regime, salary, publication_date]
             jobs.append(job)
+        
+        await asyncio.sleep(random.uniform(10, 20))
 
     print(f'Foram obtidas {len(jobs)} vagas')
     return jobs

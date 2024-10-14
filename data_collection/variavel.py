@@ -1,12 +1,12 @@
 stacks = {
     # Front-End
-    'HTML', 'CSS', 'JavaScript', 'React_js', 'Angular_js', 'Vue_js', 'jQuery', 'Bootstrap','Tailwind_CSS',
+    'JavaScript', 'React_js', 'Angular_js', 'Vue_js', 'jQuery', 'Bootstrap','Tailwind_CSS',
     'Next_js', 'Svelte',
 
     # Back-End
     'Python', 'Java', 'Node_js', 'Ruby', 'PHP', 'Desenvolvedor_Csharp', 'Desenvolvedor_C','Desenvolvedor_Go',
     'Rust', 'Scala', 'Spring_Boot', 'Elixir', 'Perl', 'Haskell', 'Erlang','Django', 'Expressjs', 'ASPNET',
-    'Ruby_on_Rails', 'Laravel', 'Gin',
+    'Ruby_on_Rails', 'Laravel',
 
     # Mobile
     'React_Native', 'Flutter', 'Swift', 'ObjectiveC', 'Kotlin',

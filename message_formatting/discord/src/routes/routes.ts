@@ -4,13 +4,13 @@ import { postEmbeds, getEmbeds, putEmbeds } from "../controllers/controllers"
 const router = express.Router()
 
 // Rota para criar um novo embed (POST /embeds)
-router.post("/embeds", postEmbeds)
+router.post("/embeds/jobs", postEmbeds)
 
 // Rota para obter todos os embeds (GET /embeds)
-router.get("/embeds", getEmbeds)
+router.get("/embeds/jobs", getEmbeds)
 
 // Rota para atualizar um embed existente (PUT /embeds)
-router.put("/embeds", putEmbeds)
+router.put("/embeds/jobs", putEmbeds)
 
 // router.delete("/embeds", deleteEmbeds)
 

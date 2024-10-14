@@ -2,7 +2,8 @@ from bs4 import BeautifulSoup
 import cloudscraper
 import json
 import asyncio
-from variavel import stacks
+
+stacks = ['javascript']
 
 async def get_startupjobs_links() -> list:
 
@@ -11,10 +12,10 @@ async def get_startupjobs_links() -> list:
   for stack in stacks:
     for page in range (1,2):
       scraper = cloudscraper.create_scraper()
-      loop = asyncio.get_event_loop()
-      response = await loop.run_in_executor(None, scraper.get, f'https://startup.jobs/locations/brazil?q={stack}&page={page}')
+      response = await asyncio.to_thread(scraper.get, f'https://startup.jobs/locations/brazil?q={stack}&page={page}')
 
       if response.status_code == 200:
+        print(response.status_code)
         soup = BeautifulSoup(response.text, 'html.parser')
         link = soup.find_all('a', class_='flex items-center gap-1 font-semibold seen:font-medium seen:text-gray-500 text-lg leading-tight hover:underline')
         for link in link:
@@ -24,25 +25,21 @@ async def get_startupjobs_links() -> list:
 
     print(f'Foram obtidos {len(links)} links')
     return links
-  
-asyncio.run(get_startupjobs_links())
 
 
-async def get_startupjobs_jobs() -> dict:
-    """
-    Função assíncrona que retorna um dicionário com detalhes da vaga a partir de um link do Indeed.
-    """
-
+async def get_startupjobs_jobs() -> list:
     jobs = []
     job_links = await get_startupjobs_links()
+
     for link in job_links:
         scraper = cloudscraper.create_scraper()
         response = await asyncio.get_event_loop().run_in_executor(None, scraper.get, link)
 
         if response.status_code == 200:
+            print(response.status_code)
             soup = BeautifulSoup(response.text, 'html.parser')
             data = soup.find('script', type='application/ld+json')
-            data = json.loads(data.text)[0]
+            data = json.loads(data.text)
 
             job_title = data['title']
 
@@ -72,4 +69,11 @@ async def get_startupjobs_jobs() -> dict:
     print(f'Foram obtidas {len(jobs)} vagas')
     return jobs
 
+
+async def main():
+    jobs = await get_startupjobs_jobs()
+    print(jobs)
+
+if __name__ == '__main__':
+    asyncio.run(main())
 

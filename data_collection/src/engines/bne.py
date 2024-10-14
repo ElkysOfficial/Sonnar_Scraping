@@ -1,6 +1,7 @@
 import asyncio
 import cloudscraper
 import json
+import random
 from bs4 import BeautifulSoup
 
 async def get_bne_links() -> list:
@@ -8,7 +9,7 @@ async def get_bne_links() -> list:
     links = []
     url = "https://www.bne.com.br"
 
-    for page in range(1, 100):
+    for page in range(1, 3):
         scraper = cloudscraper.create_scraper()
         response = await asyncio.to_thread(scraper.get, f'https://www.bne.com.br/vagas-de-emprego-na-area-de-Inform%C3%A1tica?Area=Inform%C3%A1tica&Sort=0&Page={page}')
         if response.status_code == 200:
@@ -18,9 +19,8 @@ async def get_bne_links() -> list:
                 link = cell.find('a', class_='is-link').get('href')
                 links.append(url + link)
 
-    print(f'Foram obtidos {len(links)} links')
+    print(f'Foram obtidos {len(links)} links do site bne')
     return links
-
 
 async def fetch_job_details(link):
     """Extrai detalhes de uma vaga de emprego a partir de um link."""
@@ -53,11 +53,12 @@ async def fetch_job_details(link):
             else:
                 hiring_regime = 'Efetivo'
 
-            salary = soup.select('li')[5].get_text(
-                strip=True).replace('Salário:', '')
+            salary = soup.select('li')[5].get_text(strip=True).replace('Salário:', '')
             publication_date = data['datePosted'][:10]
 
             return [link, job_title, company, location, work_type, hiring_regime, salary, publication_date]
+        
+        await asyncio.sleep(random.uniform(10, 20))
 
     return None
 
@@ -73,5 +74,5 @@ async def get_bne_jobs() -> list:
         if job is not None:
             jobs.append(job)
 
-    print(f'Foram obtidas {len(jobs)} vagas')
+    print(f'Foram obtidas {len(jobs)} vagas do site bne')
     return jobs

@@ -39,6 +39,15 @@ function postEmbeds(req: Request, res: Response) {
         const newEmbed: ExtendedEmbedData = convertAPIEmbedToEmbedData(job.toEmbed().toJSON())
         newEmbed.id = generateUniqueId()
 
+        // if (req.path === "/embeds/jobs") {
+        //
+        // } else if (req.path === "/embeds/freelancer") {
+        //
+        // } else {
+        //     // Rota não encontrada
+        //     return res.status(404).json({ error: "Rota não encontrada" })
+        // }
+
         // Adiciona o novo embed à lista e salva no arquivo
         embeds.push(newEmbed)
         saveEmbeds(embeds)

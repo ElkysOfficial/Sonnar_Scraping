@@ -1,5 +1,6 @@
 from bs4 import BeautifulSoup
 import cloudscraper
+import random
 import json
 import asyncio
 from variavel import stacks
@@ -82,6 +83,8 @@ async def get_remoteok_jobs() -> dict:
 
           job = [link, jobTitle, company, location, work_type,hiring_regime, salary, publication_date]
           jobs.append(job)
+
+        await asyncio.sleep(random.uniform(10, 20))
 
     print(f'Foram obtidas {len(jobs)} vagas')
     return jobs

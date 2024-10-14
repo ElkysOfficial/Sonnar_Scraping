@@ -29,11 +29,9 @@ async def get_careerjet_links() -> list:
     print(f'Foram obtidos {len(links)} links')
     return links
 
-
 # crie main para executar o codigo
 async def main():
     await get_careerjet_links()
-
 
 if __name__ == '__main__':
     asyncio.run(main())

@@ -27,7 +27,7 @@ async def get_careerjet_links() -> list:
 
                         links.append(link)
                         
-    print(f'Foram obtidos {len(links)} links')
+    print(f'Foram obtidos {len(links)} links do site careerjet')
     return links
 
 async def get_careerjet_jobs() -> list:
@@ -90,5 +90,5 @@ async def get_careerjet_jobs() -> list:
         job = [link, job_title, company, location, work_type,hiring_regime, salary, publication_date]
         jobs.append(job)
 
-    print(f'Foram obtidas {len(jobs)} vagas')
+    print(f'Foram obtidas {len(jobs)} vagas do site careerjet')
     return jobs
