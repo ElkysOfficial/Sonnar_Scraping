@@ -57,7 +57,7 @@ async def fetch_job_details(link):
             publication_date = data['datePosted'][:10]
 
             return [link, job_title, company, location, work_type, hiring_regime, salary, publication_date]
-        
+
         await asyncio.sleep(random.uniform(10, 20))
 
     return None

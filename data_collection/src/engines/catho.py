@@ -3,14 +3,13 @@ from bs4 import BeautifulSoup
 import cloudscraper
 import asyncio
 import random
-from datetime import date, datetime
 from variavel import stacks
 
 async def get_catho_links() -> list:
     links = []
 
     for stack in stacks:
-        for page in range(1, 2):
+        for page in range(1, 140):
             scraper = cloudscraper.create_scraper()
             response = await asyncio.to_thread(scraper.get, f'https://www.catho.com.br/vagas/{stack}/?page={page}')
             if response.status_code == 200:
@@ -57,21 +56,10 @@ async def get_catho_jobs() -> list:
 
             publication_date = data['props']['pageProps']['jobAdData']['data'][:10]
 
-            print('-' * 50)
-            print(f"job_title: {job_title}")
-            print(f"company: {company}")
-            print(f"location: {location}")
-            print(f"work_type: {work_type}")
-            print(f"hiring_regime: {hiring_regime}")
-            print(f"salary: {salary}")
-            print(f"publication_date: {publication_date}")
-            print('-' * 50)
-
-            job = [link, job_title, company, location, work_type,hiring_regime, salary, publication_date]
+            job = [link, job_title, company, location, work_type, hiring_regime, salary, publication_date]
             jobs.append(job)
 
         await asyncio.sleep(random.uniform(5, 10))
 
     print(f'Foram obtidas {len(jobs)} vagas do site catho')
     return jobs
-

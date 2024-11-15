@@ -9,14 +9,13 @@ from ..models.models import Job
 # Definindo sent_jobs como uma variável global
 sent_jobs = set()
 
-logging.basicConfig(filename='errors.log', level=logging.ERROR)
-
+logging.basicConfig(filename="errors.log", level=logging.ERROR)
 
 def load_existing_job_links():
     existing_links = set()
-    csv_path = os.path.join('src', 'data', 'job_vacancies.csv')
+    csv_path = os.path.join("src", "data", "job_vacancies.csv")
     if os.path.exists(csv_path):
-        with open(csv_path, 'r', newline='', encoding='utf-8') as f:
+        with open(csv_path, "r", newline="", encoding="latin-1") as f:
             csv_reader = csv.reader(f)
             next(csv_reader, None)  # Pula o cabeçalho se existir
             for row in csv_reader:
@@ -25,7 +24,7 @@ def load_existing_job_links():
                     existing_links.add(row[0])
     return existing_links
 
-async def scrape_jobs(max_tasks=4):
+async def scrape_jobs(max_tasks=3):
     """
     Busca vagas de emprego de várias fontes, processa e salva os resultados de forma assíncrona.
 
@@ -60,7 +59,7 @@ async def scrape_jobs(max_tasks=4):
                 print(f'Buscando em {getter.__name__.split("_")[1]}...')
                 results = await getter()  # Executa o getter para obter os resultados
                 for result in results:
-                    if result[0] not in sent_jobs:  # Verifica se o job já foi processado
+                    if (result[0] not in sent_jobs):  # Verifica se o job já foi processado
                         job = Job(*result)
                         try:
                             # Envia o job para o serviço de embed
@@ -72,16 +71,14 @@ async def scrape_jobs(max_tasks=4):
                             else:
                                 print(f"Falha ao enviar job: {job.job_title}")
                         except Exception as e:
-                            logging.error(
-                                f"Erro ao enviar job para o serviço de embed: {e}")
+                            logging.error(f"Erro ao enviar job para o serviço de embed: {e}")
                             logging.error(f"Detalhes do job: {job.to_dict()}")
             except Exception as e:
                 logging.error(f"Erro ao executar {getter.__name__.split('_')[1]}: {e}")
 
     while True:
         # Cria uma tarefa assíncrona para cada getter
-        tasks = [asyncio.create_task(process_getter(getter))
-                 for getter in getters]
+        tasks = [asyncio.create_task(process_getter(getter))for getter in getters]
 
         try:
             # Aguarda a conclusão de todas as tarefas
@@ -89,8 +86,7 @@ async def scrape_jobs(max_tasks=4):
         except Exception as e:
             logging.error(f"Erro geral durante a execução das tarefas: {e}")
 
-        await asyncio.sleep(60*60)  # Pausa de 1 hora antes do próximo ciclo
-
+        await asyncio.sleep(5 * 1)  # Pausa de 1 hora antes do próximo ciclo
 
 def save_job_to_csv(job):
     """Salva os dados da vaga em um arquivo CSV."""
@@ -98,15 +94,7 @@ def save_job_to_csv(job):
     if not os.path.exists(data_dir):
         os.makedirs(data_dir)
 
-    csv_path = os.path.join(data_dir, 'job_vacancies.csv')
-    file_exists = os.path.exists(csv_path)
-
-    with open(csv_path, 'a', newline='', encoding='utf-8') as f:
+    with open(os.path.join(data_dir, 'job_vacancies.csv'), 'a+', newline='', encoding='latin-1') as f:
         csv_writer = csv.writer(f)
-
-        # Escreve o cabeçalho se o arquivo for novo
-        if not file_exists:
-            csv_writer.writerow(job.to_dict().keys())
-
-        # Escreve os dados do job
+        # Usa o método to_dict() para obter os dados da vaga
         csv_writer.writerow(job.to_dict().values())

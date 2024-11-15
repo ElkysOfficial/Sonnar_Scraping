@@ -1,4 +1,7 @@
 import httpx
+import asyncio
+import json
+import re
 from bs4 import BeautifulSoup
 
 def check_none(value) -> str:
@@ -22,7 +25,7 @@ async def get_programathor_links() -> list:
 
     links = []
 
-    for page in range(1, 2): 
+    for page in range(1, 2):
         async with httpx.AsyncClient() as client:
             response = await client.get(f'https://programathor.com.br/jobs/page/{page}')
 
@@ -32,12 +35,12 @@ async def get_programathor_links() -> list:
                 cells = soup.find_all('div', class_='cell-list')
                 for cell in cells:
                     jobTitle = cell.find('h3')
-                    if jobTitle == None or jobTitle.text.startswith('Vencida'):       
+                    if jobTitle == None or jobTitle.text.startswith('Vencida'):
                         continue
                     jobTitle = jobTitle.get_text(strip=True)
-                    if jobTitle.endswith('NOVA'):          
+                    if jobTitle.endswith('NOVA'):
                         jobTitle = jobTitle[:-4]
-                    
+
                     link = f'https://programathor.com.br{cell.find("a")["href"]}'
 
                     links.append(link)
@@ -45,6 +48,8 @@ async def get_programathor_links() -> list:
     print(f'Foram obtidos {len(links)} links')
     return links
 
+
+import re
 
 async def get_programathor_jobs() -> list:
     jobs = []
@@ -54,35 +59,39 @@ async def get_programathor_jobs() -> list:
     for link in job_links:
         async with httpx.AsyncClient() as client:
             response = await client.get(link)
-            if response.status_code == 200:
-                soup = BeautifulSoup(response.content, 'html.parser')
 
-                job_title = soup.find('h1').get_text(strip=True)
+        if response.status_code == 200:
+            soup = BeautifulSoup(response.text, 'html.parser')
+            data = soup.find('script', type='application/ld+json')
+            if data:
+                try:
+                    # Limpa e carrega o JSON
+                    json_text = data.string.strip()
+                    json_text = re.sub(r'[\x00-\x1F\x7F-\x9F]', '', json_text)
+                    data = json.loads(json_text)
 
-                company = soup.select_one('h2 > a').parent.get_text(strip=True)
+                    job_title = data['title']
+                    company = data['hiringOrganization']['name']
+                    location = data['jobLocation']['address']['streetAddress']
+                    work_type = data['jobLocation']['address']['addressLocality']
+                    hiring_regime = data['employmentType']
+                    if hiring_regime == 'FULL_TIME':
+                        hiring_regime = 'CLT'
+                    else:
+                        hiring_regime = 'PJ'
+                    publication_date = data['datePosted']
 
-                location = soup.select_one('div[class="col-sm-7"] p a').get_text(strip=True)
-                if location not in ['Híbrido', 'Home Office (Remoto)']:
-                    pass
-                else:
-                    location = ""
+                    try:
+                        salary = data['baseSalary']['value']['value']
+                    except KeyError:
+                        salary = "Não especificado"
 
-                work_type = soup.select_one('div[class="col-sm-7"] p a').get_text(strip=True)
-                if work_type in ['Híbrido', 'Home Office (Remoto)']:
-                    pass
-                else: 
-                    work_type = ""
+                except Exception as e:
+                    print(f"Erro ao processar vaga {link}: {str(e)}")
+                    continue
 
-                hiring_regime = soup.select_one('div[class="col-sm-5"] > p').parent.get_text(strip=True)
-
-                salary = soup.find_all('div', class_='col-sm-7')
-                if salary:
-                    salary = salary[2].get_text(strip=True).replace('Salário: ', '')
-
-                publication_date = ""
-
-        job = [link, job_title, company, location, work_type,hiring_regime, salary, publication_date]
-        jobs.append(job)
+                job = [link, job_title, company, location, work_type,hiring_regime, salary, publication_date]
+                jobs.append(job)
 
     print(f'Foram obtidas {len(jobs)} vagas')
     return jobs

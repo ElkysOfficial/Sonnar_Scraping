@@ -26,7 +26,6 @@ async def get_remoteok_links() -> list:
           cells = cell.find_all('td', class_='company position company_and_position')
           for cell in cells:
             link = f'https://remoteok.com{cell.find('a', class_='preventLink').attrs['href']}'
-            print(link)
 
             links.append(link)
 
@@ -81,7 +80,7 @@ async def get_remoteok_jobs() -> dict:
 
           publication_date = data['datePosted'][:10]
 
-          job = [link, jobTitle, company, location, work_type,hiring_regime, salary, publication_date]
+          job = [link, jobTitle, company, location, work_type, hiring_regime, salary, publication_date]
           jobs.append(job)
 
         await asyncio.sleep(random.uniform(10, 20))
