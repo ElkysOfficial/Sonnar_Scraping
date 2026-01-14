@@ -1,7 +1,10 @@
-node_modules
-__pycache__
+**/node_modules/
+__pycache__/
 job_vacancies.csv
 embeds.json
 .env
-dist
+dist/
 package-lock.json
+*.log
+assets/auth/
+assets/temp/

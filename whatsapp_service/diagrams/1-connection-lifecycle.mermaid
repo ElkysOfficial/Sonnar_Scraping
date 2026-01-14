@@ -1,0 +1,46 @@
+sequenceDiagram
+    autonumber
+    participant Dev as 👨‍💻 Você
+    participant Bot as 🤖 Sonar Bot
+    participant WA as 💬 WhatsApp
+
+    Note over Dev,WA: 🚀 COMO O BOT CONECTA NO WHATSAPP
+
+    %% ========== PRIMEIRA VEZ ==========
+    rect rgb(230, 240, 255)
+        Note over Dev,WA: 🆕 Primeira vez rodando o bot
+        
+        Dev->>Bot: npm start
+        Bot->>Dev: "Digite o número do bot: "
+        Dev->>Bot: 5511999999999
+        
+        Bot->>WA: Pede código de pareamento
+        WA-->>Bot: Retorna código (ex: 1234-5678)
+        Bot->>Dev: 🔑 Mostra código: 1234-5678
+        
+        Note over Dev: Abra o WhatsApp no celular<br/>Vá em "Aparelhos Conectados"<br/>Clique em "Conectar Aparelho"<br/>Digite o código mostrado
+        
+        Dev->>WA: ✅ Código confirmado no celular
+        WA->>Bot: Conexão autorizada!
+        Bot->>Bot: Salva credenciais
+        
+        Note over Bot: ✅ BOT CONECTADO!<br/>Agora ele vai conectar<br/>automaticamente sempre
+    end
+
+    %% ========== PRÓXIMAS VEZES ==========
+    rect rgb(240, 255, 240)
+        Note over Dev,WA: 🔄 Nas próximas vezes
+        
+        Dev->>Bot: npm start
+        Bot->>Bot: Carrega credenciais salvas
+        Bot->>WA: Conecta automaticamente
+        WA-->>Bot: ✅ Conectado!
+        
+        Note over Bot: ✅ PRONTO!<br/>Bot já está online<br/>e aguardando mensagens
+    end
+
+    %% ========== RESUMO ==========
+    rect rgb(255, 255, 230)
+        Note over Dev,WA: 📝 RESUMO SIMPLES
+        Note over Dev,WA: 1️⃣ Primeira vez: npm start → Digite número → Código → Confirma no celular<br/>2️⃣ Próximas vezes: npm start → Conecta sozinho<br/>3️⃣ As credenciais ficam salvas em: assets/auth/baileys/
+    end

@@ -3,7 +3,7 @@ import { APIEmbed, EmbedData } from "discord.js"
 import { v4 as uuidv4 } from "uuid"
 import chokidar from "chokidar"
 // Define o caminho do arquivo onde os embeds serão armazenados
-const embedsFilePath = "E:\\BOT-Search-Job\\message_formatting\\discord\\src\\data\\embeds.json"
+const embedsFilePath = "D:\\Pessoal\\Sonar\\message_formatting\\discord\\src\\data\\embeds.json"
 
 // Define a interface para os dados de uma vaga de emprego
 interface JobData {

@@ -1,0 +1,56 @@
+sequenceDiagram
+    autonumber
+    participant User as 👤 Usuário
+    participant Bot as 🤖 Sonar Bot
+    participant Cmd as 📂 Arquivo do Comando
+
+    Note over User,Cmd: 🚀 QUANDO VOCÊ MANDA UM COMANDO
+
+    %% ========== USUÁRIO ENVIA ==========
+    rect rgb(230, 240, 255)
+        Note over User,Bot: 1️⃣ Usuário envia comando
+        User->>Bot: /menu
+        Note over Bot: Bot recebe a mensagem
+    end
+
+    %% ========== BOT PROCESSA ==========
+    rect rgb(240, 255, 240)
+        Note over Bot: 2️⃣ Bot verifica e procura o comando
+        
+        Bot->>Bot: Verifica se o grupo está ativo
+        Bot->>Bot: Verifica se o prefixo está correto (/)
+        Bot->>Bot: Procura o comando "menu"
+        
+        Note over Bot: Busca em:<br/>📁 src/commands/owner/<br/>📁 src/commands/admin/<br/>📁 src/commands/member/
+        
+        Bot->>Bot: ✅ Encontrou: member/menu.js
+        Bot->>Bot: Verifica se você tem permissão
+        
+        Note over Bot: Permissão baseada na pasta:<br/>• owner/ = só dono do bot<br/>• admin/ = admins do grupo<br/>• member/ = qualquer um
+    end
+
+    %% ========== COMANDO EXECUTA ==========
+    rect rgb(255, 250, 230)
+        Note over Bot,Cmd: 3️⃣ Executa o arquivo do comando
+        
+        Bot->>Cmd: Chama menu.js
+        
+        Note over Cmd: O arquivo menu.js recebe tudo pronto:<br/>• sendReply (enviar resposta)<br/>• sendImage (enviar imagem)<br/>• args (argumentos do comando)<br/>• e mais 50+ funções prontas!
+        
+        Cmd->>Cmd: Lógica do comando menu:
+        Note over Cmd: 1. Carrega imagem do menu<br/>2. Monta o texto com comandos<br/>3. Envia imagem + texto
+        
+        Cmd->>Bot: sendImageFromFile(imagem, texto)
+    end
+
+    %% ========== RESPOSTA ==========
+    rect rgb(230, 255, 230)
+        Note over Bot,User: 4️⃣ Bot responde
+        Bot->>User: 📱 Envia o menu
+        Note over User: ✅ Você recebe a resposta!
+    end
+
+    %% ========== RESUMO ==========
+    rect rgb(255, 255, 230)
+        Note over User,Cmd: 📝 RESUMO SIMPLES
+        Note over User,Cmd: 1️⃣ Você envia: /menu<br/>2️⃣ Bot procura o arquivo menu.js nas pastas de comando<br/>3️⃣ Bot verifica se você pode usar (permissão)<br/>4️⃣ Arquivo menu.js executa e usa funções prontas<br/>5️⃣ Você recebe a resposta<br/><br/>💡 DICA: Cada comando é um arquivo separado!<br/>Não existe "switch/case" gigante

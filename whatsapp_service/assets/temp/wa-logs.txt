@@ -1,0 +1,1 @@
+{"level":50,"time":"2026-01-14T12:29:23.679Z","pid":45928,"hostname":"LucelhoSilva","fullErrorNode":{"tag":"stream:error","attrs":{"code":"515"}},"msg":"stream errored out"}
