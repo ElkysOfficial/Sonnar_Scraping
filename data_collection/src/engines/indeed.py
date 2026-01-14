@@ -60,17 +60,47 @@ async def get_indeed_jobs() -> dict:
                     location = ""
 
             # Extrai modalidade de trabalho:
-            work_type = data['jobLocation']['address']['addressLocality']
-            if work_type != "Remoto":
+            try:
+                job_location_type = data.get('jobLocationType', '')
+                address_locality = data['jobLocation']['address'].get('addressLocality', '')
+                if job_location_type == 'TELECOMMUTE' or 'remoto' in address_locality.lower():
+                    work_type = "Remoto"
+                elif 'híbrido' in address_locality.lower() or 'hybrid' in str(data).lower():
+                    work_type = "Híbrido"
+                else:
+                    work_type = "Presencial"
+            except:
                 work_type = ""
-            
 
             # Extrai regime de contratação:
-            hiring_regime = ""
+            try:
+                employment_type = data.get('employmentType', '')
+                if isinstance(employment_type, list):
+                    employment_type = employment_type[0] if employment_type else ''
+                hiring_regime_map = {
+                    'FULL_TIME': 'CLT',
+                    'PART_TIME': 'Meio Período',
+                    'CONTRACTOR': 'PJ',
+                    'TEMPORARY': 'Temporário',
+                    'INTERN': 'Estágio'
+                }
+                hiring_regime = hiring_regime_map.get(employment_type, '')
+            except:
+                hiring_regime = ""
 
             # Extrai salário:
             try:
-                salary = data['baseSalary']['currency'], data['baseSalary']['value']['value']
+                currency = data['baseSalary']['currency']
+                value = data['baseSalary']['value']
+                if isinstance(value, dict):
+                    min_val = value.get('minValue', value.get('value', ''))
+                    max_val = value.get('maxValue', min_val)
+                    if min_val == max_val:
+                        salary = f"{currency} {min_val}"
+                    else:
+                        salary = f"{currency} {min_val} - {max_val}"
+                else:
+                    salary = f"{currency} {value}"
             except KeyError:
                 salary = ""
 

@@ -25,14 +25,35 @@ async def get_linkedin_jobs() -> list:
                         link = cell.find('a', class_='base-card__full-link').get('href')
                         job_title = cell.find('h3').get_text(strip=True)
                         company = cell.find('h4').get_text(strip=True)
-                        location = cell.find('span', class_='job-search-card__location').get_text(strip=True)
-                        work_type =""
-                        hiring_regime = ""
+                        location_raw = cell.find('span', class_='job-search-card__location').get_text(strip=True)
+
+                        # Detecta work_type baseado na localização
+                        location_lower = location_raw.lower()
+                        if 'remoto' in location_lower or 'remote' in location_lower:
+                            work_type = "Remoto"
+                        elif 'híbrido' in location_lower or 'hybrid' in location_lower:
+                            work_type = "Híbrido"
+                        else:
+                            work_type = "Presencial"
+
+                        location = location_raw
+
+                        # Tenta extrair regime do título (heurística)
+                        title_lower = job_title.lower()
+                        if 'estágio' in title_lower or 'estagio' in title_lower or 'intern' in title_lower:
+                            hiring_regime = "Estágio"
+                        elif 'freelance' in title_lower or 'freelancer' in title_lower:
+                            hiring_regime = "Freelancer"
+                        elif 'temporário' in title_lower or 'temporario' in title_lower:
+                            hiring_regime = "Temporário"
+                        else:
+                            hiring_regime = ""
+
                         salary = ""
                         time_element = cell.find('time', class_='job-search-card__listdate')
                         publication_date = time_element['datetime'] if time_element else ""
-                        
-                        job = [link, job_title, company, location,work_type, hiring_regime, salary, publication_date]
+
+                        job = [link, job_title, company, location, work_type, hiring_regime, salary, publication_date]
                         jobs.append(job)
 
     print(f'Foram obtidas {len(jobs)} vagas')

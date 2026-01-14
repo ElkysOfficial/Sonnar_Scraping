@@ -37,24 +37,52 @@ async def get_catho_jobs() -> list:
             data = soup.find('script', type='application/json')
             data = json.loads(data.text)
 
-            job_title = data['props']['pageProps']['jobAdData']['titulo']
-            company = data['props']['pageProps']['jobAdData']['contratante']['nome']
+            job_data = data['props']['pageProps']['jobAdData']
+
+            job_title = job_data.get('titulo', '')
+
+            # Empresa
+            contratante = job_data.get('contratante', {})
+            company = contratante.get('nome', 'Não informado')
+
+            # Localização
             location = []
-            for vaga in data['props']['pageProps']['jobAdData']['vagas']:
-                location.append(str(vaga.get('cidade', '')))
-                location.append(vaga.get('uf', ''))
+            for vaga in job_data.get('vagas', []):
+                cidade = vaga.get('cidade', '')
+                uf = vaga.get('uf', '')
+                if cidade:
+                    location.append(str(cidade))
+                if uf:
+                    location.append(uf)
 
-            work_type = data['props']['pageProps']['jobAdData']['horario']
-            if work_type is None:
-                work_type = ""
+            # Modalidade de trabalho (Remoto/Híbrido/Presencial)
+            modalidade = job_data.get('modeloTrabalho', '')
+            if modalidade:
+                work_type = modalidade
+            else:
+                # Tenta inferir da descrição ou título
+                titulo_lower = job_title.lower()
+                descricao = job_data.get('descricao', '').lower()
+                if 'remoto' in titulo_lower or 'remoto' in descricao or 'home office' in descricao:
+                    work_type = 'Remoto'
+                elif 'híbrido' in titulo_lower or 'híbrido' in descricao:
+                    work_type = 'Híbrido'
+                else:
+                    work_type = 'Presencial'
 
-            hiring_regime = data['props']['pageProps']['jobAdData']['regimeContrato']
-            try:
-                salary = data['props']['pageProps']['jobAdData']['faixaSalarial']
-            except KeyError:
-                salary = "A combinar"
+            # Regime de contratação
+            hiring_regime = job_data.get('regimeContrato', '')
+            if not hiring_regime:
+                hiring_regime = 'Não informado'
 
-            publication_date = data['props']['pageProps']['jobAdData']['data'][:10]
+            # Salário
+            salary = job_data.get('faixaSalarial', '')
+            if not salary:
+                salary = 'A combinar'
+
+            # Data de publicação
+            data_pub = job_data.get('data', '')
+            publication_date = data_pub[:10] if data_pub else ''
 
             job = [link, job_title, company, location, work_type, hiring_regime, salary, publication_date]
             jobs.append(job)

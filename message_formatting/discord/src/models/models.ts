@@ -1,5 +1,8 @@
 import { EmbedBuilder, EmbedData, EmbedField } from "discord.js"
 import dayjs from "dayjs" // Importa a biblioteca dayjs para formatação de datas
+import customParseFormat from "dayjs/plugin/customParseFormat"
+
+dayjs.extend(customParseFormat)
 
 // Interface que define a estrutura dos dados da vaga de emprego
 interface JobConstructorParams {
@@ -38,7 +41,16 @@ class Job {
 
         // Formata e adiciona a data de publicação
         if (this.data.publication_date) {
-            const formattedDate = dayjs(this.data.publication_date).format("DD/MM/YYYY")
+            // Tenta parsear diferentes formatos de data
+            let parsedDate = dayjs(this.data.publication_date, "DD/MM/YYYY", true) // Formato brasileiro
+            if (!parsedDate.isValid()) {
+                parsedDate = dayjs(this.data.publication_date, "YYYY-MM-DD", true) // Formato ISO
+            }
+            if (!parsedDate.isValid()) {
+                parsedDate = dayjs(this.data.publication_date) // Fallback automático
+            }
+
+            const formattedDate = parsedDate.isValid() ? parsedDate.format("DD/MM/YYYY") : this.data.publication_date
             fields.push({ name: "Data de Publicação", value: formattedDate, inline: true })
         }
 

@@ -39,8 +39,19 @@ async def fetch_job_details(link):
                 data['jobLocation']['address']['addressRegion'])]
 
             try:
-                work_type = 'Home Office' if data['jobLocationType'] == 'TELECOMMUTE' else ""
-            except KeyError:
+                job_location_type = data.get('jobLocationType', '')
+                if job_location_type == 'TELECOMMUTE':
+                    work_type = 'Remoto'
+                else:
+                    # Verifica na localização
+                    loc_str = str(location).lower()
+                    if 'remoto' in loc_str or 'home office' in loc_str:
+                        work_type = 'Remoto'
+                    elif 'híbrido' in loc_str:
+                        work_type = 'Híbrido'
+                    else:
+                        work_type = 'Presencial'
+            except:
                 work_type = ""
 
             if type(data['employmentType']) == list:

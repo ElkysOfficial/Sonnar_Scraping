@@ -53,9 +53,27 @@ async def get_hipsters_jobs() -> list:
                 except KeyError:
                     work_type = ""
                     
-                hiring_regime = soup.find_all('span', class_='job-type__value')[0].get_text(strip=True)
+                try:
+                    hiring_regime = soup.find_all('span', class_='job-type__value')[0].get_text(strip=True)
+                except:
+                    hiring_regime = ""
 
-                salary = ''	
+                # Tenta extrair salário do JSON-LD
+                try:
+                    salary_data = data.get('baseSalary', {})
+                    if salary_data:
+                        currency = salary_data.get('currency', 'BRL')
+                        value = salary_data.get('value', {})
+                        if isinstance(value, dict):
+                            min_val = value.get('minValue', '')
+                            max_val = value.get('maxValue', min_val)
+                            salary = f"{currency} {min_val} - {max_val}" if min_val else ""
+                        else:
+                            salary = f"{currency} {value}" if value else ""
+                    else:
+                        salary = ""
+                except:
+                    salary = ""
 
                 publication_date = data['datePosted'][:10]
         

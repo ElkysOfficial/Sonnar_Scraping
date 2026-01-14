@@ -42,53 +42,107 @@ async def get_careerjet_jobs() -> list:
             if response.status_code == 200:
                 soup = BeautifulSoup(response.text, 'html.parser')
                 data = soup.find('script', type='application/ld+json')
-                data = json.loads(data.text)
 
-                job_title = data['title']
-
-                company = data['hiringOrganization']['name']
-                if company == None:
-                    company = ''
-
-                if 'addressRegion' not in data['jobLocation']['address'] or data['jobLocation']['address']['addressRegion'] is None:
-                    location = ''
-                else:
-                    location = [data['jobLocation']['address']['addressLocality'],str(data['jobLocation']['address']['addressRegion'])]
-
-                if 'addressRegion' not in data['jobLocation']['address'] or data['jobLocation']['address']['addressRegion'] is None:
-                    work_type = 'Remoto'
-                else:
-                    work_type = ''
-
-                if isinstance(data['employmentType'], list) and len(data['employmentType']) > 1:
-                    hiring_regime = {
-                        'CONTRACTOR': 'Contrato',
-                        'INTERN': 'Estágio ou Aprendiz',
-                        'TEMPORARY': 'Temporário',
-                        'VOLUNTEER': 'Voluntário'
-                    }.get(data['employmentType'][1], 'Permanente')  # Get second element
-                else:
-                    hiring_regime = 'Permanente'
+                if not data:
+                    continue
 
                 try:
-                    currency = data['baseSalary']['currency']
-                    min_value = data['baseSalary']['value']['minValue']
-                    max_value = data['baseSalary']['value']['maxValue']
+                    data = json.loads(data.text)
+                except json.JSONDecodeError:
+                    continue
 
-                    if min_value == max_value:
-                        salary_range = f'{min_value}'
+                job_title = data.get('title', '')
+
+                # Empresa
+                hiring_org = data.get('hiringOrganization', {})
+                company = hiring_org.get('name', '') if hiring_org else ''
+                if not company:
+                    company = 'Não informado'
+
+                # Localização
+                job_location = data.get('jobLocation', {})
+                address = job_location.get('address', {}) if job_location else {}
+                locality = address.get('addressLocality', '')
+                region = address.get('addressRegion', '')
+
+                if locality or region:
+                    location = []
+                    if locality:
+                        location.append(locality)
+                    if region:
+                        location.append(str(region))
+                else:
+                    location = ''
+
+                # Modalidade de trabalho (Remoto/Híbrido/Presencial)
+                job_location_type = data.get('jobLocationType', '')
+                title_lower = job_title.lower()
+
+                if job_location_type == 'TELECOMMUTE' or 'remoto' in title_lower or 'remote' in title_lower:
+                    work_type = 'Remoto'
+                elif 'híbrido' in title_lower or 'hybrid' in title_lower:
+                    work_type = 'Híbrido'
+                elif location:
+                    work_type = 'Presencial'
+                else:
+                    work_type = 'Remoto'  # Se não tem localização, assume remoto
+
+                # Regime de contratação
+                employment_type = data.get('employmentType', '')
+                hiring_regime_map = {
+                    'FULL_TIME': 'CLT',
+                    'PART_TIME': 'Meio Período',
+                    'CONTRACTOR': 'PJ',
+                    'INTERN': 'Estágio',
+                    'TEMPORARY': 'Temporário',
+                    'VOLUNTEER': 'Voluntário'
+                }
+
+                if isinstance(employment_type, list):
+                    # Pega o primeiro tipo válido
+                    hiring_regime = 'Não informado'
+                    for emp_type in employment_type:
+                        if emp_type in hiring_regime_map:
+                            hiring_regime = hiring_regime_map[emp_type]
+                            break
+                elif employment_type:
+                    hiring_regime = hiring_regime_map.get(employment_type, 'Não informado')
+                else:
+                    hiring_regime = 'Não informado'
+
+                # Salário
+                try:
+                    base_salary = data.get('baseSalary', {})
+                    if base_salary:
+                        currency = base_salary.get('currency', 'BRL')
+                        value = base_salary.get('value', {})
+
+                        if isinstance(value, dict):
+                            min_value = value.get('minValue', '')
+                            max_value = value.get('maxValue', '')
+
+                            if min_value and max_value:
+                                if min_value == max_value:
+                                    salary = f'{currency} {min_value}'
+                                else:
+                                    salary = f'{currency} {min_value} - {max_value}'
+                            elif min_value:
+                                salary = f'{currency} {min_value}'
+                            else:
+                                salary = ''
+                        else:
+                            salary = f'{currency} {value}' if value else ''
                     else:
-                        salary_range = f'{min_value} - {max_value}'
-
-                    salary = f'{currency}, {salary_range}'
-
-                except KeyError:
+                        salary = ''
+                except:
                     salary = ''
 
-                publication_date = data['datePosted'][:10]
+                # Data de publicação
+                date_posted = data.get('datePosted', '')
+                publication_date = date_posted[:10] if date_posted else ''
 
-        job = [link, job_title, company, location, work_type,hiring_regime, salary, publication_date]
-        jobs.append(job)
+                job = [link, job_title, company, location, work_type, hiring_regime, salary, publication_date]
+                jobs.append(job)
 
     print(f'Foram obtidas {len(jobs)} vagas do site careerjet')
     return jobs

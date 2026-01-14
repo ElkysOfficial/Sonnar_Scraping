@@ -57,11 +57,28 @@ async def get_remoteok_jobs() -> dict:
 
           location = ""
 
-          work_type = data['jobLocationType']
-          if work_type == 'TELECOMMUTE':
-              work_type = 'Remoto'
+          try:
+              work_type = data['jobLocationType']
+              if work_type == 'TELECOMMUTE':
+                  work_type = 'Remoto'
+          except:
+              work_type = "Remoto"  # RemoteOK é sempre remoto
 
-          hiring_regime = ""
+          # Extrai regime de contratação
+          try:
+              employment_type = data.get('employmentType', '')
+              if isinstance(employment_type, list):
+                  employment_type = employment_type[0] if employment_type else ''
+              hiring_regime_map = {
+                  'FULL_TIME': 'Full-time',
+                  'PART_TIME': 'Part-time',
+                  'CONTRACTOR': 'Contractor',
+                  'TEMPORARY': 'Temporary',
+                  'INTERN': 'Internship'
+              }
+              hiring_regime = hiring_regime_map.get(employment_type, 'Full-time')
+          except:
+              hiring_regime = "Full-time"
 
           try:
             currency = data['baseSalary']['currency']
