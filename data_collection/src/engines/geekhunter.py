@@ -1,69 +1,96 @@
 import httpx
 
 async def get_geekhunter_jobs() -> list:
-    '''
-    Asynchronous function that returns a list of lists with the following structure:
-
-    [[code, title, company, location, stack, link], [...], [...], ...]
-
-    Each list within the returned list represents a job vacancy published in the GeekHunter website.
-    '''
+    """
+    Returns:
+    [[link, title, company, location, work_type, hiring_regime, salary, publication_date], ...]
+    """
     jobs = []
     headers = {
-        'Referer': 'https://www.geekhunter.com.br/vagas',
-        'Referrer-Policy': 'strict-origin-when-cross-origin',
+        "Referer": "https://www.geekhunter.com.br/vagas",
+        "Referrer-Policy": "strict-origin-when-cross-origin",
+        "Accept": "application/json",
     }
+
     data = {
-        'operationName': 'findShowcaseJobs',
-        'variables': {
-            'showcaseParams': {
-                'companyLocation': [],
-                'order': 'newer',
-                'remoteWork': False,
-                'pagination': {'page': 0, 'perPage': 1000},
+        "operationName": "findShowcaseJobs",
+        "variables": {
+            "showcaseParams": {
+                "companyLocation": [],
+                "order": "newer",
+                "remoteWork": False,
+                "pagination": {"page": 0, "perPage": 1000},
             }
         },
-        'query': 'query findShowcaseJobs($showcaseParams: SearchJobFilter!) {\n  findShowcaseJobs(showcaseParams: $showcaseParams) {\n    data {\n      city {\n        name}\n      cltMaxSalary\n      cltMinSalary\n      createdAt\n      maxSalary\n      pjMaxSalary\n      pjMinSalary\n      usdAnnualSalaryMin\n      usdAnnualSalaryMax\n      remoteWork\n      slug\n      title\n}}\n}\n'
+        "query": """
+        query findShowcaseJobs($showcaseParams: SearchJobFilter!) {
+          findShowcaseJobs(showcaseParams: $showcaseParams) {
+            data {
+              id
+              company { name slug }
+              city { name }
+              cltMaxSalary
+              cltMinSalary
+              createdAt
+              maxSalary
+              pjMaxSalary
+              pjMinSalary
+              usdAnnualSalaryMin
+              usdAnnualSalaryMax
+              remoteWork
+              slug
+              title
+            }
+          }
+        }
+        """,
     }
 
-    async with httpx.AsyncClient() as client:
-        response = await client.post('https://www.geekhunter.com.br/graphql', headers=headers, json=data)
-        if response.status_code == 200:
-            json_response = response.json()
-            results = json_response['data']['findShowcaseJobs']['data']
+    async with httpx.AsyncClient(timeout=30) as client:
+        response = await client.post("https://www.geekhunter.com.br/graphql", headers=headers, json=data)
+        response.raise_for_status()
+        json_response = response.json()
+        results = json_response["data"]["findShowcaseJobs"]["data"]
 
-            for result in results:
-                link = f"https://www.geekhunter.com.br/vaga/{result['slug']}"
-                job_title = result['title']
+        for result in results:
+            job_slug = result["slug"]
+            company_obj = result.get("company") or {}
+            company = company_obj.get("slug", "")
+            company_slug = company_obj.get("slug", "")
 
-                # INSERIR A BUSCA DOS CAMPOS ABAIXO:
-                company = ""
+            # link correto (como você pediu)
+            link = f"https://www.geekhunter.com.br/{company_slug}/jobs/{job_slug}"
+            print(link)
 
-                location = result['city']['name'] if result['city'] else 'Remoto'
+            job_title = result["title"]
+            location = result["city"]["name"] if result.get("city") else "Remoto"
 
-                # INSERIR A BUSCA DOS CAMPOS ABAIXO:
-                work_type = result['remoteWork']
-                if work_type:
-                    work_type = "Remoto"
-                else:
-                    work_type = "Hibrido ou Presencial"
-                
-                if result['cltMaxSalary'] and result['cltMinSalary']:
-                    hiring_regime = 'CLT'
-                    salary = f"R${result['cltMinSalary']} - R${result['cltMaxSalary']}"
-                elif result['pjMaxSalary'] and result['pjMinSalary']:
-                    hiring_regime = 'PJ'
-                    salary = f"R${result['pjMinSalary']} - R${result['pjMaxSalary']}"
-                elif result['usdAnnualSalaryMin'] and result['usdAnnualSalaryMax']:
-                    hiring_regime = 'Internacional'
-                    salary = f"US${result['usdAnnualSalaryMin']} - US${result['usdAnnualSalaryMax']}"
+            work_type = "Remoto" if result.get("remoteWork") else "Hibrido ou Presencial"
 
-                # INSERIR A BUSCA DOS CAMPOS ABAIXO:
-                publication_date = f"{result['createdAt'][8:10]}/{result['createdAt'][5:7]}/{result['createdAt'][0:4]}"
-                
-                # area = result['focus']['description'] if result['focus'] else 'Não informado'
-                job = [link, job_title, company, location, work_type, hiring_regime, salary, publication_date]
-                jobs.append(job)
-            
-    print(f'Foram obtidas {len(jobs)} vagas')
+            hiring_regime = "Não informado"
+            salary = "Não informado"
+            if result.get("cltMaxSalary") and result.get("cltMinSalary"):
+                hiring_regime = "CLT"
+                salary = f"R${result['cltMinSalary']} - R${result['cltMaxSalary']}"
+            elif result.get("pjMaxSalary") and result.get("pjMinSalary"):
+                hiring_regime = "PJ"
+                salary = f"R${result['pjMinSalary']} - R${result['pjMaxSalary']}"
+            elif result.get("usdAnnualSalaryMin") and result.get("usdAnnualSalaryMax"):
+                hiring_regime = "Internacional"
+                salary = f"US${result['usdAnnualSalaryMin']} - US${result['usdAnnualSalaryMax']}"
+
+            created_at = result.get("createdAt", "")
+            publication_date = f"{created_at[8:10]}/{created_at[5:7]}/{created_at[0:4]}" if len(created_at) >= 10 else ""
+
+            job = [link, job_title, company, location, work_type, hiring_regime, salary, publication_date]
+            jobs.append(job)
+
+    print(f"Foram obtidas {len(jobs)} vagas")
     return jobs
+
+# if __name__ == "__main__":
+#     import asyncio
+
+#     jobs = asyncio.run(get_geekhunter_jobs())
+#     for job in jobs:
+#         print(job)
