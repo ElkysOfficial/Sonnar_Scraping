@@ -55,12 +55,11 @@ async def get_geekhunter_jobs() -> list:
         for result in results:
             job_slug = result["slug"]
             company_obj = result.get("company") or {}
-            company = company_obj.get("slug", "")
-            company_slug = company_obj.get("slug", "")
+            company_name = (company_obj.get("name") or "").strip()
+            company_slug = company_obj.get("slug") or ""
 
             # link correto (como você pediu)
             link = f"https://www.geekhunter.com.br/{company_slug}/jobs/{job_slug}"
-            print(link)
 
             job_title = result["title"]
             location = result["city"]["name"] if result.get("city") else "Remoto"
@@ -82,7 +81,7 @@ async def get_geekhunter_jobs() -> list:
             created_at = result.get("createdAt", "")
             publication_date = f"{created_at[8:10]}/{created_at[5:7]}/{created_at[0:4]}" if len(created_at) >= 10 else ""
 
-            job = [link, job_title, company, location, work_type, hiring_regime, salary, publication_date]
+            job = [link, job_title, company_name, location, work_type, hiring_regime, salary, publication_date]
             jobs.append(job)
 
     print(f"Foram obtidas {len(jobs)} vagas")
