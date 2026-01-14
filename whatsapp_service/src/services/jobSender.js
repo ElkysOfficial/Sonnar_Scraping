@@ -14,9 +14,9 @@ import { JOB_GROUP_ID, EMBEDS_FILE_PATH, BOT_EMOJI } from "../config.js"
 import { selectNextJob, extractStack } from "./jobDistributor.js"
 import { getSentIds, getRecentStacks, markAsSent, cleanOldRecords } from "./sentHistory.js"
 
-// Intervalo aleatório entre 2 e 5 minutos (em milissegundos)
-const MIN_INTERVAL = 2 * 60 * 1000 // 2 minutos
-const MAX_INTERVAL = 5 * 60 * 1000 // 5 minutos
+// Intervalo aleatório entre 30s e 1 minuto (em milissegundos) - TESTE
+const MIN_INTERVAL = 30 * 1000 // 30 segundos
+const MAX_INTERVAL = 60 * 1000 // 1 minuto
 
 // Configurações de distribuição
 const COOLDOWN_DAYS = 7 // Dias antes de reenviar mesma vaga
