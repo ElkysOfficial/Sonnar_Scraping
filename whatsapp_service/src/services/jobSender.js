@@ -1,6 +1,7 @@
 /**
  * Serviço de envio automático de vagas para WhatsApp
  * Envia vagas do embeds.json para o grupo configurado com intervalo aleatório de 5-8 minutos
+ * Utiliza seleção aleatória justa com diversidade de stacks.
  *
  * @author Sonar Bot
  */
@@ -10,10 +11,16 @@ import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { infoLog, successLog, warningLog, errorLog } from "../utils/logger.js"
 import { JOB_GROUP_ID, EMBEDS_FILE_PATH, BOT_EMOJI } from "../config.js"
+import { selectNextJob, extractStack } from "./jobDistributor.js"
+import { getSentIds, getRecentStacks, markAsSent, cleanOldRecords } from "./sentHistory.js"
 
-// Intervalo aleatório entre 3 e 6 minutos (em milissegundos)
-const MIN_INTERVAL = 3 * 60 * 1000 // 3 minutos
-const MAX_INTERVAL = 6 * 60 * 1000 // 6 minutos
+// Intervalo aleatório entre 2 e 5 minutos (em milissegundos)
+const MIN_INTERVAL = 2 * 60 * 1000 // 2 minutos
+const MAX_INTERVAL = 5 * 60 * 1000 // 5 minutos
+
+// Configurações de distribuição
+const COOLDOWN_DAYS = 7 // Dias antes de reenviar mesma vaga
+const MAX_CONSECUTIVE_SAME_STACK = 1 // Máximo de vagas consecutivas da mesma stack (1 = nunca repete seguidas)
 
 /**
  * Gera um intervalo aleatório entre MIN e MAX
@@ -123,7 +130,7 @@ async function sendJob(socket, job) {
 }
 
 /**
- * Processa e envia a próxima vaga não enviada
+ * Processa e envia a próxima vaga com seleção aleatória justa.
  * @param {Object} socket - Socket do Baileys
  */
 async function processNextJob(socket) {
@@ -133,24 +140,51 @@ async function processNextJob(socket) {
     return
   }
 
-  // Encontra a primeira vaga não enviada para WhatsApp
-  const pendingJobIndex = embeds.findIndex(job => job.whatsappSent !== true)
+  // Filtra apenas vagas ainda não marcadas como enviadas no arquivo
+  const pendingJobs = embeds.filter((job) => job.whatsappSent !== true)
 
-  if (pendingJobIndex === -1) {
-    return // Todas as vagas já foram enviadas
+  if (pendingJobs.length === 0) {
+    infoLog("📭 Todas as vagas do arquivo já foram enviadas")
+    return
   }
 
-  const job = embeds[pendingJobIndex]
-  const title = job.title || job.job_title || "Vaga"
+  // Obtém histórico de envios (cooldown) e stacks recentes (diversidade)
+  const sentIds = getSentIds(JOB_GROUP_ID, COOLDOWN_DAYS)
+  const recentStacks = getRecentStacks()
 
-  infoLog(`📤 Enviando vaga: ${title}`)
+  // Seleciona próxima vaga com algoritmo justo
+  const job = selectNextJob({
+    jobs: pendingJobs,
+    groupId: JOB_GROUP_ID,
+    sentIds,
+    recentStacks,
+    maxConsecutive: MAX_CONSECUTIVE_SAME_STACK
+  })
+
+  if (!job) {
+    infoLog("📭 Nenhuma vaga disponível (todas em cooldown)")
+    return
+  }
+
+  const title = job.title || job.job_title || "Vaga"
+  const stack = extractStack(job)
+  const jobId = job.id || job.url || job.job_url
+
+  infoLog(`📤 Enviando vaga: ${title} [stack: ${stack}]`)
 
   const success = await sendJob(socket, job)
 
   if (success) {
-    // Marca a vaga como enviada para WhatsApp
-    embeds[pendingJobIndex].whatsappSent = true
-    saveEmbeds(embeds)
+    // Marca no arquivo embeds.json
+    const jobIndex = embeds.findIndex((e) => (e.id || e.url || e.job_url) === jobId)
+    if (jobIndex !== -1) {
+      embeds[jobIndex].whatsappSent = true
+      saveEmbeds(embeds)
+    }
+
+    // Registra no histórico local (para cooldown e diversidade)
+    markAsSent(JOB_GROUP_ID, jobId, stack)
+
     successLog(`✅ Vaga enviada com sucesso: ${title}`)
   }
 }
@@ -193,10 +227,15 @@ export function startJobSender(socket) {
     warningLog("   O serviço aguardará o arquivo ser criado.")
   }
 
+  // Limpa registros antigos do histórico
+  cleanOldRecords(COOLDOWN_DAYS)
+
   infoLog("════════════════════════════════════════════════════")
   infoLog("       📋 SERVIÇO DE VAGAS INICIADO")
   infoLog("════════════════════════════════════════════════════")
-  infoLog(`⏱️  Intervalo: aleatório entre 5-8 minutos`)
+  infoLog(`⏱️  Intervalo: aleatório entre ${MIN_INTERVAL / 60000}-${MAX_INTERVAL / 60000} minutos`)
+  infoLog(`🔀 Seleção: aleatória com diversidade de stacks`)
+  infoLog(`🔄 Cooldown: ${COOLDOWN_DAYS} dias`)
   infoLog(`📍 Grupo: ${JOB_GROUP_ID}`)
   infoLog(`📁 Arquivo: ${EMBEDS_FILE_PATH}`)
   infoLog("════════════════════════════════════════════════════")

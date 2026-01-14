@@ -1,9 +1,11 @@
 import fs from "fs" // Importa o módulo 'fs' para manipulação de arquivos
+import path from "path"
 import { APIEmbed, EmbedData } from "discord.js"
 import { v4 as uuidv4 } from "uuid"
 import chokidar from "chokidar"
 // Define o caminho do arquivo onde os embeds serão armazenados
-const embedsFilePath = "D:\\Pessoal\\Sonar\\message_formatting\\discord\\src\\data\\embeds.json"
+const embedsFilePath = "C:\\Users\\lcvsilva\\Desktop\\Sonar\\message_formatting\\discord\\src\\data\\embeds.json"
+const embedsDir = path.dirname(embedsFilePath)
 
 // Define a interface para os dados de uma vaga de emprego
 interface JobData {
@@ -40,6 +42,10 @@ function loadEmbeds(): ExtendedEmbedData[] {
 
 // Salva os embeds no arquivo JSON
 function saveEmbeds(embeds: ExtendedEmbedData[]) {
+    // Cria o diretório se não existir
+    if (!fs.existsSync(embedsDir)) {
+        fs.mkdirSync(embedsDir, { recursive: true })
+    }
     fs.writeFileSync(embedsFilePath, JSON.stringify(embeds, null, 2)) // Escreve os embeds no arquivo com formatação
 }
 
