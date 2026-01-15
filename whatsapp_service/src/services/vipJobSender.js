@@ -155,7 +155,7 @@ function formatJobMessage(job) {
  */
 function lidToJid(lid) {
   // Se já está no formato correto
-  if (lid.includes("@s.whatsapp.net")) {
+  if (lid.includes("@lid") || lid.includes("@s.whatsapp.net")) {
     return lid
   }
 
@@ -184,6 +184,43 @@ async function sendJobToSubscriber(socket, lid, job) {
     errorLog(`[VIP] Erro ao enviar vaga para ${lid}: ${err.message}`)
     return false
   }
+}
+
+async function sendRecentEmbedsToSubscriber(socket, lid, stacks, maxJobs = 5) {
+  const embeds = loadEmbeds()
+  let sent = 0
+
+  if (!sentJobsPerSubscriber.has(lid)) {
+    sentJobsPerSubscriber.set(lid, new Set())
+  }
+
+  const sentJobs = sentJobsPerSubscriber.get(lid)
+
+  for (const job of embeds.slice(-50)) {
+    const jobId = job.id || job.url || job.job_url
+
+    if (sentJobs.has(jobId)) {
+      continue
+    }
+
+    if (!jobMatchesStacks(job, stacks)) {
+      continue
+    }
+
+    const success = await sendJobToSubscriber(socket, lid, job)
+    if (success) {
+      sentJobs.add(jobId)
+      sent++
+    }
+
+    if (sent >= maxJobs) {
+      break
+    }
+
+    await delay(1000)
+  }
+
+  return sent
 }
 
 /**
@@ -267,7 +304,7 @@ export function startVipJobSender(socket) {
   // Primeira execução após 30 segundos
   setTimeout(async () => {
     await processVipJobs(socket)
-  }, 30000)
+  }, CHECK_INTERVAL)
 
   // Execuções periódicas
   setInterval(async () => {
@@ -311,9 +348,14 @@ export async function forceVipJobCheck(socket, lid) {
  */
 export async function triggerVipSearch(socket, lid, stacks) {
   const VIP_SERVER_URL = "http://localhost:3001/vip/search"
+  let preloadPromise = null
 
   try {
     infoLog(`[VIP SEARCH] Disparando busca para ${lid} com stacks: ${stacks.join(", ")}`)
+    preloadPromise = sendRecentEmbedsToSubscriber(socket, lid, stacks, 5).catch((err) => {
+      errorLog(`[VIP SEARCH] Erro ao enviar embeds durante busca: ${err.message}`)
+      return 0
+    })
 
     // Mapeia stacks para keywords de busca
     const keywordMappings = {
@@ -372,6 +414,9 @@ export async function triggerVipSearch(socket, lid, stacks) {
     const data = await response.json()
 
     if (!data.success) {
+      if (preloadPromise) {
+        await preloadPromise
+      }
       return { success: false, jobsFound: 0, jobsSent: 0, error: data.error || "Erro desconhecido" }
     }
 
@@ -434,6 +479,9 @@ export async function triggerVipSearch(socket, lid, stacks) {
 
     successLog(`[VIP SEARCH] Busca concluída para ${lid}: ${jobsSent}/${jobs.length} vagas enviadas`)
 
+    if (preloadPromise) {
+      await preloadPromise
+    }
     return {
       success: true,
       jobsFound: jobs.length,
@@ -441,6 +489,9 @@ export async function triggerVipSearch(socket, lid, stacks) {
     }
   } catch (err) {
     errorLog(`[VIP SEARCH] Erro na busca VIP: ${err.message}`)
+    if (preloadPromise) {
+      await preloadPromise
+    }
 
     // Se o servidor VIP não está disponível, tenta buscar das vagas existentes
     if (err.code === "ECONNREFUSED" || err.message.includes("fetch")) {

@@ -16,7 +16,7 @@ export const BOT_NAME = "Sonar Bot"
 // LID do bot.
 // Para obter o LID do bot, use o comando <prefixo>lid respondendo em cima de uma mensagem do número do bot
 // Troque o <prefixo> pelo prefixo do bot (ex: /lid).
-export const BOT_LID = "120152280592452@lid"
+export const BOT_LID = "220676074017018@lid"
 
 // LID do dono do bot.
 // Para obter o LID do dono do bot, use o comando <prefixo>meu-lid
@@ -78,8 +78,8 @@ export const OPENAI_API_KEY = ""
 // ID do grupo para envio de vagas (use /get-group-id para obter)
 export const JOB_GROUP_ID = "120363421632065613@g.us"
 
-// Intervalo de envio em ms (30 segundos)
-export const JOB_SEND_INTERVAL = 30000
+// Intervalo de envio em ms (5 minutos)
+export const JOB_SEND_INTERVAL = 5 * 60 * 1000
 
 // Caminho do arquivo de vagas (embeds.json)
 export const EMBEDS_FILE_PATH = path.resolve(__dirname, "..", "..", "message_formatting", "discord", "src", "data", "embeds.json")
@@ -101,11 +101,7 @@ export const ORCAMENTO_NUMBERS = [
 
 // Números para notificação de pagamento (um por linha para fácil edição)
 // Para adicionar mais números, copie e cole uma linha e substitua o número
-export const PAYMENT_NOTIFICATION_NUMBERS = [
-  "120152280592452@lid",
-  "5953026035805@lid",
-  "209590629191798@lid"
-]
+export const PAYMENT_NOTIFICATION_NUMBERS = ["120152280592452@lid", "5953026035805@lid", "209590629191798@lid"]
 
 // Link do Google Calendar para agendamento
 export const CALENDAR_LINK = "https://calendar.app.google/aL3PxrCWRYVBxRkD7"
