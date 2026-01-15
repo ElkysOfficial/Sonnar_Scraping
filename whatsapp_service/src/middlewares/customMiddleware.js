@@ -11,7 +11,6 @@
 import { delay } from "baileys";
 import {
   BOT_EMOJI,
-  ELKYS_NUMBER,
   ORCAMENTO_NUMBERS,
   CALENDAR_LINK,
   PAYMENT_LINK_GROUP,
@@ -39,10 +38,12 @@ function cleanOldStates() {
 setInterval(cleanOldStates, 10 * 60 * 1000);
 
 /**
- * Verifica se a mensagem é do número da Elkys (privado)
+ * Verifica se a mensagem é privada (não é grupo)
  */
-function isElkysPrivateMessage(remoteJid) {
-  return remoteJid === ELKYS_NUMBER;
+function isPrivateMessage(remoteJid) {
+  // Mensagens privadas terminam com @s.whatsapp.net
+  // Grupos terminam com @g.us
+  return remoteJid?.endsWith("@s.whatsapp.net");
 }
 
 /**
@@ -241,8 +242,8 @@ export async function customMiddleware({
 
   const { fullMessage, remoteJid, userLid } = extractDataFromMessage(webMessage);
 
-  // Só processa mensagens do número da Elkys (privado)
-  if (!isElkysPrivateMessage(remoteJid)) {
+  // Só processa mensagens privadas (não grupos)
+  if (!isPrivateMessage(remoteJid)) {
     return;
   }
 
