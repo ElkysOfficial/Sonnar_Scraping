@@ -5,12 +5,13 @@ import {
   getVipSubscribers,
   getVipSubscriber,
 } from "../../utils/database.js";
+import { triggerVipSearch } from "../../services/vipJobSender.js";
 
 export default {
   name: "vip",
   description: "Gerencia assinantes VIP (vagas personalizadas)",
   commands: ["vip", "assinante", "subscriber"],
-  usage: `${PREFIX}vip <add|remove|list> [lid] [stacks]`,
+  usage: `${PREFIX}vip <add|remove|list|search> [lid] [stacks]`,
   /**
    * @param {CommandHandleProps} props
    */
@@ -21,13 +22,15 @@ export default {
     sendSuccessReply,
     sendErrorReply,
     sendWarningReply,
+    sendWaitReply,
+    socket,
   }) => {
     const action = args[0]?.toLowerCase();
 
     if (!action) {
       const help = `*📋 Comandos VIP*
 
-*Adicionar assinante:*
+*Adicionar assinante (já dispara busca):*
 ${PREFIX}vip add <lid> <stacks>
 
 *Exemplos:*
@@ -44,8 +47,11 @@ ${PREFIX}vip list
 *Ver assinante específico:*
 ${PREFIX}vip info <lid>
 
+*Buscar vagas agora para um assinante:*
+${PREFIX}vip search <lid>
+
 *Stacks disponíveis:*
-estágio, frontend, backend, fullstack, mobile, devops, data, qa, todas`;
+estágio, frontend, backend, fullstack, mobile, devops, data, qa, react, node, python, java, todas`;
 
       return await sendReply(help);
     }
@@ -80,13 +86,63 @@ estágio, frontend, backend, fullstack, mobile, devops, data, qa, todas`;
         const isNew = addVipSubscriber(normalizedLid, stacks);
 
         if (isNew) {
-          return await sendSuccessReply(
-            `Assinante VIP adicionado!\n\n👤 *LID:* ${normalizedLid}\n📚 *Stacks:* ${stacks.join(", ")}`
+          await sendSuccessReply(
+            `Assinante VIP adicionado!\n\n👤 *LID:* ${normalizedLid}\n📚 *Stacks:* ${stacks.join(", ")}\n\n⏳ Iniciando busca de vagas...`
           );
         } else {
-          return await sendSuccessReply(
-            `Assinante VIP atualizado!\n\n👤 *LID:* ${normalizedLid}\n📚 *Stacks:* ${stacks.join(", ")}`
+          await sendSuccessReply(
+            `Assinante VIP atualizado!\n\n👤 *LID:* ${normalizedLid}\n📚 *Stacks:* ${stacks.join(", ")}\n\n⏳ Iniciando busca de vagas...`
           );
+        }
+
+        // Dispara busca imediata em background
+        triggerVipSearch(socket, normalizedLid, stacks)
+          .then((result) => {
+            if (result.success) {
+              console.log(`[VIP] Busca concluída para ${normalizedLid}: ${result.jobsSent} vagas enviadas`);
+            } else {
+              console.error(`[VIP] Erro na busca para ${normalizedLid}: ${result.error}`);
+            }
+          })
+          .catch((err) => {
+            console.error(`[VIP] Erro ao disparar busca: ${err.message}`);
+          });
+
+        return;
+      }
+
+      case "search":
+      case "buscar": {
+        const lid = args[1];
+
+        if (!lid) {
+          return await sendErrorReply(
+            `Informe o LID do assinante.\n\nExemplo: ${PREFIX}vip search 120152280592452@lid`
+          );
+        }
+
+        const normalizedLid = lid.includes("@lid") ? lid : `${lid}@lid`;
+        const subscriber = getVipSubscriber(normalizedLid);
+
+        if (!subscriber) {
+          return await sendWarningReply(`Assinante não encontrado: ${normalizedLid}`);
+        }
+
+        await sendWaitReply(`Buscando vagas para ${normalizedLid}...\nStacks: ${subscriber.stacks.join(", ")}`);
+
+        // Dispara busca
+        try {
+          const result = await triggerVipSearch(socket, normalizedLid, subscriber.stacks);
+
+          if (result.success) {
+            return await sendSuccessReply(
+              `Busca concluída!\n\n📊 *Vagas encontradas:* ${result.jobsFound}\n📤 *Vagas enviadas:* ${result.jobsSent}`
+            );
+          } else {
+            return await sendErrorReply(`Erro na busca: ${result.error}`);
+          }
+        } catch (err) {
+          return await sendErrorReply(`Erro ao buscar: ${err.message}`);
         }
       }
 
@@ -163,7 +219,7 @@ ${subscriber.updatedAt ? `*Atualizado em:* ${new Date(subscriber.updatedAt).toLo
 
       default:
         return await sendErrorReply(
-          `Ação inválida: ${action}\n\nUse: add, remove, list ou info`
+          `Ação inválida: ${action}\n\nUse: add, remove, list, info ou search`
         );
     }
   },
