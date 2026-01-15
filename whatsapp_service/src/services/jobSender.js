@@ -1,6 +1,6 @@
 /**
  * Serviço de envio automático de vagas para WhatsApp
- * Envia vagas do embeds.json para o grupo configurado com intervalo fixo de 5 minutos
+ * Envia vagas do embeds.json para o grupo configurado com intervalo aleatório de 5-8 minutos
  * Utiliza seleção aleatória justa com diversidade de stacks.
  *
  * @author Sonar Bot
@@ -10,23 +10,24 @@ import fs from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { infoLog, successLog, warningLog, errorLog } from "../utils/logger.js"
-import { JOB_GROUP_ID, EMBEDS_FILE_PATH, BOT_EMOJI, JOB_SEND_INTERVAL } from "../config.js"
+import { JOB_GROUP_ID, EMBEDS_FILE_PATH, BOT_EMOJI } from "../config.js"
 import { selectNextJob, extractStack } from "./jobDistributor.js"
 import { getSentIds, getRecentStacks, markAsSent, cleanOldRecords } from "./sentHistory.js"
 
-// Intervalo fixo entre envios (em milissegundos)
-const FIXED_INTERVAL = JOB_SEND_INTERVAL || 5 * 60 * 1000
+// Intervalo aleatório entre 30s e 1 minuto (em milissegundos) - TESTE
+const MIN_INTERVAL = 30 * 1000 // 30 segundos
+const MAX_INTERVAL = 60 * 1000 // 1 minuto
 
 // Configurações de distribuição
 const COOLDOWN_DAYS = 7 // Dias antes de reenviar mesma vaga
 const MAX_CONSECUTIVE_SAME_STACK = 1 // Máximo de vagas consecutivas da mesma stack (1 = nunca repete seguidas)
 
 /**
- * Gera o intervalo de envio
+ * Gera um intervalo aleatório entre MIN e MAX
  * @returns {number} Intervalo em milissegundos
  */
-function getNextInterval() {
-  return FIXED_INTERVAL
+function getRandomInterval() {
+  return Math.floor(Math.random() * (MAX_INTERVAL - MIN_INTERVAL + 1)) + MIN_INTERVAL
 }
 
 const __filename = fileURLToPath(import.meta.url)
@@ -189,11 +190,11 @@ async function processNextJob(socket) {
 }
 
 /**
- * Agenda o próximo envio com intervalo fixo
+ * Agenda o próximo envio com intervalo aleatório
  * @param {Object} socket - Socket do Baileys
  */
 function scheduleNextJob(socket) {
-  const interval = getNextInterval()
+  const interval = getRandomInterval()
   const minutes = Math.floor(interval / 60000)
   const seconds = Math.floor((interval % 60000) / 1000)
 
@@ -232,16 +233,16 @@ export function startJobSender(socket) {
   infoLog("════════════════════════════════════════════════════")
   infoLog("       📋 SERVIÇO DE VAGAS INICIADO")
   infoLog("════════════════════════════════════════════════════")
-  infoLog(`⏱️  Intervalo: ${FIXED_INTERVAL / 60000} minutos`)
+  infoLog(`⏱️  Intervalo: aleatório entre ${MIN_INTERVAL / 60000}-${MAX_INTERVAL / 60000} minutos`)
   infoLog(`🔀 Seleção: aleatória com diversidade de stacks`)
   infoLog(`🔄 Cooldown: ${COOLDOWN_DAYS} dias`)
   infoLog(`📍 Grupo: ${JOB_GROUP_ID}`)
   infoLog(`📁 Arquivo: ${EMBEDS_FILE_PATH}`)
   infoLog("════════════════════════════════════════════════════")
 
-  // Executa a primeira vez após o intervalo configurado
+  // Executa a primeira vez após 10 segundos
   setTimeout(async () => {
     await processNextJob(socket)
-    scheduleNextJob(socket) // Inicia o ciclo de envios fixos
-  }, FIXED_INTERVAL)
+    scheduleNextJob(socket) // Inicia o ciclo de envios aleatórios
+  }, 10000)
 }
