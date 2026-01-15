@@ -11,6 +11,7 @@ import { onMessagesUpsert } from "./middlewares/onMesssagesUpsert.js";
 import { badMacHandler } from "./utils/badMacHandler.js";
 import { errorLog } from "./utils/logger.js";
 import { startJobSender } from "./services/jobSender.js";
+import { startVipJobSender } from "./services/vipJobSender.js";
 
 export function load(socket) {
   const safeEventHandler = async (callback, data, eventName) => {
@@ -59,4 +60,7 @@ export function load(socket) {
 
   // Inicia o serviço de envio automático de vagas
   startJobSender(socket);
+
+  // Inicia o serviço de vagas VIP (personalizadas)
+  startVipJobSender(socket);
 }

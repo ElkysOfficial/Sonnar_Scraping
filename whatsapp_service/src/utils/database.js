@@ -494,3 +494,86 @@ export function getSpiderApiToken() {
 
   return config.spider_api_token || SPIDER_API_TOKEN;
 }
+
+// ======= ASSINANTES VIP (Vagas Personalizadas) =======
+const VIP_SUBSCRIBERS_FILE = "vip-subscribers";
+
+/**
+ * Obtém todos os assinantes VIP
+ * @returns {Array<{lid: string, stacks: string[], addedAt: string}>}
+ */
+export function getVipSubscribers() {
+  return readJSON(VIP_SUBSCRIBERS_FILE, []);
+}
+
+/**
+ * Adiciona um assinante VIP
+ * @param {string} lid - ID do usuário (formato: 123456789@lid)
+ * @param {string[]} stacks - Lista de stacks (ex: ["estágio", "frontend"])
+ * @returns {boolean} True se adicionou, false se já existia
+ */
+export function addVipSubscriber(lid, stacks) {
+  const subscribers = getVipSubscribers();
+
+  const existingIndex = subscribers.findIndex((s) => s.lid === lid);
+
+  if (existingIndex !== -1) {
+    // Atualiza stacks se já existe
+    subscribers[existingIndex].stacks = stacks;
+    subscribers[existingIndex].updatedAt = new Date().toISOString();
+    writeJSON(VIP_SUBSCRIBERS_FILE, subscribers, []);
+    return false;
+  }
+
+  subscribers.push({
+    lid,
+    stacks,
+    addedAt: new Date().toISOString(),
+  });
+
+  writeJSON(VIP_SUBSCRIBERS_FILE, subscribers, []);
+  return true;
+}
+
+/**
+ * Remove um assinante VIP
+ * @param {string} lid - ID do usuário
+ * @returns {boolean} True se removeu, false se não existia
+ */
+export function removeVipSubscriber(lid) {
+  const subscribers = getVipSubscribers();
+
+  const index = subscribers.findIndex((s) => s.lid === lid);
+
+  if (index === -1) {
+    return false;
+  }
+
+  subscribers.splice(index, 1);
+  writeJSON(VIP_SUBSCRIBERS_FILE, subscribers, []);
+  return true;
+}
+
+/**
+ * Verifica se um usuário é assinante VIP
+ * @param {string} lid - ID do usuário
+ * @returns {Object|null} Dados do assinante ou null
+ */
+export function getVipSubscriber(lid) {
+  const subscribers = getVipSubscribers();
+  return subscribers.find((s) => s.lid === lid) || null;
+}
+
+/**
+ * Obtém assinantes VIP por stack
+ * @param {string} stack - Stack para filtrar
+ * @returns {Array} Lista de assinantes que querem essa stack
+ */
+export function getSubscribersByStack(stack) {
+  const subscribers = getVipSubscribers();
+  const stackLower = stack.toLowerCase();
+
+  return subscribers.filter((s) =>
+    s.stacks.some((st) => st.toLowerCase() === stackLower || st.toLowerCase() === "todas")
+  );
+}
