@@ -19,8 +19,8 @@ const CHECK_INTERVAL = 5 * 60 * 1000
 // Formato: { "lid": Set<jobId> }
 const sentJobsPerSubscriber = new Map()
 
-// Último ID de vaga processado globalmente
-let lastProcessedIndex = 0
+// Controle de intervalo por assinante
+const lastSentAtPerSubscriber = new Map()
 
 /**
  * Carrega as vagas do arquivo embeds.json
@@ -173,12 +173,18 @@ function lidToJid(lid) {
  */
 async function sendJobToSubscriber(socket, lid, job) {
   try {
+    const lastSentAt = lastSentAtPerSubscriber.get(lid) || 0
+    if (Date.now() - lastSentAt < CHECK_INTERVAL) {
+      return false
+    }
+
     const jid = lidToJid(lid)
     const message = formatJobMessage(job)
 
     await delay(TIMEOUT_IN_MILLISECONDS_BY_EVENT)
     await socket.sendMessage(jid, { text: message })
 
+    lastSentAtPerSubscriber.set(lid, Date.now())
     return true
   } catch (err) {
     errorLog(`[VIP] Erro ao enviar vaga para ${lid}: ${err.message}`)
@@ -235,36 +241,31 @@ async function processVipJobs(socket) {
     return
   }
 
-  // Processa apenas vagas novas (após o último índice processado)
-  const newJobs = embeds.slice(lastProcessedIndex)
+  infoLog(`[VIP] Verificando vagas para ${subscribers.length} assinantes`)
 
-  if (newJobs.length === 0) {
-    return
-  }
+  for (const subscriber of subscribers) {
+    if (!sentJobsPerSubscriber.has(subscriber.lid)) {
+      sentJobsPerSubscriber.set(subscriber.lid, new Set())
+    }
 
-  infoLog(`[VIP] Processando ${newJobs.length} novas vagas para ${subscribers.length} assinantes`)
+    const sentJobs = sentJobsPerSubscriber.get(subscriber.lid)
+    const lastSentAt = lastSentAtPerSubscriber.get(subscriber.lid) || 0
 
-  for (const job of newJobs) {
-    const jobId = job.id || job.url || job.job_url
+    if (Date.now() - lastSentAt < CHECK_INTERVAL) {
+      continue
+    }
 
-    for (const subscriber of subscribers) {
-      // Verifica se já enviou essa vaga para esse assinante
-      if (!sentJobsPerSubscriber.has(subscriber.lid)) {
-        sentJobsPerSubscriber.set(subscriber.lid, new Set())
-      }
-
-      const sentJobs = sentJobsPerSubscriber.get(subscriber.lid)
+    for (const job of embeds.slice(-200)) {
+      const jobId = job.id || job.url || job.job_url
 
       if (sentJobs.has(jobId)) {
         continue
       }
 
-      // Verifica se a vaga corresponde às stacks do assinante
       if (!jobMatchesStacks(job, subscriber.stacks)) {
         continue
       }
 
-      // Envia a vaga
       const success = await sendJobToSubscriber(socket, subscriber.lid, job)
 
       if (success) {
@@ -272,13 +273,11 @@ async function processVipJobs(socket) {
         successLog(`[VIP] Vaga enviada para ${subscriber.lid}: ${job.title || job.job_title}`)
       }
 
-      // Pequeno delay entre envios para evitar spam
-      await delay(1000)
+      break
     }
-  }
 
-  // Atualiza o índice processado
-  lastProcessedIndex = embeds.length
+    await delay(1000)
+  }
 }
 
 /**
