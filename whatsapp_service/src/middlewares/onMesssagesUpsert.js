@@ -4,7 +4,7 @@
  *
  * @author Dev Gui
  */
-import { DEVELOPER_MODE } from "../config.js";
+import { DEVELOPER_MODE, BOT_LID } from "../config.js";
 import { badMacHandler } from "../utils/badMacHandler.js";
 import { checkIfMemberIsMuted } from "../utils/database.js";
 import { dynamicCommand } from "../utils/dynamicCommand.js";
@@ -26,6 +26,15 @@ export async function onMessagesUpsert({ socket, messages, startProcess }) {
   }
 
   for (const webMessage of messages) {
+    // Ignora mensagens do próprio bot em qualquer contexto
+    const userLid = webMessage.key?.participant;
+    const botLidClean = BOT_LID.replace("@lid", "").replace("@s.whatsapp.net", "");
+    const userLidClean = userLid?.replace(/:[0-9][0-9]|:[0-9]/g, "").replace("@lid", "").replace("@s.whatsapp.net", "") || "";
+    
+    if (userLidClean === botLidClean || webMessage.key?.fromMe) {
+      continue;
+    }
+
     if (DEVELOPER_MODE) {
       infoLog(
         `\n\n⪨========== [ MENSAGEM RECEBIDA ] ==========⪩ \n\n${JSON.stringify(

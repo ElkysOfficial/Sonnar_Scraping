@@ -85,11 +85,27 @@ export const JOB_SEND_INTERVAL = 30000
 export const EMBEDS_FILE_PATH = path.resolve(__dirname, "..", "..", "message_formatting", "discord", "src", "data", "embeds.json")
 
 // ======= CONFIGURAÇÕES DA ELKYS =======
-// Número da Elkys (formato: numero@s.whatsapp.net)
+// Número da Elkys (formato: numero@s.whatsapp.net ou numero@lid)
 export const ELKYS_NUMBER = "5531983244210@s.whatsapp.net"
 
-// Números para notificação de orçamento
-export const ORCAMENTO_NUMBERS = ["5531998324421@s.whatsapp.net", "5531972624740@s.whatsapp.net", "5531998478235@s.whatsapp.net"]
+// Números para notificação de orçamento (um por linha para fácil edição)
+// Para adicionar mais números, copie e cole uma linha e substitua o número
+// Exemplo: "120152280592452@lid"
+export const ORCAMENTO_NUMBERS = [
+  "120152280592452@lid",
+  "5953026035805@lid",
+  "209590629191798@lid",
+  "5531972624740@s.whatsapp.net",
+  "5531998478235@s.whatsapp.net"
+]
+
+// Números para notificação de pagamento (um por linha para fácil edição)
+// Para adicionar mais números, copie e cole uma linha e substitua o número
+export const PAYMENT_NOTIFICATION_NUMBERS = [
+  "120152280592452@lid",
+  "5953026035805@lid",
+  "209590629191798@lid"
+]
 
 // Link do Google Calendar para agendamento
 export const CALENDAR_LINK = "https://calendar.app.google/aL3PxrCWRYVBxRkD7"

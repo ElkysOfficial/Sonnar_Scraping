@@ -1,0 +1,48 @@
+{
+  "records": [
+    {
+      "jobId": "2b40f430-eb6c-4973-8535-3ee474aca55a",
+      "groupId": "120363421632065613@g.us",
+      "sentAt": 1768491896102
+    },
+    {
+      "jobId": "766ed38e-ef69-4af2-b849-25f7fabeea0f",
+      "groupId": "120363421632065613@g.us",
+      "sentAt": 1768492039785
+    },
+    {
+      "jobId": "8870f305-1628-4091-9ae1-ac5fa815ddc5",
+      "groupId": "120363421632065613@g.us",
+      "sentAt": 1768492092819
+    },
+    {
+      "jobId": "650ea932-a033-4d5b-91d3-ccfd62bb0432",
+      "groupId": "120363421632065613@g.us",
+      "sentAt": 1768492125706
+    },
+    {
+      "jobId": "c33a77d7-fe9a-4ef2-baeb-84076fe02ae9",
+      "groupId": "120363421632065613@g.us",
+      "sentAt": 1768492177062
+    },
+    {
+      "jobId": "26f38c63-5fd7-4948-a6cd-24fd34401dd2",
+      "groupId": "120363421632065613@g.us",
+      "sentAt": 1768492227121
+    },
+    {
+      "jobId": "b4215ea4-0360-46e5-8058-67d600915fe4",
+      "groupId": "120363421632065613@g.us",
+      "sentAt": 1768492266188
+    }
+  ],
+  "recentStacks": [
+    "other",
+    "php",
+    "flutter",
+    "other",
+    "flutter",
+    "angular",
+    "other"
+  ]
+}
