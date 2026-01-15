@@ -83,3 +83,20 @@ export const JOB_SEND_INTERVAL = 30000
 
 // Caminho do arquivo de vagas (embeds.json)
 export const EMBEDS_FILE_PATH = path.resolve(__dirname, "..", "..", "message_formatting", "discord", "src", "data", "embeds.json")
+
+// ======= CONFIGURAÇÕES DA ELKYS =======
+// Número da Elkys (formato: numero@s.whatsapp.net)
+export const ELKYS_NUMBER = "5531983244210@s.whatsapp.net"
+
+// Números para notificação de orçamento
+export const ORCAMENTO_NUMBERS = ["5531998324421@s.whatsapp.net", "5531972624740@s.whatsapp.net", "5531998478235@s.whatsapp.net"]
+
+// Link do Google Calendar para agendamento
+export const CALENDAR_LINK = "https://calendar.app.google/aL3PxrCWRYVBxRkD7"
+
+// Links de pagamento Mercado Pago
+export const PAYMENT_LINK_GROUP = "https://buy.stripe.com/9B68wI4uY23P2FW5qkbfO00"
+export const PAYMENT_LINK_PRIVATE = "https://buy.stripe.com/14AcMY2mQbEpcgwg4YbfO01"
+
+// Link do grupo de vagas (será enviado após confirmação de pagamento)
+export const JOB_GROUP_LINK = "https://chat.whatsapp.com/HGtEZLt5jys7aOONUUhF6a"
