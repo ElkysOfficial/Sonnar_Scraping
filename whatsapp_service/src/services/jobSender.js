@@ -1,6 +1,6 @@
 /**
  * Serviço de envio automático de vagas para WhatsApp
- * Envia vagas do embeds.json para o grupo configurado com intervalo aleatório de 5-8 minutos
+ * Envia vagas do embeds.json para o grupo configurado com intervalo fixo de 5 minutos
  * Utiliza seleção aleatória justa com diversidade de stacks.
  *
  * @author Sonar Bot
@@ -10,24 +10,25 @@ import fs from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { infoLog, successLog, warningLog, errorLog } from "../utils/logger.js"
-import { JOB_GROUP_ID, EMBEDS_FILE_PATH, BOT_EMOJI } from "../config.js"
+import { JOB_GROUP_ID, EMBEDS_FILE_PATH, BOT_EMOJI, JOB_SEND_INTERVAL } from "../config.js"
 import { selectNextJob, extractStack } from "./jobDistributor.js"
 import { getSentIds, getRecentStacks, markAsSent, cleanOldRecords } from "./sentHistory.js"
 
-// Intervalo aleatório entre 30s e 1 minuto (em milissegundos) - TESTE
-const MIN_INTERVAL = 30 * 1000 // 30 segundos
-const MAX_INTERVAL = 60 * 1000 // 1 minuto
+// Intervalo fixo entre envios (em milissegundos)
+const FIXED_INTERVAL = JOB_SEND_INTERVAL || 5 * 60 * 1000
 
 // Configurações de distribuição
 const COOLDOWN_DAYS = 7 // Dias antes de reenviar mesma vaga
 const MAX_CONSECUTIVE_SAME_STACK = 1 // Máximo de vagas consecutivas da mesma stack (1 = nunca repete seguidas)
+let jobSenderTimeoutId = null
+let jobSenderToken = 0
 
 /**
- * Gera um intervalo aleatório entre MIN e MAX
+ * Gera o intervalo de envio
  * @returns {number} Intervalo em milissegundos
  */
-function getRandomInterval() {
-  return Math.floor(Math.random() * (MAX_INTERVAL - MIN_INTERVAL + 1)) + MIN_INTERVAL
+function getNextInterval() {
+  return FIXED_INTERVAL
 }
 
 const __filename = fileURLToPath(import.meta.url)
@@ -43,6 +44,9 @@ function loadEmbeds() {
       return []
     }
     const data = fs.readFileSync(EMBEDS_FILE_PATH, "utf8")
+    if (!data.trim()) {
+      return []
+    }
     return JSON.parse(data)
   } catch (err) {
     if (err instanceof SyntaxError) {
@@ -54,13 +58,33 @@ function loadEmbeds() {
   }
 }
 
+
+function writeJsonAtomic(filePath, data) {
+  const dir = path.dirname(filePath)
+  const base = path.basename(filePath)
+  const tempPath = path.join(dir, `.tmp-${base}-${process.pid}-${Date.now()}`)
+  fs.writeFileSync(tempPath, data, "utf8")
+  try {
+    if (fs.existsSync(filePath)) {
+      fs.rmSync(filePath, { force: true })
+    }
+    fs.renameSync(tempPath, filePath)
+  } catch (error) {
+    if (fs.existsSync(tempPath)) {
+      fs.rmSync(tempPath, { force: true })
+    }
+    throw error
+  }
+}
+
 /**
  * Salva as vagas no arquivo embeds.json
  * @param {Array} embeds - Array de vagas
  */
 function saveEmbeds(embeds) {
   try {
-    fs.writeFileSync(EMBEDS_FILE_PATH, JSON.stringify(embeds, null, 2))
+    const payload = JSON.stringify(embeds, null, 2)
+    writeJsonAtomic(EMBEDS_FILE_PATH, payload)
   } catch (err) {
     errorLog(`Erro ao salvar embeds.json: ${err.message}`)
   }
@@ -71,6 +95,10 @@ function saveEmbeds(embeds) {
  * @param {Object} job - Objeto da vaga
  * @returns {string} Mensagem formatada
  */
+function isSocketReady(socket) {
+  return socket?.ws?.readyState === 1
+}
+
 function formatJobMessage(job) {
   // Extrai dados do embed (formato Discord) ou dados diretos
   const title = job.title || job.job_title || "Não informado"
@@ -116,6 +144,10 @@ function formatJobMessage(job) {
  */
 async function sendJob(socket, job) {
   try {
+    if (!isSocketReady(socket)) {
+      warningLog("Conexao fechada. Envio de vaga aguardando reconexao.")
+      return false
+    }
     const message = formatJobMessage(job)
 
     await socket.sendMessage(JOB_GROUP_ID, {
@@ -190,11 +222,12 @@ async function processNextJob(socket) {
 }
 
 /**
- * Agenda o próximo envio com intervalo aleatório
+ * Agenda o próximo envio com intervalo fixo
  * @param {Object} socket - Socket do Baileys
  */
 function scheduleNextJob(socket) {
-  const interval = getRandomInterval()
+  const token = jobSenderToken
+  const interval = getNextInterval()
   const minutes = Math.floor(interval / 60000)
   const seconds = Math.floor((interval % 60000) / 1000)
 
@@ -211,6 +244,12 @@ function scheduleNextJob(socket) {
  * @param {Object} socket - Socket do Baileys
  */
 export function startJobSender(socket) {
+  if (jobSenderTimeoutId) {
+    clearTimeout(jobSenderTimeoutId)
+    jobSenderTimeoutId = null
+  }
+  jobSenderToken += 1
+
   if (!JOB_GROUP_ID) {
     warningLog("⚠️ JOB_GROUP_ID não configurado no config.js. Serviço de vagas desativado.")
     warningLog("   Use o comando /get-group-id em um grupo para obter o ID.")
@@ -233,16 +272,16 @@ export function startJobSender(socket) {
   infoLog("════════════════════════════════════════════════════")
   infoLog("       📋 SERVIÇO DE VAGAS INICIADO")
   infoLog("════════════════════════════════════════════════════")
-  infoLog(`⏱️  Intervalo: aleatório entre ${MIN_INTERVAL / 60000}-${MAX_INTERVAL / 60000} minutos`)
+  infoLog(`⏱️  Intervalo: ${FIXED_INTERVAL / 60000} minutos`)
   infoLog(`🔀 Seleção: aleatória com diversidade de stacks`)
   infoLog(`🔄 Cooldown: ${COOLDOWN_DAYS} dias`)
   infoLog(`📍 Grupo: ${JOB_GROUP_ID}`)
   infoLog(`📁 Arquivo: ${EMBEDS_FILE_PATH}`)
   infoLog("════════════════════════════════════════════════════")
 
-  // Executa a primeira vez após 10 segundos
+  // Executa a primeira vez após o intervalo configurado
   setTimeout(async () => {
     await processNextJob(socket)
-    scheduleNextJob(socket) // Inicia o ciclo de envios aleatórios
-  }, 10000)
+    scheduleNextJob(socket) // Inicia o ciclo de envios fixos
+  }, FIXED_INTERVAL)
 }

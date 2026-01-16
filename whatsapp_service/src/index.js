@@ -82,6 +82,18 @@ import {
   warningLog,
 } from "./utils/logger.js";
 
+const originalConsoleWarn = console.warn.bind(console);
+console.warn = (...args) => {
+  const message = args.map(String).join(" ");
+  if (
+    message.includes("Closing stale open session for new outgoing prekey bundle") ||
+    message.includes("Closing session: SessionEntry")
+  ) {
+    return;
+  }
+  originalConsoleWarn(...args);
+};
+
 process.on("uncaughtException", (error) => {
   if (badMacHandler.handleError(error, "uncaughtException")) {
     return;

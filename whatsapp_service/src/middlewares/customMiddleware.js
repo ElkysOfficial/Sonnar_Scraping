@@ -8,7 +8,7 @@
  *
  * @author Dev Gui
  */
-import { delay } from "baileys";
+import { delay } from "baileys"
 import {
   BOT_EMOJI,
   BOT_LID,
@@ -19,31 +19,31 @@ import {
   PAYMENT_LINK_PRIVATE,
   JOB_GROUP_LINK,
   TIMEOUT_IN_MILLISECONDS_BY_EVENT,
-  PREFIX,
-} from "../config.js";
-import { extractDataFromMessage } from "../utils/index.js";
-import { errorLog, infoLog } from "../utils/logger.js";
+  PREFIX
+} from "../config.js"
+import { extractDataFromMessage } from "../utils/index.js"
+import { errorLog, infoLog } from "../utils/logger.js"
 
 // Timeout de 5 minutos em milissegundos
-const SESSION_TIMEOUT_MS = 5 * 60 * 1000;
+const SESSION_TIMEOUT_MS = 5 * 60 * 1000
 
 // Estado das conversas em memória
 // Estrutura: { "userId": { state: "menu" | "sonar_menu" | "awaiting_budget_name" | "awaiting_budget_description" | "awaiting_payment_group" | "awaiting_payment_private", timestamp: Date, budgetData: { name: "", description: "" }, previousState: "", timeout: timerId } }
-const conversationStates = new Map();
-const userTimeouts = new Map();
+const conversationStates = new Map()
+const userTimeouts = new Map()
 
 // Limpa estados antigos (mais de 30 minutos)
 function cleanOldStates() {
-  const thirtyMinutesAgo = Date.now() - 30 * 60 * 1000;
+  const thirtyMinutesAgo = Date.now() - 30 * 60 * 1000
   for (const [userId, data] of conversationStates.entries()) {
     if (data.timestamp < thirtyMinutesAgo) {
-      conversationStates.delete(userId);
+      conversationStates.delete(userId)
     }
   }
 }
 
 // Executa limpeza a cada 10 minutos
-setInterval(cleanOldStates, 10 * 60 * 1000);
+setInterval(cleanOldStates, 10 * 60 * 1000)
 
 /**
  * Configura timeout para a sessão do usuário
@@ -51,43 +51,42 @@ setInterval(cleanOldStates, 10 * 60 * 1000);
 function setupSessionTimeout(socket, userId, remoteJid) {
   // Limpa timeout anterior se existir
   if (userTimeouts.has(userId)) {
-    clearTimeout(userTimeouts.get(userId));
+    clearTimeout(userTimeouts.get(userId))
   }
 
   // Cria novo timeout
   const timeout = setTimeout(async () => {
     try {
-      infoLog(`[SESSION TIMEOUT] Timeout de 5 minutos atingido para ${userId}`);
-      
+      infoLog(`[SESSION TIMEOUT] Timeout de 5 minutos atingido para ${userId}`)
+
       // Envia mensagem de encerramento
-      await sendWithDelay(socket, remoteJid, { 
-        text: getSessionTimeoutMessage() 
-      });
+      await sendWithDelay(socket, remoteJid, {
+        text: getSessionTimeoutMessage()
+      })
 
       // Reseta o estado para menu
-      conversationStates.set(userId, { 
-        state: "menu", 
+      conversationStates.set(userId, {
+        state: "menu",
         timestamp: Date.now(),
         budgetData: {},
         previousState: ""
-      });
+      })
 
       // Remove o timeout do mapa
-      userTimeouts.delete(userId);
-      
+      userTimeouts.delete(userId)
     } catch (error) {
-      errorLog(`[SESSION TIMEOUT] Erro ao processar timeout: ${error.message}`);
+      errorLog(`[SESSION TIMEOUT] Erro ao processar timeout: ${error.message}`)
     }
-  }, SESSION_TIMEOUT_MS);
+  }, SESSION_TIMEOUT_MS)
 
-  userTimeouts.set(userId, timeout);
+  userTimeouts.set(userId, timeout)
 }
 
 /**
  * Atualiza o timestamp da sessão (reseta timeout)
  */
 function updateSessionTimeout(socket, userId, remoteJid) {
-  setupSessionTimeout(socket, userId, remoteJid);
+  setupSessionTimeout(socket, userId, remoteJid)
 }
 
 /**
@@ -96,15 +95,63 @@ function updateSessionTimeout(socket, userId, remoteJid) {
 function isPrivateMessage(remoteJid) {
   // Grupos terminam com @g.us
   // Mensagens privadas podem terminar com @s.whatsapp.net ou @lid
-  return !remoteJid?.endsWith("@g.us");
+  return !remoteJid?.endsWith("@g.us")
 }
 
 /**
  * Envia mensagem com delay para evitar banimento
  */
 async function sendWithDelay(socket, jid, content) {
-  await delay(TIMEOUT_IN_MILLISECONDS_BY_EVENT);
-  return await socket.sendMessage(jid, content);
+  await delay(TIMEOUT_IN_MILLISECONDS_BY_EVENT)
+  return await socket.sendMessage(jid, content)
+}
+
+function normalizePhone(text) {
+  return (text || "").replace(/\D/g, "")
+}
+
+function isValidPhone(text) {
+  const digits = normalizePhone(text)
+  return digits.length >= 10 && digits.length <= 13
+}
+
+function isValidEmail(email) {
+  const value = (email || "").trim()
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)
+}
+
+function isValidName(name) {
+  const value = (name || "").trim()
+  if (value.length < 5) {
+    return false
+  }
+  const parts = value.split(/\s+/).filter(Boolean)
+  if (parts.length < 2) {
+    return false
+  }
+  return parts.every(part => /\p{L}/u.test(part))
+}
+
+function formatPhone(text) {
+  const digits = normalizePhone(text)
+  if (digits.length === 11) {
+    return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`
+  }
+  if (digits.length === 10) {
+    return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`
+  }
+  return digits
+}
+
+function formatLeadLines(leadData) {
+  if (!leadData) {
+    return ""
+  }
+  const parts = []
+  if (leadData.name) parts.push(`*Nome:* ${leadData.name}`)
+  if (leadData.phone) parts.push(`*Telefone:* ${leadData.phone}`)
+  if (leadData.email) parts.push(`*E-mail:* ${leadData.email}`)
+  return parts.length ? parts.join("\n") + "\n" : ""
 }
 
 /**
@@ -113,17 +160,17 @@ async function sendWithDelay(socket, jid, content) {
 function getMainMenu() {
   return `*ELKYS*
 
-_Software, Automação e Produtos Digitais para escalar negócios._
+_Software, automacao e produtos digitais para escalar negocios._
 
-_👋 Como podemos te ajudar hoje?_
+> Como podemos te ajudar hoje?
 
-💼 *1* - _Orçamento: Receba uma proposta sob medida._
-📅 *2* - _Reunião: Agende um horário com nosso time._
-💼 *3* - _Vagas: Oportunidades e conteúdos exclusivos._
-🤝 *4* - _Quer se tornar um parceiro_
-
-──────────────────
-Digite *1*, *2*, *3* ou *4*`;
+- 1️⃣ - _Orcamento: receba uma proposta sob medida._
+- 2️⃣ - _Reuniao: agende um horario com nosso time._
+- 3️⃣ - _Vagas: oportunidades e conteudos exclusivos._
+- 4️⃣ - _Quero ser parceiro_
+_______________________
+Digite o numero da opcao desejada
+_ou digite "voltar" para retornar_`
 }
 
 /**
@@ -132,17 +179,14 @@ Digite *1*, *2*, *3* ou *4*`;
 function getSonarMenu() {
   return `*Vagas de Emprego*
 
-_Escolha como deseja receber as oportunidades:_
+> Escolha como deseja receber as oportunidades:
 
-📢 *1* • Grupo de Vagas
-_Acesso exclusivo a vagas diárias_
+- 1️⃣ - Grupo de Vagas: _Acesso exclusivo a vagas diarias_
+- 2️⃣ - Vagas Personalizadas: _Receba filtradas por seu perfil_
 
-📱 *2* • Vagas Personalizadas
-_Receba filtradas por seu perfil_
-
-──────────────────
-Digite *1* ou *2*
-Digite *0* para voltar`;
+----------------------------------------
+Digite o numero da opcao desejada
+_ou digite "voltar" para retornar_`
 }
 
 /**
@@ -151,56 +195,84 @@ Digite *0* para voltar`;
 function getPartnerMessage() {
   return `*Programa de Parceria*
 
-_Interessado em fazer parte do nosso time?_
+> Interessado em fazer parte do nosso time?
 
-Clique no link abaixo para conversar com nosso time de parcerias:
+> Fale diretamente com nosso time de parcerias: https://wa.me/553198478235
 
-https://wa.me/553198478235
-
-──────────────────
-Digite *menu* para voltar`;
+----------------------------------------
+Digite *menu* para voltar`
 }
 
 /**
  * Mensagem solicitando nome para orçamento
  */
 function getBudgetNameMessage() {
-  return `💼 *Solicitar Orçamento*
+  return `*Solicitar Orcamento*
 
-_Para continuar, qual é o seu nome?_
+> Para continuar, me diga seu nome completo.
 
-──────────────────
-Digite seu nome
-_ou digite "voltar" para retornar ao menu_`;
+----------------------------------------
+_ou digite "voltar" para retornar_`
+}
+
+function getBudgetPhoneMessage(name) {
+  return `*Perfeito, ${name}!*
+
+> Qual seu telefone com DDD?
+_Ex: (31) 99999-9999_
+
+----------------------------------------
+_ou digite "voltar" para retornar_`
+}
+
+function getBudgetEmailMessage(name) {
+  return `*Obrigado, ${name}!*
+
+> Qual o seu melhor e-mail?
+_Ex: seuemail@dominio.com_
+
+----------------------------------------
+_ou digite "voltar" para retornar_`
+}
+
+function getBudgetCompanyTypeMessage(name) {
+  return `*So mais uma, ${name}!*
+
+> Voce esta entrando em contato como empresa?
+
+*1* - Sim, sou empresa
+*2* - Nao, pessoa fisica
+
+----------------------------------------
+Digite *1* ou *2*
+_ou digite "voltar" para retornar_`
 }
 
 /**
  * Mensagem solicitando descrição para orçamento
  */
 function getBudgetDescriptionMessage(name) {
-  return `*Ótimo, ${name}!*
+  return `*Otimo, ${name}!*
 
-_Agora, fale um pouco sobre o que se trata seu projeto. Descreva brevemente o que você precisa:_
+> Conte rapidamente sobre o seu projeto.
+_Ex: sistema de vendas online, app mobile, automacao de processos..._
 
-_Ex: Sistema de vendas online, App mobile, Automação de processos, etc._
-
-──────────────────
-Digite a descrição
-_ou digite "voltar" para retornar ao passo anterior_`;
+----------------------------------------
+Digite a descricao
+_ou digite "voltar" para retornar_`
 }
 
 /**
  * Mensagem de confirmação de orçamento enviado
  */
 function getBudgetConfirmationMessage() {
-  return `✓ *Obrigado!*
+  return `*Obrigado!*
 
-Suas informações foram enviadas com sucesso.
+> Suas informacoes foram enviadas com sucesso.
+Nossa equipe analisara seu projeto e entrara em contato em breve.
 
-Nossa equipe analisará seu projeto e entrará em contato em breve!
-
-──────────────────
-Digite *menu* para voltar`;
+----------------------------------------
+Digite *menu* para voltar`
 }
 
 /**
@@ -212,24 +284,27 @@ function getOrcamentoNotification(userNumber) {
 _Cliente:_ ${userNumber}
 _Data:_ ${new Date().toLocaleString("pt-BR")}
 
-Entrar em contato assim que possível.`;
+Entrar em contato assim que possível.`
 }
 
 /**
  * Mensagem com detalhes completos do orçamento
  */
 function getBudgetDetailsMessage(budgetData) {
-  return `*Novo Orçamento Solicitado*
+  return `*Novo Orcamento Solicitado*
 
 *Nome do Cliente:* ${budgetData.name}
-*Número:* ${budgetData.clientNumber}
+*Telefone:* ${budgetData.phone || "-"}
+*E-mail:* ${budgetData.email || "-"}
+*Tipo:* ${budgetData.companyType || "-"}
+*Numero:* ${budgetData.clientNumber}
 *Data:* ${new Date().toLocaleString("pt-BR")}
 
-*Descrição do Projeto:*
+*Descricao do Projeto:*
 ${budgetData.description}
 
-──────────────────
-_Favor, entrar em contato com o cliente em breve._`;
+----------------------------------------
+_Favor, entrar em contato com o cliente em breve._`
 }
 
 /**
@@ -241,155 +316,185 @@ function getOrcamentoConfirmation() {
 Obrigado! Nossa equipe entrará em contato em breve.
 
 ──────────────────
-Digite *menu* para voltar`;
+Digite *menu* para voltar`
 }
 
 /**
  * Mensagem com link do calendário
  */
 function getCalendarMessage() {
-  return `📅 *Agendar Reunião*
+  return `*Agendar Reuniao*
 
-_Clique no link para escolher o melhor horário:_
+> Clique no link para escolher o melhor horario:
 
 ${CALENDAR_LINK}
 
-──────────────────
-Digite *menu* para voltar`;
+----------------------------------------
+Digite *menu* para voltar`
 }
 
 /**
  * Mensagem de pagamento para acesso ao grupo
  */
 function getPaymentGroupMessage() {
-  return `📢 *Acesso ao Grupo de Vagas*
+  return `*Acesso ao Grupo de Vagas*
 
-_Efetue o pagamento para acesso exclusivo:_
+> Efetue o pagamento para liberar o acesso:
 
-*Cartão/Stripe:*
+*Cartao / Stripe:*
 ${PAYMENT_LINK_GROUP}
 
 *PIX:*
 CNPJ: 64.095.868/0001-03
 
-_Após confirmação, você receberá o acesso._
+_Apos confirmacao, voce recebera o acesso._
 
-──────────────────
-Digite *pago* após pagamento
-Digite *0* para voltar
-Digite *menu* para menu principal`;
+----------------------------------------
+Digite *pago* apos o pagamento
+_ou digite "voltar" para retornar_
+Digite *menu* para menu principal`
 }
 
 /**
  * Mensagem de pagamento para vagas privadas
  */
 function getPaymentPrivateMessage() {
-  return `📱 *Vagas Personalizadas*
+  return `*Vagas Personalizadas*
 
-_Receba oportunidades filtradas por seu perfil:_
+> Receba oportunidades filtradas por seu perfil:
 
-*Cartão/Stripe:*
+*Cartao / Stripe:*
 ${PAYMENT_LINK_PRIVATE}
 
 *PIX:*
 CNPJ: 64.095.868/0001-03
 
-_Após confirmação, você receberá vagas personalizadas._
+_Apos confirmacao, voce recebera vagas personalizadas._
 
-──────────────────
-Digite *pago* após pagamento
-Digite *0* para voltar
-Digite *menu* para menu principal`;
+----------------------------------------
+Digite *pago* apos o pagamento
+_ou digite "voltar" para retornar_
+Digite *menu* para menu principal`
+}
+
+function getLeadNameMessage(planLabel) {
+  return `*${planLabel}*
+
+> Para continuar, qual o seu nome completo?
+
+----------------------------------------
+Digite seu nome
+_ou digite "voltar" para retornar_`
+}
+
+function getLeadPhoneMessage(name) {
+  return `*Obrigado, ${name}!*
+
+> Qual seu telefone com DDD?
+_Ex: (31) 99999-9999_
+
+----------------------------------------
+Digite seu telefone
+_ou digite "voltar" para retornar_`
+}
+
+function getLeadEmailMessage(name) {
+  return `*Quase la, ${name}!*
+
+> Informe seu e-mail para enviarmos a confirmacao:
+_Ex: seuemail@dominio.com_
+
+----------------------------------------
+Digite seu e-mail
+_ou digite "voltar" para retornar_`
 }
 
 /**
  * Mensagem após confirmação de pagamento do grupo
  */
 function getGroupAccessMessage() {
-  return `✓ *Bem-vindo!*
+  return `*Bem-vindo!*
 
 Obrigado pela sua assinatura.
 
-_Acesse o grupo exclusivo:_
+> Acesse o grupo exclusivo:
 ${JOB_GROUP_LINK}
 
 Boas oportunidades!
 
-──────────────────
-Digite *menu* para voltar`;
+----------------------------------------
+Digite *menu* para voltar`
 }
 
 /**
  * Mensagem após confirmação de pagamento das vagas privadas
  */
 function getPrivateAccessMessage() {
-  return `✓ *Bem-vindo!*
+  return `*Bem-vindo!*
 
 Obrigado pela sua assinatura.
 
-Você começará a receber vagas personalizadas aqui no WhatsApp.
+Voce comecara a receber vagas personalizadas aqui no WhatsApp.
+_Fique atento as notificacoes._
 
-_Fique atento às notificações._
-
-──────────────────
-Digite *menu* para voltar`;
+----------------------------------------
+Digite *menu* para voltar`
 }
 
 /**
  * Mensagem de opção inválida
  */
 function getInvalidOptionMessage() {
-  return `*Opção inválida*
+  return `*Opcao invalida*
 
-_Por favor, selecione uma das opções disponíveis._
+_Responda com um dos numeros do menu atual._
 
-*Opções válidas:* 1, 2, 3 ou 4
-
-Digite *menu* para ver novamente as opções.`;
+> Digite *menu* para voltar ao inicio.`
 }
 
 /**
  * Mensagem de timeout de sessão
  */
 function getSessionTimeoutMessage() {
-  return `*Sessão Encerrada*
+  return `*Sessao Encerrada*
 
-_Devido à demora na resposta, estamos encerrando seu atendimento._
+> Demoramos uma resposta e encerramos seu atendimento.
+Para iniciar novamente, digite *menu*.
 
-Para iniciar um novo atendimento, digite *menu*.
-
-──────────────────
-Estaremos felizes em ajudá-lo novamente!`;
+----------------------------------------
+Estaremos felizes em ajudar novamente!`
 }
 
 /**
  * Notificação de pagamento - Grupo de Vagas
  */
-function getPaymentNotificationGroup(clientNumber) {
-  return `💰 *Notificação de Pagamento*
+function getPaymentNotificationGroup(clientNumber, leadData) {
+  const leadLines = formatLeadLines(leadData)
+  return `*Notificacao de Pagamento*
 
-_Usuário pagou para o Acesso ao grupo de vagas_
+_Usuario pagou para acesso ao Grupo de Vagas._
 
 *Cliente:* ${clientNumber}
-*Data:* ${new Date().toLocaleString("pt-BR")}
+${leadLines}*Data:* ${new Date().toLocaleString("pt-BR")}
 
-──────────────────
-_Ative o acesso no grupo!_`;
+----------------------------------------
+> Ative o acesso no grupo!`
 }
 
 /**
  * Notificação de pagamento - Vagas Personalizadas
  */
-function getPaymentNotificationPrivate(clientNumber) {
-  return `💰 *Notificação de Pagamento*
+function getPaymentNotificationPrivate(clientNumber, leadData) {
+  const leadLines = formatLeadLines(leadData)
+  return `*Notificacao de Pagamento*
 
-_Usuário pagou para o Acesso vagas personalizadas_
+_Usuario pagou para acesso as Vagas Personalizadas._
 
 *Cliente:* ${clientNumber}
-*Data:* ${new Date().toLocaleString("pt-BR")}
+${leadLines}*Data:* ${new Date().toLocaleString("pt-BR")}
 
-──────────────────
-_Configure o acesso às vagas do cliente!_`;
+----------------------------------------
+> Configure o acesso as vagas do cliente!`
 }
 
 /**
@@ -398,246 +503,360 @@ _Configure o acesso às vagas do cliente!_`;
 function getPaymentReceiptRequestMessage() {
   return `*Comprovante de Pagamento*
 
-_Para validar sua transação, envie o comprovante de pagamento._
+> Para validar sua transacao, envie o comprovante.
 
-_Você pode enviar:_
-• Screenshot do pagamento
-• Comprovante da transferência PIX
-• Qualquer imagem que comprove o pagamento
+_Voce pode enviar:_
+- Screenshot do pagamento
+- Comprovante da transferencia PIX
+- Qualquer imagem que comprove o pagamento
 
-──────────────────
-_Digite "0" para voltar_`;
+----------------------------------------
+_ou digite "voltar" para retornar_`
 }
 
-export async function customMiddleware({
-  socket,
-  webMessage,
-  type,
-  commonFunctions,
-  action,
-  data,
-}) {
+export async function customMiddleware({ socket, webMessage, type, commonFunctions, action, data }) {
   try {
     // Processa mensagens de texto e mídia
     if (type !== "message") {
-      return;
+      return
     }
 
-    const { fullMessage, remoteJid, userLid, prefix } = extractDataFromMessage(webMessage);
+    const { fullMessage, remoteJid, userLid, prefix } = extractDataFromMessage(webMessage)
 
     // Ignora mensagens do próprio bot em QUALQUER contexto (privado ou grupo)
-    const botLidClean = BOT_LID.replace("@lid", "").replace("@s.whatsapp.net", "");
-    const userLidClean = userLid?.replace("@lid", "").replace("@s.whatsapp.net", "") || "";
-    
+    const botLidClean = BOT_LID.replace("@lid", "").replace("@s.whatsapp.net", "")
+    const userLidClean = userLid?.replace("@lid", "").replace("@s.whatsapp.net", "") || ""
+
     if (userLidClean === botLidClean || remoteJid === BOT_LID || remoteJid === BOT_LID.replace("@lid", "@s.whatsapp.net")) {
-      return;
+      return
     }
 
     // Só processa mensagens privadas (não grupos)
     if (!isPrivateMessage(remoteJid)) {
-      return;
+      return
     }
 
     // Log apenas para mensagens privadas e comandos
-    const isCommand = prefix === PREFIX;
+    const isCommand = prefix === PREFIX
     if (isCommand) {
-      infoLog(`[CUSTOM MIDDLEWARE] Comando recebido: ${fullMessage}`);
+      infoLog(`[CUSTOM MIDDLEWARE] Comando recebido: ${fullMessage}`)
     }
 
     // Se for um comando (começa com prefixo configurado), deixa passar sem interceptar
     if (isCommand) {
-      return;
+      return
     }
 
-    infoLog(`[CUSTOM MIDDLEWARE] Mensagem privada recebida: "${fullMessage?.substring(0, 50)}${fullMessage?.length > 50 ? "..." : ""}"`);
+    // Ignora mensagens #auto-command (mídia sem texto/caption)
+    // Essas mensagens são placeholders gerados automaticamente e não devem ser processadas como opções de menu
+    if (fullMessage === "#auto-command") {
+      return
+    }
+
+    infoLog(`[CUSTOM MIDDLEWARE] Mensagem privada recebida: "${fullMessage?.substring(0, 50)}${fullMessage?.length > 50 ? "..." : ""}"`)
 
     // Processa estados que aceitam mídia
-    const userId = remoteJid;
-    let userState = conversationStates.get(userId);
-    const messageText = fullMessage?.trim().toLowerCase() || "";
-    
+    const userId = remoteJid
+    let userState = conversationStates.get(userId)
+    const messageTextRaw = fullMessage?.trim() || ""
+    const messageText = messageTextRaw.toLowerCase()
+
     if (userState && (userState.state === "awaiting_payment_receipt_group" || userState.state === "awaiting_payment_receipt_private")) {
       // Se estiver aguardando comprovante, processa a mensagem com webMessage completo
-      
+
       // Atualiza timeout
-      updateSessionTimeout(socket, userId, remoteJid);
-      userState.timestamp = Date.now();
-      
+      updateSessionTimeout(socket, userId, remoteJid)
+      userState.timestamp = Date.now()
+
       if (userState.state === "awaiting_payment_receipt_group") {
-        await handlePaymentReceiptGroup(socket, remoteJid, messageText, userId, webMessage);
+        await handlePaymentReceiptGroup(socket, remoteJid, messageText, userId, webMessage)
       } else if (userState.state === "awaiting_payment_receipt_private") {
-        await handlePaymentReceiptPrivate(socket, remoteJid, messageText, userId, webMessage);
+        await handlePaymentReceiptPrivate(socket, remoteJid, messageText, userId, webMessage)
       }
-      return;
+      return
     }
 
     // Obtém o estado atual da conversa (verificado novamente para os demais casos)
-    userState = conversationStates.get(userId);
+    userState = conversationStates.get(userId)
 
     // Se o usuário digitar "menu", volta para o menu principal
     if (messageText === "menu") {
-      conversationStates.set(userId, { state: "menu", timestamp: Date.now(), budgetData: {}, previousState: "" });
-      await sendWithDelay(socket, remoteJid, { text: getMainMenu() });
-      updateSessionTimeout(socket, userId, remoteJid);
-      return;
+      conversationStates.set(userId, { state: "menu", timestamp: Date.now(), budgetData: {}, previousState: "" })
+      await sendWithDelay(socket, remoteJid, { text: getMainMenu() })
+      updateSessionTimeout(socket, userId, remoteJid)
+      return
     }
 
     // Se não tem estado ou é primeira mensagem, mostra menu principal
     if (!userState) {
-      conversationStates.set(userId, { state: "menu", timestamp: Date.now(), budgetData: {}, previousState: "" });
-      await sendWithDelay(socket, remoteJid, { text: getMainMenu() });
-      updateSessionTimeout(socket, userId, remoteJid);
-      return;
+      conversationStates.set(userId, { state: "menu", timestamp: Date.now(), budgetData: {}, previousState: "" })
+      await sendWithDelay(socket, remoteJid, { text: getMainMenu() })
+      updateSessionTimeout(socket, userId, remoteJid)
+      return
     }
 
     // Atualiza timeout (reseta o timer)
-    updateSessionTimeout(socket, userId, remoteJid);
+    updateSessionTimeout(socket, userId, remoteJid)
 
     // Atualiza timestamp
-    userState.timestamp = Date.now();
+    userState.timestamp = Date.now()
 
     // Processa de acordo com o estado atual
     switch (userState.state) {
       case "menu":
-        await handleMainMenu(socket, remoteJid, messageText, userId);
-        break;
+        await handleMainMenu(socket, remoteJid, messageText, userId)
+        break
 
       case "sonar_menu":
-        await handleSonarMenu(socket, remoteJid, messageText, userId);
-        break;
+        await handleSonarMenu(socket, remoteJid, messageText, userId)
+        break
 
       case "awaiting_budget_name":
-        await handleBudgetName(socket, remoteJid, messageText, userId);
-        break;
+        await handleBudgetName(socket, remoteJid, messageText, userId, messageTextRaw)
+        break
+
+      case "awaiting_budget_phone":
+        await handleBudgetPhone(socket, remoteJid, messageText, userId)
+        break
+
+      case "awaiting_budget_email":
+        await handleBudgetEmail(socket, remoteJid, messageText, userId)
+        break
+
+      case "awaiting_budget_company_type":
+        await handleBudgetCompanyType(socket, remoteJid, messageText, userId)
+        break
 
       case "awaiting_budget_description":
-        await handleBudgetDescription(socket, remoteJid, messageText, userId);
-        break;
+        await handleBudgetDescription(socket, remoteJid, messageText, userId, messageTextRaw)
+        break
+
+      case "awaiting_plan_name":
+        await handlePlanName(socket, remoteJid, messageText, userId, messageTextRaw)
+        break
+
+      case "awaiting_plan_phone":
+        await handlePlanPhone(socket, remoteJid, messageText, userId)
+        break
+
+      case "awaiting_plan_email":
+        await handlePlanEmail(socket, remoteJid, messageText, userId)
+        break
 
       case "awaiting_payment_group":
-        await handlePaymentGroup(socket, remoteJid, messageText, userId);
-        break;
+        await handlePaymentGroup(socket, remoteJid, messageText, userId)
+        break
 
       case "awaiting_payment_private":
-        await handlePaymentPrivate(socket, remoteJid, messageText, userId);
-        break;
+        await handlePaymentPrivate(socket, remoteJid, messageText, userId)
+        break
 
       case "awaiting_payment_receipt_group":
-        await handlePaymentReceiptGroup(socket, remoteJid, messageText, userId, webMessage);
-        break;
+        await handlePaymentReceiptGroup(socket, remoteJid, messageText, userId, webMessage)
+        break
 
       case "awaiting_payment_receipt_private":
-        await handlePaymentReceiptPrivate(socket, remoteJid, messageText, userId, webMessage);
-        break;
+        await handlePaymentReceiptPrivate(socket, remoteJid, messageText, userId, webMessage)
+        break
 
       default:
-        conversationStates.set(userId, { state: "menu", timestamp: Date.now() });
-        await sendWithDelay(socket, remoteJid, { text: getMainMenu() });
+        conversationStates.set(userId, { state: "menu", timestamp: Date.now() })
+        await sendWithDelay(socket, remoteJid, { text: getMainMenu() })
     }
   } catch (error) {
-    errorLog(`[CUSTOM MIDDLEWARE] Erro no middleware customizado: ${error.message}`);
-    errorLog(`[CUSTOM MIDDLEWARE] Stack: ${error.stack}`);
+    errorLog(`[CUSTOM MIDDLEWARE] Erro no middleware customizado: ${error.message}`)
+    errorLog(`[CUSTOM MIDDLEWARE] Stack: ${error.stack}`)
   }
 }
 
 /**
  * Processa o nome do orçamento
  */
-async function handleBudgetName(socket, remoteJid, messageText, userId) {
+async function handleBudgetName(socket, remoteJid, messageText, userId, rawMessage) {
   try {
-    // Se digitar "voltar", volta para o menu principal
     if (messageText === "voltar") {
-      const userState = conversationStates.get(userId);
-      userState.state = "menu";
-      userState.timestamp = Date.now();
-      userState.budgetData = {};
-      userState.previousState = "";
-      conversationStates.set(userId, userState);
-      
-      infoLog(`[HANDLE BUDGET NAME] Usuário voltou ao menu`);
-      await sendWithDelay(socket, remoteJid, { text: getMainMenu() });
-      return;
+      const userState = conversationStates.get(userId)
+      userState.state = "menu"
+      userState.timestamp = Date.now()
+      userState.budgetData = {}
+      userState.previousState = ""
+      conversationStates.set(userId, userState)
+
+      infoLog(`[HANDLE BUDGET NAME] Usuario voltou ao menu`)
+      await sendWithDelay(socket, remoteJid, { text: getMainMenu() })
+      return
     }
 
-    if (!messageText || messageText.trim().length === 0) {
-      infoLog(`[HANDLE BUDGET NAME] Nome vazio recebido`);
-      await sendWithDelay(socket, remoteJid, { text: "Por favor, digite um nome válido." });
-      return;
+    const nameInput = (rawMessage || messageText).trim()
+
+    if (!isValidName(nameInput)) {
+      infoLog(`[HANDLE BUDGET NAME] Nome invalido recebido`)
+      await sendWithDelay(socket, remoteJid, { text: `*Nome invalido*\n_Digite seu nome completo (nome e sobrenome)._` })
+      return
     }
 
-    // Armazena o nome e muda para o estado de descrição
-    let userState = conversationStates.get(userId);
-    userState.budgetData.name = messageText.trim();
-    userState.state = "awaiting_budget_description";
-    userState.timestamp = Date.now();
-    conversationStates.set(userId, userState);
+    let userState = conversationStates.get(userId)
+    userState.budgetData.name = nameInput
+    userState.state = "awaiting_budget_phone"
+    userState.timestamp = Date.now()
+    conversationStates.set(userId, userState)
 
-    infoLog(`[HANDLE BUDGET NAME] Nome registrado: ${messageText}`);
-    await sendWithDelay(socket, remoteJid, { text: getBudgetDescriptionMessage(messageText.trim()) });
+    infoLog(`[HANDLE BUDGET NAME] Nome registrado: ${nameInput}`)
+    await sendWithDelay(socket, remoteJid, { text: getBudgetPhoneMessage(nameInput) })
   } catch (error) {
-    errorLog(`[HANDLE BUDGET NAME] Erro: ${error.message}`);
-    errorLog(`[HANDLE BUDGET NAME] Stack: ${error.stack}`);
+    errorLog(`[HANDLE BUDGET NAME] Erro: ${error.message}`)
+    errorLog(`[HANDLE BUDGET NAME] Stack: ${error.stack}`)
+  }
+}
+
+async function handleBudgetPhone(socket, remoteJid, messageText, userId) {
+  try {
+    if (messageText === "voltar") {
+      const userState = conversationStates.get(userId)
+      userState.state = "awaiting_budget_name"
+      userState.timestamp = Date.now()
+      conversationStates.set(userId, userState)
+
+      infoLog(`[HANDLE BUDGET PHONE] Usuario voltou ao passo anterior`)
+      await sendWithDelay(socket, remoteJid, { text: getBudgetNameMessage() })
+      return
+    }
+
+    if (!isValidPhone(messageText)) {
+      infoLog(`[HANDLE BUDGET PHONE] Telefone invalido recebido`)
+      await sendWithDelay(socket, remoteJid, { text: `*Telefone invalido*\n_Envie com DDD. Ex: 31999999999._` })
+      return
+    }
+
+    let userState = conversationStates.get(userId)
+    userState.budgetData.phone = formatPhone(messageText)
+    userState.state = "awaiting_budget_email"
+    userState.timestamp = Date.now()
+    conversationStates.set(userId, userState)
+
+    infoLog(`[HANDLE BUDGET PHONE] Telefone registrado: ${messageText}`)
+    await sendWithDelay(socket, remoteJid, { text: getBudgetEmailMessage(userState.budgetData.name || "") })
+  } catch (error) {
+    errorLog(`[HANDLE BUDGET PHONE] Erro: ${error.message}`)
+    errorLog(`[HANDLE BUDGET PHONE] Stack: ${error.stack}`)
+  }
+}
+
+async function handleBudgetEmail(socket, remoteJid, messageText, userId) {
+  try {
+    if (messageText === "voltar") {
+      const userState = conversationStates.get(userId)
+      userState.state = "awaiting_budget_phone"
+      userState.timestamp = Date.now()
+      conversationStates.set(userId, userState)
+
+      infoLog(`[HANDLE BUDGET EMAIL] Usuario voltou ao passo anterior`)
+      await sendWithDelay(socket, remoteJid, { text: getBudgetPhoneMessage(userState.budgetData.name || "") })
+      return
+    }
+
+    if (!isValidEmail(messageText)) {
+      infoLog(`[HANDLE BUDGET EMAIL] Email invalido recebido`)
+      await sendWithDelay(socket, remoteJid, { text: `*E-mail invalido*\n_Verifique e envie novamente._` })
+      return
+    }
+
+    let userState = conversationStates.get(userId)
+    userState.budgetData.email = messageText.trim()
+    userState.state = "awaiting_budget_company_type"
+    userState.timestamp = Date.now()
+    conversationStates.set(userId, userState)
+
+    infoLog(`[HANDLE BUDGET EMAIL] Email registrado: ${messageText}`)
+    await sendWithDelay(socket, remoteJid, { text: getBudgetCompanyTypeMessage(userState.budgetData.name || "") })
+  } catch (error) {
+    errorLog(`[HANDLE BUDGET EMAIL] Erro: ${error.message}`)
+    errorLog(`[HANDLE BUDGET EMAIL] Stack: ${error.stack}`)
+  }
+}
+
+async function handleBudgetCompanyType(socket, remoteJid, messageText, userId) {
+  try {
+    if (messageText === "voltar") {
+      const userState = conversationStates.get(userId)
+      userState.state = "awaiting_budget_email"
+      userState.timestamp = Date.now()
+      conversationStates.set(userId, userState)
+
+      infoLog(`[HANDLE BUDGET COMPANY] Usuario voltou ao passo anterior`)
+      await sendWithDelay(socket, remoteJid, { text: getBudgetEmailMessage(userState.budgetData.name || "") })
+      return
+    }
+
+    if (!["1", "2"].includes(messageText)) {
+      await sendWithDelay(socket, remoteJid, { text: `*Opcao invalida*\n_Digite 1 para empresa ou 2 para pessoa fisica._` })
+      return
+    }
+
+    let userState = conversationStates.get(userId)
+    userState.budgetData.companyType = messageText === "1" ? "Empresa" : "Pessoa fisica"
+    userState.state = "awaiting_budget_description"
+    userState.timestamp = Date.now()
+    conversationStates.set(userId, userState)
+
+    infoLog(`[HANDLE BUDGET COMPANY] Tipo registrado: ${userState.budgetData.companyType}`)
+    await sendWithDelay(socket, remoteJid, { text: getBudgetDescriptionMessage(userState.budgetData.name || "") })
+  } catch (error) {
+    errorLog(`[HANDLE BUDGET COMPANY] Erro: ${error.message}`)
+    errorLog(`[HANDLE BUDGET COMPANY] Stack: ${error.stack}`)
   }
 }
 
 /**
  * Processa a descrição do orçamento
  */
-async function handleBudgetDescription(socket, remoteJid, messageText, userId) {
+async function handleBudgetDescription(socket, remoteJid, messageText, userId, rawMessage) {
   try {
-    // Se digitar "voltar", volta para o passo anterior (nome)
     if (messageText === "voltar") {
-      const userState = conversationStates.get(userId);
-      userState.state = "awaiting_budget_name";
-      userState.timestamp = Date.now();
-      conversationStates.set(userId, userState);
-      
-      infoLog(`[HANDLE BUDGET DESCRIPTION] Usuário voltou ao passo anterior`);
-      const name = userState.budgetData.name || "";
-      if (name) {
-        // Se já tinha nome, volta para a descrição
-        await sendWithDelay(socket, remoteJid, { text: getBudgetDescriptionMessage(name) });
-      } else {
-        // Se não tinha nome, volta para pedir nome
-        await sendWithDelay(socket, remoteJid, { text: getBudgetNameMessage() });
-      }
-      return;
+      const userState = conversationStates.get(userId)
+      userState.state = "awaiting_budget_company_type"
+      userState.timestamp = Date.now()
+      conversationStates.set(userId, userState)
+
+      infoLog(`[HANDLE BUDGET DESCRIPTION] Usuario voltou ao passo anterior`)
+      await sendWithDelay(socket, remoteJid, { text: getBudgetCompanyTypeMessage(userState.budgetData.name || "") })
+      return
     }
 
-    if (!messageText || messageText.trim().length === 0) {
-      infoLog(`[HANDLE BUDGET DESCRIPTION] Descrição vazia recebida`);
-      await sendWithDelay(socket, remoteJid, { text: "Por favor, digite uma descrição válida." });
-      return;
+    const descriptionInput = (rawMessage || messageText).trim()
+
+    if (!descriptionInput || descriptionInput.length === 0) {
+      infoLog(`[HANDLE BUDGET DESCRIPTION] Descricao vazia recebida`)
+      await sendWithDelay(socket, remoteJid, { text: `*Descricao invalida*\n_Escreva uma descricao breve do projeto._` })
+      return
     }
 
-    // Obtém os dados armazenados
-    let userState = conversationStates.get(userId);
-    userState.budgetData.description = messageText.trim();
-    userState.state = "menu";
-    userState.timestamp = Date.now();
-    conversationStates.set(userId, userState);
+    let userState = conversationStates.get(userId)
+    userState.budgetData.description = descriptionInput
+    userState.budgetData.clientNumber = remoteJid.replace("@s.whatsapp.net", "").replace("@lid", "")
+    userState.state = "menu"
+    userState.timestamp = Date.now()
+    conversationStates.set(userId, userState)
 
-    const budgetData = userState.budgetData;
+    const budgetData = userState.budgetData
 
-    infoLog(`[HANDLE BUDGET DESCRIPTION] Orçamento completo: ${JSON.stringify(budgetData)}`);
+    infoLog(`[HANDLE BUDGET DESCRIPTION] Orcamento completo: ${JSON.stringify(budgetData)}`)
 
-    // Envia para todos os números configurados em ORCAMENTO_NUMBERS
     for (const targetNumber of ORCAMENTO_NUMBERS) {
       try {
         await sendWithDelay(socket, targetNumber, {
-          text: getBudgetDetailsMessage(budgetData),
-        });
-        infoLog(`[HANDLE BUDGET DESCRIPTION] Orçamento enviado para ${targetNumber}`);
+          text: getBudgetDetailsMessage(budgetData)
+        })
+        infoLog(`[HANDLE BUDGET DESCRIPTION] Orcamento enviado para ${targetNumber}`)
       } catch (error) {
-        errorLog(`[HANDLE BUDGET DESCRIPTION] Erro ao enviar orçamento para ${targetNumber}: ${error.message}`);
+        errorLog(`[HANDLE BUDGET DESCRIPTION] Erro ao enviar orcamento para ${targetNumber}: ${error.message}`)
       }
     }
 
-    // Confirma para o cliente
-    await sendWithDelay(socket, remoteJid, { text: getBudgetConfirmationMessage() });
+    await sendWithDelay(socket, remoteJid, { text: getBudgetConfirmationMessage() })
   } catch (error) {
-    errorLog(`[HANDLE BUDGET DESCRIPTION] Erro: ${error.message}`);
-    errorLog(`[HANDLE BUDGET DESCRIPTION] Stack: ${error.stack}`);
+    errorLog(`[HANDLE BUDGET DESCRIPTION] Erro: ${error.message}`)
+    errorLog(`[HANDLE BUDGET DESCRIPTION] Stack: ${error.stack}`)
   }
 }
 
@@ -646,54 +865,46 @@ async function handleBudgetDescription(socket, remoteJid, messageText, userId) {
  */
 async function handleMainMenu(socket, remoteJid, messageText, userId) {
   try {
-    // Validação de entrada: apenas números de 1 a 4 são válidos
-    const validOptions = ["1", "2", "3", "4"];
-    
+    const validOptions = ["1", "2", "3", "4"]
+
     if (!validOptions.includes(messageText)) {
-      infoLog(`[HANDLE MAIN MENU] Opção inválida: "${messageText}". Enviando mensagem de erro.`);
-      await sendWithDelay(socket, remoteJid, { text: getInvalidOptionMessage() });
-      return;
+      infoLog(`[HANDLE MAIN MENU] Opcao invalida: "${messageText}". Enviando mensagem de erro.`)
+      await sendWithDelay(socket, remoteJid, { text: getInvalidOptionMessage() })
+      return
     }
 
     switch (messageText) {
       case "1":
-        // Solicitar Orçamento - Pedir nome do cliente
-        conversationStates.set(userId, { 
-          state: "awaiting_budget_name", 
+        conversationStates.set(userId, {
+          state: "awaiting_budget_name",
           timestamp: Date.now(),
-          budgetData: { 
-            name: "", 
-            description: "",
-            clientNumber: remoteJid.replace("@s.whatsapp.net", "").replace("@lid", "")
-          } 
-        });
-        await sendWithDelay(socket, remoteJid, { text: getBudgetNameMessage() });
-        break;
+          budgetData: { name: "", phone: "", email: "", companyType: "", description: "" },
+          previousState: ""
+        })
+        await sendWithDelay(socket, remoteJid, { text: getBudgetNameMessage() })
+        break
 
       case "2":
-        // Agendar Horário - Envia link do Google Calendar
-        await sendWithDelay(socket, remoteJid, { text: getCalendarMessage() });
-        conversationStates.set(userId, { state: "menu", timestamp: Date.now() });
-        break;
+        await sendWithDelay(socket, remoteJid, { text: getCalendarMessage() })
+        conversationStates.set(userId, { state: "menu", timestamp: Date.now() })
+        break
 
       case "3":
-        // Sonar Bot - Mostra submenu
-        conversationStates.set(userId, { state: "sonar_menu", timestamp: Date.now() });
-        await sendWithDelay(socket, remoteJid, { text: getSonarMenu() });
-        break;
+        conversationStates.set(userId, { state: "sonar_menu", timestamp: Date.now() })
+        await sendWithDelay(socket, remoteJid, { text: getSonarMenu() })
+        break
 
       case "4":
-        // Parceiros - Redireciona para o número de parceiros
-        await sendWithDelay(socket, remoteJid, { text: getPartnerMessage() });
-        conversationStates.set(userId, { state: "menu", timestamp: Date.now() });
-        break;
+        await sendWithDelay(socket, remoteJid, { text: getPartnerMessage() })
+        conversationStates.set(userId, { state: "menu", timestamp: Date.now() })
+        break
 
       default:
-        await sendWithDelay(socket, remoteJid, { text: getInvalidOptionMessage() });
+        await sendWithDelay(socket, remoteJid, { text: getInvalidOptionMessage() })
     }
   } catch (error) {
-    errorLog(`[HANDLE MAIN MENU] Erro: ${error.message}`);
-    errorLog(`[HANDLE MAIN MENU] Stack: ${error.stack}`);
+    errorLog(`[HANDLE MAIN MENU] Erro: ${error.message}`)
+    errorLog(`[HANDLE MAIN MENU] Stack: ${error.stack}`)
   }
 }
 
@@ -702,67 +913,175 @@ async function handleMainMenu(socket, remoteJid, messageText, userId) {
  */
 async function handleSonarMenu(socket, remoteJid, messageText, userId) {
   try {
-    // Validação de entrada: apenas 0, 1 ou 2 são válidos
-    const validOptions = ["0", "1", "2"];
-    
+    // Validação de entrada: apenas voltar, 1 ou 2 são válidos
+    const validOptions = ["voltar", "1", "2"]
+
     if (!validOptions.includes(messageText)) {
-      infoLog(`[HANDLE SONAR MENU] Opção inválida: "${messageText}". Enviando mensagem de erro.`);
-      await sendWithDelay(socket, remoteJid, { text: getInvalidOptionMessage() });
-      return;
+      infoLog(`[HANDLE SONAR MENU] Opção inválida: "${messageText}". Enviando mensagem de erro.`)
+      await sendWithDelay(socket, remoteJid, { text: getInvalidOptionMessage() })
+      return
     }
 
     switch (messageText) {
-      case "0":
+      case "voltar":
         // Volta ao menu principal
-        conversationStates.set(userId, { state: "menu", timestamp: Date.now() });
-        await sendWithDelay(socket, remoteJid, { text: getMainMenu() });
-        break;
+        conversationStates.set(userId, { state: "menu", timestamp: Date.now() })
+        await sendWithDelay(socket, remoteJid, { text: getMainMenu() })
+        break
 
       case "1":
-        // Opção 1 - Link de acesso ao grupo (pagamento)
-        conversationStates.set(userId, { state: "awaiting_payment_group", timestamp: Date.now() });
-        await sendWithDelay(socket, remoteJid, { text: getPaymentGroupMessage() });
-        break;
+        // Op??o 1 - Grupo de Vagas (coleta de dados)
+        conversationStates.set(userId, {
+          state: "awaiting_plan_name",
+          timestamp: Date.now(),
+          planType: "group",
+          leadData: { name: "", phone: "", email: "" }
+        })
+        await sendWithDelay(socket, remoteJid, { text: getLeadNameMessage("Grupo de Vagas") })
+        break
 
       case "2":
-        // Opção 2 - Vagas personalizadas no privado (pagamento)
-        conversationStates.set(userId, { state: "awaiting_payment_private", timestamp: Date.now() });
-        await sendWithDelay(socket, remoteJid, { text: getPaymentPrivateMessage() });
-        break;
+        // Op??o 2 - Vagas personalizadas no privado (coleta de dados)
+        conversationStates.set(userId, {
+          state: "awaiting_plan_name",
+          timestamp: Date.now(),
+          planType: "private",
+          leadData: { name: "", phone: "", email: "" }
+        })
+        await sendWithDelay(socket, remoteJid, { text: getLeadNameMessage("Vagas Personalizadas") })
+        break
 
       default:
-        await sendWithDelay(socket, remoteJid, { text: getInvalidOptionMessage() });
+        await sendWithDelay(socket, remoteJid, { text: getInvalidOptionMessage() })
     }
   } catch (error) {
-    errorLog(`[HANDLE SONAR MENU] Erro: ${error.message}`);
-    errorLog(`[HANDLE SONAR MENU] Stack: ${error.stack}`);
+    errorLog(`[HANDLE SONAR MENU] Erro: ${error.message}`)
+    errorLog(`[HANDLE SONAR MENU] Stack: ${error.stack}`)
   }
 }
 
 /**
  * Processa confirmação de pagamento para acesso ao grupo
  */
+
+async function handlePlanName(socket, remoteJid, messageText, userId, rawMessage) {
+  try {
+    if (messageText === "voltar") {
+      conversationStates.set(userId, { state: "sonar_menu", timestamp: Date.now() })
+      await sendWithDelay(socket, remoteJid, { text: getSonarMenu() })
+      return
+    }
+
+    const nameInput = (rawMessage || messageText).trim()
+
+    if (!isValidName(nameInput)) {
+      await sendWithDelay(socket, remoteJid, { text: `*Nome invalido*\n_Digite seu nome completo (nome e sobrenome)._` })
+      return
+    }
+
+    const userState = conversationStates.get(userId)
+    userState.leadData.name = nameInput
+    userState.state = "awaiting_plan_phone"
+    userState.timestamp = Date.now()
+    conversationStates.set(userId, userState)
+
+    await sendWithDelay(socket, remoteJid, { text: getLeadPhoneMessage(userState.leadData.name) })
+  } catch (error) {
+    errorLog(`[HANDLE PLAN NAME] Erro: ${error.message}`)
+  }
+}
+
+async function handlePlanPhone(socket, remoteJid, messageText, userId) {
+  try {
+    if (messageText === "voltar") {
+      const userState = conversationStates.get(userId)
+      userState.state = "awaiting_plan_name"
+      userState.timestamp = Date.now()
+      conversationStates.set(userId, userState)
+
+      await sendWithDelay(socket, remoteJid, { text: getLeadNameMessage(userState.planType === "group" ? "Grupo de Vagas" : "Vagas Personalizadas") })
+      return
+    }
+
+    if (!isValidPhone(messageText)) {
+      await sendWithDelay(socket, remoteJid, { text: `*Telefone invalido*\n_Envie com DDD. Ex: 31999999999._` })
+      return
+    }
+
+    const userState = conversationStates.get(userId)
+    userState.leadData.phone = formatPhone(messageText)
+    userState.state = "awaiting_plan_email"
+    userState.timestamp = Date.now()
+    conversationStates.set(userId, userState)
+
+    await sendWithDelay(socket, remoteJid, { text: getLeadEmailMessage(userState.leadData.name) })
+  } catch (error) {
+    errorLog(`[HANDLE PLAN PHONE] Erro: ${error.message}`)
+  }
+}
+
+async function handlePlanEmail(socket, remoteJid, messageText, userId) {
+  try {
+    if (messageText === "voltar") {
+      const userState = conversationStates.get(userId)
+      userState.state = "awaiting_plan_phone"
+      userState.timestamp = Date.now()
+      conversationStates.set(userId, userState)
+
+      await sendWithDelay(socket, remoteJid, { text: getLeadPhoneMessage(userState.leadData.name) })
+      return
+    }
+
+    if (!isValidEmail(messageText)) {
+      await sendWithDelay(socket, remoteJid, { text: `*E-mail invalido*\n_Verifique e envie novamente._` })
+      return
+    }
+
+    const userState = conversationStates.get(userId)
+    userState.leadData.email = messageText.trim()
+    userState.timestamp = Date.now()
+
+    if (userState.planType === "group") {
+      userState.state = "awaiting_payment_group"
+      conversationStates.set(userId, userState)
+      await sendWithDelay(socket, remoteJid, { text: getPaymentGroupMessage() })
+      return
+    }
+
+    userState.state = "awaiting_payment_private"
+    conversationStates.set(userId, userState)
+    await sendWithDelay(socket, remoteJid, { text: getPaymentPrivateMessage() })
+  } catch (error) {
+    errorLog(`[HANDLE PLAN EMAIL] Erro: ${error.message}`)
+  }
+}
+
 async function handlePaymentGroup(socket, remoteJid, messageText, userId) {
   try {
     switch (messageText) {
-      case "0":
-        // Volta ao submenu Sonar
-        conversationStates.set(userId, { state: "sonar_menu", timestamp: Date.now() });
-        await sendWithDelay(socket, remoteJid, { text: getSonarMenu() });
-        break;
+      case "voltar":
+        conversationStates.set(userId, { state: "sonar_menu", timestamp: Date.now() })
+        await sendWithDelay(socket, remoteJid, { text: getSonarMenu() })
+        break
 
-      case "pago":
-        // Solicita comprovante de pagamento
-        conversationStates.set(userId, { state: "awaiting_payment_receipt_group", timestamp: Date.now(), clientNumber: remoteJid });
-        await sendWithDelay(socket, remoteJid, { text: getPaymentReceiptRequestMessage() });
-        break;
+      case "pago": {
+        const userState = conversationStates.get(userId)
+        conversationStates.set(userId, {
+          state: "awaiting_payment_receipt_group",
+          timestamp: Date.now(),
+          clientNumber: remoteJid,
+          leadData: userState?.leadData || {}
+        })
+        await sendWithDelay(socket, remoteJid, { text: getPaymentReceiptRequestMessage() })
+        break
+      }
 
       default:
-        await sendWithDelay(socket, remoteJid, { text: getInvalidOptionMessage() });
+        await sendWithDelay(socket, remoteJid, { text: getInvalidOptionMessage() })
     }
   } catch (error) {
-    errorLog(`[HANDLE PAYMENT GROUP] Erro: ${error.message}`);
-    errorLog(`[HANDLE PAYMENT GROUP] Stack: ${error.stack}`);
+    errorLog(`[HANDLE PAYMENT GROUP] Erro: ${error.message}`)
+    errorLog(`[HANDLE PAYMENT GROUP] Stack: ${error.stack}`)
   }
 }
 
@@ -772,24 +1091,29 @@ async function handlePaymentGroup(socket, remoteJid, messageText, userId) {
 async function handlePaymentPrivate(socket, remoteJid, messageText, userId) {
   try {
     switch (messageText) {
-      case "0":
-        // Volta ao submenu Sonar
-        conversationStates.set(userId, { state: "sonar_menu", timestamp: Date.now() });
-        await sendWithDelay(socket, remoteJid, { text: getSonarMenu() });
-        break;
+      case "voltar":
+        conversationStates.set(userId, { state: "sonar_menu", timestamp: Date.now() })
+        await sendWithDelay(socket, remoteJid, { text: getSonarMenu() })
+        break
 
-      case "pago":
-        // Solicita comprovante de pagamento
-        conversationStates.set(userId, { state: "awaiting_payment_receipt_private", timestamp: Date.now(), clientNumber: remoteJid });
-        await sendWithDelay(socket, remoteJid, { text: getPaymentReceiptRequestMessage() });
-        break;
+      case "pago": {
+        const userState = conversationStates.get(userId)
+        conversationStates.set(userId, {
+          state: "awaiting_payment_receipt_private",
+          timestamp: Date.now(),
+          clientNumber: remoteJid,
+          leadData: userState?.leadData || {}
+        })
+        await sendWithDelay(socket, remoteJid, { text: getPaymentReceiptRequestMessage() })
+        break
+      }
 
       default:
-        await sendWithDelay(socket, remoteJid, { text: getInvalidOptionMessage() });
+        await sendWithDelay(socket, remoteJid, { text: getInvalidOptionMessage() })
     }
   } catch (error) {
-    errorLog(`[HANDLE PAYMENT PRIVATE] Erro: ${error.message}`);
-    errorLog(`[HANDLE PAYMENT PRIVATE] Stack: ${error.stack}`);
+    errorLog(`[HANDLE PAYMENT PRIVATE] Erro: ${error.message}`)
+    errorLog(`[HANDLE PAYMENT PRIVATE] Stack: ${error.stack}`)
   }
 }
 
@@ -798,49 +1122,46 @@ async function handlePaymentPrivate(socket, remoteJid, messageText, userId) {
  */
 async function handlePaymentReceiptGroup(socket, remoteJid, messageText, userId, webMessage) {
   try {
-    const userState = conversationStates.get(userId);
-    
-    // Se digitar "0", volta ao submenu de pagamento
-    if (messageText === "0") {
-      conversationStates.set(userId, { state: "awaiting_payment_group", timestamp: Date.now() });
-      await sendWithDelay(socket, remoteJid, { text: getPaymentGroupMessage() });
-      return;
+    const userState = conversationStates.get(userId)
+
+    if (messageText === "voltar") {
+      conversationStates.set(userId, { state: "awaiting_payment_group", timestamp: Date.now(), leadData: userState?.leadData || {} })
+      await sendWithDelay(socket, remoteJid, { text: getPaymentGroupMessage() })
+      return
     }
 
-    // Verifica se há imagem/mídia na mensagem
     if (webMessage?.message?.imageMessage || webMessage?.message?.documentMessage) {
-      const clientNumber = remoteJid.replace("@s.whatsapp.net", "").replace("@lid", "");
-      
-      // Envia para todos os números configurados
+      const clientNumber = remoteJid.replace("@s.whatsapp.net", "").replace("@lid", "")
+      const leadData = userState?.leadData || {}
+
       for (const targetNumber of PAYMENT_NOTIFICATION_NUMBERS) {
         try {
-          // Envia a imagem/comprovante
           await sendWithDelay(socket, targetNumber, {
             image: webMessage.message.imageMessage || webMessage.message.documentMessage,
-            caption: `💰 *Comprovante de Pagamento - Grupo de Vagas*\n\n*Cliente:* ${clientNumber}\n*Data:* ${new Date().toLocaleString("pt-BR")}`
-          });
-          
-          // Envia notificação de pagamento
+            caption: `*Comprovante de Pagamento - Grupo de Vagas*
+
+*Cliente:* ${clientNumber}
+*Data:* ${new Date().toLocaleString("pt-BR")}`
+          })
+
           await sendWithDelay(socket, targetNumber, {
-            text: getPaymentNotificationGroup(clientNumber)
-          });
-          
-          infoLog(`[HANDLE PAYMENT RECEIPT GROUP] Comprovante enviado para ${targetNumber}`);
+            text: getPaymentNotificationGroup(clientNumber, leadData)
+          })
+
+          infoLog(`[HANDLE PAYMENT RECEIPT GROUP] Comprovante enviado para ${targetNumber}`)
         } catch (error) {
-          errorLog(`[HANDLE PAYMENT RECEIPT GROUP] Erro ao enviar para ${targetNumber}: ${error.message}`);
+          errorLog(`[HANDLE PAYMENT RECEIPT GROUP] Erro ao enviar para ${targetNumber}: ${error.message}`)
         }
       }
 
-      // Envia mensagem de boas-vindas para o cliente
-      await sendWithDelay(socket, remoteJid, { text: getGroupAccessMessage() });
-      conversationStates.set(userId, { state: "menu", timestamp: Date.now() });
+      await sendWithDelay(socket, remoteJid, { text: getGroupAccessMessage() })
+      conversationStates.set(userId, { state: "menu", timestamp: Date.now() })
     } else {
-      // Se não for imagem, pede para enviar comprovante
-      await sendWithDelay(socket, remoteJid, { text: getPaymentReceiptRequestMessage() });
+      await sendWithDelay(socket, remoteJid, { text: getPaymentReceiptRequestMessage() })
     }
   } catch (error) {
-    errorLog(`[HANDLE PAYMENT RECEIPT GROUP] Erro: ${error.message}`);
-    errorLog(`[HANDLE PAYMENT RECEIPT GROUP] Stack: ${error.stack}`);
+    errorLog(`[HANDLE PAYMENT RECEIPT GROUP] Erro: ${error.message}`)
+    errorLog(`[HANDLE PAYMENT RECEIPT GROUP] Stack: ${error.stack}`)
   }
 }
 
@@ -849,48 +1170,45 @@ async function handlePaymentReceiptGroup(socket, remoteJid, messageText, userId,
  */
 async function handlePaymentReceiptPrivate(socket, remoteJid, messageText, userId, webMessage) {
   try {
-    const userState = conversationStates.get(userId);
-    
-    // Se digitar "0", volta ao submenu de pagamento
-    if (messageText === "0") {
-      conversationStates.set(userId, { state: "awaiting_payment_private", timestamp: Date.now() });
-      await sendWithDelay(socket, remoteJid, { text: getPaymentPrivateMessage() });
-      return;
+    const userState = conversationStates.get(userId)
+
+    if (messageText === "voltar") {
+      conversationStates.set(userId, { state: "awaiting_payment_private", timestamp: Date.now(), leadData: userState?.leadData || {} })
+      await sendWithDelay(socket, remoteJid, { text: getPaymentPrivateMessage() })
+      return
     }
 
-    // Verifica se há imagem/mídia na mensagem
     if (webMessage?.message?.imageMessage || webMessage?.message?.documentMessage) {
-      const clientNumber = remoteJid.replace("@s.whatsapp.net", "").replace("@lid", "");
-      
-      // Envia para todos os números configurados
+      const clientNumber = remoteJid.replace("@s.whatsapp.net", "").replace("@lid", "")
+      const leadData = userState?.leadData || {}
+
       for (const targetNumber of PAYMENT_NOTIFICATION_NUMBERS) {
         try {
-          // Envia a imagem/comprovante
           await sendWithDelay(socket, targetNumber, {
             image: webMessage.message.imageMessage || webMessage.message.documentMessage,
-            caption: `💰 *Comprovante de Pagamento - Vagas Personalizadas*\n\n*Cliente:* ${clientNumber}\n*Data:* ${new Date().toLocaleString("pt-BR")}`
-          });
-          
-          // Envia notificação de pagamento
+            caption: `*Comprovante de Pagamento - Vagas Personalizadas*
+
+*Cliente:* ${clientNumber}
+*Data:* ${new Date().toLocaleString("pt-BR")}`
+          })
+
           await sendWithDelay(socket, targetNumber, {
-            text: getPaymentNotificationPrivate(clientNumber)
-          });
-          
-          infoLog(`[HANDLE PAYMENT RECEIPT PRIVATE] Comprovante enviado para ${targetNumber}`);
+            text: getPaymentNotificationPrivate(clientNumber, leadData)
+          })
+
+          infoLog(`[HANDLE PAYMENT RECEIPT PRIVATE] Comprovante enviado para ${targetNumber}`)
         } catch (error) {
-          errorLog(`[HANDLE PAYMENT RECEIPT PRIVATE] Erro ao enviar para ${targetNumber}: ${error.message}`);
+          errorLog(`[HANDLE PAYMENT RECEIPT PRIVATE] Erro ao enviar para ${targetNumber}: ${error.message}`)
         }
       }
 
-      // Envia mensagem de boas-vindas para o cliente
-      await sendWithDelay(socket, remoteJid, { text: getPrivateAccessMessage() });
-      conversationStates.set(userId, { state: "menu", timestamp: Date.now() });
+      await sendWithDelay(socket, remoteJid, { text: getPrivateAccessMessage() })
+      conversationStates.set(userId, { state: "menu", timestamp: Date.now() })
     } else {
-      // Se não for imagem, pede para enviar comprovante
-      await sendWithDelay(socket, remoteJid, { text: getPaymentReceiptRequestMessage() });
+      await sendWithDelay(socket, remoteJid, { text: getPaymentReceiptRequestMessage() })
     }
   } catch (error) {
-    errorLog(`[HANDLE PAYMENT RECEIPT PRIVATE] Erro: ${error.message}`);
-    errorLog(`[HANDLE PAYMENT RECEIPT PRIVATE] Stack: ${error.stack}`);
+    errorLog(`[HANDLE PAYMENT RECEIPT PRIVATE] Erro: ${error.message}`)
+    errorLog(`[HANDLE PAYMENT RECEIPT PRIVATE] Stack: ${error.stack}`)
   }
 }

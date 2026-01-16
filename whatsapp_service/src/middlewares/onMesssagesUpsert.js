@@ -15,7 +15,7 @@ import {
   isAtLeastMinutesInPast,
 } from "../utils/index.js";
 import { loadCommonFunctions } from "../utils/loadCommonFunctions.js";
-import { errorLog, infoLog } from "../utils/logger.js";
+import { errorLog, infoLog, warningLog } from "../utils/logger.js";
 import { customMiddleware } from "./customMiddleware.js";
 import { messageHandler } from "./messageHandler.js";
 import { onGroupParticipantsUpdate } from "./onGroupParticipantsUpdate.js";
@@ -124,6 +124,13 @@ export async function onMessagesUpsert({ socket, messages, startProcess }) {
       await dynamicCommand(commonFunctions, startProcess);
     } catch (error) {
       if (badMacHandler.handleError(error, "message-processing")) {
+        if (badMacHandler.hasReachedLimit()) {
+          warningLog(
+            "Limite de Bad MAC errors atingido durante processamento de mensagens. Limpando arquivos de sessÇœo..."
+          );
+          badMacHandler.clearProblematicSessionFiles();
+          badMacHandler.resetErrorCount();
+        }
         continue;
       }
 

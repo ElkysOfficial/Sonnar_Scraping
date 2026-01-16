@@ -69,8 +69,12 @@ export function extractDataFromMessage(webMessage) {
 
   const commandWithoutPrefix = command.replace(new RegExp(`^[${PREFIX}]+`), "");
 
+  const normalizedArgs = args
+    .flatMap((arg) => splitByCharacters(arg, ["\\", "|", "/"]))
+    .filter(Boolean);
+
   return {
-    args: splitByCharacters(args.join(" "), ["\\", "|", "/"]),
+    args: normalizedArgs,
     commandName: formatCommand(commandWithoutPrefix),
     fullArgs: args.join(" "),
     fullMessage,

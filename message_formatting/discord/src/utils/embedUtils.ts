@@ -4,7 +4,7 @@ import { APIEmbed, EmbedData } from "discord.js"
 import { v4 as uuidv4 } from "uuid"
 import chokidar from "chokidar"
 // Define o caminho do arquivo onde os embeds serão armazenados
-const embedsFilePath = "C:\\Users\\lcvsilva\\Desktop\\Sonar\\message_formatting\\discord\\src\\data\\embeds.json"
+const embedsFilePath = "D:\\Pessoal\\Sonar\\message_formatting\\discord\\src\\data\\embeds.json"
 const embedsDir = path.dirname(embedsFilePath)
 
 // Define a interface para os dados de uma vaga de emprego
@@ -24,6 +24,9 @@ interface ExtendedEmbedData extends EmbedData {
 function loadEmbeds(): ExtendedEmbedData[] {
     try {
         const data = fs.readFileSync(embedsFilePath, "utf8")
+        if (!data.trim()) {
+            return []
+        }
         return JSON.parse(data) as ExtendedEmbedData[]
     } catch (err: any) {
         if (err.code === "ENOENT") {
@@ -40,13 +43,32 @@ function loadEmbeds(): ExtendedEmbedData[] {
     }
 }
 
+function writeJsonAtomic(filePath: string, data: string) {
+    const dir = path.dirname(filePath)
+    const base = path.basename(filePath)
+    const tempPath = path.join(dir, `.tmp-${base}-${process.pid}-${Date.now()}`)
+    fs.writeFileSync(tempPath, data, "utf8")
+    try {
+        if (fs.existsSync(filePath)) {
+            fs.rmSync(filePath, { force: true })
+        }
+        fs.renameSync(tempPath, filePath)
+    } catch (error) {
+        if (fs.existsSync(tempPath)) {
+            fs.rmSync(tempPath, { force: true })
+        }
+        throw error
+    }
+}
+
 // Salva os embeds no arquivo JSON
 function saveEmbeds(embeds: ExtendedEmbedData[]) {
     // Cria o diretório se não existir
     if (!fs.existsSync(embedsDir)) {
         fs.mkdirSync(embedsDir, { recursive: true })
     }
-    fs.writeFileSync(embedsFilePath, JSON.stringify(embeds, null, 2)) // Escreve os embeds no arquivo com formatação
+    const payload = JSON.stringify(embeds, null, 2)
+    writeJsonAtomic(embedsFilePath, payload) // Escreve os embeds no arquivo com formatação
 }
 
 // Valida os dados de uma vaga de emprego

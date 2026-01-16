@@ -14,6 +14,9 @@ import { getVipSubscribers } from "../utils/database.js"
 
 // Intervalo entre verificações (5 minutos)
 const CHECK_INTERVAL = 5 * 60 * 1000
+let vipTimeoutId = null
+let vipIntervalId = null
+let vipRunToken = 0
 
 // Histórico de vagas enviadas para cada assinante (em memória)
 // Formato: { "lid": Set<jobId> }
@@ -32,6 +35,9 @@ function loadEmbeds() {
       return []
     }
     const data = fs.readFileSync(EMBEDS_FILE_PATH, "utf8")
+    if (!data.trim()) {
+      return []
+    }
     return JSON.parse(data)
   } catch (err) {
     errorLog(`[VIP] Erro ao carregar embeds.json: ${err.message}`)
@@ -92,6 +98,12 @@ function jobMatchesStacks(job, subscriberStacks) {
       devops: ["sre", "cloud", "aws", "azure", "gcp", "kubernetes", "docker"],
       data: ["dados", "data science", "machine learning", "ml", "ai", "bi", "analytics"],
       qa: ["quality", "teste", "test", "testing", "automação"],
+      // Mapeamentos adicionais
+      tech: ["desenvolvedor", "developer", "engenheiro", "engineer", "analista", "programador", "software", "ti", "tecnologia"],
+      lead: ["tech lead", "líder", "lider", "lead", "gerente", "coordenador", "head", "manager", "senior", "sênior", "pleno", "sr"],
+      junior: ["junior", "júnior", "jr", "trainee", "estágio", "estagio"],
+      pleno: ["pleno", "pl", "mid", "middle"],
+      senior: ["senior", "sênior", "sr", "especialista", "principal"],
     }
 
     // Verifica mapeamentos
@@ -113,6 +125,10 @@ function jobMatchesStacks(job, subscriberStacks) {
  * @param {Object} job - Objeto da vaga
  * @returns {string} Mensagem formatada
  */
+function isSocketReady(socket) {
+  return socket?.ws?.readyState === 1
+}
+
 function formatJobMessage(job) {
   const title = job.title || job.job_title || "Não informado"
   const company = job.author?.name || job.company || "Não informado"
@@ -155,7 +171,7 @@ function formatJobMessage(job) {
  */
 function lidToJid(lid) {
   // Se já está no formato correto
-  if (lid.includes("@s.whatsapp.net")) {
+  if (lid.includes("@lid") || lid.includes("@s.whatsapp.net")) {
     return lid
   }
 
@@ -173,6 +189,10 @@ function lidToJid(lid) {
  */
 async function sendJobToSubscriber(socket, lid, job) {
   try {
+    if (!isSocketReady(socket)) {
+      warningLog("Conexao fechada. Envio VIP aguardando reconexao.")
+      return false
+    }
     const lastSentAt = lastSentAtPerSubscriber.get(lid) || 0
     if (Date.now() - lastSentAt < CHECK_INTERVAL) {
       return false
@@ -197,6 +217,11 @@ async function sendJobToSubscriber(socket, lid, job) {
  * @param {Object} socket - Socket do Baileys
  */
 async function processVipJobs(socket) {
+  if (!isSocketReady(socket)) {
+    warningLog("Conexao fechada. Verificacao VIP aguardando reconexao.")
+    return
+  }
+
   const embeds = loadEmbeds()
   const subscribers = getVipSubscribers()
 
@@ -248,6 +273,15 @@ async function processVipJobs(socket) {
  * @param {Object} socket - Socket do Baileys
  */
 export function startVipJobSender(socket) {
+  if (vipTimeoutId) {
+    clearTimeout(vipTimeoutId)
+    vipTimeoutId = null
+  }
+  if (vipIntervalId) {
+    clearInterval(vipIntervalId)
+    vipIntervalId = null
+  }
+  vipRunToken += 1
   const subscribers = getVipSubscribers()
 
   infoLog("════════════════════════════════════════════════════")
@@ -264,12 +298,19 @@ export function startVipJobSender(socket) {
   }
 
   // Primeira execução após 30 segundos
-  setTimeout(async () => {
+  const token = vipRunToken
+  vipTimeoutId = setTimeout(async () => {
+    if (token != vipRunToken) {
+      return
+    }
     await processVipJobs(socket)
-  }, 30000)
+  }, CHECK_INTERVAL)
 
   // Execuções periódicas
-  setInterval(async () => {
+  vipIntervalId = setInterval(async () => {
+    if (token != vipRunToken) {
+      return
+    }
     await processVipJobs(socket)
   }, CHECK_INTERVAL)
 }
@@ -302,84 +343,37 @@ export async function forceVipJobCheck(socket, lid) {
 
 /**
  * Dispara busca VIP dedicada para um cliente
- * Chama o servidor Python para buscar vagas novas com as keywords do cliente
+ * Busca vagas no embeds.json que correspondem às stacks do assinante
  * @param {Object} socket - Socket do Baileys
  * @param {string} lid - LID do assinante
  * @param {string[]} stacks - Stacks/keywords para buscar
  * @returns {Promise<{success: boolean, jobsFound: number, jobsSent: number, error?: string}>}
  */
 export async function triggerVipSearch(socket, lid, stacks) {
-  const VIP_SERVER_URL = "http://localhost:3001/vip/search"
-
   try {
-    infoLog(`[VIP SEARCH] Disparando busca para ${lid} com stacks: ${stacks.join(", ")}`)
-
-    // Mapeia stacks para keywords de busca
-    const keywordMappings = {
-      estagio: ["Estagiarioa_em_TI", "estágio", "trainee", "junior"],
-      estágio: ["Estagiarioa_em_TI", "estágio", "trainee", "junior"],
-      frontend: ["Desenvolvedor_FrontEnd", "React_js", "Vue_js", "Angular_js", "JavaScript"],
-      backend: ["Desenvolvedor_BackEnd", "Node_js", "Python", "Java", "PHP"],
-      fullstack: ["Desenvolvedor_FullStack", "fullstack"],
-      mobile: ["Desenvolvedor_Mobile", "React_Native", "Flutter", "Kotlin", "Swift"],
-      devops: ["DevOps", "AWS", "Azure", "Kubernetes", "Docker"],
-      data: ["Cientista_de_Dados", "Analista_de_Dados", "Power_BI", "Python"],
-      qa: ["Analista_de_Testes", "QA", "teste", "quality"],
-      react: ["React_js", "React_Native"],
-      node: ["Node_js", "Expressjs"],
-      python: ["Python", "Django"],
-      java: ["Java", "Spring_Boot"],
-      todas: ["Desenvolvedor", "Analista", "Engenheiro"],
-    }
-
-    // Expande stacks para keywords
-    const keywords = []
-    for (const stack of stacks) {
-      const normalizedStack = stack.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
-      const mappedKeywords = keywordMappings[normalizedStack]
-      if (mappedKeywords) {
-        keywords.push(...mappedKeywords)
-      } else {
-        // Se não tem mapeamento, usa a própria stack
-        keywords.push(stack)
+    if (!isSocketReady(socket)) {
+      warningLog("Conexao fechada. Busca VIP aguardando reconexao.")
+      return {
+        success: false,
+        jobsFound: 0,
+        jobsSent: 0,
+        error: "Conexao fechada",
       }
     }
+    infoLog(`[VIP SEARCH] Disparando busca para ${lid} com stacks: ${stacks.join(", ")}`)
 
-    // Remove duplicatas
-    const uniqueKeywords = [...new Set(keywords)]
+    // Carrega todas as vagas do embeds.json
+    const embeds = loadEmbeds()
 
-    infoLog(`[VIP SEARCH] Keywords expandidas: ${uniqueKeywords.join(", ")}`)
-
-    // Chama o servidor Python de busca VIP
-    const response = await fetch(VIP_SERVER_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        keywords: uniqueKeywords,
-        max_results: 20,
-        client_id: lid,
-      }),
-      timeout: 120000, // 2 minutos de timeout
-    })
-
-    if (!response.ok) {
-      throw new Error(`Servidor VIP retornou ${response.status}`)
+    if (embeds.length === 0) {
+      warningLog("[VIP SEARCH] Nenhuma vaga disponível no embeds.json")
+      return {
+        success: false,
+        jobsFound: 0,
+        jobsSent: 0,
+        error: "Nenhuma vaga disponível no momento",
+      }
     }
-
-    const data = await response.json()
-
-    if (!data.success) {
-      return { success: false, jobsFound: 0, jobsSent: 0, error: data.error || "Erro desconhecido" }
-    }
-
-    const jobs = data.jobs || []
-    infoLog(`[VIP SEARCH] Encontradas ${jobs.length} vagas para ${lid}`)
-
-    // Envia as vagas para o cliente
-    let jobsSent = 0
-    const jid = lidToJid(lid)
 
     // Inicializa histórico de envios se não existir
     if (!sentJobsPerSubscriber.has(lid)) {
@@ -387,29 +381,43 @@ export async function triggerVipSearch(socket, lid, stacks) {
     }
     const sentJobs = sentJobsPerSubscriber.get(lid)
 
-    for (const job of jobs) {
-      const jobId = job.job_url
+    // Filtra vagas que correspondem às stacks
+    const matchingJobs = []
+    for (const job of embeds) {
+      const jobId = job.id || job.url || job.job_url
 
-      // Verifica se já enviou essa vaga
+      // Pula vagas já enviadas
       if (sentJobs.has(jobId)) {
         continue
       }
 
+      // Verifica se a vaga corresponde às stacks
+      if (jobMatchesStacks(job, stacks)) {
+        matchingJobs.push(job)
+      }
+    }
+
+    infoLog(`[VIP SEARCH] Encontradas ${matchingJobs.length} vagas novas para ${lid}`)
+
+    if (matchingJobs.length === 0) {
+      return {
+        success: true,
+        jobsFound: 0,
+        jobsSent: 0,
+        error: "Nenhuma vaga nova encontrada para as stacks informadas",
+      }
+    }
+
+    // Envia as vagas para o cliente (máximo 10 por busca)
+    let jobsSent = 0
+    const jid = lidToJid(lid)
+    const jobsToSend = matchingJobs.slice(0, 10)
+
+    for (const job of jobsToSend) {
+      const jobId = job.id || job.url || job.job_url
+
       try {
-        // Formata a mensagem
-        let message = `${BOT_EMOJI} *VAGA PERSONALIZADA PARA VOCÊ!*\n\n`
-        message += `📌 *Título:* ${job.job_title || "Não informado"}\n`
-        message += `🏢 *Empresa:* ${job.company || "Não informado"}\n`
-        message += `📍 *Local:* ${job.location || "Não informado"}\n`
-        message += `💰 *Salário:* ${job.salary || "Não informado"}\n`
-        message += `📝 *Regime:* ${job.hiring_regime || "Não informado"}\n`
-        message += `🏠 *Tipo:* ${job.work_type || "Não informado"}\n`
-
-        if (job.job_url) {
-          message += `\n🔗 *Link para candidatura:*\n${job.job_url}`
-        }
-
-        message += `\n\n_Enviado pelo Sonar Bot VIP_ ⭐`
+        const message = formatJobMessage(job)
 
         await delay(TIMEOUT_IN_MILLISECONDS_BY_EVENT)
         await socket.sendMessage(jid, { text: message })
@@ -417,52 +425,24 @@ export async function triggerVipSearch(socket, lid, stacks) {
         sentJobs.add(jobId)
         jobsSent++
 
-        successLog(`[VIP SEARCH] Vaga enviada para ${lid}: ${job.job_title}`)
+        successLog(`[VIP SEARCH] Vaga enviada para ${lid}: ${job.title || job.job_title}`)
 
-        // Limite de 10 vagas por busca
-        if (jobsSent >= 10) {
-          break
-        }
-
-        // Delay entre envios
+        // Delay entre envios para evitar flood
         await delay(2000)
       } catch (err) {
         errorLog(`[VIP SEARCH] Erro ao enviar vaga: ${err.message}`)
       }
     }
 
-    successLog(`[VIP SEARCH] Busca concluída para ${lid}: ${jobsSent}/${jobs.length} vagas enviadas`)
+    successLog(`[VIP SEARCH] Busca concluída para ${lid}: ${jobsSent}/${matchingJobs.length} vagas enviadas`)
 
     return {
       success: true,
-      jobsFound: jobs.length,
+      jobsFound: matchingJobs.length,
       jobsSent,
     }
   } catch (err) {
     errorLog(`[VIP SEARCH] Erro na busca VIP: ${err.message}`)
-
-    // Se o servidor VIP não está disponível, tenta buscar das vagas existentes
-    if (err.code === "ECONNREFUSED" || err.message.includes("fetch")) {
-      warningLog("[VIP SEARCH] Servidor VIP indisponível, buscando em vagas existentes...")
-
-      const embeds = loadEmbeds()
-      let jobsSent = 0
-
-      for (const job of embeds.slice(-50)) {
-        if (jobMatchesStacks(job, stacks)) {
-          const success = await sendJobToSubscriber(socket, lid, job)
-          if (success) jobsSent++
-          if (jobsSent >= 5) break
-        }
-      }
-
-      return {
-        success: true,
-        jobsFound: embeds.length,
-        jobsSent,
-        error: "Servidor VIP indisponível, usou vagas existentes",
-      }
-    }
 
     return {
       success: false,

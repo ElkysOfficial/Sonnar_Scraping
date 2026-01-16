@@ -64,6 +64,8 @@ class BadMacHandler {
           ) {
             continue;
           }
+          fs.rmSync(filePath, { force: true });
+          removedCount++;
         }
       }
 
