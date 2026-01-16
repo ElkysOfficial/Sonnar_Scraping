@@ -103,9 +103,13 @@ estágio, frontend, backend, fullstack, mobile, devops, data, qa, react, node, p
         }
 
         // Dispara busca imediata em background
-        triggerVipSearch(socket, normalizedLid, stacks)
+        triggerVipSearch(normalizedLid, stacks)
           .then((result) => {
             if (result.success) {
+              if (result.queued) {
+                console.log(`[VIP] Busca enfileirada para ${normalizedLid} (conexao fechada).`);
+                return;
+              }
               console.log(`[VIP] Busca concluída para ${normalizedLid}: ${result.jobsSent} vagas enviadas`);
             } else {
               console.error(`[VIP] Erro na busca para ${normalizedLid}: ${result.error}`);
@@ -139,7 +143,13 @@ estágio, frontend, backend, fullstack, mobile, devops, data, qa, react, node, p
 
         // Dispara busca
         try {
-          const result = await triggerVipSearch(socket, normalizedLid, subscriber.stacks);
+          const result = await triggerVipSearch(normalizedLid, subscriber.stacks);
+
+          if (result.queued) {
+            return await sendWarningReply(
+              "Conexao fechada. Busca VIP enfileirada e sera executada na reconexao."
+            );
+          }
 
           if (result.success) {
             return await sendSuccessReply(

@@ -2,6 +2,11 @@
  * Serviço de envio de vagas personalizadas para assinantes VIP
  * Envia vagas filtradas por stack para o privado dos assinantes
  *
+ * REGRAS:
+ * - Apenas 1 vaga enviada a cada 5 minutos por assinante
+ * - Mesma vaga não é enviada duas vezes (exceto após 48 horas)
+ * - Estado persistido em arquivo para sobreviver a reinicializações
+ *
  * @author Sonar Bot
  */
 
@@ -11,19 +16,45 @@ import { infoLog, successLog, warningLog, errorLog } from "../utils/logger.js"
 import { EMBEDS_FILE_PATH, BOT_EMOJI, TIMEOUT_IN_MILLISECONDS_BY_EVENT } from "../config.js"
 import { extractStack } from "./jobDistributor.js"
 import { getVipSubscribers } from "../utils/database.js"
+import { getCurrentSocket, isCurrentSocketReady } from "../utils/socketManager.js"
+import {
+  canSendToSubscriber,
+  wasJobSentRecently,
+  recordJobSent,
+  getTimeUntilCanSend,
+  getSentJobIds,
+  cleanOldEntries
+} from "./vipHistory.js"
 
 // Intervalo entre verificações (5 minutos)
 const CHECK_INTERVAL = 5 * 60 * 1000
 let vipTimeoutId = null
 let vipIntervalId = null
 let vipRunToken = 0
+let vipPendingTimeoutId = null
 
-// Histórico de vagas enviadas para cada assinante (em memória)
-// Formato: { "lid": Set<jobId> }
-const sentJobsPerSubscriber = new Map()
+// Buscas VIP pendentes quando a conexao esta fechada
+const pendingVipSearches = new Map()
 
-// Controle de intervalo por assinante
-const lastSentAtPerSubscriber = new Map()
+function queueVipSearch(lid, stacks) {
+  pendingVipSearches.set(lid, { stacks, queuedAt: Date.now() })
+}
+
+async function processPendingVipSearches() {
+  if (pendingVipSearches.size === 0) {
+    return
+  }
+
+  for (const [lid, data] of pendingVipSearches.entries()) {
+    const result = await triggerVipSearch(lid, data.stacks, { allowQueue: false })
+
+    if (result.success && (result.jobsFound === 0 || result.jobsSent > 0)) {
+      pendingVipSearches.delete(lid)
+    }
+
+    await delay(1000)
+  }
+}
 
 /**
  * Carrega as vagas do arquivo embeds.json
@@ -61,14 +92,17 @@ function normalizeStack(stack) {
 
 /**
  * Verifica se a vaga corresponde às stacks do assinante
+ * IMPORTANTE: Somente retorna true se a vaga corresponder EXATAMENTE ao que o assinante deseja
  * @param {Object} job - Vaga
  * @param {string[]} subscriberStacks - Stacks do assinante
  * @returns {boolean}
  */
 function jobMatchesStacks(job, subscriberStacks) {
-  const jobStack = extractStack(job)
   const jobTitle = (job.title || job.job_title || "").toLowerCase()
-  const normalizedJobStack = normalizeStack(jobStack)
+  const normalizedJobTitle = normalizeStack(jobTitle)
+
+  // Termos que indicam vagas de nível junior/estagiário (para exclusão em algumas stacks)
+  const juniorTerms = ["junior", "jr", "estagio", "estágio", "intern", "trainee", "aprendiz"]
 
   for (const stack of subscriberStacks) {
     const normalizedStack = normalizeStack(stack)
@@ -78,59 +112,131 @@ function jobMatchesStacks(job, subscriberStacks) {
       return true
     }
 
-    // Verifica correspondência direta da stack
-    if (normalizedJobStack === normalizedStack) {
-      return true
-    }
-
-    // Verifica se a stack aparece no título
-    if (jobTitle.includes(normalizedStack)) {
-      return true
-    }
-
-    // Mapeamentos especiais
+    // Mapeamentos específicos e restritos
     const stackMappings = {
-      estagio: ["estágio", "estagio", "intern", "trainee", "junior", "júnior"],
-      frontend: ["front-end", "front end", "react", "vue", "angular", "html", "css", "javascript"],
-      backend: ["back-end", "back end", "node", "python", "java", "php", "ruby", "go", ".net", "c#"],
-      fullstack: ["full-stack", "full stack", "fullstack"],
-      mobile: ["android", "ios", "flutter", "react native", "kotlin", "swift"],
-      devops: ["sre", "cloud", "aws", "azure", "gcp", "kubernetes", "docker"],
-      data: ["dados", "data science", "machine learning", "ml", "ai", "bi", "analytics"],
-      qa: ["quality", "teste", "test", "testing", "automação"],
-      design: [
-        "design",
-        "designer",
-        "ux",
-        "ui",
-        "ux/ui",
-        "product design",
-        "product designer",
-        "gráfico",
-        "grafico",
-        "visual design",
-        "design visual",
-        "web design",
-        "web designer",
-        "branding",
-        "identidade visual",
-        "estágio de design",
-        "estagio de design",
-        "design de produto",
-      ],
-      // Mapeamentos adicionais
-      tech: ["desenvolvedor", "developer", "engenheiro", "engineer", "analista", "programador", "software", "ti", "tecnologia"],
-      lead: ["tech lead", "líder", "lider", "lead", "gerente", "coordenador", "head", "manager", "senior", "sênior", "pleno", "sr"],
-      junior: ["junior", "júnior", "jr", "trainee", "estágio", "estagio"],
-      pleno: ["pleno", "pl", "mid", "middle"],
-      senior: ["senior", "sênior", "sr", "especialista", "principal"],
+      // Tech Lead - vagas de liderança técnica, senior e pleno (NUNCA junior/estagiário)
+      "tech lead": {
+        terms: ["tech lead", "lider tecnico", "lider de tecnologia", "technical lead", "lead developer", "lead engineer", "engineering lead", "lider de engenharia", "lider de desenvolvimento", "senior", "sr.", "pleno", "pl.", "especialista", "arquiteto", "architect", "principal", "staff", "gerente", "manager", "coordenador", "head"],
+        excludeJunior: true
+      },
+
+      // Design - vagas de design
+      "design": {
+        terms: ["design", "designer", "ux", "ui", "ux/ui", "ui/ux", "product design", "product designer", "grafico", "visual design", "web design", "web designer"],
+        excludeJunior: false
+      },
+
+      // Frontend
+      "frontend": {
+        terms: ["frontend", "front-end", "front end"],
+        excludeJunior: false
+      },
+
+      // Backend
+      "backend": {
+        terms: ["backend", "back-end", "back end"],
+        excludeJunior: false
+      },
+
+      // Fullstack
+      "fullstack": {
+        terms: ["fullstack", "full-stack", "full stack"],
+        excludeJunior: false
+      },
+
+      // Mobile
+      "mobile": {
+        terms: ["mobile", "android", "ios", "flutter", "react native"],
+        excludeJunior: false
+      },
+
+      // DevOps
+      "devops": {
+        terms: ["devops", "dev ops", "sre", "site reliability"],
+        excludeJunior: false
+      },
+
+      // Data
+      "data": {
+        terms: ["data", "dados", "data science", "data engineer", "cientista de dados", "engenheiro de dados"],
+        excludeJunior: false
+      },
+
+      // QA
+      "qa": {
+        terms: ["qa", "quality", "teste", "tester", "testing", "qualidade"],
+        excludeJunior: false
+      },
+
+      // Estágio
+      "estagio": {
+        terms: ["estagio", "estágio", "intern", "internship"],
+        excludeJunior: false
+      },
+
+      // Python
+      "python": {
+        terms: ["python"],
+        excludeJunior: false
+      },
+
+      // Java
+      "java": {
+        terms: ["java"],
+        excludeJunior: false
+      },
+
+      // Node
+      "node": {
+        terms: ["node", "nodejs", "node.js"],
+        excludeJunior: false
+      },
+
+      // React
+      "react": {
+        terms: ["react", "reactjs", "react.js"],
+        excludeJunior: false
+      },
+
+      // Angular
+      "angular": {
+        terms: ["angular", "angularjs"],
+        excludeJunior: false
+      },
+
+      // Vue
+      "vue": {
+        terms: ["vue", "vuejs", "vue.js"],
+        excludeJunior: false
+      },
     }
 
-    // Verifica mapeamentos
-    const mappedStacks = stackMappings[normalizedStack]
-    if (mappedStacks) {
-      for (const mapped of mappedStacks) {
-        if (jobTitle.includes(mapped) || normalizedJobStack.includes(normalizeStack(mapped))) {
+    // Verifica se a stack aparece diretamente no título
+    if (normalizedJobTitle.includes(normalizedStack)) {
+      // Se for tech lead, verificar se não é junior/estagiário
+      if (normalizedStack === "tech lead") {
+        const isJunior = juniorTerms.some(term => normalizedJobTitle.includes(normalizeStack(term)))
+        if (isJunior) {
+          return false
+        }
+      }
+      return true
+    }
+
+    // Verifica mapeamentos específicos
+    const mapping = stackMappings[normalizedStack]
+    if (mapping) {
+      // Se deve excluir junior, verifica primeiro
+      if (mapping.excludeJunior) {
+        const isJunior = juniorTerms.some(term => normalizedJobTitle.includes(normalizeStack(term)))
+        if (isJunior) {
+          continue // Pula para a próxima stack do assinante
+        }
+      }
+
+      // Verifica se algum termo corresponde
+      for (const term of mapping.terms) {
+        if (normalizedJobTitle.includes(normalizeStack(term))) {
           return true
         }
       }
@@ -145,10 +251,6 @@ function jobMatchesStacks(job, subscriberStacks) {
  * @param {Object} job - Objeto da vaga
  * @returns {string} Mensagem formatada
  */
-function isSocketReady(socket) {
-  return socket?.ws?.readyState === 1
-}
-
 function formatJobMessage(job) {
   const title = job.title || job.job_title || "Não informado"
   const company = job.author?.name || job.company || "Não informado"
@@ -202,20 +304,32 @@ function lidToJid(lid) {
 
 /**
  * Envia uma vaga para um assinante VIP
- * @param {Object} socket - Socket do Baileys
+ * IMPORTANTE: Verifica intervalo de 5 minutos e histórico de 48h via persistência
  * @param {string} lid - LID do assinante
  * @param {Object} job - Vaga a enviar
- * @returns {boolean}
+ * @returns {{success: boolean, reason?: string}}
  */
-async function sendJobToSubscriber(socket, lid, job) {
+async function sendJobToSubscriber(lid, job) {
   try {
-    if (!isSocketReady(socket)) {
+    const socket = getCurrentSocket()
+    if (!isCurrentSocketReady()) {
       warningLog("Conexao fechada. Envio VIP aguardando reconexao.")
-      return false
+      return { success: false, reason: "connection_closed" }
     }
-    const lastSentAt = lastSentAtPerSubscriber.get(lid) || 0
-    if (Date.now() - lastSentAt < CHECK_INTERVAL) {
-      return false
+
+    // Verifica intervalo de 5 minutos (persistido)
+    if (!canSendToSubscriber(lid)) {
+      const remaining = getTimeUntilCanSend(lid)
+      const remainingMin = Math.ceil(remaining / 60000)
+      warningLog(`[VIP] Cooldown ativo para ${lid}. Aguardar ${remainingMin} minutos.`)
+      return { success: false, reason: "cooldown" }
+    }
+
+    const jobId = job.id || job.url || job.job_url
+
+    // Verifica se a vaga já foi enviada nas últimas 48h (persistido)
+    if (wasJobSentRecently(lid, jobId)) {
+      return { success: false, reason: "already_sent" }
     }
 
     const jid = lidToJid(lid)
@@ -224,23 +338,29 @@ async function sendJobToSubscriber(socket, lid, job) {
     await delay(TIMEOUT_IN_MILLISECONDS_BY_EVENT)
     await socket.sendMessage(jid, { text: message })
 
-    lastSentAtPerSubscriber.set(lid, Date.now())
-    return true
+    // Registra o envio (persiste em arquivo)
+    recordJobSent(lid, jobId)
+
+    return { success: true }
   } catch (err) {
     errorLog(`[VIP] Erro ao enviar vaga para ${lid}: ${err.message}`)
-    return false
+    return { success: false, reason: "error" }
   }
 }
 
 /**
  * Processa novas vagas e envia para assinantes VIP
- * @param {Object} socket - Socket do Baileys
  */
-async function processVipJobs(socket) {
-  if (!isSocketReady(socket)) {
+async function processVipJobs() {
+  if (!isCurrentSocketReady()) {
     warningLog("Conexao fechada. Verificacao VIP aguardando reconexao.")
     return
   }
+
+  await processPendingVipSearches()
+
+  // Limpa entradas antigas periodicamente
+  cleanOldEntries()
 
   const embeds = loadEmbeds()
   const subscribers = getVipSubscribers()
@@ -252,35 +372,34 @@ async function processVipJobs(socket) {
   infoLog(`[VIP] Verificando vagas para ${subscribers.length} assinantes`)
 
   for (const subscriber of subscribers) {
-    if (!sentJobsPerSubscriber.has(subscriber.lid)) {
-      sentJobsPerSubscriber.set(subscriber.lid, new Set())
-    }
-
-    const sentJobs = sentJobsPerSubscriber.get(subscriber.lid)
-    const lastSentAt = lastSentAtPerSubscriber.get(subscriber.lid) || 0
-
-    if (Date.now() - lastSentAt < CHECK_INTERVAL) {
+    // Verifica cooldown de 5 minutos (persistido)
+    if (!canSendToSubscriber(subscriber.lid)) {
       continue
     }
+
+    // Obtém IDs de vagas já enviadas nas últimas 48h
+    const sentJobIds = getSentJobIds(subscriber.lid)
 
     for (const job of embeds.slice(-200)) {
       const jobId = job.id || job.url || job.job_url
 
-      if (sentJobs.has(jobId)) {
+      // Pula vagas já enviadas nas últimas 48h
+      if (sentJobIds.has(jobId)) {
         continue
       }
 
+      // Verifica se a vaga corresponde às stacks
       if (!jobMatchesStacks(job, subscriber.stacks)) {
         continue
       }
 
-      const success = await sendJobToSubscriber(socket, subscriber.lid, job)
+      const result = await sendJobToSubscriber(subscriber.lid, job)
 
-      if (success) {
-        sentJobs.add(jobId)
+      if (result.success) {
         successLog(`[VIP] Vaga enviada para ${subscriber.lid}: ${job.title || job.job_title}`)
       }
 
+      // Independente do resultado, só tenta enviar uma vaga por ciclo
       break
     }
 
@@ -290,7 +409,7 @@ async function processVipJobs(socket) {
 
 /**
  * Inicia o serviço de envio de vagas VIP
- * @param {Object} socket - Socket do Baileys
+ * @param {Object} socket - Socket do Baileys (usado apenas para registrar evento)
  */
 export function startVipJobSender(socket) {
   if (vipTimeoutId) {
@@ -301,14 +420,23 @@ export function startVipJobSender(socket) {
     clearInterval(vipIntervalId)
     vipIntervalId = null
   }
+  if (vipPendingTimeoutId) {
+    clearTimeout(vipPendingTimeoutId)
+    vipPendingTimeoutId = null
+  }
   vipRunToken += 1
   const subscribers = getVipSubscribers()
+
+  // Limpa entradas antigas do histórico ao iniciar
+  cleanOldEntries()
 
   infoLog("════════════════════════════════════════════════════")
   infoLog("       ⭐ SERVIÇO DE VAGAS VIP INICIADO")
   infoLog("════════════════════════════════════════════════════")
   infoLog(`👥 Assinantes ativos: ${subscribers.length}`)
   infoLog(`⏱️  Intervalo de verificação: ${CHECK_INTERVAL / 60000} minutos`)
+  infoLog(`⏱️  Cooldown por assinante: 5 minutos`)
+  infoLog(`⏱️  Cooldown para reenvio: 48 horas`)
   infoLog("════════════════════════════════════════════════════")
 
   if (subscribers.length > 0) {
@@ -317,30 +445,43 @@ export function startVipJobSender(socket) {
     })
   }
 
-  // Primeira execução após 30 segundos
+  // Processa buscas pendentes assim que possivel
   const token = vipRunToken
+  vipPendingTimeoutId = setTimeout(async () => {
+    if (token != vipRunToken) {
+      return
+    }
+    if (!isCurrentSocketReady()) {
+      return
+    }
+    await processPendingVipSearches()
+  }, 5000)
+
+  // Primeira execução após 30 segundos
+  infoLog(`⏱️ Primeira verificação VIP em 30 segundos`)
   vipTimeoutId = setTimeout(async () => {
     if (token != vipRunToken) {
       return
     }
-    await processVipJobs(socket)
-  }, CHECK_INTERVAL)
+    infoLog(`[VIP] Executando primeira verificação de vagas...`)
+    await processVipJobs()
+  }, 30 * 1000)
 
   // Execuções periódicas
   vipIntervalId = setInterval(async () => {
     if (token != vipRunToken) {
       return
     }
-    await processVipJobs(socket)
+    infoLog(`[VIP] Executando verificação periódica de vagas...`)
+    await processVipJobs()
   }, CHECK_INTERVAL)
 }
 
 /**
  * Força o envio imediato para um assinante (útil para testes)
- * @param {Object} socket - Socket do Baileys
  * @param {string} lid - LID do assinante
  */
-export async function forceVipJobCheck(socket, lid) {
+export async function forceVipJobCheck(lid) {
   const embeds = loadEmbeds()
   const subscriber = getVipSubscribers().find((s) => s.lid === lid)
 
@@ -348,35 +489,68 @@ export async function forceVipJobCheck(socket, lid) {
     return { success: false, message: "Assinante não encontrado" }
   }
 
-  for (const job of embeds.slice(-10)) {
-    // Últimas 10 vagas
+  // Verifica cooldown
+  if (!canSendToSubscriber(lid)) {
+    const remaining = getTimeUntilCanSend(lid)
+    const remainingMin = Math.ceil(remaining / 60000)
+    return { success: false, message: `Aguarde ${remainingMin} minutos para o próximo envio` }
+  }
+
+  // Obtém vagas já enviadas
+  const sentJobIds = getSentJobIds(lid)
+
+  for (const job of embeds.slice(-50)) {
+    const jobId = job.id || job.url || job.job_url
+
+    // Pula vagas já enviadas nas últimas 48h
+    if (sentJobIds.has(jobId)) {
+      continue
+    }
+
     if (!jobMatchesStacks(job, subscriber.stacks)) {
       continue
     }
 
-    const success = await sendJobToSubscriber(socket, lid, job)
-    if (success) {
+    const result = await sendJobToSubscriber(lid, job)
+    if (result.success) {
       return { success: true, message: "1 vaga enviada" }
     }
 
-    return { success: true, message: "Envio em cooldown (5 minutos)" }
+    if (result.reason === "cooldown") {
+      const remaining = getTimeUntilCanSend(lid)
+      const remainingMin = Math.ceil(remaining / 60000)
+      return { success: false, message: `Aguarde ${remainingMin} minutos para o próximo envio` }
+    }
+
+    return { success: false, message: `Erro: ${result.reason}` }
   }
 
-  return { success: true, message: "Nenhuma vaga encontrada" }
+  return { success: true, message: "Nenhuma vaga nova encontrada" }
 }
 
 /**
  * Dispara busca VIP dedicada para um cliente
  * Busca vagas no embeds.json que correspondem às stacks do assinante
- * @param {Object} socket - Socket do Baileys
  * @param {string} lid - LID do assinante
  * @param {string[]} stacks - Stacks/keywords para buscar
+ * @param {Object} options - Opções adicionais
  * @returns {Promise<{success: boolean, jobsFound: number, jobsSent: number, error?: string}>}
  */
-export async function triggerVipSearch(socket, lid, stacks) {
+export async function triggerVipSearch(lid, stacks, options = {}) {
   try {
-    if (!isSocketReady(socket)) {
+    if (!isCurrentSocketReady()) {
       warningLog("Conexao fechada. Busca VIP aguardando reconexao.")
+      if (options.allowQueue !== false) {
+        queueVipSearch(lid, stacks)
+        infoLog(`[VIP] Busca enfileirada para ${lid} (conexao fechada).`)
+        return {
+          success: true,
+          queued: true,
+          jobsFound: 0,
+          jobsSent: 0,
+          error: "Conexao fechada. Busca enfileirada.",
+        }
+      }
       return {
         success: false,
         jobsFound: 0,
@@ -384,7 +558,21 @@ export async function triggerVipSearch(socket, lid, stacks) {
         error: "Conexao fechada",
       }
     }
+
     infoLog(`[VIP SEARCH] Disparando busca para ${lid} com stacks: ${stacks.join(", ")}`)
+
+    // Verifica cooldown de 5 minutos
+    if (!canSendToSubscriber(lid)) {
+      const remaining = getTimeUntilCanSend(lid)
+      const remainingMin = Math.ceil(remaining / 60000)
+      warningLog(`[VIP SEARCH] Cooldown ativo para ${lid}. Aguardar ${remainingMin} minutos.`)
+      return {
+        success: true,
+        jobsFound: 0,
+        jobsSent: 0,
+        error: `Aguarde ${remainingMin} minutos para o próximo envio`,
+      }
+    }
 
     // Carrega todas as vagas do embeds.json
     const embeds = loadEmbeds()
@@ -399,19 +587,16 @@ export async function triggerVipSearch(socket, lid, stacks) {
       }
     }
 
-    // Inicializa histórico de envios se não existir
-    if (!sentJobsPerSubscriber.has(lid)) {
-      sentJobsPerSubscriber.set(lid, new Set())
-    }
-    const sentJobs = sentJobsPerSubscriber.get(lid)
+    // Obtém IDs de vagas já enviadas nas últimas 48h
+    const sentJobIds = getSentJobIds(lid)
 
-    // Filtra vagas que correspondem às stacks
+    // Filtra vagas que correspondem às stacks e não foram enviadas recentemente
     const matchingJobs = []
     for (const job of embeds) {
       const jobId = job.id || job.url || job.job_url
 
-      // Pula vagas já enviadas
-      if (sentJobs.has(jobId)) {
+      // Pula vagas já enviadas nas últimas 48h
+      if (sentJobIds.has(jobId)) {
         continue
       }
 
@@ -432,18 +617,16 @@ export async function triggerVipSearch(socket, lid, stacks) {
       }
     }
 
-    // Envia apenas uma vaga por vez (intervalo mínimo de 5 minutos)
+    // Envia apenas uma vaga (regra: 1 vaga a cada 5 minutos)
     let jobsSent = 0
     const job = matchingJobs[0]
-    const jobId = job.id || job.url || job.job_url
 
-    const success = await sendJobToSubscriber(socket, lid, job)
-    if (success) {
-      sentJobs = 1
-      sentJobs.add(jobId)
+    const result = await sendJobToSubscriber(lid, job)
+    if (result.success) {
+      jobsSent = 1
       successLog(`[VIP SEARCH] Vaga enviada para ${lid}: ${job.title || job.job_title}`)
     } else {
-      warningLog(`[VIP SEARCH] Envio em cooldown para ${lid}. Aguardando intervalo de 5 minutos.`)
+      warningLog(`[VIP SEARCH] Não foi possível enviar: ${result.reason}`)
     }
 
     successLog(`[VIP SEARCH] Busca concluída para ${lid}: ${jobsSent}/${matchingJobs.length} vagas enviadas`)

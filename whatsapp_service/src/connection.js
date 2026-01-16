@@ -37,6 +37,7 @@ import {
   successLog,
   warningLog,
 } from "./utils/logger.js";
+import { setCurrentSocket, setConnectionState } from "./utils/socketManager.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -53,6 +54,8 @@ const logger = pino(
 logger.level = "error";
 
 const msgRetryCounterCache = new NodeCache();
+let reconnectTimeoutId = null;
+let reconnectAttempts = 0;
 
 export async function connect() {
   const baileysFolder = path.resolve(
@@ -83,6 +86,9 @@ export async function connect() {
     shouldSyncHistoryMessage: () => false,
   });
 
+  // Define socket global imediatamente (estado de conexão será atualizado no evento)
+  setCurrentSocket(socket);
+
   if (!socket.authState.creds.registered) {
     warningLog("Credenciais ainda não configuradas!");
 
@@ -103,10 +109,25 @@ export async function connect() {
     sayLog(`Código de pareamento: ${code}`);
   }
 
+  const scheduleReconnect = async () => {
+    if (reconnectTimeoutId) {
+      return;
+    }
+    const delayMs = Math.min(1000 * Math.pow(2, reconnectAttempts), 10000);
+    reconnectAttempts += 1;
+    reconnectTimeoutId = setTimeout(async () => {
+      reconnectTimeoutId = null;
+      const newSocket = await connect();
+      load(newSocket);
+    }, delayMs);
+  };
+
   socket.ev.on("connection.update", async (update) => {
     const { connection, lastDisconnect } = update;
 
     if (connection === "close") {
+      // Marca conexão como fechada
+      setConnectionState(false);
       const error = lastDisconnect?.error;
       const statusCode = error?.output?.statusCode;
 
@@ -124,8 +145,7 @@ export async function connect() {
             badMacHandler.clearProblematicSessionFiles();
             badMacHandler.resetErrorCount();
 
-            const newSocket = await connect();
-            load(newSocket);
+            await scheduleReconnect();
             return;
           }
         }
@@ -172,12 +192,19 @@ export async function connect() {
             break;
         }
 
-        const newSocket = await connect();
-        load(newSocket);
+        await scheduleReconnect();
       }
     } else if (connection === "open") {
+      // Marca conexão como aberta e atualiza socket global
+      setCurrentSocket(socket);
+      setConnectionState(true);
       successLog("Fui conectado com sucesso!");
       infoLog("Versão do WhatsApp Web: " + WAWEB_VERSION.join("."));
+      if (reconnectTimeoutId) {
+        clearTimeout(reconnectTimeoutId);
+        reconnectTimeoutId = null;
+      }
+      reconnectAttempts = 0;
       successLog(
         `✅ Estou pronto para uso! 
 Verifique o prefixo, digitando a palavra "prefixo" no WhatsApp. 

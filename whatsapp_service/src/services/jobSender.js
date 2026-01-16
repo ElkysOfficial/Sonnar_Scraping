@@ -13,12 +13,14 @@ import { infoLog, successLog, warningLog, errorLog } from "../utils/logger.js"
 import { JOB_GROUP_ID, EMBEDS_FILE_PATH, BOT_EMOJI, JOB_SEND_INTERVAL } from "../config.js"
 import { selectNextJob, extractStack } from "./jobDistributor.js"
 import { getSentIds, getRecentStacks, markAsSent, cleanOldRecords } from "./sentHistory.js"
+import { getCurrentSocket, isCurrentSocketReady } from "../utils/socketManager.js"
 
 // Intervalo fixo entre envios (em milissegundos)
 const FIXED_INTERVAL = JOB_SEND_INTERVAL || 5 * 60 * 1000
+const VIP_PROMO_INTERVAL = 2 * 60 * 60 * 1000
 
 // Configurações de distribuição
-const COOLDOWN_DAYS = 7 // Dias antes de reenviar mesma vaga
+const COOLDOWN_DAYS = 1 // Dias antes de reenviar mesma vaga (24 horas)
 const MAX_CONSECUTIVE_SAME_STACK = 1 // Máximo de vagas consecutivas da mesma stack (1 = nunca repete seguidas)
 let jobSenderTimeoutId = null
 let jobSenderToken = 0
@@ -33,6 +35,18 @@ function getNextInterval() {
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
+const PROMO_STATE_PATH = path.resolve(__dirname, "..", "..", "database", "vip-promo-state.json")
+
+const VIP_PROMO_MESSAGE = `🚀 Quer receber vagas do seu stack em prioridade? Vira VIP.
+
+No VIP, você não depende do fluxo geral:
+✅ Você tem uma rota dedicada só pro seu perfil (ex: tech lead, python, java, frontend, devops, etc.)
+✅ O bot faz scraping com todas as fontes ativas (se eu adicionar novas engines, você automaticamente ganha elas também)
+✅ Nada de vaga repetida
+✅ Entrega contínua e organizada: vagas novas enviadas em intervalos, sem spam e sem bagunça
+✅ Você recebe vagas muito mais relevantes, com foco total no seu objetivo
+
+📌 É literalmente o bot trabalhando pra você, em vez de você perder tempo filtrando vaga ruim.`
 
 /**
  * Carrega as vagas do arquivo embeds.json
@@ -58,6 +72,57 @@ function loadEmbeds() {
   }
 }
 
+function readPromoState() {
+  try {
+    if (!fs.existsSync(PROMO_STATE_PATH)) {
+      return { lastSentAt: 0 }
+    }
+    const raw = fs.readFileSync(PROMO_STATE_PATH, "utf8")
+    if (!raw.trim()) {
+      return { lastSentAt: 0 }
+    }
+    const data = JSON.parse(raw)
+    return { lastSentAt: data?.lastSentAt || 0 }
+  } catch (err) {
+    errorLog(`Erro ao ler estado da promo VIP: ${err.message}`)
+    return { lastSentAt: 0 }
+  }
+}
+
+function writePromoState(state) {
+  try {
+    const payload = JSON.stringify(state, null, 2)
+    writeJsonAtomic(PROMO_STATE_PATH, payload)
+  } catch (err) {
+    errorLog(`Erro ao salvar estado da promo VIP: ${err.message}`)
+  }
+}
+
+async function maybeSendVipPromo() {
+  try {
+    const socket = getCurrentSocket()
+    if (!isCurrentSocketReady()) {
+      warningLog("[PROMO] Conexao fechada. Envio de promo VIP aguardando reconexao.")
+      return false
+    }
+
+    const state = readPromoState()
+    const now = Date.now()
+    if (now - state.lastSentAt < VIP_PROMO_INTERVAL) {
+      infoLog("[PROMO] Promo VIP ainda em cooldown (2h)")
+      return false
+    }
+
+    infoLog(`[PROMO] Enviando promo VIP para o grupo ${JOB_GROUP_ID}...`)
+    await socket.sendMessage(JOB_GROUP_ID, { text: VIP_PROMO_MESSAGE })
+    writePromoState({ lastSentAt: now })
+    successLog("[PROMO] Promo VIP enviada com sucesso!")
+    return true
+  } catch (err) {
+    errorLog(`[PROMO] Erro ao enviar promo VIP: ${err.message}`)
+    return false
+  }
+}
 
 function writeJsonAtomic(filePath, data) {
   const dir = path.dirname(filePath)
@@ -95,10 +160,6 @@ function saveEmbeds(embeds) {
  * @param {Object} job - Objeto da vaga
  * @returns {string} Mensagem formatada
  */
-function isSocketReady(socket) {
-  return socket?.ws?.readyState === 1
-}
-
 function formatJobMessage(job) {
   // Extrai dados do embed (formato Discord) ou dados diretos
   const title = job.title || job.job_title || "Não informado"
@@ -138,13 +199,13 @@ function formatJobMessage(job) {
 
 /**
  * Envia uma vaga para o grupo do WhatsApp
- * @param {Object} socket - Socket do Baileys
  * @param {Object} job - Objeto da vaga
  * @returns {boolean} True se enviou com sucesso
  */
-async function sendJob(socket, job) {
+async function sendJob(job) {
   try {
-    if (!isSocketReady(socket)) {
+    const socket = getCurrentSocket()
+    if (!isCurrentSocketReady()) {
       warningLog("Conexao fechada. Envio de vaga aguardando reconexao.")
       return false
     }
@@ -163,26 +224,40 @@ async function sendJob(socket, job) {
 
 /**
  * Processa e envia a próxima vaga com seleção aleatória justa.
- * @param {Object} socket - Socket do Baileys
  */
-async function processNextJob(socket) {
-  const embeds = loadEmbeds()
+async function processNextJob() {
+  infoLog("[GRUPO] Iniciando processamento de vaga para o grupo...")
 
-  if (embeds.length === 0) {
+  if (!isCurrentSocketReady()) {
+    warningLog("[GRUPO] Conexao fechada. Processamento de vagas aguardando reconexao.")
     return
   }
 
+  infoLog("[GRUPO] Socket pronto. Carregando embeds...")
+  const embeds = loadEmbeds()
+
+  if (embeds.length === 0) {
+    warningLog("[GRUPO] Nenhuma vaga no arquivo embeds.json")
+    return
+  }
+
+  infoLog(`[GRUPO] Total de vagas carregadas: ${embeds.length}`)
+
   // Filtra apenas vagas ainda não marcadas como enviadas no arquivo
-  const pendingJobs = embeds.filter((job) => job.whatsappSent !== true)
+  const pendingJobs = embeds.filter(job => job.whatsappSent !== true)
+
+  infoLog(`[GRUPO] Vagas pendentes (whatsappSent != true): ${pendingJobs.length}`)
 
   if (pendingJobs.length === 0) {
-    infoLog("📭 Todas as vagas do arquivo já foram enviadas")
+    infoLog("📭 [GRUPO] Todas as vagas do arquivo já foram enviadas")
     return
   }
 
   // Obtém histórico de envios (cooldown) e stacks recentes (diversidade)
   const sentIds = getSentIds(JOB_GROUP_ID, COOLDOWN_DAYS)
   const recentStacks = getRecentStacks()
+
+  infoLog(`[GRUPO] IDs em cooldown: ${sentIds.size}, Stacks recentes: ${recentStacks.length}`)
 
   // Seleciona próxima vaga com algoritmo justo
   const job = selectNextJob({
@@ -194,7 +269,7 @@ async function processNextJob(socket) {
   })
 
   if (!job) {
-    infoLog("📭 Nenhuma vaga disponível (todas em cooldown)")
+    infoLog("📭 [GRUPO] Nenhuma vaga disponível (todas em cooldown ou diversidade)")
     return
   }
 
@@ -204,11 +279,11 @@ async function processNextJob(socket) {
 
   infoLog(`📤 Enviando vaga: ${title} [stack: ${stack}]`)
 
-  const success = await sendJob(socket, job)
+  const success = await sendJob(job)
 
   if (success) {
     // Marca no arquivo embeds.json
-    const jobIndex = embeds.findIndex((e) => (e.id || e.url || e.job_url) === jobId)
+    const jobIndex = embeds.findIndex(e => (e.id || e.url || e.job_url) === jobId)
     if (jobIndex !== -1) {
       embeds[jobIndex].whatsappSent = true
       saveEmbeds(embeds)
@@ -223,25 +298,28 @@ async function processNextJob(socket) {
 
 /**
  * Agenda o próximo envio com intervalo fixo
- * @param {Object} socket - Socket do Baileys
  */
-function scheduleNextJob(socket) {
+function scheduleNextJob() {
   const token = jobSenderToken
   const interval = getNextInterval()
   const minutes = Math.floor(interval / 60000)
   const seconds = Math.floor((interval % 60000) / 1000)
 
-  infoLog(`⏱️ Próximo envio em ${minutes}m ${seconds}s`)
+  infoLog(`⏱️ Próximo envio de vaga no grupo em ${minutes}m ${seconds}s`)
 
-  setTimeout(async () => {
-    await processNextJob(socket)
-    scheduleNextJob(socket) // Agenda o próximo após enviar
+  jobSenderTimeoutId = setTimeout(async () => {
+    if (token !== jobSenderToken) {
+      return
+    }
+    await processNextJob()
+    await maybeSendVipPromo()
+    scheduleNextJob() // Agenda o próximo após enviar
   }, interval)
 }
 
 /**
  * Inicia o serviço de envio automático de vagas
- * @param {Object} socket - Socket do Baileys
+ * @param {Object} socket - Socket do Baileys (usado apenas para inicialização)
  */
 export function startJobSender(socket) {
   if (jobSenderTimeoutId) {
@@ -249,6 +327,7 @@ export function startJobSender(socket) {
     jobSenderTimeoutId = null
   }
   jobSenderToken += 1
+  const token = jobSenderToken
 
   if (!JOB_GROUP_ID) {
     warningLog("⚠️ JOB_GROUP_ID não configurado no config.js. Serviço de vagas desativado.")
@@ -270,18 +349,24 @@ export function startJobSender(socket) {
   cleanOldRecords(COOLDOWN_DAYS)
 
   infoLog("════════════════════════════════════════════════════")
-  infoLog("       📋 SERVIÇO DE VAGAS INICIADO")
+  infoLog("       📋 SERVIÇO DE VAGAS DO GRUPO INICIADO")
   infoLog("════════════════════════════════════════════════════")
   infoLog(`⏱️  Intervalo: ${FIXED_INTERVAL / 60000} minutos`)
   infoLog(`🔀 Seleção: aleatória com diversidade de stacks`)
-  infoLog(`🔄 Cooldown: ${COOLDOWN_DAYS} dias`)
+  infoLog(`🔄 Cooldown: ${COOLDOWN_DAYS * 24} horas`)
   infoLog(`📍 Grupo: ${JOB_GROUP_ID}`)
   infoLog(`📁 Arquivo: ${EMBEDS_FILE_PATH}`)
   infoLog("════════════════════════════════════════════════════")
 
-  // Executa a primeira vez após o intervalo configurado
-  setTimeout(async () => {
-    await processNextJob(socket)
-    scheduleNextJob(socket) // Inicia o ciclo de envios fixos
-  }, FIXED_INTERVAL)
+  // Primeira execução após 30 segundos para permitir conexão estabilizar
+  infoLog(`⏱️ Primeira vaga do grupo será enviada em 30 segundos`)
+  jobSenderTimeoutId = setTimeout(async () => {
+    if (token !== jobSenderToken) {
+      return
+    }
+    infoLog("[GRUPO] Executando primeiro envio de vaga...")
+    await processNextJob()
+    await maybeSendVipPromo()
+    scheduleNextJob() // Inicia o ciclo de envios fixos
+  }, 30 * 1000)
 }
