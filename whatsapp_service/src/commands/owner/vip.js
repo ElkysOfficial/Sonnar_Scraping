@@ -25,7 +25,14 @@ export default {
     sendWaitReply,
     socket,
   }) => {
-    const action = args[0]?.toLowerCase();
+    let action = args[0]?.toLowerCase();
+    const isLidArg = (value) => !!value && (/^\d+@lid$/i.test(value) || /^\d+$/i.test(value));
+
+    // Atalho: /vip <lid> <stacks> => trata como "add"
+    if (action && isLidArg(action) && !["add", "adicionar", "remove", "remover", "delete", "deletar", "list", "listar", "ls", "info", "ver", "search", "buscar"].includes(action)) {
+      args.unshift("add");
+      action = "add";
+    }
 
     if (!action) {
       const help = `*📋 Comandos VIP*

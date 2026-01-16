@@ -169,8 +169,7 @@ _Software, automacao e produtos digitais para escalar negocios._
 - 3️⃣ - _Vagas: oportunidades e conteudos exclusivos._
 - 4️⃣ - _Quero ser parceiro_
 _______________________
-Digite o numero da opcao desejada
-_ou digite "voltar" para retornar_`
+Digite o numero da opcao desejada`
 }
 
 /**

@@ -98,6 +98,26 @@ function jobMatchesStacks(job, subscriberStacks) {
       devops: ["sre", "cloud", "aws", "azure", "gcp", "kubernetes", "docker"],
       data: ["dados", "data science", "machine learning", "ml", "ai", "bi", "analytics"],
       qa: ["quality", "teste", "test", "testing", "automação"],
+      design: [
+        "design",
+        "designer",
+        "ux",
+        "ui",
+        "ux/ui",
+        "product design",
+        "product designer",
+        "gráfico",
+        "grafico",
+        "visual design",
+        "design visual",
+        "web design",
+        "web designer",
+        "branding",
+        "identidade visual",
+        "estágio de design",
+        "estagio de design",
+        "design de produto",
+      ],
       // Mapeamentos adicionais
       tech: ["desenvolvedor", "developer", "engenheiro", "engineer", "analista", "programador", "software", "ti", "tecnologia"],
       lead: ["tech lead", "líder", "lider", "lead", "gerente", "coordenador", "head", "manager", "senior", "sênior", "pleno", "sr"],
@@ -328,17 +348,21 @@ export async function forceVipJobCheck(socket, lid) {
     return { success: false, message: "Assinante não encontrado" }
   }
 
-  let sent = 0
   for (const job of embeds.slice(-10)) {
     // Últimas 10 vagas
-    if (jobMatchesStacks(job, subscriber.stacks)) {
-      const success = await sendJobToSubscriber(socket, lid, job)
-      if (success) sent++
-      if (sent >= 3) break // Máximo 3 vagas por vez
+    if (!jobMatchesStacks(job, subscriber.stacks)) {
+      continue
     }
+
+    const success = await sendJobToSubscriber(socket, lid, job)
+    if (success) {
+      return { success: true, message: "1 vaga enviada" }
+    }
+
+    return { success: true, message: "Envio em cooldown (5 minutos)" }
   }
 
-  return { success: true, message: `${sent} vagas enviadas` }
+  return { success: true, message: "Nenhuma vaga encontrada" }
 }
 
 /**
@@ -408,30 +432,18 @@ export async function triggerVipSearch(socket, lid, stacks) {
       }
     }
 
-    // Envia as vagas para o cliente (máximo 10 por busca)
+    // Envia apenas uma vaga por vez (intervalo mínimo de 5 minutos)
     let jobsSent = 0
-    const jid = lidToJid(lid)
-    const jobsToSend = matchingJobs.slice(0, 10)
+    const job = matchingJobs[0]
+    const jobId = job.id || job.url || job.job_url
 
-    for (const job of jobsToSend) {
-      const jobId = job.id || job.url || job.job_url
-
-      try {
-        const message = formatJobMessage(job)
-
-        await delay(TIMEOUT_IN_MILLISECONDS_BY_EVENT)
-        await socket.sendMessage(jid, { text: message })
-
-        sentJobs.add(jobId)
-        jobsSent++
-
-        successLog(`[VIP SEARCH] Vaga enviada para ${lid}: ${job.title || job.job_title}`)
-
-        // Delay entre envios para evitar flood
-        await delay(2000)
-      } catch (err) {
-        errorLog(`[VIP SEARCH] Erro ao enviar vaga: ${err.message}`)
-      }
+    const success = await sendJobToSubscriber(socket, lid, job)
+    if (success) {
+      sentJobs = 1
+      sentJobs.add(jobId)
+      successLog(`[VIP SEARCH] Vaga enviada para ${lid}: ${job.title || job.job_title}`)
+    } else {
+      warningLog(`[VIP SEARCH] Envio em cooldown para ${lid}. Aguardando intervalo de 5 minutos.`)
     }
 
     successLog(`[VIP SEARCH] Busca concluída para ${lid}: ${jobsSent}/${matchingJobs.length} vagas enviadas`)
