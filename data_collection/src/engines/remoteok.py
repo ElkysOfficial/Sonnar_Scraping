@@ -1,106 +1,129 @@
-from bs4 import BeautifulSoup
-import cloudscraper
-import random
-import json
 import asyncio
+import sys
+import os
+from curl_cffi import requests
+
+# Adiciona o diretório pai ao path para importar variavel
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 from variavel import stacks
 
-async def get_remoteok_links() -> list:
-  links = []
 
-  for stack in stacks:
-      scraper = cloudscraper.create_scraper()
-      loop = asyncio.get_event_loop()
-      response = await loop.run_in_executor(None, scraper.get, f'https://remoteok.com/remote-{stack}-jobs')
-      if response.status_code == 200:
-        soup = BeautifulSoup(response.text, 'html.parser')
-        cells = soup.find_all('tr', class_='job')
-        for cell in cells:
-          lia = cell.find_all('a', class_='no-border tooltip-set action-add-tag')
-          stack_list = []
-          for li in lia:
-            h3_tag = li.find('h3')
-            if h3_tag:
-              stack_list.append(h3_tag.get_text(strip=True))
-          stack = ' - '.join(stack_list)
-          cells = cell.find_all('td', class_='company position company_and_position')
-          for cell in cells:
-            link = f'https://remoteok.com{cell.find('a', class_='preventLink').attrs['href']}'
-
-            links.append(link)
-
-  print(f'Foram obtidos {len(links)} links')
-  return links
+# Sessão global
+_session = None
 
 
-async def get_remoteok_jobs() -> dict:
+def get_session():
+    """Retorna a sessão global, criando se necessário."""
+    global _session
+    if _session is None:
+        _session = requests.Session(impersonate='chrome')
+    return _session
+
+
+async def get_remoteok_jobs() -> list:
     """
-    Função assíncrona que retorna um dicionário com detalhes da vaga a partir de um link do Indeed.
+    Extrai vagas do RemoteOK usando a API JSON.
+    A API retorna todas as vagas de uma vez, então filtramos pelas stacks.
     """
+    session = get_session()
 
-    jobs = []
-    job_links = await get_remoteok_links()
-    for link in job_links:
-        scraper = cloudscraper.create_scraper()
-        response = await asyncio.get_event_loop().run_in_executor(None, scraper.get, link)
+    try:
+        response = await asyncio.to_thread(session.get, 'https://remoteok.com/api', timeout=30)
 
-        if response.status_code == 200:
-          soup = BeautifulSoup(response.text, 'html.parser')
-          print(soup)
-          data = soup.find_all('script', type='application/ld+json')
-          data = data[2]
-          data = json.loads(data.text)
+        if response.status_code != 200:
+            print(f'Erro ao acessar API RemoteOK: {response.status_code}')
+            return []
 
-          jobTitle = data['title']
+        data = response.json()
 
-          company = data['hiringOrganization']['name']
+        # Primeiro item é metadata, vagas começam do índice 1
+        if not data or len(data) < 2:
+            print('Nenhuma vaga encontrada na API RemoteOK')
+            return []
 
-          location = ""
+        # Converter stacks para lowercase para comparação
+        stacks_lower = {s.lower().replace('_', ' ').replace('-', ' ') for s in stacks}
 
-          try:
-              work_type = data['jobLocationType']
-              if work_type == 'TELECOMMUTE':
-                  work_type = 'Remoto'
-          except:
-              work_type = "Remoto"  # RemoteOK é sempre remoto
+        jobs = []
+        seen_ids = set()
 
-          # Extrai regime de contratação
-          try:
-              employment_type = data.get('employmentType', '')
-              if isinstance(employment_type, list):
-                  employment_type = employment_type[0] if employment_type else ''
-              hiring_regime_map = {
-                  'FULL_TIME': 'Full-time',
-                  'PART_TIME': 'Part-time',
-                  'CONTRACTOR': 'Contractor',
-                  'TEMPORARY': 'Temporary',
-                  'INTERN': 'Internship'
-              }
-              hiring_regime = hiring_regime_map.get(employment_type, 'Full-time')
-          except:
-              hiring_regime = "Full-time"
+        for item in data[1:]:  # Pula o primeiro item (metadata)
+            job_id = item.get('id')
+            if not job_id or job_id in seen_ids:
+                continue
 
-          try:
-            currency = data['baseSalary']['currency']
-            min_value = data['baseSalary']['value']['minValue']
-            max_value = data['baseSalary']['value']['maxValue']
+            # Verificar se a vaga está relacionada às stacks
+            tags = item.get('tags', [])
+            position = item.get('position', '').lower()
+            description = item.get('description', '').lower()[:500]  # Primeiros 500 chars
 
-            if min_value == max_value:
-                salary_range = f'{min_value}'
-            else:
-                salary_range = f'{min_value} - {max_value}'
+            # Checar se alguma stack está nas tags, posição ou descrição
+            is_relevant = False
+            for stack in stacks_lower:
+                stack_words = stack.split()
+                if any(word in tags for word in stack_words):
+                    is_relevant = True
+                    break
+                if any(word in position for word in stack_words):
+                    is_relevant = True
+                    break
+                if any(word in description for word in stack_words):
+                    is_relevant = True
+                    break
 
-            salary = f'{currency}, {salary_range}'
+            if not is_relevant:
+                continue
 
-          except KeyError:
+            seen_ids.add(job_id)
+
+            # Extrair dados
+            link = item.get('url', '')
+            job_title = item.get('position', '')
+            company = item.get('company', '')
+            location = []  # RemoteOK é sempre remoto
+            work_type = 'Remoto'
+            hiring_regime = 'Full-time'  # Padrão para RemoteOK
+
+            # Salário
             salary = ''
+            salary_min = item.get('salary_min')
+            salary_max = item.get('salary_max')
+            if salary_min and salary_max:
+                if salary_min == salary_max:
+                    salary = f'USD {salary_min}'
+                else:
+                    salary = f'USD {salary_min} - {salary_max}'
+            elif salary_min:
+                salary = f'USD {salary_min}'
 
-          publication_date = data['datePosted'][:10]
+            # Data de publicação no formato brasileiro DD/MM/YYYY
+            date_posted = item.get('date', '')
+            date_raw = date_posted[:10] if date_posted else ''
+            if date_raw and len(date_raw) == 10 and '-' in date_raw:
+                parts = date_raw.split('-')
+                publication_date = f"{parts[2]}/{parts[1]}/{parts[0]}"
+            else:
+                publication_date = date_raw
 
-          job = [link, jobTitle, company, location, work_type, hiring_regime, salary, publication_date]
-          jobs.append(job)
+            job = [link, job_title, company, location, work_type, hiring_regime, salary, publication_date]
+            jobs.append(job)
 
-        await asyncio.sleep(random.uniform(10, 20))
+        print(f'Foram obtidas {len(jobs)} vagas do site RemoteOK')
+        return jobs
 
-    print(f'Foram obtidas {len(jobs)} vagas')
-    return jobs
+    except Exception:
+        return []
+
+
+def reset_session():
+    """Reseta a sessão (útil em caso de bloqueio)."""
+    global _session
+    _session = None
+
+
+# Teste
+if __name__ == "__main__":
+    jobs = asyncio.run(get_remoteok_jobs())
+    print(f'Total: {len(jobs)}')
+    for job in jobs[:10]:
+        print(job)

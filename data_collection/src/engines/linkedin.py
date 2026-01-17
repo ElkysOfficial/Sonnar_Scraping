@@ -36,7 +36,13 @@ async def get_linkedin_jobs() -> list:
                         else:
                             work_type = "Presencial"
 
-                        location = location_raw
+                        # Localização como lista
+                        if work_type == "Remoto":
+                            location = []
+                        else:
+                            # Separar cidade e estado
+                            parts = [p.strip() for p in location_raw.split(',') if p.strip()]
+                            location = parts[:2] if parts else []
 
                         # Tenta extrair regime do título (heurística)
                         title_lower = job_title.lower()
@@ -51,10 +57,17 @@ async def get_linkedin_jobs() -> list:
 
                         salary = ""
                         time_element = cell.find('time', class_='job-search-card__listdate')
-                        publication_date = time_element['datetime'] if time_element else ""
+                        date_raw = time_element['datetime'][:10] if time_element and time_element.get('datetime') else ""
+
+                        # Data de publicação no formato brasileiro DD/MM/YYYY
+                        if date_raw and len(date_raw) == 10 and '-' in date_raw:
+                            parts = date_raw.split('-')
+                            publication_date = f"{parts[2]}/{parts[1]}/{parts[0]}"
+                        else:
+                            publication_date = date_raw
 
                         job = [link, job_title, company, location, work_type, hiring_regime, salary, publication_date]
                         jobs.append(job)
 
-    print(f'Foram obtidas {len(jobs)} vagas')
+    print(f'Foram obtidas {len(jobs)} vagas do site LinkedIn')
     return jobs

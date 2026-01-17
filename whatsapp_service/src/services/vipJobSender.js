@@ -253,22 +253,44 @@ function jobMatchesStacks(job, subscriberStacks) {
  */
 function formatJobMessage(job) {
   const title = job.title || job.job_title || "Não informado"
-  const company = job.author?.name || job.company || "Não informado"
 
   const fields = job.fields || []
-  const getFieldValue = (name) => {
-    const field = fields.find((f) => f.name?.toLowerCase().includes(name.toLowerCase()))
-    return field?.value || null
+  const normalize = (value) => {
+    if (!value) {
+      return ""
+    }
+    return value
+      .toString()
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .trim()
   }
 
-  const location = getFieldValue("local") || job.location || "Não informado"
-  const salary = getFieldValue("salário") || getFieldValue("salario") || job.salary || "Não informado"
-  const regime = getFieldValue("regime") || job.hiring_regime || "Não informado"
-  const workType = getFieldValue("tipo") || job.work_type || "Não informado"
-  const publicationDate = getFieldValue("publicação") || getFieldValue("publicacao") || job.publication_date || "Não informado"
-  const jobUrl = job.url || job.job_url || ""
+  const getFieldValue = (keys) => {
+    for (const field of fields) {
+      const fieldName = normalize(field?.name)
+      if (!fieldName) {
+        continue
+      }
+      for (const key of keys) {
+        if (fieldName.includes(key)) {
+          return field?.value || null
+        }
+      }
+    }
+    return null
+  }
 
-  let message = `${BOT_EMOJI} *VAGA PERSONALIZADA PARA VOCÊ!*\n\n`
+  const company = getFieldValue(["empresa", "company"]) || job.author?.name || job.company || "Não informado"
+  const location = getFieldValue(["localidade", "localizacao", "local"]) || job.location || "Não informado"
+  const salary = getFieldValue(["salario", "remuneracao"]) || job.salary || "Não informado"
+  const regime = getFieldValue(["regime", "contratacao"]) || job.hiring_regime || "Não informado"
+  const workType = getFieldValue(["modalidade", "tipo"]) || job.work_type || "Não informado"
+  const publicationDate = getFieldValue(["data de publicacao", "publicacao"]) || job.publication_date || "Não informado"
+  const jobUrl = job.url || job.job_url || ""
+  let message = `${BOT_EMOJI} *VAGA PERSONALIZADA PARA VOC?!*\n\n`
+
   message += `📌 *Título:* ${title}\n`
   message += `🏢 *Empresa:* ${company}\n`
   message += `📍 *Local:* ${location}\n`

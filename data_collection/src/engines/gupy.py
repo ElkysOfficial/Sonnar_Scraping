@@ -35,21 +35,33 @@ async def get_gupy_jobs() -> list:
           title = job['name']
           company = job['careerPageName']
 
-          work_type = job['workplaceType']
-          work_type = work_types.get(work_type, work_type)
+          work_type_raw = job.get('workplaceType', '')
+          work_type = work_types.get(work_type_raw, work_type_raw) if work_type_raw else ''
 
-          hiring_regime = job['type']
-          hiring_regime = regime_types.get(hiring_regime, hiring_regime)
+          hiring_regime_raw = job.get('type', '')
+          hiring_regime = regime_types.get(hiring_regime_raw, hiring_regime_raw) if hiring_regime_raw else ''
 
-          location = f"{job['city']} - {job['state']}" if job['city'] and job['state'] else ""
+          # Localização como lista
+          city = job.get('city', '')
+          state = job.get('state', '')
+          location = []
+          if city:
+              location.append(city)
+          if state:
+              location.append(state)
 
           salary = ""
 
-          publication_date = job['publishedDate']
+          # Data de publicação no formato brasileiro DD/MM/YYYY
+          date_raw = job.get('publishedDate', '')[:10] if job.get('publishedDate') else ''
+          if date_raw and len(date_raw) == 10 and '-' in date_raw:
+              parts = date_raw.split('-')
+              publication_date = f"{parts[2]}/{parts[1]}/{parts[0]}"
+          else:
+              publication_date = date_raw
 
-          job = [link, title, company, location, work_type, hiring_regime, salary, publication_date]
+          job_data = [link, title, company, location, work_type, hiring_regime, salary, publication_date]
+          jobs.append(job_data)
 
-          jobs.append(job)
-
-  print(f'Foram obtidas {len(jobs)} vagas')
+  print(f'Foram obtidas {len(jobs)} vagas do site Gupy')
   return jobs

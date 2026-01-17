@@ -20,7 +20,6 @@ async def get_hipsters_links():
                         link = cell.find("a", class_="link").get("href")
                         links.append(link)
 
-    print(f'Foram obtidos {len(links)} links')
     return links
 
 async def get_hipsters_jobs() -> list:
@@ -41,10 +40,17 @@ async def get_hipsters_jobs() -> list:
                 job_title = data['title']
                 company = data['hiringOrganization']['name']
 
+                # Localização como lista
                 try:
-                    location = data['jobLocation']['address']['addressLocality']
-                except KeyError:
-                    location = ""
+                    locality = data['jobLocation']['address'].get('addressLocality', '')
+                    region = data['jobLocation']['address'].get('addressRegion', '')
+                    location = []
+                    if locality:
+                        location.append(locality)
+                    if region:
+                        location.append(region)
+                except (KeyError, TypeError):
+                    location = []
 
                 try:
                     work_type = data['jobLocationType']
@@ -75,11 +81,17 @@ async def get_hipsters_jobs() -> list:
                 except:
                     salary = ""
 
-                publication_date = data['datePosted'][:10]
-        
+                # Data de publicação no formato brasileiro DD/MM/YYYY
+                date_raw = data['datePosted'][:10]
+                if date_raw and len(date_raw) == 10 and '-' in date_raw:
+                    parts = date_raw.split('-')
+                    publication_date = f"{parts[2]}/{parts[1]}/{parts[0]}"
+                else:
+                    publication_date = date_raw
+
         job = [link, job_title, company, location, work_type,hiring_regime, salary, publication_date]
         jobs.append(job)
 
-    print(f'Foram obtidas {len(jobs)} vagas')
+    print(f'Foram obtidas {len(jobs)} vagas do site Hipsters')
     return jobs
 

@@ -22,7 +22,6 @@ async def get_infojobs_links() -> list:
                         link = f'https://www.infojobs.com.br{cell["data-href"]}'
                         links.append(link)
 
-    print(f'Foram obtidos {len(links)} links')
     return links
 
 
@@ -48,10 +47,17 @@ async def get_infojobs_jobs() -> dict:
                 jobTitle = data['title']
                 company = data['hiringOrganization']['name']
 
+                # Localização como lista
                 try:
-                    location = [data['jobLocation']['address']['addressLocality'],data['jobLocation']['address']['addressRegion']]
-                except KeyError:
-                    location = ""
+                    locality = data['jobLocation']['address'].get('addressLocality', '')
+                    region = data['jobLocation']['address'].get('addressRegion', '')
+                    location = []
+                    if locality:
+                        location.append(locality)
+                    if region:
+                        location.append(region)
+                except (KeyError, TypeError):
+                    location = []
 
                 try:
                     work_type = soup.find('div', class_='text-medium small font-weight-bold mb-4').get_text(strip=True)
@@ -63,7 +69,13 @@ async def get_infojobs_jobs() -> dict:
                 except:
                     hiring_regime = ""
 
-                publication_date = data['datePosted'][:10]
+                # Data de publicação no formato brasileiro DD/MM/YYYY
+                date_raw = data['datePosted'][:10]
+                if date_raw and len(date_raw) == 10 and '-' in date_raw:
+                    parts = date_raw.split('-')
+                    publication_date = f"{parts[2]}/{parts[1]}/{parts[0]}"
+                else:
+                    publication_date = date_raw
 
                 # Tenta extrair salário do JSON-LD ou do HTML
                 try:
@@ -87,5 +99,5 @@ async def get_infojobs_jobs() -> dict:
                 job = [link, jobTitle, company, location, work_type,hiring_regime, salary, publication_date]
                 jobs.append(job)
                 
-    print(f'Foram obtidas {len(jobs)} vagas')
+    print(f'Foram obtidas {len(jobs)} vagas do site InfoJobs')
     return jobs

@@ -27,7 +27,6 @@ async def get_careerjet_links() -> list:
 
                         links.append(link)
                         
-    print(f'Foram obtidos {len(links)} links do site careerjet')
     return links
 
 async def get_careerjet_jobs() -> list:
@@ -57,7 +56,7 @@ async def get_careerjet_jobs() -> list:
                 hiring_org = data.get('hiringOrganization', {})
                 company = hiring_org.get('name', '') if hiring_org else ''
                 if not company:
-                    company = 'Não informado'
+                    company = ''
 
                 # Localização
                 job_location = data.get('jobLocation', {})
@@ -100,15 +99,15 @@ async def get_careerjet_jobs() -> list:
 
                 if isinstance(employment_type, list):
                     # Pega o primeiro tipo válido
-                    hiring_regime = 'Não informado'
+                    hiring_regime = ''
                     for emp_type in employment_type:
                         if emp_type in hiring_regime_map:
                             hiring_regime = hiring_regime_map[emp_type]
                             break
                 elif employment_type:
-                    hiring_regime = hiring_regime_map.get(employment_type, 'Não informado')
+                    hiring_regime = hiring_regime_map.get(employment_type, '')
                 else:
-                    hiring_regime = 'Não informado'
+                    hiring_regime = ''
 
                 # Salário
                 try:
@@ -137,9 +136,14 @@ async def get_careerjet_jobs() -> list:
                 except:
                     salary = ''
 
-                # Data de publicação
+                # Data de publicação no formato brasileiro DD/MM/YYYY
                 date_posted = data.get('datePosted', '')
-                publication_date = date_posted[:10] if date_posted else ''
+                date_raw = date_posted[:10] if date_posted else ''
+                if date_raw and len(date_raw) == 10 and '-' in date_raw:
+                    parts = date_raw.split('-')
+                    publication_date = f"{parts[2]}/{parts[1]}/{parts[0]}"
+                else:
+                    publication_date = date_raw
 
                 job = [link, job_title, company, location, work_type, hiring_regime, salary, publication_date]
                 jobs.append(job)

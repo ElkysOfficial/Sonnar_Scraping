@@ -1,9 +1,10 @@
 import httpx
 
+
 async def get_geekhunter_jobs() -> list:
     """
-    Returns:
-    [[link, title, company, location, work_type, hiring_regime, salary, publication_date], ...]
+    Extrai vagas do GeekHunter via GraphQL API.
+    Returns: [[link, title, company, location, work_type, hiring_regime, salary, publication_date], ...]
     """
     jobs = []
     headers = {
@@ -33,6 +34,7 @@ async def get_geekhunter_jobs() -> list:
               cltMinSalary
               createdAt
               maxSalary
+              minSalary
               pjMaxSalary
               pjMinSalary
               usdAnnualSalaryMin
@@ -46,45 +48,97 @@ async def get_geekhunter_jobs() -> list:
         """,
     }
 
-    async with httpx.AsyncClient(timeout=30) as client:
-        response = await client.post("https://www.geekhunter.com.br/graphql", headers=headers, json=data)
-        response.raise_for_status()
-        json_response = response.json()
-        results = json_response["data"]["findShowcaseJobs"]["data"]
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            response = await client.post("https://www.geekhunter.com.br/graphql", headers=headers, json=data)
+            response.raise_for_status()
+            json_response = response.json()
+            results = json_response.get("data", {}).get("findShowcaseJobs", {}).get("data", [])
 
-        for result in results:
-            job_slug = result["slug"]
-            company_obj = result.get("company") or {}
-            company_name = (company_obj.get("name") or "").strip()
-            company_slug = company_obj.get("slug") or ""
+            for result in results:
+                job_slug = result.get("slug", "")
+                company_obj = result.get("company") or {}
+                company_name = (company_obj.get("name") or "").strip()
+                company_slug = company_obj.get("slug") or ""
 
-            # link correto (como você pediu)
-            link = f"https://www.geekhunter.com.br/{company_slug}/jobs/{job_slug}"
+                link = f"https://www.geekhunter.com.br/{company_slug}/jobs/{job_slug}"
+                job_title = result.get("title", "")
 
-            job_title = result["title"]
-            location = result["city"]["name"] if result.get("city") else "Remoto"
+                # Localização como lista
+                city_obj = result.get("city")
+                city_name = city_obj.get("name", "") if city_obj else ""
+                location = [city_name] if city_name else []
 
-            work_type = "Remoto" if result.get("remoteWork") else "Hibrido ou Presencial"
+                # Modalidade de trabalho
+                is_remote = result.get("remoteWork", False)
+                if is_remote:
+                    work_type = "Remoto"
+                elif city_name:
+                    work_type = "Presencial"
+                else:
+                    work_type = "Remoto"
 
-            hiring_regime = "Não informado"
-            salary = "Não informado"
-            if result.get("cltMaxSalary") and result.get("cltMinSalary"):
-                hiring_regime = "CLT"
-                salary = f"R${result['cltMinSalary']} - R${result['cltMaxSalary']}"
-            elif result.get("pjMaxSalary") and result.get("pjMinSalary"):
-                hiring_regime = "PJ"
-                salary = f"R${result['pjMinSalary']} - R${result['pjMaxSalary']}"
-            elif result.get("usdAnnualSalaryMin") and result.get("usdAnnualSalaryMax"):
-                hiring_regime = "Internacional"
-                salary = f"US${result['usdAnnualSalaryMin']} - US${result['usdAnnualSalaryMax']}"
+                # Regime e salário - tentar todas as combinações disponíveis
+                hiring_regime = ""
+                salary = ""
 
-            created_at = result.get("createdAt", "")
-            publication_date = f"{created_at[8:10]}/{created_at[5:7]}/{created_at[0:4]}" if len(created_at) >= 10 else ""
+                clt_min = result.get("cltMinSalary")
+                clt_max = result.get("cltMaxSalary")
+                pj_min = result.get("pjMinSalary")
+                pj_max = result.get("pjMaxSalary")
+                usd_min = result.get("usdAnnualSalaryMin")
+                usd_max = result.get("usdAnnualSalaryMax")
+                generic_min = result.get("minSalary")
+                generic_max = result.get("maxSalary")
 
-            job = [link, job_title, company_name, location, work_type, hiring_regime, salary, publication_date]
-            jobs.append(job)
+                if clt_min or clt_max:
+                    hiring_regime = "CLT"
+                    if clt_min and clt_max:
+                        salary = f"R$ {clt_min} - R$ {clt_max}"
+                    elif clt_min:
+                        salary = f"R$ {clt_min}"
+                    elif clt_max:
+                        salary = f"R$ {clt_max}"
+                elif pj_min or pj_max:
+                    hiring_regime = "PJ"
+                    if pj_min and pj_max:
+                        salary = f"R$ {pj_min} - R$ {pj_max}"
+                    elif pj_min:
+                        salary = f"R$ {pj_min}"
+                    elif pj_max:
+                        salary = f"R$ {pj_max}"
+                elif usd_min or usd_max:
+                    hiring_regime = "Internacional"
+                    if usd_min and usd_max:
+                        salary = f"USD {usd_min} - USD {usd_max}"
+                    elif usd_min:
+                        salary = f"USD {usd_min}"
+                    elif usd_max:
+                        salary = f"USD {usd_max}"
+                elif generic_min or generic_max:
+                    if generic_min and generic_max:
+                        salary = f"R$ {generic_min} - R$ {generic_max}"
+                    elif generic_min:
+                        salary = f"R$ {generic_min}"
+                    elif generic_max:
+                        salary = f"R$ {generic_max}"
 
-    print(f"Foram obtidas {len(jobs)} vagas")
+                # Data de publicação no formato brasileiro DD/MM/YYYY
+                created_at = result.get("createdAt", "")
+                date_raw = created_at[:10] if len(created_at) >= 10 else ""
+                if date_raw and len(date_raw) == 10 and '-' in date_raw:
+                    parts = date_raw.split('-')
+                    publication_date = f"{parts[2]}/{parts[1]}/{parts[0]}"
+                else:
+                    publication_date = date_raw
+
+                job = [link, job_title, company_name, location, work_type, hiring_regime, salary, publication_date]
+                jobs.append(job)
+
+    except Exception:
+        pass
+
+    print(f"Foram obtidas {len(jobs)} vagas do site GeekHunter")
     return jobs
 
 # if __name__ == "__main__":
