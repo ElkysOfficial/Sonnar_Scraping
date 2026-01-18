@@ -5,6 +5,8 @@ import csv
 from .job_getters import getters
 from ..routes.routes import send_to_embed_service_job
 from ..models.models import Job
+from ..utils.google_enricher import GoogleEnricher, is_missing_field
+from ..utils.jobsUtils import format_salary, format_glassdoor_salary
 
 # Definindo sent_jobs como uma variável global
 sent_jobs = set()
@@ -23,6 +25,22 @@ def load_existing_job_links():
                     # O link está na primeira coluna
                     existing_links.add(row[0])
     return existing_links
+
+def normalize_job_result(result):
+    location = result[3] if len(result) > 3 else ''
+    if isinstance(location, list):
+        location = ' - '.join(str(item) for item in location if item)
+
+    return {
+        'job_url': str(result[0]) if len(result) > 0 else '',
+        'job_title': str(result[1]) if len(result) > 1 else '',
+        'company': str(result[2]) if len(result) > 2 else '',
+        'location': str(location),
+        'work_type': str(result[4]) if len(result) > 4 else '',
+        'hiring_regime': str(result[5]) if len(result) > 5 else '',
+        'salary': str(result[6]) if len(result) > 6 else '',
+        'publication_date': str(result[7]) if len(result) > 7 else ''
+    }
 
 async def scrape_jobs(max_tasks=3):
     """
@@ -50,43 +68,70 @@ async def scrape_jobs(max_tasks=3):
     # Inicializa sent_jobs com os links existentes
     sent_jobs = load_existing_job_links()
 
-    async def process_getter(getter):
-        """
-        Função interna para processar um getter específico.
-        """
-        async with semaphore:
-            try:
-                print(f'Buscando em {getter.__name__.split("_")[1]}...')
-                results = await getter()  # Executa o getter para obter os resultados
-                for result in results:
-                    if (result[0] not in sent_jobs):  # Verifica se o job já foi processado
-                        job = Job(*result)
+    async with GoogleEnricher() as enricher:
+        async def process_getter(getter):
+            """
+            Funcao interna para processar um getter especifico.
+            """
+            async with semaphore:
+                try:
+                    print(f'Buscando em {getter.__name__.split("_")[1]}...')
+                    results = await getter()  # Executa o getter para obter os resultados
+                    for result in results:
+                        job_data = normalize_job_result(result)
+                        job_url = job_data.get('job_url')
+                        if not job_url or job_url in sent_jobs:
+                            continue  # Verifica se o job ja foi processado
+
                         try:
-                            # Envia o job para o serviço de embed
+                            job_data['salary'] = format_salary(job_data.get('salary', ''))
+                            needs_location = is_missing_field(job_data.get('location'))
+                            needs_salary = is_missing_field(job_data.get('salary'))
+                            if needs_location or needs_salary:
+                                job_data = await enricher.enrich_job(job_data)
+                                if needs_salary and job_data.get('salary'):
+                                    job_data['salary'] = format_glassdoor_salary(job_data.get('salary', ''))
+                        except Exception as e:
+                            logging.error(f"Erro ao enriquecer job: {e}")
+                            logging.error(f"Detalhes do job: {job_data}")
+
+                        job = Job(
+                            job_data.get('job_url', ''),
+                            job_data.get('job_title', ''),
+                            job_data.get('company', ''),
+                            job_data.get('location', ''),
+                            job_data.get('work_type', ''),
+                            job_data.get('hiring_regime', ''),
+                            job_data.get('salary', ''),
+                            job_data.get('publication_date', '')
+                        )
+                        try:
+                            # Envia o job para o servico de embed
                             response = await send_to_embed_service_job(job.to_dict())
                             if response and response.get("success"):
                                 # Adiciona o job ao conjunto de jobs processados
-                                sent_jobs.add(result[0])
+                                sent_jobs.add(job_url)
                                 save_job_to_csv(job)  # Salva o job no CSV
                             else:
                                 print(f"Falha ao enviar job: {job.job_title}")
                         except Exception as e:
-                            logging.error(f"Erro ao enviar job para o serviço de embed: {e}")
+                            logging.error(f"Erro ao enviar job para o servico de embed: {e}")
                             logging.error(f"Detalhes do job: {job.to_dict()}")
+                except Exception as e:
+                    logging.error(f"Erro ao executar {getter.__name__.split('_')[1]}: {e}")
+
+        while True:
+            # Cria uma tarefa assincrona para cada getter
+            tasks = [asyncio.create_task(process_getter(getter))for getter in getters]
+
+            try:
+                # Aguarda a conclusao de todas as tarefas
+                await asyncio.gather(*tasks)
             except Exception as e:
-                logging.error(f"Erro ao executar {getter.__name__.split('_')[1]}: {e}")
+                logging.error(f"Erro geral durante a execucao das tarefas: {e}")
 
-    while True:
-        # Cria uma tarefa assíncrona para cada getter
-        tasks = [asyncio.create_task(process_getter(getter))for getter in getters]
+            await asyncio.sleep(5 * 1)  # Pausa de 1 hora antes do proximo ciclo
 
-        try:
-            # Aguarda a conclusão de todas as tarefas
-            await asyncio.gather(*tasks)
-        except Exception as e:
-            logging.error(f"Erro geral durante a execução das tarefas: {e}")
-
-        await asyncio.sleep(5 * 1)  # Pausa de 1 hora antes do próximo ciclo
 
 def save_job_to_csv(job):
     """Salva os dados da vaga em um arquivo CSV."""

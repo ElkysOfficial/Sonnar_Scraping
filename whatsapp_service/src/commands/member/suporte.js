@@ -8,9 +8,9 @@ import { getRandomName } from "../../utils/index.js"
 
 export default {
   name: "suporte",
-  description: "Suporte inteligente do Takeshi usando IA treinada",
+  description: "Suporte inteligente do Sonar Bot usando IA treinada",
   commands: ["suporte", "help", "ajuda"],
-  usage: `${PREFIX}suporte como instalar o Takeshi no Termux?
+  usage: `${PREFIX}suporte como instalar o Sonar Bot no Termux?
 
 Você também pode enviar uma imagem com o comando ${PREFIX}suporte
 
@@ -38,7 +38,7 @@ Você também pode escrever o texto e responder a mensagem com o comando ${PREFI
       await sendReact(BOT_EMOJI)
 
       await sendReply(
-        `*Takeshi Assistant*
+        `*Sonar Bot Assistant*
         
 Faça sua pergunta sobre mim que eu te ajudarei!
   

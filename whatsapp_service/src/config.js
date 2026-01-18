@@ -61,6 +61,9 @@ export const ONLY_GROUP_ID = ""
 // caso queira ver os logs de mensagens recebidas
 export const DEVELOPER_MODE = false
 
+// Nivel de log padrao (talk, input, info, success, warning, error, none)
+export const LOG_LEVEL = process.env.LOG_LEVEL || 'success'
+
 // Caso queira usar proxy.
 export const PROXY_PROTOCOL = "http"
 export const PROXY_HOST = ""

@@ -12,7 +12,7 @@
 
 import fs from "node:fs"
 import { delay } from "baileys"
-import { infoLog, successLog, warningLog, errorLog } from "../utils/logger.js"
+import { infoLog, infoLogAlways, successLog, warningLog, errorLog } from "../utils/logger.js"
 import { EMBEDS_FILE_PATH, BOT_EMOJI, TIMEOUT_IN_MILLISECONDS_BY_EVENT } from "../config.js"
 import { extractStack } from "./jobDistributor.js"
 import { getVipSubscribers } from "../utils/database.js"
@@ -455,7 +455,7 @@ export function startVipJobSender(socket) {
   infoLog("════════════════════════════════════════════════════")
   infoLog("       ⭐ SERVIÇO DE VAGAS VIP INICIADO")
   infoLog("════════════════════════════════════════════════════")
-  infoLog(`👥 Assinantes ativos: ${subscribers.length}`)
+  infoLogAlways(`👥 Assinantes ativos: ${subscribers.length}`)
   infoLog(`⏱️  Intervalo de verificação: ${CHECK_INTERVAL / 60000} minutos`)
   infoLog(`⏱️  Cooldown por assinante: 5 minutos`)
   infoLog(`⏱️  Cooldown para reenvio: 48 horas`)
