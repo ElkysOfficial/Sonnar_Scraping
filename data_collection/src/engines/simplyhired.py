@@ -28,24 +28,32 @@ async def get_simplyhired_jobs() -> list:
     session = get_session()
 
     for stack in stacks:
-        try:
-            url = f'https://www.simplyhired.com.br/search?q={stack}&l='
-            response = await asyncio.to_thread(session.get, url, timeout=30)
+        # Percorrer 10 páginas por stack
+        for page in range(1, 11):
+            try:
+                url = f'https://www.simplyhired.com.br/search?q={stack}&l=&pn={page}'
+                response = await asyncio.to_thread(session.get, url, timeout=30)
 
-            if response.status_code == 200:
+                if response.status_code != 200:
+                    break
+
                 # Extrair __NEXT_DATA__ do HTML
                 match = re.search(r'<script id="__NEXT_DATA__" type="application/json">(.+?)</script>', response.text)
                 if not match:
-                    continue
+                    break
 
                 try:
                     data = json.loads(match.group(1))
                 except json.JSONDecodeError:
-                    continue
+                    break
 
                 # Navegar até as vagas
                 page_props = data.get('props', {}).get('pageProps', {})
                 job_list = page_props.get('jobs', [])
+
+                # Se não tem vagas, para de paginar
+                if not job_list:
+                    break
 
                 for item in job_list:
                     try:
@@ -116,10 +124,10 @@ async def get_simplyhired_jobs() -> list:
                     except Exception:
                         continue
 
-        except Exception:
-            continue
+                await asyncio.sleep(0.3)
 
-        await asyncio.sleep(0.5)
+            except Exception:
+                break
 
     print(f'Foram obtidas {len(jobs)} vagas do site SimplyHired')
     return jobs

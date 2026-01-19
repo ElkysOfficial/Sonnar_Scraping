@@ -33,7 +33,7 @@ def parse_date(date_str):
 
 async def get_weworkremotely_jobs() -> list:
     """
-    Extrai vagas do We Work Remotely via RSS feed.
+    Extrai vagas do We Work Remotely via múltiplos RSS feeds por categoria.
     Site 100% focado em vagas remotas.
     Returns: [[link, title, company, location, work_type, hiring_regime, salary, publication_date], ...]
     """
@@ -51,11 +51,26 @@ async def get_weworkremotely_jobs() -> list:
         'machine learning', 'ml', 'ai', 'blockchain', 'web3', 'defi'
     }
 
-    try:
-        url = 'https://weworkremotely.com/remote-jobs.rss'
-        response = await asyncio.to_thread(session.get, url, timeout=30)
+    # Múltiplos feeds RSS por categoria para maximizar cobertura
+    rss_feeds = [
+        'https://weworkremotely.com/remote-jobs.rss',
+        'https://weworkremotely.com/categories/remote-programming-jobs.rss',
+        'https://weworkremotely.com/categories/remote-devops-sysadmin-jobs.rss',
+        'https://weworkremotely.com/categories/remote-design-jobs.rss',
+        'https://weworkremotely.com/categories/remote-product-jobs.rss',
+        'https://weworkremotely.com/categories/remote-data-jobs.rss',
+        'https://weworkremotely.com/categories/remote-full-stack-programming-jobs.rss',
+        'https://weworkremotely.com/categories/remote-front-end-programming-jobs.rss',
+        'https://weworkremotely.com/categories/remote-back-end-programming-jobs.rss',
+    ]
 
-        if response.status_code == 200:
+    for rss_url in rss_feeds:
+        try:
+            response = await asyncio.to_thread(session.get, rss_url, timeout=30)
+
+            if response.status_code != 200:
+                continue
+
             # Parse XML
             root = ET.fromstring(response.content)
 
@@ -120,8 +135,10 @@ async def get_weworkremotely_jobs() -> list:
                 except Exception:
                     continue
 
-    except Exception:
-        pass
+            await asyncio.sleep(0.3)
+
+        except Exception:
+            continue
 
     print(f'Foram obtidas {len(jobs)} vagas do site WeWorkRemotely')
     return jobs

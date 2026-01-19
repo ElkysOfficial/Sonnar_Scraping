@@ -40,11 +40,14 @@ async def get_jooble_jobs() -> list:
     session = get_session()
 
     for stack in stacks:
-        try:
-            url = f'https://br.jooble.org/SearchResult?ukw={stack}'
-            response = await asyncio.to_thread(session.get, url, timeout=30)
+        # Percorrer 10 páginas por stack
+        for page in range(1, 11):
+            try:
+                url = f'https://br.jooble.org/SearchResult?ukw={stack}&p={page}'
+                response = await asyncio.to_thread(session.get, url, timeout=30)
 
-            if response.status_code == 200:
+                if response.status_code != 200:
+                    break
                 # Extrair __INITIAL_STATE__ do HTML
                 match = re.search(r'__INITIAL_STATE__\s*=\s*({.+?});?\s*</script>', response.text, re.DOTALL)
                 if not match:
@@ -141,10 +144,15 @@ async def get_jooble_jobs() -> list:
                     except Exception:
                         continue
 
-        except Exception:
-            continue
+                # Se não encontrou vagas nessa página, para de paginar
+                page_jobs = [i for i in items if not i.get('componentName') and 'url' in i]
+                if len(page_jobs) == 0:
+                    break
 
-        await asyncio.sleep(0.5)
+                await asyncio.sleep(0.3)
+
+            except Exception:
+                break
 
     print(f'Foram obtidas {len(jobs)} vagas do site Jooble')
     return jobs

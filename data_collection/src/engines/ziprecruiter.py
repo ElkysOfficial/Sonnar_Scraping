@@ -26,15 +26,23 @@ async def get_ziprecruiter_jobs() -> list:
     session = get_session()
 
     for stack in stacks:
-        try:
-            url = f'https://www.ziprecruiter.co.uk/jobs/search?q={stack}&l='
-            response = await asyncio.to_thread(session.get, url, timeout=30)
+        # Percorrer 10 páginas por stack
+        for page in range(1, 11):
+            try:
+                url = f'https://www.ziprecruiter.co.uk/jobs/search?q={stack}&l=&page={page}'
+                response = await asyncio.to_thread(session.get, url, timeout=30)
 
-            if response.status_code == 200:
+                if response.status_code != 200:
+                    break
+
                 soup = BeautifulSoup(response.text, 'html.parser')
 
                 # ZipRecruiter usa <a class="jobList-title job-link">
                 job_titles = soup.find_all('a', class_='jobList-title')
+
+                # Se não tem vagas, para de paginar
+                if not job_titles:
+                    break
 
                 for title_elem in job_titles:
                     try:
@@ -108,10 +116,10 @@ async def get_ziprecruiter_jobs() -> list:
                     except Exception:
                         continue
 
-        except Exception:
-            continue
+                await asyncio.sleep(0.3)
 
-        await asyncio.sleep(0.5)
+            except Exception:
+                break
 
     print(f'Foram obtidas {len(jobs)} vagas do site ZipRecruiter')
     return jobs
