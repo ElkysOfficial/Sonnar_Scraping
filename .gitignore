@@ -6,3 +6,5 @@ package-lock.json
 *.log
 assets/auth/
 assets/temp/
+message_sending/whatsapp_service/assets/auth/
+message_sending/whatsapp_service/assets/temp/
