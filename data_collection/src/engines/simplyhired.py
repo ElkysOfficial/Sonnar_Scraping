@@ -1,147 +1,120 @@
-import httpx
 import asyncio
 import json
-from bs4 import BeautifulSoup
+import re
+import urllib.parse
+from curl_cffi import requests
 from variavel import stacks
+
+
+# Sessão global
+_session = None
+
+
+def get_session():
+    """Retorna a sessão global, criando se necessário."""
+    global _session
+    if _session is None:
+        _session = requests.Session(impersonate='chrome')
+    return _session
 
 
 async def get_simplyhired_jobs() -> list:
     """
-    Extrai vagas do SimplyHired Brasil.
+    Extrai vagas do SimplyHired Brasil via __NEXT_DATA__ embutido no HTML.
     Returns: [[link, title, company, location, work_type, hiring_regime, salary, publication_date], ...]
     """
     jobs = []
     seen_links = set()
-
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-        'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
-    }
+    session = get_session()
 
     for stack in stacks:
         try:
-            async with httpx.AsyncClient(timeout=30, headers=headers, follow_redirects=True) as client:
-                # SimplyHired Brasil - busca remota
-                url = f'https://www.simplyhired.com.br/search?q={stack}&l=Remote'
-                response = await client.get(url)
+            url = f'https://www.simplyhired.com.br/search?q={stack}&l='
+            response = await asyncio.to_thread(session.get, url, timeout=30)
 
-                if response.status_code == 200:
-                    soup = BeautifulSoup(response.text, 'html.parser')
+            if response.status_code == 200:
+                # Extrair __NEXT_DATA__ do HTML
+                match = re.search(r'<script id="__NEXT_DATA__" type="application/json">(.+?)</script>', response.text)
+                if not match:
+                    continue
 
-                    # Tenta encontrar JSON-LD primeiro
-                    scripts = soup.find_all('script', type='application/ld+json')
-                    for script in scripts:
-                        try:
-                            data = json.loads(script.string)
-                            if isinstance(data, list):
-                                for item in data:
-                                    if item.get('@type') == 'JobPosting':
-                                        link = item.get('url', '')
-                                        if link in seen_links:
-                                            continue
-                                        seen_links.add(link)
+                try:
+                    data = json.loads(match.group(1))
+                except json.JSONDecodeError:
+                    continue
 
-                                        job_title = item.get('title', '')
+                # Navegar até as vagas
+                page_props = data.get('props', {}).get('pageProps', {})
+                job_list = page_props.get('jobs', [])
 
-                                        hiring_org = item.get('hiringOrganization', {})
-                                        company = hiring_org.get('name', '') if isinstance(hiring_org, dict) else ''
-
-                                        job_location = item.get('jobLocation', {})
-                                        address = job_location.get('address', {}) if isinstance(job_location, dict) else {}
-                                        locality = address.get('addressLocality', '')
-                                        region = address.get('addressRegion', '')
-
-                                        location = []
-                                        if locality:
-                                            location.append(locality)
-                                        if region:
-                                            location.append(region)
-
-                                        # Work type
-                                        job_location_type = item.get('jobLocationType', '')
-                                        if job_location_type == 'TELECOMMUTE' or 'remote' in job_title.lower():
-                                            work_type = 'Remoto'
-                                            location = []
-                                        else:
-                                            work_type = 'Presencial'
-
-                                        # Regime
-                                        employment_type = item.get('employmentType', '')
-                                        hiring_regime_map = {
-                                            'FULL_TIME': 'CLT',
-                                            'PART_TIME': 'Meio Período',
-                                            'CONTRACTOR': 'PJ',
-                                            'INTERN': 'Estágio',
-                                            'TEMPORARY': 'Temporário'
-                                        }
-                                        if isinstance(employment_type, list):
-                                            employment_type = employment_type[0] if employment_type else ''
-                                        hiring_regime = hiring_regime_map.get(employment_type, '')
-
-                                        # Salário
-                                        salary = ''
-                                        base_salary = item.get('baseSalary', {})
-                                        if isinstance(base_salary, dict):
-                                            currency = base_salary.get('currency', 'BRL')
-                                            value = base_salary.get('value', {})
-                                            if isinstance(value, dict):
-                                                min_val = value.get('minValue', '')
-                                                max_val = value.get('maxValue', '')
-                                                if min_val and max_val:
-                                                    salary = f'{currency} {min_val} - {max_val}'
-                                                elif min_val:
-                                                    salary = f'{currency} {min_val}'
-
-                                        # Data
-                                        date_posted = item.get('datePosted', '')
-                                        date_raw = date_posted[:10] if date_posted else ''
-                                        if date_raw and len(date_raw) == 10 and '-' in date_raw:
-                                            parts = date_raw.split('-')
-                                            publication_date = f"{parts[2]}/{parts[1]}/{parts[0]}"
-                                        else:
-                                            publication_date = date_raw
-
-                                        job = [link, job_title, company, location, work_type, hiring_regime, salary, publication_date]
-                                        jobs.append(job)
-
-                        except json.JSONDecodeError:
+                for item in job_list:
+                    try:
+                        # Link
+                        encoded_url = item.get('encodedUrl', '')
+                        if not encoded_url:
                             continue
 
-                    # Fallback: parse HTML diretamente
-                    if not jobs:
-                        job_cards = soup.find_all('article') or soup.find_all('div', class_=lambda x: x and 'job' in str(x).lower())
-                        for card in job_cards:
-                            try:
-                                link_elem = card.find('a', href=True)
-                                if not link_elem:
-                                    continue
+                        # Decodificar URL
+                        decoded_url = urllib.parse.unquote(encoded_url)
+                        link = f'https://www.simplyhired.com.br{decoded_url}'
 
-                                link = link_elem.get('href', '')
-                                if not link.startswith('http'):
-                                    link = f'https://www.simplyhired.com.br{link}'
+                        if link in seen_links:
+                            continue
+                        seen_links.add(link)
 
-                                if link in seen_links:
-                                    continue
-                                seen_links.add(link)
+                        # Título
+                        job_title = item.get('title', '')
+                        if not job_title:
+                            continue
 
-                                title_elem = card.find('h2') or card.find('h3')
-                                job_title = title_elem.get_text(strip=True) if title_elem else ''
+                        # Empresa (geralmente no título após " - ")
+                        company = ''
+                        if ' - ' in job_title:
+                            parts = job_title.rsplit(' - ', 1)
+                            job_title = parts[0].strip()
+                            company = parts[1].strip() if len(parts) > 1 else ''
 
-                                company_elem = card.find('span', class_=lambda x: x and 'company' in str(x).lower())
-                                company = company_elem.get_text(strip=True) if company_elem else ''
+                        # Localização e work_type
+                        remote_attrs = item.get('remoteAttributes', [])
+                        title_lower = job_title.lower()
 
-                                location = []
-                                work_type = 'Remoto'  # Buscamos vagas remotas
-                                hiring_regime = ''
-                                salary = ''
-                                publication_date = ''
+                        if remote_attrs or 'remoto' in title_lower or 'remote' in title_lower:
+                            work_type = 'Remoto'
+                            location = []
+                        elif 'híbrido' in title_lower or 'hybrid' in title_lower:
+                            work_type = 'Híbrido'
+                            location = []
+                        else:
+                            work_type = 'Presencial'
+                            location = []
 
-                                job = [link, job_title, company, location, work_type, hiring_regime, salary, publication_date]
-                                jobs.append(job)
+                        # Regime de contratação
+                        job_types = item.get('jobTypes', [])
+                        hiring_regime = ''
+                        for jt in job_types:
+                            jt_lower = jt.lower() if isinstance(jt, str) else ''
+                            if 'integral' in jt_lower or 'full' in jt_lower:
+                                hiring_regime = 'CLT'
+                            elif 'parcial' in jt_lower or 'part' in jt_lower:
+                                hiring_regime = 'Meio Período'
+                            elif 'temporário' in jt_lower or 'temp' in jt_lower:
+                                hiring_regime = 'Temporário'
+                            elif 'estágio' in jt_lower or 'intern' in jt_lower:
+                                hiring_regime = 'Estágio'
+                            elif 'freelance' in jt_lower or 'contract' in jt_lower:
+                                hiring_regime = 'PJ'
 
-                            except Exception:
-                                continue
+                        # Salário (não disponível na listagem)
+                        salary = ''
+
+                        # Data de publicação (não disponível na listagem)
+                        publication_date = ''
+
+                        job = [link, job_title, company, location, work_type, hiring_regime, salary, publication_date]
+                        jobs.append(job)
+
+                    except Exception:
+                        continue
 
         except Exception:
             continue
@@ -150,6 +123,12 @@ async def get_simplyhired_jobs() -> list:
 
     print(f'Foram obtidas {len(jobs)} vagas do site SimplyHired')
     return jobs
+
+
+def reset_session():
+    """Reseta a sessão (útil em caso de bloqueio)."""
+    global _session
+    _session = None
 
 
 if __name__ == "__main__":

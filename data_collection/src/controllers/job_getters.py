@@ -14,15 +14,15 @@ from ..engines.programathor import get_programathor_jobs  # falta refatorar
 from ..engines.remoteok import get_remoteok_jobs  # testar
 
 getters = [
-    # get_bne_jobs,
-    # get_catho_jobs,
-    get_careerjet_jobs,
-    # get_geekhunter_jobs,
-    # get_gupy_jobs,
-    # get_hipsters_jobs,
-    # get_indeed_jobs,
-    # get_infojobs_jobs,
-    # get_linkedin_jobs,
-    # get_programathor_jobs,
-    # get_remoteok_jobs,
+    get_bne_jobs,
+    get_catho_jobs,
+    # get_careerjet_jobs,
+    get_geekhunter_jobs,
+    get_gupy_jobs,
+    get_hipsters_jobs,
+    get_indeed_jobs,
+    get_infojobs_jobs,
+    get_linkedin_jobs,
+    get_programathor_jobs,
+    get_remoteok_jobs,
 ]
