@@ -1,6 +1,7 @@
 import asyncio
 import json
 import re
+from datetime import datetime, timedelta
 from curl_cffi import requests
 from bs4 import BeautifulSoup
 from variavel import stacks
@@ -18,36 +19,107 @@ def get_session():
     return _session
 
 
-def extract_title_from_content(content):
-    """Extrai título limpo do conteúdo HTML."""
-    if not content:
+def parse_relative_date(date_caption: str) -> str:
+    """
+    Converte datas relativas do Jooble para formato DD/MM/YYYY.
+    Exemplos: 'há 2 dias atrás', 'hoje', 'há 1 hora', 'ontem'
+    """
+    if not date_caption:
         return ''
-    # Remove tags HTML
-    soup = BeautifulSoup(content, 'html.parser')
-    text = soup.get_text(strip=True)
-    # Pega primeira linha/frase
-    lines = text.split('\n')
-    return lines[0][:100] if lines else text[:100]
+
+    date_caption = date_caption.lower().strip()
+    today = datetime.now()
+
+    # Hoje
+    if 'hoje' in date_caption or 'agora' in date_caption or 'hora' in date_caption or 'minuto' in date_caption:
+        return today.strftime('%d/%m/%Y')
+
+    # Ontem
+    if 'ontem' in date_caption:
+        return (today - timedelta(days=1)).strftime('%d/%m/%Y')
+
+    # "há X dias"
+    days_match = re.search(r'(\d+)\s*dias?', date_caption)
+    if days_match:
+        days = int(days_match.group(1))
+        return (today - timedelta(days=days)).strftime('%d/%m/%Y')
+
+    # "há X semanas"
+    weeks_match = re.search(r'(\d+)\s*semanas?', date_caption)
+    if weeks_match:
+        weeks = int(weeks_match.group(1))
+        return (today - timedelta(weeks=weeks)).strftime('%d/%m/%Y')
+
+    # "há X meses" (aproximado)
+    months_match = re.search(r'(\d+)\s*m[eê]s(es)?', date_caption)
+    if months_match:
+        months = int(months_match.group(1))
+        return (today - timedelta(days=months * 30)).strftime('%d/%m/%Y')
+
+    return ''
+
+
+def parse_iso_date(date_str: str) -> str:
+    """Converte data ISO (YYYY-MM-DD) para formato brasileiro (DD/MM/YYYY)."""
+    if not date_str:
+        return ''
+    try:
+        # Pega apenas a parte da data (ignora hora)
+        date_part = date_str[:10]
+        if len(date_part) == 10 and '-' in date_part:
+            parts = date_part.split('-')
+            return f"{parts[2]}/{parts[1]}/{parts[0]}"
+    except Exception:
+        pass
+    return ''
+
+
+def extract_hiring_regime(title: str, job_type: str = '') -> str:
+    """Extrai regime de contratação do título ou tipo de vaga."""
+    title_lower = title.lower()
+    job_type_lower = (job_type or '').lower()
+
+    if 'estágio' in title_lower or 'estagio' in title_lower or 'intern' in title_lower or 'estágio' in job_type_lower:
+        return 'Estágio'
+    if 'pj' in title_lower or 'pessoa jurídica' in title_lower or 'pessoa juridica' in title_lower:
+        return 'PJ'
+    if 'freelance' in title_lower or 'freelancer' in title_lower or 'contractor' in job_type_lower:
+        return 'Freelancer'
+    if 'temporário' in title_lower or 'temporario' in title_lower or 'temporary' in job_type_lower:
+        return 'Temporário'
+    if 'part-time' in title_lower or 'meio período' in title_lower or 'meio periodo' in title_lower:
+        return 'Meio Período'
+    if 'clt' in title_lower:
+        return 'CLT'
+    if 'full-time' in job_type_lower or 'full_time' in job_type_lower or 'integral' in job_type_lower:
+        return 'Full-time'
+
+    return ''
 
 
 async def get_jooble_jobs() -> list:
     """
     Extrai vagas do Jooble Brasil via __INITIAL_STATE__ embutido no HTML.
+
+    IMPORTANTE: O Jooble é um agregador que usa links de redirect.
+    Esta engine filtra vagas sem dados essenciais (empresa, localização).
+
     Returns: [[link, title, company, location, work_type, hiring_regime, salary, publication_date], ...]
     """
     jobs = []
-    seen_links = set()
+    seen_ids = set()
     session = get_session()
 
     for stack in stacks:
-        # Percorrer 10 páginas por stack
-        for page in range(1, 11):
+        # Percorrer até 5 páginas por stack (reduzido para evitar muitas vagas de baixa qualidade)
+        for page in range(1, 6):
             try:
                 url = f'https://br.jooble.org/SearchResult?ukw={stack}&p={page}'
                 response = await asyncio.to_thread(session.get, url, timeout=30)
 
                 if response.status_code != 200:
                     break
+
                 # Extrair __INITIAL_STATE__ do HTML
                 match = re.search(r'__INITIAL_STATE__\s*=\s*({.+?});?\s*</script>', response.text, re.DOTALL)
                 if not match:
@@ -65,6 +137,7 @@ async def get_jooble_jobs() -> list:
                     continue
 
                 items = jobs_pages[0].get('items', [])
+                page_has_jobs = False
 
                 for item in items:
                     try:
@@ -72,35 +145,46 @@ async def get_jooble_jobs() -> list:
                         if item.get('componentName'):
                             continue
 
-                        # Verificar se é uma vaga válida
-                        if 'url' not in item:
+                        # Usar uid como identificador único
+                        uid = item.get('uid', '')
+                        if not uid:
                             continue
 
-                        link = item.get('url', '')
-                        if not link:
+                        if uid in seen_ids:
                             continue
-                        if not link.startswith('http'):
-                            link = f'https://br.jooble.org{link}'
+                        seen_ids.add(uid)
 
-                        if link in seen_links:
-                            continue
-                        seen_links.add(link)
+                        # === TÍTULO ===
+                        # Usar campo 'position' que tem o título limpo
+                        job_title = item.get('position', '')
+                        if not job_title:
+                            # Fallback para fullContent
+                            full_content = item.get('fullContent', '') or item.get('content', '')
+                            if full_content:
+                                soup = BeautifulSoup(full_content, 'html.parser')
+                                text = soup.get_text(strip=True)
+                                job_title = text.split('\n')[0][:100] if text else ''
 
-                        # Título - extrair do fullContent ou content
-                        full_content = item.get('fullContent', '') or item.get('content', '')
-                        job_title = extract_title_from_content(full_content)
                         if not job_title:
                             continue
 
-                        # Empresa
+                        # === EMPRESA ===
                         company_data = item.get('company', {})
-                        company = company_data.get('name', '') if isinstance(company_data, dict) else ''
+                        company = ''
+                        if isinstance(company_data, dict):
+                            company = company_data.get('name', '') or ''
 
-                        # Localização
+                        # Pular vagas sem empresa identificada
+                        if not company or company.lower() in ['confidencial', 'não informado', 'empresa confidencial']:
+                            continue
+
+                        # === LOCALIZAÇÃO ===
                         location_data = item.get('location', {})
-                        location_name = location_data.get('name', '') if isinstance(location_data, dict) else ''
+                        location_name = ''
+                        if isinstance(location_data, dict):
+                            location_name = location_data.get('name', '') or ''
 
-                        # Detectar work_type
+                        # === WORK TYPE (Remoto/Híbrido/Presencial) ===
                         is_remote = item.get('isRemoteJob', False)
                         title_lower = job_title.lower()
                         location_lower = location_name.lower()
@@ -108,7 +192,7 @@ async def get_jooble_jobs() -> list:
                         if is_remote or 'remoto' in title_lower or 'remote' in title_lower or 'remoto' in location_lower:
                             work_type = 'Remoto'
                             location = []
-                        elif 'híbrido' in title_lower or 'hibrido' in title_lower or 'hybrid' in title_lower:
+                        elif 'híbrido' in title_lower or 'hibrido' in title_lower or 'hybrid' in title_lower or 'híbrido' in location_lower:
                             work_type = 'Híbrido'
                             parts = [p.strip() for p in location_name.split(',') if p.strip()]
                             location = parts[:2] if parts else []
@@ -117,36 +201,59 @@ async def get_jooble_jobs() -> list:
                             parts = [p.strip() for p in location_name.split(',') if p.strip()]
                             location = parts[:2] if parts else []
 
-                        # Regime de contratação
-                        job_type = item.get('jobType', '')
-                        if 'estágio' in title_lower or 'estagio' in title_lower or 'intern' in title_lower:
-                            hiring_regime = 'Estágio'
-                        elif 'pj' in title_lower or 'freelance' in title_lower or 'contractor' in job_type.lower():
-                            hiring_regime = 'PJ'
-                        elif 'temporário' in title_lower or 'temporario' in title_lower:
-                            hiring_regime = 'Temporário'
-                        else:
-                            hiring_regime = ''
+                        # === REGIME DE CONTRATAÇÃO ===
+                        job_type = item.get('jobType', '') or ''
+                        hiring_regime = extract_hiring_regime(job_title, job_type)
 
-                        # Salário
+                        # === SALÁRIO ===
                         salary = item.get('salary', '') or ''
                         if isinstance(salary, dict):
-                            salary = ''
+                            # Tentar extrair de estrutura de salário
+                            min_sal = salary.get('min', salary.get('minValue', ''))
+                            max_sal = salary.get('max', salary.get('maxValue', ''))
+                            currency = salary.get('currency', 'R$')
+                            if min_sal and max_sal:
+                                salary = f'{currency} {min_sal} - {max_sal}'
+                            elif min_sal:
+                                salary = f'{currency} {min_sal}'
+                            else:
+                                salary = ''
 
-                        # Data de publicação
-                        date_caption = item.get('dateCaption', '')
-                        # dateCaption vem como "há 2 dias", "hoje", etc - deixamos vazio
-                        publication_date = ''
+                        # Verificar estimatedSalary como fallback
+                        if not salary:
+                            estimated = item.get('estimatedSalary')
+                            if estimated and isinstance(estimated, dict):
+                                min_sal = estimated.get('min', estimated.get('minValue', ''))
+                                max_sal = estimated.get('max', estimated.get('maxValue', ''))
+                                if min_sal:
+                                    salary = f'R$ {min_sal}' + (f' - R$ {max_sal}' if max_sal else '')
 
-                        job = [link, job_title, company, location, work_type, hiring_regime, salary, publication_date]
-                        jobs.append(job)
+                        # === DATA DE PUBLICAÇÃO ===
+                        # Tentar dateUpdated primeiro (formato ISO)
+                        date_updated = item.get('dateUpdated', '')
+                        publication_date = parse_iso_date(date_updated)
+
+                        # Fallback para dateCaption (formato relativo)
+                        if not publication_date:
+                            date_caption = item.get('dateCaption', '')
+                            publication_date = parse_relative_date(date_caption)
+
+                        # === LINK ===
+                        # Construir link para página de detalhes do Jooble (mais estável que /away/)
+                        link = f'https://br.jooble.org/desc/{uid}?ckey={stack}'
+
+                        # === VALIDAÇÃO FINAL ===
+                        # Só adiciona vagas com dados mínimos preenchidos
+                        if job_title and company:
+                            job = [link, job_title, company, location, work_type, hiring_regime, salary, publication_date]
+                            jobs.append(job)
+                            page_has_jobs = True
 
                     except Exception:
                         continue
 
-                # Se não encontrou vagas nessa página, para de paginar
-                page_jobs = [i for i in items if not i.get('componentName') and 'url' in i]
-                if len(page_jobs) == 0:
+                # Se não encontrou vagas válidas nessa página, para de paginar
+                if not page_has_jobs:
                     break
 
                 await asyncio.sleep(0.3)
@@ -166,5 +273,19 @@ def reset_session():
 
 if __name__ == "__main__":
     jobs = asyncio.run(get_jooble_jobs())
-    for job in jobs[:5]:
-        print(job)
+    print(f'\n{"="*80}')
+    print(f'RESULTADO: {len(jobs)} vagas encontradas')
+    print(f'{"="*80}\n')
+
+    for i, job in enumerate(jobs[:5]):
+        link, title, company, location, work_type, hiring_regime, salary, pub_date = job
+        print(f'--- Vaga {i+1} ---')
+        print(f'Título: {title}')
+        print(f'Empresa: {company}')
+        print(f'Local: {location if location else "Não especificado"}')
+        print(f'Tipo: {work_type}')
+        print(f'Regime: {hiring_regime if hiring_regime else "Não especificado"}')
+        print(f'Salário: {salary if salary else "Não informado"}')
+        print(f'Publicação: {pub_date if pub_date else "Não informado"}')
+        print(f'Link: {link}')
+        print()
