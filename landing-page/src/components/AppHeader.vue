@@ -22,6 +22,24 @@
         <a href="#contato" class="btn btn-primary nav-cta" @click="closeMenu">
           Começar
         </a>
+
+        <!-- Theme Toggle -->
+        <button
+          class="theme-toggle"
+          @click="toggleTheme"
+          :aria-label="isDark ? 'Ativar modo claro' : 'Ativar modo escuro'"
+          :title="isDark ? 'Modo claro' : 'Modo escuro'"
+        >
+          <!-- Sun Icon (visible in dark mode) -->
+          <svg v-if="isDark" width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+            <circle cx="10" cy="10" r="4" stroke="currentColor" stroke-width="1.5"/>
+            <path d="M10 2V4M10 16V18M18 10H16M4 10H2M15.657 4.343L14.243 5.757M5.757 14.243L4.343 15.657M15.657 15.657L14.243 14.243M5.757 5.757L4.343 4.343" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+          <!-- Moon Icon (visible in light mode) -->
+          <svg v-else width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+            <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </button>
       </nav>
 
       <button
@@ -47,6 +65,7 @@ export default {
       isScrolled: false,
       isMenuOpen: false,
       activeSection: '',
+      isDark: false,
       navLinks: [
         { href: '#como-funciona', label: 'Como funciona' },
         { href: '#planos', label: 'Planos' },
@@ -57,6 +76,7 @@ export default {
   mounted() {
     window.addEventListener('scroll', this.handleScroll)
     this.setupIntersectionObserver()
+    this.initTheme()
   },
   beforeUnmount() {
     window.removeEventListener('scroll', this.handleScroll)
@@ -86,6 +106,33 @@ export default {
         { threshold: 0.3, rootMargin: '-80px 0px -50% 0px' }
       )
       sections.forEach((section) => observer.observe(section))
+    },
+    initTheme() {
+      // Check for saved theme preference, or use system preference
+      const savedTheme = localStorage.getItem('sonnar-theme')
+
+      if (savedTheme) {
+        this.isDark = savedTheme === 'dark'
+        document.documentElement.setAttribute('data-theme', savedTheme)
+      } else {
+        // Check system preference
+        const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
+        this.isDark = prefersDark
+        // Don't set attribute - let CSS handle system preference
+      }
+
+      // Listen for system preference changes
+      window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
+        if (!localStorage.getItem('sonnar-theme')) {
+          this.isDark = e.matches
+        }
+      })
+    },
+    toggleTheme() {
+      this.isDark = !this.isDark
+      const theme = this.isDark ? 'dark' : 'light'
+      document.documentElement.setAttribute('data-theme', theme)
+      localStorage.setItem('sonnar-theme', theme)
     }
   }
 }
@@ -102,14 +149,15 @@ export default {
   left: 0;
   right: 0;
   z-index: var(--z-fixed);
-  background: rgba(255, 255, 255, 0.9);
+  background: var(--header-bg);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
-  transition: all var(--transition-base);
+  transition: all var(--transition-base), background-color 0.3s ease;
   border-bottom: 1px solid transparent;
 }
 
 .header-scrolled {
+  background: var(--header-bg-scrolled);
   border-bottom-color: var(--color-border);
 }
 
@@ -196,6 +244,42 @@ export default {
 .nav-cta {
   padding: var(--space-2) var(--space-4);
   font-size: var(--text-sm);
+}
+
+/* ==========================================================================
+   Theme Toggle
+   ========================================================================== */
+
+.theme-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  padding: 0;
+  color: var(--color-text-secondary);
+  background: transparent;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.theme-toggle:hover {
+  color: var(--color-text-primary);
+  background: var(--color-surface);
+  border-color: var(--color-text-muted);
+}
+
+.theme-toggle svg {
+  width: 1.125rem;
+  height: 1.125rem;
+  transition: transform 0.3s ease;
+}
+
+.theme-toggle:hover svg {
+  transform: rotate(15deg);
 }
 
 /* ==========================================================================
@@ -307,6 +391,12 @@ export default {
     font-size: var(--text-base);
     text-align: center;
     justify-content: center;
+  }
+
+  .theme-toggle {
+    width: 2.75rem;
+    height: 2.75rem;
+    margin-top: var(--space-4);
   }
 }
 

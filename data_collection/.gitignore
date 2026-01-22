@@ -4,6 +4,7 @@ xablau.json
 cloudscrappper.ipynb
 httpx.ipynb
 cloudscrapper.ipynb
+tests/reports/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

@@ -8,20 +8,24 @@
    ========================================================================== */
 
 :root {
-  /* ========== COLORS — Solid, no gradients ========== */
+  /* ========== COLORS — Light Theme (Default) ========== */
   --color-background: #FFFFFF;
   --color-surface: #FAFBFC;
+  --color-surface-elevated: #FFFFFF;
   --color-border: #E5E7EB;
+  --color-border-subtle: #F3F4F6;
 
   /* Text */
   --color-text-primary: #111827;
   --color-text-secondary: #4B5563;
   --color-text-muted: #9CA3AF;
+  --color-text-inverse: #FFFFFF;
 
-  /* Accent */
+  /* Accent - Azul Sonnar */
   --color-accent: #2563EB;
   --color-accent-hover: #1D4ED8;
   --color-accent-soft: #EFF6FF;
+  --color-accent-muted: rgba(37, 99, 235, 0.1);
 
   /* Alias for components using --color-primary */
   --color-primary: #2563EB;
@@ -39,6 +43,95 @@
   /* Gradients (for testimonials avatars) */
   --gradient-hero: linear-gradient(135deg, #2563EB 0%, #7C3AED 100%);
 
+  /* Header specific */
+  --header-bg: rgba(255, 255, 255, 0.9);
+  --header-bg-scrolled: rgba(255, 255, 255, 0.95);
+
+  /* Shadows - Light theme */
+  --shadow-color: 0, 0, 0;
+
+  /* Theme transition */
+  --theme-transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+/* ==========================================================================
+   Dark Theme
+   ========================================================================== */
+
+[data-theme="dark"] {
+  /* Background layers - Slate palette for depth */
+  --color-background: #0f172a;
+  --color-surface: #1e293b;
+  --color-surface-elevated: #334155;
+  --color-border: #334155;
+  --color-border-subtle: #1e293b;
+
+  /* Text - High contrast for readability */
+  --color-text-primary: #f1f5f9;
+  --color-text-secondary: #94a3b8;
+  --color-text-muted: #64748b;
+  --color-text-inverse: #0f172a;
+
+  /* Accent - Slightly brighter blue for dark bg */
+  --color-accent: #3b82f6;
+  --color-accent-hover: #60a5fa;
+  --color-accent-soft: rgba(59, 130, 246, 0.15);
+  --color-accent-muted: rgba(59, 130, 246, 0.1);
+
+  /* Primary alias */
+  --color-primary: #3b82f6;
+  --color-primary-soft: rgba(59, 130, 246, 0.15);
+
+  /* Status - Adjusted for dark bg */
+  --color-success: #10b981;
+  --color-success-soft: rgba(16, 185, 129, 0.15);
+
+  /* Header */
+  --header-bg: rgba(15, 23, 42, 0.9);
+  --header-bg-scrolled: rgba(15, 23, 42, 0.95);
+
+  /* Shadows - Darker and more pronounced */
+  --shadow-color: 0, 0, 0;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.5);
+  --shadow-xl: 0 16px 48px rgba(0, 0, 0, 0.6);
+}
+
+/* Auto dark mode based on system preference */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --color-background: #0f172a;
+    --color-surface: #1e293b;
+    --color-surface-elevated: #334155;
+    --color-border: #334155;
+    --color-border-subtle: #1e293b;
+    --color-text-primary: #f1f5f9;
+    --color-text-secondary: #94a3b8;
+    --color-text-muted: #64748b;
+    --color-text-inverse: #0f172a;
+    --color-accent: #3b82f6;
+    --color-accent-hover: #60a5fa;
+    --color-accent-soft: rgba(59, 130, 246, 0.15);
+    --color-accent-muted: rgba(59, 130, 246, 0.1);
+    --color-primary: #3b82f6;
+    --color-primary-soft: rgba(59, 130, 246, 0.15);
+    --color-success: #10b981;
+    --color-success-soft: rgba(16, 185, 129, 0.15);
+    --header-bg: rgba(15, 23, 42, 0.9);
+    --header-bg-scrolled: rgba(15, 23, 42, 0.95);
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
+    --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.5);
+    --shadow-xl: 0 16px 48px rgba(0, 0, 0, 0.6);
+  }
+}
+
+/* ==========================================================================
+   Typography — Global (theme-independent)
+   ========================================================================== */
+
+:root {
   /* ========== TYPOGRAPHY — Fluid with clamp() ========== */
   --font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 
@@ -92,7 +185,7 @@
   --radius-2xl: 1.5rem;   /* 24px */
   --radius-full: 9999px;  /* Pill/Circle */
 
-  /* ========== SHADOWS ========== */
+  /* ========== SHADOWS (light theme defaults) ========== */
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
   --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
   --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.12);
@@ -154,6 +247,8 @@ body {
   min-height: 100dvh; /* Dynamic viewport height for mobile */
   /* Prevent horizontal overflow */
   overflow-x: hidden;
+  /* Smooth theme transition */
+  transition: background-color 0.3s ease, color 0.3s ease;
 }
 
 /* Prevent horizontal scroll on app container */

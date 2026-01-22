@@ -7,6 +7,7 @@
     <main id="main-content">
       <HeroSection />
       <HowItWorksSection />
+      <MapSection />
       <PricingSection />
       <FaqSection />
       <ContactSection />
@@ -20,6 +21,7 @@
 import AppHeader from './components/AppHeader.vue'
 import HeroSection from './components/HeroSection.vue'
 import HowItWorksSection from './components/HowItWorksSection.vue'
+import MapSection from './components/MapSection.vue'
 import PricingSection from './components/PricingSection.vue'
 import FaqSection from './components/FaqSection.vue'
 import ContactSection from './components/ContactSection.vue'
@@ -31,6 +33,7 @@ export default {
     AppHeader,
     HeroSection,
     HowItWorksSection,
+    MapSection,
     PricingSection,
     FaqSection,
     ContactSection,

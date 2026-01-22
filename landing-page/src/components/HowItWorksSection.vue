@@ -15,15 +15,6 @@
           <p class="step-description">{{ step.description }}</p>
         </div>
       </div>
-
-      <div class="sources">
-        <p class="sources-label">De onde vêm as vagas</p>
-        <p class="sources-list">
-          LinkedIn Jobs · Gupy · Glassdoor · Indeed · Programathor · Trampos.co ·
-          GeekHunter · Remotar · Impulso · Revelo · Vagas.com · InfoJobs · Catho · + outras
-        </p>
-        <p class="sources-note">Fontes atualizadas regularmente. Última adição: Janeiro 2025.</p>
-      </div>
     </div>
   </section>
 </template>
@@ -62,7 +53,6 @@ export default {
   /* Mobile: single column */
   grid-template-columns: 1fr;
   gap: var(--space-3);
-  margin-bottom: clamp(2.5rem, 6vw, 4rem);
 }
 
 /* Tablet: 2 columns (last one centered if odd) */
@@ -137,40 +127,6 @@ export default {
   font-size: var(--text-base);
   color: var(--color-text-secondary);
   line-height: 1.6;
-}
-
-/* ==========================================================================
-   Sources Section
-   ========================================================================== */
-
-.sources {
-  text-align: center;
-  padding: clamp(1.5rem, 5vw, 3rem);
-  background: var(--color-background);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-}
-
-.sources-label {
-  font-size: var(--text-xs);
-  font-weight: var(--font-semibold);
-  color: var(--color-text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  margin-bottom: var(--space-4);
-}
-
-.sources-list {
-  font-size: var(--text-base);
-  color: var(--color-text-secondary);
-  line-height: 1.8;
-  max-width: 40rem;
-  margin: 0 auto var(--space-4);
-}
-
-.sources-note {
-  font-size: var(--text-sm);
-  color: var(--color-text-muted);
 }
 
 /* ==========================================================================
