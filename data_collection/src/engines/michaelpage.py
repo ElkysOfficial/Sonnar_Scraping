@@ -2,12 +2,29 @@ import httpx
 import asyncio
 import json
 from bs4 import BeautifulSoup
-from variavel import stacks
+
+
+# Categorias válidas do MichaelPage Brasil (slugs pré-definidos)
+# O site não suporta busca por texto livre - apenas categorias
+MICHAELPAGE_CATEGORIES = [
+    'ti-tecnologia',
+    'engenharia',
+    'financas-contabilidade',
+    'vendas',
+    'marketing',
+    'recursos-humanos',
+    'supply-chain',
+    'juridico',
+]
 
 
 async def get_michaelpage_jobs() -> list:
     """
     Extrai vagas do Michael Page Brasil.
+
+    IMPORTANTE: MichaelPage usa categorias pré-definidas (slugs), não busca por texto.
+    As vagas são extraídas dos links /job-detail/ encontrados nas páginas de categoria.
+
     Returns: [[link, title, company, location, work_type, hiring_regime, salary, publication_date], ...]
     """
     jobs = []
@@ -19,185 +36,95 @@ async def get_michaelpage_jobs() -> list:
         'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
     }
 
-    # Busca por stacks
-    for stack in stacks:
+    # Busca por categorias válidas do site
+    for category in MICHAELPAGE_CATEGORIES:
         try:
             async with httpx.AsyncClient(timeout=30, headers=headers, follow_redirects=True) as client:
-                # Michael Page Brasil
-                url = f'https://www.michaelpage.com.br/jobs/{stack}'
+                # Michael Page Brasil - usar categorias ao invés de stacks
+                url = f'https://www.michaelpage.com.br/jobs/{category}'
                 response = await client.get(url)
 
                 if response.status_code == 200:
                     soup = BeautifulSoup(response.text, 'html.parser')
 
-                    # Tenta encontrar JSON-LD primeiro
-                    scripts = soup.find_all('script', type='application/ld+json')
-                    for script in scripts:
+                    # ESTRATÉGIA PRINCIPAL: Buscar links /job-detail/ na página
+                    # O MichaelPage não usa JSON-LD nas listagens, apenas nas páginas individuais
+                    all_links = soup.find_all('a', href=True)
+                    job_detail_links = [
+                        a for a in all_links
+                        if '/job-detail/' in a.get('href', '')
+                    ]
+
+                    for link_elem in job_detail_links:
                         try:
-                            data = json.loads(script.string)
-                            items = data if isinstance(data, list) else [data]
-
-                            for item in items:
-                                if item.get('@type') == 'JobPosting':
-                                    link = item.get('url', '')
-                                    if link in seen_links:
-                                        continue
-                                    seen_links.add(link)
-
-                                    job_title = item.get('title', '')
-
-                                    hiring_org = item.get('hiringOrganization', {})
-                                    company = hiring_org.get('name', '') if isinstance(hiring_org, dict) else ''
-
-                                    job_location = item.get('jobLocation', {})
-                                    address = job_location.get('address', {}) if isinstance(job_location, dict) else {}
-                                    locality = address.get('addressLocality', '')
-                                    region = address.get('addressRegion', '')
-
-                                    location = []
-                                    if locality:
-                                        location.append(locality)
-                                    if region:
-                                        location.append(region)
-
-                                    # Work type
-                                    job_location_type = item.get('jobLocationType', '')
-                                    title_lower = job_title.lower()
-
-                                    if job_location_type == 'TELECOMMUTE' or 'remoto' in title_lower or 'remote' in title_lower:
-                                        work_type = 'Remoto'
-                                        location = []
-                                    elif 'híbrido' in title_lower or 'hibrido' in title_lower or 'hybrid' in title_lower:
-                                        work_type = 'Híbrido'
-                                    else:
-                                        work_type = 'Presencial'
-
-                                    # Regime
-                                    employment_type = item.get('employmentType', '')
-                                    hiring_regime_map = {
-                                        'FULL_TIME': 'CLT',
-                                        'PART_TIME': 'Meio Período',
-                                        'CONTRACTOR': 'PJ',
-                                        'INTERN': 'Estágio',
-                                        'TEMPORARY': 'Temporário'
-                                    }
-                                    if isinstance(employment_type, list):
-                                        employment_type = employment_type[0] if employment_type else ''
-                                    hiring_regime = hiring_regime_map.get(employment_type, '')
-
-                                    # Salário
-                                    salary = ''
-                                    base_salary = item.get('baseSalary', {})
-                                    if isinstance(base_salary, dict):
-                                        currency = base_salary.get('currency', 'BRL')
-                                        value = base_salary.get('value', {})
-                                        if isinstance(value, dict):
-                                            min_val = value.get('minValue', '')
-                                            max_val = value.get('maxValue', '')
-                                            if min_val and max_val:
-                                                salary = f'{currency} {min_val} - {max_val}'
-                                            elif min_val:
-                                                salary = f'{currency} {min_val}'
-
-                                    # Data
-                                    date_posted = item.get('datePosted', '')
-                                    date_raw = date_posted[:10] if date_posted else ''
-                                    if date_raw and len(date_raw) == 10 and '-' in date_raw:
-                                        parts = date_raw.split('-')
-                                        publication_date = f"{parts[2]}/{parts[1]}/{parts[0]}"
-                                    else:
-                                        publication_date = date_raw
-
-                                    job = [link, job_title, company, location, work_type, hiring_regime, salary, publication_date]
-                                    jobs.append(job)
-
-                        except json.JSONDecodeError:
-                            continue
-
-                    # Fallback: parse HTML
-                    job_cards = soup.find_all('article', class_=lambda x: x and 'job' in str(x).lower())
-                    if not job_cards:
-                        job_cards = soup.find_all('div', class_=lambda x: x and 'job-result' in str(x).lower())
-                    if not job_cards:
-                        job_cards = soup.find_all('li', class_=lambda x: x and 'job' in str(x).lower())
-
-                    for card in job_cards:
-                        try:
-                            link_elem = card.find('a', href=True)
-                            if not link_elem:
+                            href = link_elem.get('href', '')
+                            if not href:
                                 continue
 
-                            link = link_elem.get('href', '')
-                            if not link:
-                                continue
-                            if not link.startswith('http'):
-                                link = f'https://www.michaelpage.com.br{link}'
+                            # Construir URL completa
+                            if href.startswith('/'):
+                                link = f'https://www.michaelpage.com.br{href}'
+                            else:
+                                link = href
 
+                            # Deduplicar
                             if link in seen_links:
                                 continue
                             seen_links.add(link)
 
-                            # Título
-                            title_elem = card.find('h2') or card.find('h3') or card.find('a', class_=lambda x: x and 'title' in str(x).lower())
-                            job_title = ''
-                            if title_elem:
-                                job_title = title_elem.get_text(strip=True)
-                            else:
-                                job_title = link_elem.get_text(strip=True)
-
-                            if not job_title:
+                            # Extrair título do texto do link
+                            job_title = link_elem.get_text(strip=True)
+                            if not job_title or len(job_title) < 3:
                                 continue
 
-                            # Empresa
-                            company_elem = card.find('span', class_=lambda x: x and 'company' in str(x).lower())
-                            company = company_elem.get_text(strip=True) if company_elem else ''
+                            # Empresa - MichaelPage geralmente é consultoria, empresa = cliente confidencial
+                            company = 'Michael Page'
 
-                            # Localização
-                            location_elem = card.find('span', class_=lambda x: x and 'location' in str(x).lower())
-                            location_raw = location_elem.get_text(strip=True) if location_elem else ''
+                            # Localização e work_type - extrair do contexto pai
+                            parent = link_elem.find_parent('div')
+                            location_raw = ''
+                            work_type = 'Presencial'
+                            hiring_regime = ''
+                            salary = ''
 
+                            if parent:
+                                parent_text = parent.get_text(strip=True).lower()
+
+                                # Detectar localização no texto
+                                if 'são paulo' in parent_text:
+                                    location_raw = 'São Paulo'
+                                elif 'rio de janeiro' in parent_text:
+                                    location_raw = 'Rio de Janeiro'
+
+                                # Detectar work_type
+                                if 'home office' in parent_text or 'remoto' in parent_text:
+                                    work_type = 'Remoto'
+                                elif 'híbrido' in parent_text or 'hibrido' in parent_text:
+                                    work_type = 'Híbrido'
+
+                                # Detectar regime
+                                if 'permanent' in parent_text or 'efetivo' in parent_text:
+                                    hiring_regime = 'CLT'
+                                elif 'temporár' in parent_text:
+                                    hiring_regime = 'Temporário'
+
+                            # Construir location como lista
                             title_lower = job_title.lower()
-                            if 'remoto' in location_raw.lower() or 'remoto' in title_lower:
+                            if work_type == 'Remoto':
+                                location = []
+                            elif location_raw:
+                                location = [location_raw]
+                            else:
+                                location = []
+
+                            # Detectar work_type também pelo título
+                            if 'remoto' in title_lower or 'remote' in title_lower:
                                 work_type = 'Remoto'
                                 location = []
-                            elif 'híbrido' in location_raw.lower() or 'híbrido' in title_lower:
+                            elif 'híbrido' in title_lower or 'hibrido' in title_lower:
                                 work_type = 'Híbrido'
-                                parts = [p.strip() for p in location_raw.split(',') if p.strip()]
-                                location = parts[:2] if parts else []
-                            else:
-                                work_type = 'Presencial'
-                                parts = [p.strip() for p in location_raw.split(',') if p.strip()]
-                                location = parts[:2] if parts else []
 
-                            # Regime de contratação
-                            hiring_regime = ''
-                            regime_elem = card.find('span', class_=lambda x: x and ('type' in str(x).lower() or 'contract' in str(x).lower()))
-                            if regime_elem:
-                                regime_text = regime_elem.get_text(strip=True).lower()
-                                if 'permanente' in regime_text or 'efetivo' in regime_text or 'full' in regime_text:
-                                    hiring_regime = 'CLT'
-                                elif 'temporário' in regime_text or 'temporary' in regime_text:
-                                    hiring_regime = 'Temporário'
-                                elif 'contrato' in regime_text or 'contract' in regime_text:
-                                    hiring_regime = 'PJ'
-
-                            # Salário
-                            salary = ''
-                            salary_elem = card.find('span', class_=lambda x: x and 'salary' in str(x).lower())
-                            if salary_elem:
-                                salary = salary_elem.get_text(strip=True)
-
-                            # Data de publicação
                             publication_date = ''
-                            date_elem = card.find('time') or card.find('span', class_=lambda x: x and 'date' in str(x).lower())
-                            if date_elem:
-                                date_raw = date_elem.get('datetime', '') or date_elem.get_text(strip=True)
-                                if date_raw and len(date_raw) >= 10:
-                                    date_raw = date_raw[:10]
-                                    if '-' in date_raw:
-                                        parts = date_raw.split('-')
-                                        if len(parts) == 3:
-                                            publication_date = f"{parts[2]}/{parts[1]}/{parts[0]}"
 
                             job = [link, job_title, company, location, work_type, hiring_regime, salary, publication_date]
                             jobs.append(job)

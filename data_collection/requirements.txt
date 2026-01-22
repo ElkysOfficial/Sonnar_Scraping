@@ -1,0 +1,33 @@
+# Sonar Data Collection - Python Dependencies
+# Install: pip install -r requirements.txt
+
+# HTTP Clients
+httpx>=0.27.0
+requests>=2.31.0
+cloudscraper>=1.2.71
+curl_cffi>=0.6.0
+
+# HTML Parsing
+beautifulsoup4>=4.12.0
+
+# Browser Automation (for Google Enricher)
+playwright>=1.40.0
+
+# Standard library dependencies already included in Python:
+# - asyncio
+# - json
+# - csv
+# - os
+# - sys
+# - re
+# - logging
+# - datetime
+# - typing
+# - pathlib
+# - unicodedata
+# - xml.etree.ElementTree
+# - urllib.parse
+# - http.server
+# - threading
+# - importlib
+# - inspect

@@ -83,18 +83,23 @@ async def get_gupy_jobs() -> list:
           job_data = [link, title, company, location, work_type, hiring_regime, salary, publication_date]
           jobs.append(job_data)
 
-  # Enriquecer vagas com salary vazio usando Google
+  # Enriquecer vagas com location/salary vazios usando Google
   if jobs:
     async with GoogleEnricher() as enricher:
       for job_data in jobs:
-        if is_missing_field(job_data[6]):  # salary está no índice 6
+        location_str = job_data[3] if isinstance(job_data[3], str) else ", ".join(job_data[3]) if job_data[3] else ""
+        needs_location = is_missing_field(location_str)
+        needs_salary = is_missing_field(job_data[6])  # salary está no índice 6
+        if needs_location or needs_salary:
           enriched = await enricher.enrich_job({
             "company": job_data[2],
             "job_title": job_data[1],
-            "location": job_data[3],
+            "location": location_str,
             "salary": job_data[6]
           })
-          if enriched.get("salary"):
+          if needs_location and enriched.get("location"):
+            job_data[3] = enriched["location"]
+          if needs_salary and enriched.get("salary"):
             job_data[6] = enriched["salary"]
 
   print(f"Foram obtidas {len(jobs)} vagas do site Gupy")

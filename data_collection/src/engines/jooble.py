@@ -114,8 +114,8 @@ async def get_jooble_jobs() -> list:
     session = get_session()
 
     for stack in stacks:
-        # Percorrer até 5 páginas por stack (reduzido para evitar muitas vagas de baixa qualidade)
-        for page in range(1, 6):
+        # Percorrer até 10 páginas por stack (~200 vagas por stack)
+        for page in range(1, 11):
             try:
                 url = f'https://br.jooble.org/SearchResult?ukw={stack}&p={page}'
                 response = await asyncio.to_thread(session.get, url, timeout=30)
@@ -140,11 +140,10 @@ async def get_jooble_jobs() -> list:
                     continue
 
                 items = jobs_pages[0].get('items', [])
-                page_has_jobs = False
 
                 for item in items:
                     try:
-                        # Pular componentes (banners, etc)
+                        # Pular componentes (banners, widgets, etc)
                         if item.get('componentName'):
                             continue
 
@@ -159,33 +158,48 @@ async def get_jooble_jobs() -> list:
 
                         # === TÍTULO ===
                         # Usar campo 'position' que tem o título limpo
-                        job_title = item.get('position', '')
+                        # Tratar encoding: remover caracteres problemáticos (emojis)
+                        job_title = item.get('position', '') or ''
+                        # Limpar caracteres não-ASCII problemáticos (emojis causam UnicodeEncodeError no Windows)
+                        job_title = job_title.encode('ascii', 'ignore').decode('ascii').strip()
+
                         if not job_title:
                             # Fallback para fullContent
                             full_content = item.get('fullContent', '') or item.get('content', '')
                             if full_content:
                                 soup = BeautifulSoup(full_content, 'html.parser')
                                 text = soup.get_text(strip=True)
+                                text = text.encode('ascii', 'ignore').decode('ascii')
                                 job_title = text.split('\n')[0][:100] if text else ''
 
                         if not job_title:
                             continue
 
                         # === EMPRESA ===
-                        company_data = item.get('company', {})
+                        company_data = item.get('company')
                         company = ''
-                        if isinstance(company_data, dict):
-                            company = company_data.get('name', '') or ''
+                        if company_data is None:
+                            company = 'Não informado'
+                        elif isinstance(company_data, dict):
+                            company = company_data.get('name') or 'Não informado'
+                        elif isinstance(company_data, str):
+                            company = company_data or 'Não informado'
+                        else:
+                            company = 'Não informado'
 
-                        # Pular vagas sem empresa identificada
-                        if not company or company.lower() in ['confidencial', 'não informado', 'empresa confidencial']:
-                            continue
+                        # Normalizar empresa confidencial
+                        if company.lower() in ['confidencial', 'empresa confidencial', '']:
+                            company = 'Confidencial'
 
                         # === LOCALIZAÇÃO ===
-                        location_data = item.get('location', {})
+                        location_data = item.get('location')
                         location_name = ''
-                        if isinstance(location_data, dict):
-                            location_name = location_data.get('name', '') or ''
+                        if location_data is None:
+                            location_name = ''
+                        elif isinstance(location_data, dict):
+                            location_name = location_data.get('name') or ''
+                        elif isinstance(location_data, str):
+                            location_name = location_data
 
                         # === WORK TYPE (Remoto/Híbrido/Presencial) ===
                         is_remote = item.get('isRemoteJob', False)
@@ -209,18 +223,23 @@ async def get_jooble_jobs() -> list:
                         hiring_regime = extract_hiring_regime(job_title, job_type)
 
                         # === SALÁRIO ===
-                        salary = item.get('salary', '') or ''
-                        if isinstance(salary, dict):
-                            # Tentar extrair de estrutura de salário
-                            min_sal = salary.get('min', salary.get('minValue', ''))
-                            max_sal = salary.get('max', salary.get('maxValue', ''))
-                            currency = salary.get('currency', 'R$')
+                        # Na prática, salary vem como string (geralmente vazia)
+                        salary_raw = item.get('salary')
+                        salary = ''
+
+                        if salary_raw is None:
+                            salary = ''
+                        elif isinstance(salary_raw, str):
+                            salary = salary_raw.strip()
+                        elif isinstance(salary_raw, dict):
+                            # Fallback caso mude para dict no futuro
+                            min_sal = salary_raw.get('min', salary_raw.get('minValue', ''))
+                            max_sal = salary_raw.get('max', salary_raw.get('maxValue', ''))
+                            currency = salary_raw.get('currency', 'R$')
                             if min_sal and max_sal:
                                 salary = f'{currency} {min_sal} - {max_sal}'
                             elif min_sal:
                                 salary = f'{currency} {min_sal}'
-                            else:
-                                salary = ''
 
                         # Verificar estimatedSalary como fallback
                         if not salary:
@@ -246,17 +265,17 @@ async def get_jooble_jobs() -> list:
                         link = f'https://br.jooble.org/desc/{uid}?ckey={stack}'
 
                         # === VALIDAÇÃO FINAL ===
-                        # Só adiciona vagas com dados mínimos preenchidos
-                        if job_title and company:
+                        # Só adiciona vagas com título preenchido (empresa pode ser "Confidencial")
+                        if job_title:
                             job = [link, job_title, company, location, work_type, hiring_regime, salary, publication_date]
                             jobs.append(job)
-                            page_has_jobs = True
 
                     except Exception:
                         continue
 
-                # Se não encontrou vagas válidas nessa página, para de paginar
-                if not page_has_jobs:
+                # Continuar paginando mesmo com duplicatas
+                # Apenas parar se a página não tiver nenhum item (fim dos resultados)
+                if len(items) == 0:
                     break
 
                 await asyncio.sleep(0.3)

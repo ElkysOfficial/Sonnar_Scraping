@@ -1,49 +1,81 @@
 stacks = {
-    # Front-End
-    'JavaScript', 'React_js', 'Angular_js', 'Vue_js', 'jQuery', 'Bootstrap', 'Tailwind_CSS',
-    'Next_js', 'Svelte',
+    # ===== LINGUAGENS DE PROGRAMAÇÃO =====
+    'Python', 'Java', 'JavaScript', 'TypeScript', 'C#', 'C++', 'Go', 'Rust',
+    'Ruby', 'PHP', 'Swift', 'Kotlin', 'Scala', 'R', 'MATLAB',
+    'Perl', 'Haskell', 'Elixir', 'Erlang', 'Clojure', 'Lua',
 
-    # Back-End
-    'Python', 'Java', 'Node_js', 'Ruby', 'PHP', 'Desenvolvedor_Csharp', 'Desenvolvedor_C', 'Desenvolvedor_Go',
-    'Rust', 'Scala', 'Spring_Boot', 'Elixir', 'Perl', 'Haskell', 'Erlang', 'Django', 'Expressjs', 'ASPNET',
-    'Ruby_on_Rails', 'Laravel',
+    # ===== FRONT-END =====
+    'React', 'Angular', 'Vue.js', 'Next.js', 'Svelte', 'jQuery',
+    'HTML', 'CSS', 'SASS', 'Bootstrap', 'Tailwind CSS', 'Material UI',
 
-    # Mobile
-    'React_Native', 'Flutter', 'Swift', 'ObjectiveC', 'Kotlin',
+    # ===== BACK-END FRAMEWORKS =====
+    'Node.js', 'Express.js', 'Django', 'Flask', 'FastAPI',
+    'Spring Boot', 'Spring', '.NET', 'ASP.NET', 'Laravel', 'Symfony',
+    'Ruby on Rails', 'NestJS', 'Gin', 'Echo',
 
-    # Design
-    'UI_Design', 'UX_Design', 'Figma', 'Adobe_XD', 'Sketch',
+    # ===== MOBILE =====
+    'React Native', 'Flutter', 'iOS Developer', 'Android Developer',
+    'Xamarin', 'Ionic', 'SwiftUI', 'Jetpack Compose',
 
-    # Cloud
-    'AWS', 'Azure', 'Google_Cloud_Platform', 'Heroku', 'Firebase', 'Netlify', 'Vercel', 'Render', 'Flyio', 'Appliku',
+    # ===== BANCO DE DADOS =====
+    'SQL', 'PostgreSQL', 'MySQL', 'MongoDB', 'Redis', 'Oracle',
+    'SQL Server', 'SQLite', 'Cassandra', 'DynamoDB', 'Elasticsearch',
+    'Neo4j', 'MariaDB', 'CouchDB',
 
-    # Banco de Dados
-    'PostgreSQL', 'MySQL', 'MongoDB', 'SQLite', 'Redis', 'Oracle', 'SQL', 'Cassandra', 'MariaDB',
+    # ===== CLOUD & DEVOPS =====
+    'AWS', 'Azure', 'Google Cloud', 'GCP', 'Heroku', 'Firebase',
+    'Docker', 'Kubernetes', 'Terraform', 'Ansible', 'Jenkins',
+    'CI/CD', 'DevOps', 'SRE', 'GitOps', 'ArgoCD', 'Helm',
+    'Linux', 'Unix', 'Bash', 'Shell Script',
 
-    # Arquitetura de Software
-    'Microservices', 'REST_APIs', 'GraphQL', 'Design_Patterns', 'Clean_Architecture', 'DomainDriven_Design_DDD',
-    'EventDriven_Architecture_EDA', 'Serverless_Architecture', 'CloudNative_Architecture', 'Docker',
-    'Kubernetes', 'CICD_Continuous_IntegrationContinuous_Deployment', 'DevOps', 'Performance',
-    'Scalability',
+    # ===== DATA & ANALYTICS =====
+    'Data Engineer', 'Data Analyst', 'Business Intelligence', 'BI',
+    'Power BI', 'Tableau', 'Looker', 'Metabase',
+    'ETL', 'Data Pipeline', 'Apache Spark', 'Apache Kafka',
+    'Airflow', 'dbt', 'Snowflake', 'Databricks', 'BigQuery',
 
-    # Redes
-    'TCPIP', 'HTTP', 'DNS', 'Load_Balancing', 'Security',
+    # ===== MACHINE LEARNING & AI =====
+    'Machine Learning', 'Deep Learning', 'Data Science', 'AI',
+    'TensorFlow', 'PyTorch', 'Keras', 'Scikit-learn',
+    'NLP', 'Computer Vision', 'MLOps', 'LLM', 'GPT',
+    'Pandas', 'NumPy', 'Jupyter',
 
-    # Análise de Dados
-    'SQL', 'R', 'Pandas', 'NumPy', 'Scikitlearn', 'Tableau', 'Power_BI', 'MATLAB',
+    # ===== ARQUITETURA & PADRÕES =====
+    'Microservices', 'REST API', 'GraphQL', 'gRPC',
+    'Software Architecture', 'System Design', 'Domain Driven Design',
+    'Event Driven', 'Serverless', 'Cloud Native',
 
-    # Machine Learning/IA
-    'TensorFlow', 'PyTorch', 'Keras', 'Scikitlearn', 'Natural_Language_Processing_NLP',
+    # ===== SEGURANÇA =====
+    'Cybersecurity', 'Information Security', 'Security Engineer',
+    'Penetration Testing', 'SIEM', 'SOC Analyst',
 
-    # Áreas da TI
-    'Desenvolvedor_FrontEnd', 'Desenvolvedor_BackEnd', 'Desenvolvedor_FullStack', 'Desenvolvedor_Mobile',
-    'Arquiteto_de_Software', 'Engenheiro_de_Software', 'Analista_de_Sistemas', 'Analista_de_Negocios',
-    'Analista_de_Testes', 'Engenheiro_de_DevOps', 'Administrador_de_Banco_de_Dados_DBA''Administrador_de_Sistemas',
-    'Especialista_em_Seguranca_da_Informacao', 'Cientista_de_Dados', 'Engenheiro_de_Machine_Learning',
-    'Gerente_de_Projetos', 'Scrum_Master', 'Product_Owner', 'UXUI_Designer',
+    # ===== QA & TESTING =====
+    'QA Engineer', 'Test Automation', 'Selenium', 'Cypress',
+    'Jest', 'Playwright', 'JUnit', 'pytest', 'SDET',
 
-    # Hierarquia em TI
-    'Estagiarioa_em_TI', 'Desenvolvedora_Junior', 'Analista_Junior', 'Desenvolvedora_Plenoa', 'Analista_Plenoa',
-    'Desenvolvedora_Senior', 'Analista_Senior', 'Especialista', 'Tech_Lead', 'Arquitetoa_de_Software', 'Gerente_de_TI',
-    'CTO_Chief_Technology_Officer'
+    # ===== CARGOS / JOB TITLES =====
+    # Inglês (Dice, LinkedIn, etc)
+    'Software Engineer', 'Software Developer', 'Full Stack Developer',
+    'Frontend Developer', 'Backend Developer', 'Web Developer',
+    'Mobile Developer', 'DevOps Engineer', 'Cloud Engineer',
+    'Data Engineer', 'Data Scientist', 'ML Engineer',
+    'Site Reliability Engineer', 'Platform Engineer',
+    'Solutions Architect', 'Technical Lead', 'Engineering Manager',
+    'Product Manager', 'Scrum Master', 'Agile Coach',
+
+    # Português (Indeed BR, Catho, InfoJobs, Gupy)
+    'Desenvolvedor', 'Programador', 'Analista de Sistemas',
+    'Engenheiro de Software', 'Desenvolvedor Full Stack',
+    'Desenvolvedor Front-End', 'Desenvolvedor Back-End',
+    'Desenvolvedor Mobile', 'Analista de Dados',
+    'Cientista de Dados', 'Arquiteto de Software',
+    'Analista de QA', 'Analista de Testes',
+    'Administrador de Banco de Dados', 'DBA',
+    'Analista de Segurança', 'Analista DevOps',
+
+    # ===== NÍVEIS DE EXPERIÊNCIA =====
+    'Junior Developer', 'Senior Developer', 'Staff Engineer',
+    'Principal Engineer', 'Tech Lead', 'CTO',
+    'Desenvolvedor Junior', 'Desenvolvedor Pleno', 'Desenvolvedor Senior',
+    'Estagiário TI', 'Trainee',
 }
