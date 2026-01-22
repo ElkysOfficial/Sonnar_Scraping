@@ -48,6 +48,16 @@ export async function onMessagesUpsert({ socket, messages, startProcess }) {
     try {
       const timestamp = webMessage.messageTimestamp;
 
+      // DEBUG: Log para identificar mensagens de mídia
+      const hasImage = !!webMessage?.message?.imageMessage;
+      const hasDocument = !!webMessage?.message?.documentMessage;
+      const hasViewOnce = !!webMessage?.message?.viewOnceMessage || !!webMessage?.message?.viewOnceMessageV2;
+      if (hasImage || hasDocument || hasViewOnce) {
+        infoLog(`[DEBUG MEDIA] Mídia detectada - Image: ${hasImage}, Document: ${hasDocument}, ViewOnce: ${hasViewOnce}`);
+        infoLog(`[DEBUG MEDIA] RemoteJid: ${webMessage?.key?.remoteJid}`);
+        infoLog(`[DEBUG MEDIA] Message keys: ${Object.keys(webMessage?.message || {}).join(', ')}`);
+      }
+
       if (webMessage?.message) {
         messageHandler(socket, webMessage);
       }

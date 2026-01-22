@@ -15,7 +15,10 @@ def get_session():
     """Retorna a sessão global, criando se necessário."""
     global _session
     if _session is None:
-        _session = requests.Session(impersonate='chrome')
+        # IMPORTANTE: Não adicionar headers personalizados!
+        # impersonate='chrome120' já configura todos os headers corretos.
+        # Headers extras conflitam e causam 403.
+        _session = requests.Session(impersonate='chrome120')
     return _session
 
 

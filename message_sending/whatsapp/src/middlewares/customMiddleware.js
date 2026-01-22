@@ -8,7 +8,7 @@
  *
  * @author Dev Gui
  */
-import { delay } from "baileys"
+import { delay, downloadContentFromMessage } from "baileys"
 import {
   BOT_EMOJI,
   BOT_LID,
@@ -111,6 +111,69 @@ function isPrivateMessage(remoteJid) {
 async function sendWithDelay(socket, jid, content) {
   await delay(TIMEOUT_IN_MILLISECONDS_BY_EVENT)
   return await socket.sendMessage(jid, content)
+}
+
+/**
+ * Obtém o conteúdo de mídia da mensagem (trata viewOnce, etc.)
+ */
+function getMediaContent(webMessage, context) {
+  return (
+    webMessage?.message?.[`${context}Message`] ||
+    webMessage?.message?.viewOnceMessage?.message?.[`${context}Message`] ||
+    webMessage?.message?.viewOnceMessageV2?.message?.[`${context}Message`] ||
+    webMessage?.message?.extendedTextMessage?.contextInfo?.quotedMessage?.[`${context}Message`] ||
+    webMessage?.message?.extendedTextMessage?.contextInfo?.quotedMessage?.viewOnceMessage?.message?.[`${context}Message`] ||
+    webMessage?.message?.extendedTextMessage?.contextInfo?.quotedMessage?.viewOnceMessageV2?.message?.[`${context}Message`]
+  )
+}
+
+/**
+ * Verifica se a mensagem contém mídia (imagem ou documento)
+ */
+function hasMediaContent(webMessage) {
+  return !!(getMediaContent(webMessage, "image") || getMediaContent(webMessage, "document"))
+}
+
+/**
+ * Baixa mídia (imagem ou documento) de uma mensagem do WhatsApp
+ * @returns {Promise<{buffer: Buffer, mimetype: string, filename?: string} | null>}
+ */
+async function downloadMediaFromMessage(webMessage) {
+  try {
+    const imageMessage = getMediaContent(webMessage, "image")
+    const documentMessage = getMediaContent(webMessage, "document")
+
+    if (!imageMessage && !documentMessage) {
+      infoLog(`[DOWNLOAD MEDIA] Nenhuma mídia encontrada na mensagem`)
+      return null
+    }
+
+    const mediaMessage = imageMessage || documentMessage
+    const mediaType = imageMessage ? "image" : "document"
+
+    infoLog(`[DOWNLOAD MEDIA] Iniciando download de ${mediaType}...`)
+
+    const stream = await downloadContentFromMessage(mediaMessage, mediaType)
+    let buffer = Buffer.from([])
+
+    for await (const chunk of stream) {
+      buffer = Buffer.concat([buffer, chunk])
+    }
+
+    infoLog(`[DOWNLOAD MEDIA] Download concluído. Tamanho: ${buffer.length} bytes`)
+
+    return {
+      buffer,
+      mimetype: mediaMessage.mimetype || (imageMessage ? "image/jpeg" : "application/octet-stream"),
+      filename: documentMessage?.fileName || null,
+      isImage: !!imageMessage,
+      isDocument: !!documentMessage
+    }
+  } catch (error) {
+    errorLog(`[DOWNLOAD MEDIA] Erro ao baixar mídia: ${error.message}`)
+    errorLog(`[DOWNLOAD MEDIA] Stack: ${error.stack}`)
+    return null
+  }
 }
 
 function normalizePhone(text) {
@@ -362,6 +425,133 @@ Digite *menu* para menu principal`
 }
 
 /**
+ * Mensagem para coletar filtros VIP
+ */
+function getVipFiltersMessage() {
+  return `*Vagas Personalizadas*
+
+> Envie exatamente neste formato (copie e cole):
+
+Roles: cientista de dados, engenheiro de dados
+Stacks: data, python, sql
+Senioridade: pleno, senior
+Local: Belo Horizonte/MG, Brasil
+Modalidade: remoto, hibrido
+Contrato: clt, pj
+Idiomas: pt, en
+
+*Obrigatorio:* Roles e Stacks
+*Opcional:* Senioridade, Local, Modalidade, Contrato, Idiomas
+
+----------------------------------------
+Se faltar um campo opcional, pode remover a linha.
+_ou digite "voltar" para retornar_`
+}
+
+/**
+ * Parseia os filtros VIP enviados pelo usuário
+ * @param {string} text - Texto com os filtros
+ * @returns {Object|null} Objeto com filtros parseados ou null se inválido
+ */
+function parseVipFilters(text) {
+  const lines = text.split("\n").map(l => l.trim()).filter(Boolean)
+  const filters = {
+    roles: [],
+    stacks: [],
+    seniority: [],
+    locations: [],
+    workMode: [],
+    contract: [],
+    languages: [],
+    weights: {
+      roles: 20,
+      stacks: 30,
+      seniority: 15,
+      locations: 10,
+      workMode: 10,
+      contract: 10,
+      languages: 5
+    },
+    must: {
+      roles: true,
+      stacks: true,
+      workMode: false,
+      contract: false,
+      languages: false
+    },
+    ignoreUnknown: true
+  }
+
+  const fieldMappings = {
+    "roles": "roles",
+    "role": "roles",
+    "cargos": "roles",
+    "cargo": "roles",
+    "stacks": "stacks",
+    "stack": "stacks",
+    "tecnologias": "stacks",
+    "senioridade": "seniority",
+    "seniority": "seniority",
+    "nivel": "seniority",
+    "local": "locations",
+    "locais": "locations",
+    "locations": "locations",
+    "localizacao": "locations",
+    "modalidade": "workMode",
+    "workmode": "workMode",
+    "tipo": "workMode",
+    "contrato": "contract",
+    "contract": "contract",
+    "regime": "contract",
+    "idiomas": "languages",
+    "idioma": "languages",
+    "languages": "languages"
+  }
+
+  for (const line of lines) {
+    const colonIndex = line.indexOf(":")
+    if (colonIndex === -1) continue
+
+    const rawKey = line.substring(0, colonIndex).trim().toLowerCase()
+      .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    const rawValue = line.substring(colonIndex + 1).trim()
+
+    const fieldName = fieldMappings[rawKey]
+    if (!fieldName) continue
+
+    const values = rawValue.split(",").map(v => v.trim().toLowerCase()).filter(Boolean)
+    if (values.length > 0) {
+      filters[fieldName] = values
+    }
+  }
+
+  // Valida campos obrigatórios
+  if (filters.roles.length === 0 || filters.stacks.length === 0) {
+    return null
+  }
+
+  return filters
+}
+
+/**
+ * Formata os filtros VIP para exibição
+ */
+function formatVipFiltersForDisplay(filters) {
+  if (!filters) return "Nenhum filtro definido"
+
+  const lines = []
+  if (filters.roles?.length) lines.push(`Cargos: ${filters.roles.join(", ")}`)
+  if (filters.stacks?.length) lines.push(`Stacks: ${filters.stacks.join(", ")}`)
+  if (filters.seniority?.length) lines.push(`Senioridade: ${filters.seniority.join(", ")}`)
+  if (filters.locations?.length) lines.push(`Local: ${filters.locations.join(", ")}`)
+  if (filters.workMode?.length) lines.push(`Modalidade: ${filters.workMode.join(", ")}`)
+  if (filters.contract?.length) lines.push(`Contrato: ${filters.contract.join(", ")}`)
+  if (filters.languages?.length) lines.push(`Idiomas: ${filters.languages.join(", ")}`)
+
+  return lines.length > 0 ? lines.join("\n") : "Nenhum filtro definido"
+}
+
+/**
  * Mensagem de pagamento para vagas privadas
  */
 function getPaymentPrivateMessage() {
@@ -529,16 +719,26 @@ export async function customMiddleware({ socket, webMessage, type, commonFunctio
 
     const { fullMessage, remoteJid, userLid, prefix } = extractDataFromMessage(webMessage)
 
+    // DEBUG: Log para mensagens privadas com mídia
+    const debugHasMedia = hasMediaContent(webMessage)
+    if (debugHasMedia) {
+      infoLog(`[DEBUG CUSTOM] Mídia recebida de ${remoteJid}`)
+      infoLog(`[DEBUG CUSTOM] fullMessage: "${fullMessage}"`)
+      infoLog(`[DEBUG CUSTOM] Message keys: ${Object.keys(webMessage?.message || {}).join(', ')}`)
+    }
+
     // Ignora mensagens do próprio bot em QUALQUER contexto (privado ou grupo)
     const botLidClean = BOT_LID.replace("@lid", "").replace("@s.whatsapp.net", "")
     const userLidClean = userLid?.replace("@lid", "").replace("@s.whatsapp.net", "") || ""
 
     if (userLidClean === botLidClean || remoteJid === BOT_LID || remoteJid === BOT_LID.replace("@lid", "@s.whatsapp.net")) {
+      if (debugHasMedia) infoLog(`[DEBUG CUSTOM] Ignorando: mensagem do próprio bot`)
       return
     }
 
     // Só processa mensagens privadas (não grupos)
     if (!isPrivateMessage(remoteJid)) {
+      if (debugHasMedia) infoLog(`[DEBUG CUSTOM] Ignorando: não é mensagem privada`)
       return
     }
 
@@ -553,22 +753,29 @@ export async function customMiddleware({ socket, webMessage, type, commonFunctio
       return
     }
 
-    // Ignora mensagens #auto-command (mídia sem texto/caption)
-    // Essas mensagens são placeholders gerados automaticamente e não devem ser processadas como opções de menu
-    if (fullMessage === "#auto-command") {
-      return
-    }
-
-    infoLog(`[CUSTOM MIDDLEWARE] Mensagem privada recebida: "${fullMessage?.substring(0, 50)}${fullMessage?.length > 50 ? "..." : ""}"`)
-
-    // Processa estados que aceitam mídia
+    // Processa estados que aceitam mídia ANTES de ignorar #auto-command
+    // Isso permite que imagens sem caption sejam processadas quando o usuário está aguardando comprovante
     const userId = remoteJid
     let userState = conversationStates.get(userId)
     const messageTextRaw = fullMessage?.trim() || ""
     const messageText = messageTextRaw.toLowerCase()
 
+    // Verifica se há mídia na mensagem (imagem ou documento) - usa função que trata viewOnce, etc.
+    const hasMedia = hasMediaContent(webMessage)
+
+    // DEBUG: Log do estado atual
+    if (hasMedia) {
+      infoLog(`[DEBUG STATE] userId: ${userId}`)
+      infoLog(`[DEBUG STATE] userState existe: ${!!userState}`)
+      infoLog(`[DEBUG STATE] userState.state: ${userState?.state || 'undefined'}`)
+      infoLog(`[DEBUG STATE] Todos estados salvos: ${Array.from(conversationStates.keys()).join(', ')}`)
+    }
+
     if (userState && (userState.state === "awaiting_payment_receipt_group" || userState.state === "awaiting_payment_receipt_private")) {
       // Se estiver aguardando comprovante, processa a mensagem com webMessage completo
+      // Aceita tanto mídia quanto texto (como "voltar")
+
+      infoLog(`[CUSTOM MIDDLEWARE] Usuario aguardando comprovante. hasMedia: ${hasMedia}, messageText: "${messageText}"`)
 
       // Atualiza timeout
       updateSessionTimeout(socket, userId, remoteJid)
@@ -581,6 +788,14 @@ export async function customMiddleware({ socket, webMessage, type, commonFunctio
       }
       return
     }
+
+    // Ignora mensagens #auto-command (mídia sem texto/caption) SOMENTE se não estiver aguardando comprovante
+    // Essas mensagens são placeholders gerados automaticamente e não devem ser processadas como opções de menu
+    if (fullMessage === "#auto-command") {
+      return
+    }
+
+    infoLog(`[CUSTOM MIDDLEWARE] Mensagem privada recebida: "${fullMessage?.substring(0, 50)}${fullMessage?.length > 50 ? "..." : ""}"`)
 
     // Obtém o estado atual da conversa (verificado novamente para os demais casos)
     userState = conversationStates.get(userId)
@@ -647,6 +862,10 @@ export async function customMiddleware({ socket, webMessage, type, commonFunctio
 
       case "awaiting_plan_email":
         await handlePlanEmail(socket, remoteJid, messageText, userId)
+        break
+
+      case "awaiting_vip_filters":
+        await handleVipFilters(socket, remoteJid, messageText, userId, messageTextRaw)
         break
 
       case "awaiting_payment_group":
@@ -1058,11 +1277,60 @@ async function handlePlanEmail(socket, remoteJid, messageText, userId) {
       return
     }
 
-    userState.state = "awaiting_payment_private"
+    // Para VIP, coleta os filtros antes de mostrar pagamento
+    userState.state = "awaiting_vip_filters"
     conversationStates.set(userId, userState)
-    await sendWithDelay(socket, remoteJid, { text: getPaymentPrivateMessage() })
+    await sendWithDelay(socket, remoteJid, { text: getVipFiltersMessage() })
   } catch (error) {
     errorLog(`[HANDLE PLAN EMAIL] Erro: ${error.message}`)
+  }
+}
+
+/**
+ * Processa os filtros VIP enviados pelo usuário
+ */
+async function handleVipFilters(socket, remoteJid, messageText, userId, rawMessage) {
+  try {
+    if (messageText === "voltar") {
+      const userState = conversationStates.get(userId)
+      userState.state = "awaiting_plan_email"
+      userState.timestamp = Date.now()
+      conversationStates.set(userId, userState)
+
+      await sendWithDelay(socket, remoteJid, { text: getLeadEmailMessage(userState.leadData?.name || "") })
+      return
+    }
+
+    const filters = parseVipFilters(rawMessage || messageText)
+
+    if (!filters) {
+      await sendWithDelay(socket, remoteJid, {
+        text: `*Formato invalido*
+
+Os campos *Roles* e *Stacks* são obrigatórios.
+
+Por favor, envie no formato correto:
+
+Roles: desenvolvedor, backend
+Stacks: java, python, node
+
+_ou digite "voltar" para retornar_`
+      })
+      return
+    }
+
+    const userState = conversationStates.get(userId)
+    userState.vipFilters = filters
+    userState.state = "awaiting_payment_private"
+    userState.timestamp = Date.now()
+    conversationStates.set(userId, userState)
+
+    infoLog(`[HANDLE VIP FILTERS] Filtros parseados para ${userId}: ${JSON.stringify(filters)}`)
+
+    await sendWithDelay(socket, remoteJid, { text: getPaymentPrivateMessage() })
+  } catch (error) {
+    errorLog(`[HANDLE VIP FILTERS] Erro: ${error.message}`)
+    errorLog(`[HANDLE VIP FILTERS] Stack: ${error.stack}`)
   }
 }
 
@@ -1100,20 +1368,27 @@ async function handlePaymentGroup(socket, remoteJid, messageText, userId) {
  */
 async function handlePaymentPrivate(socket, remoteJid, messageText, userId) {
   try {
+    const userState = conversationStates.get(userId)
+
     switch (messageText) {
       case "voltar":
-        conversationStates.set(userId, { state: "sonar_menu", timestamp: Date.now() })
-        await sendWithDelay(socket, remoteJid, { text: getSonarMenu() })
+        // Volta para a coleta de filtros
+        userState.state = "awaiting_vip_filters"
+        userState.timestamp = Date.now()
+        conversationStates.set(userId, userState)
+        await sendWithDelay(socket, remoteJid, { text: getVipFiltersMessage() })
         break
 
       case "pago": {
-        const userState = conversationStates.get(userId)
+        infoLog(`[DEBUG PAGO] Definindo estado awaiting_payment_receipt_private para userId: ${userId}`)
         conversationStates.set(userId, {
           state: "awaiting_payment_receipt_private",
           timestamp: Date.now(),
           clientNumber: remoteJid,
-          leadData: userState?.leadData || {}
+          leadData: userState?.leadData || {},
+          vipFilters: userState?.vipFilters || null
         })
+        infoLog(`[DEBUG PAGO] Estado salvo. Filtros VIP: ${JSON.stringify(userState?.vipFilters)}`)
         await sendWithDelay(socket, remoteJid, { text: getPaymentReceiptRequestMessage() })
         break
       }
@@ -1140,19 +1415,45 @@ async function handlePaymentReceiptGroup(socket, remoteJid, messageText, userId,
       return
     }
 
-    if (webMessage?.message?.imageMessage || webMessage?.message?.documentMessage) {
+    if (hasMediaContent(webMessage)) {
       const clientNumber = remoteJid.replace("@s.whatsapp.net", "").replace("@lid", "")
       const leadData = userState?.leadData || {}
 
+      infoLog(`[HANDLE PAYMENT RECEIPT GROUP] Mídia detectada do cliente ${clientNumber}. Iniciando download...`)
+
+      // Baixa a mídia antes de encaminhar
+      const media = await downloadMediaFromMessage(webMessage)
+
+      if (!media) {
+        errorLog(`[HANDLE PAYMENT RECEIPT GROUP] Falha ao baixar mídia do cliente ${clientNumber}`)
+        await sendWithDelay(socket, remoteJid, { text: `*Erro ao processar comprovante*\n\nPor favor, envie novamente a imagem ou documento.` })
+        return
+      }
+
+      infoLog(`[HANDLE PAYMENT RECEIPT GROUP] Mídia baixada com sucesso: ${media.isImage ? 'imagem' : 'documento'}`)
+
       for (const targetNumber of PAYMENT_NOTIFICATION_NUMBERS) {
         try {
-          await sendWithDelay(socket, targetNumber, {
-            image: webMessage.message.imageMessage || webMessage.message.documentMessage,
-            caption: `*Comprovante de Pagamento - Grupo de Vagas*
+          // Envia a mídia usando o buffer baixado
+          if (media.isImage) {
+            await sendWithDelay(socket, targetNumber, {
+              image: media.buffer,
+              caption: `*Comprovante de Pagamento - Grupo de Vagas*
 
 *Cliente:* ${clientNumber}
 *Data:* ${new Date().toLocaleString("pt-BR")}`
-          })
+            })
+          } else {
+            await sendWithDelay(socket, targetNumber, {
+              document: media.buffer,
+              mimetype: media.mimetype,
+              fileName: media.filename || `comprovante_${clientNumber}.pdf`,
+              caption: `*Comprovante de Pagamento - Grupo de Vagas*
+
+*Cliente:* ${clientNumber}
+*Data:* ${new Date().toLocaleString("pt-BR")}`
+            })
+          }
 
           await sendWithDelay(socket, targetNumber, {
             text: getPaymentNotificationGroup(clientNumber, leadData)
@@ -1184,22 +1485,40 @@ async function handlePaymentReceiptPrivate(socket, remoteJid, messageText, userI
     const userState = conversationStates.get(userId)
 
     if (messageText === "voltar") {
-      conversationStates.set(userId, { state: "awaiting_payment_private", timestamp: Date.now(), leadData: userState?.leadData || {} })
+      conversationStates.set(userId, {
+        state: "awaiting_payment_private",
+        timestamp: Date.now(),
+        leadData: userState?.leadData || {},
+        vipFilters: userState?.vipFilters || null
+      })
       await sendWithDelay(socket, remoteJid, { text: getPaymentPrivateMessage() })
       return
     }
 
-    if (webMessage?.message?.imageMessage || webMessage?.message?.documentMessage) {
+    if (hasMediaContent(webMessage)) {
       const clientNumber = remoteJid.replace("@s.whatsapp.net", "").replace("@lid", "")
       const clientLid = `${clientNumber}@lid`
       const leadData = userState?.leadData || {}
       const clientName = leadData?.name || "Não informado"
       const vipFilters = userState?.vipFilters || null
 
+      infoLog(`[HANDLE PAYMENT RECEIPT PRIVATE] Mídia detectada do cliente ${clientNumber}. Iniciando download...`)
+
+      // Baixa a mídia antes de encaminhar
+      const media = await downloadMediaFromMessage(webMessage)
+
+      if (!media) {
+        errorLog(`[HANDLE PAYMENT RECEIPT PRIVATE] Falha ao baixar mídia do cliente ${clientNumber}`)
+        await sendWithDelay(socket, remoteJid, { text: `*Erro ao processar comprovante*\n\nPor favor, envie novamente a imagem ou documento.` })
+        return
+      }
+
+      infoLog(`[HANDLE PAYMENT RECEIPT PRIVATE] Mídia baixada com sucesso: ${media.isImage ? 'imagem' : 'documento'}`)
+
       // Salva como PENDENTE (NÃO como VIP ainda)
       addVipPendingSubscriber(clientName, clientLid, vipFilters)
       updateVipPendingPaymentProof(clientLid, {
-        type: webMessage.message.imageMessage ? "image" : "document",
+        type: media.isImage ? "image" : "document",
         receivedAt: new Date().toISOString()
       })
 
@@ -1213,27 +1532,31 @@ async function handlePaymentReceiptPrivate(socket, remoteJid, messageText, userI
 
       for (const targetNumber of approvalTargets) {
         try {
-          await sendWithDelay(socket, targetNumber, {
-            image: webMessage.message.imageMessage || webMessage.message.documentMessage,
-            caption: `*COMPROVANTE VIP*
+          // Envia a mídia usando o buffer baixado
+          if (media.isImage) {
+            await sendWithDelay(socket, targetNumber, {
+              image: media.buffer,
+              caption: `*COMPROVANTE VIP*
 
 Cliente: ${clientName}
 Número: ${clientNumber}
 Data: ${new Date().toLocaleString("pt-BR")}`
-          })
+            })
+          } else {
+            await sendWithDelay(socket, targetNumber, {
+              document: media.buffer,
+              mimetype: media.mimetype,
+              fileName: media.filename || `comprovante_vip_${clientNumber}.pdf`,
+              caption: `*COMPROVANTE VIP*
+
+Cliente: ${clientName}
+Número: ${clientNumber}
+Data: ${new Date().toLocaleString("pt-BR")}`
+            })
+          }
 
           // Formata os filtros para exibição
-          let filtersSummary = "Nenhum filtro definido"
-          if (vipFilters) {
-            const lines = []
-            if (vipFilters.roles?.length) lines.push(`Cargos: ${vipFilters.roles.join(", ")}`)
-            if (vipFilters.stacks?.length) lines.push(`Stacks: ${vipFilters.stacks.join(", ")}`)
-            if (vipFilters.seniority?.length) lines.push(`Senioridade: ${vipFilters.seniority.join(", ")}`)
-            if (vipFilters.locations?.length) lines.push(`Local: ${vipFilters.locations.join(", ")}`)
-            if (vipFilters.workMode?.length) lines.push(`Modalidade: ${vipFilters.workMode.join(", ")}`)
-            if (vipFilters.contract?.length) lines.push(`Contrato: ${vipFilters.contract.join(", ")}`)
-            if (lines.length) filtersSummary = lines.join("\n")
-          }
+          const filtersSummary = formatVipFiltersForDisplay(vipFilters)
 
           const approvalMessage = `*SOLICITAÇÃO DE VIP*
 ━━━━━━━━━━━━━━━━━━━━━

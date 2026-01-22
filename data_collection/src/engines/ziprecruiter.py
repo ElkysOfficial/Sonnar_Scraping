@@ -1,7 +1,48 @@
 import asyncio
+import re
+from datetime import datetime, timedelta
 from curl_cffi import requests
 from bs4 import BeautifulSoup
 from variavel import stacks
+
+
+def parse_relative_date(date_text: str) -> str:
+    """Converte datas relativas para formato DD/MM/YYYY."""
+    if not date_text:
+        return ''
+
+    date_text = date_text.lower().strip()
+    today = datetime.now()
+
+    if 'today' in date_text or 'just' in date_text or 'now' in date_text:
+        return today.strftime('%d/%m/%Y')
+    if 'yesterday' in date_text:
+        return (today - timedelta(days=1)).strftime('%d/%m/%Y')
+
+    # "Xd" ou "X days" ou "X day ago"
+    days_match = re.search(r'(\d+)\s*d(ays?)?(\s*ago)?', date_text)
+    if days_match:
+        days = int(days_match.group(1))
+        return (today - timedelta(days=days)).strftime('%d/%m/%Y')
+
+    # "Xw" ou "X weeks"
+    weeks_match = re.search(r'(\d+)\s*w(eeks?)?(\s*ago)?', date_text)
+    if weeks_match:
+        weeks = int(weeks_match.group(1))
+        return (today - timedelta(weeks=weeks)).strftime('%d/%m/%Y')
+
+    # "Xm" ou "X months"
+    months_match = re.search(r'(\d+)\s*m(onths?)?(\s*ago)?', date_text)
+    if months_match:
+        months = int(months_match.group(1))
+        return (today - timedelta(days=months * 30)).strftime('%d/%m/%Y')
+
+    # "X hours ago"
+    hours_match = re.search(r'(\d+)\s*h(ours?)?(\s*ago)?', date_text)
+    if hours_match:
+        return today.strftime('%d/%m/%Y')
+
+    return ''
 
 
 # Sessão global
@@ -107,8 +148,28 @@ async def get_ziprecruiter_jobs() -> list:
                             if salary_elem:
                                 salary = salary_elem.get_text(strip=True)
 
-                        # Data (ZipRecruiter não mostra na listagem)
+                        # Data de publicação
                         publication_date = ''
+                        if parent:
+                            # Tentar encontrar elemento de data
+                            date_elem = parent.find('time') or parent.find('span', class_=lambda x: x and ('date' in str(x).lower() or 'posted' in str(x).lower() or 'ago' in str(x).lower()))
+                            if date_elem:
+                                date_text = date_elem.get('datetime', '') or date_elem.get_text(strip=True)
+                                if date_text:
+                                    if len(date_text) >= 10 and '-' in date_text:
+                                        date_raw = date_text[:10]
+                                        parts = date_raw.split('-')
+                                        if len(parts) == 3:
+                                            publication_date = f"{parts[2]}/{parts[1]}/{parts[0]}"
+                                    else:
+                                        publication_date = parse_relative_date(date_text)
+
+                            # Fallback: buscar texto com "ago"
+                            if not publication_date:
+                                card_text = parent.get_text()
+                                ago_match = re.search(r'(\d+\s*(?:d|day|hour|week|month)s?\s*ago)', card_text, re.I)
+                                if ago_match:
+                                    publication_date = parse_relative_date(ago_match.group(1))
 
                         job = [link, job_title, company, location, work_type, hiring_regime, salary, publication_date]
                         jobs.append(job)

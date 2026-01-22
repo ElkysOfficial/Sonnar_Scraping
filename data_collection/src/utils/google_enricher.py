@@ -266,31 +266,32 @@ class GoogleEnricher:
 
     async def __aenter__(self):
         self._playwright = await async_playwright().start()
-        launch_args = ["--disable-blink-features=AutomationControlled", "--disable-dev-shm-usage"]
-
-        # Garante que o diretório do perfil existe
-        os.makedirs(self.profile_path, exist_ok=True)
+        launch_args = [
+            "--disable-blink-features=AutomationControlled",
+            "--disable-dev-shm-usage",
+            "--no-sandbox",
+            "--disable-setuid-sandbox",
+        ]
 
         try:
-            # Usa perfil persistente para manter cookies e dados entre execuções
-            self._context = await self._playwright.chromium.launch_persistent_context(
-                self.profile_path,
+            # Tenta usar o Chrome instalado primeiro
+            self._browser = await self._playwright.chromium.launch(
                 channel="chrome",
                 headless=self.headless,
                 args=launch_args,
-                locale="pt-BR",
-                timezone_id="America/Sao_Paulo",
-                user_agent=DEFAULT_USER_AGENT
             )
         except Exception:
-            self._context = await self._playwright.chromium.launch_persistent_context(
-                self.profile_path,
+            # Fallback para Chromium bundled
+            self._browser = await self._playwright.chromium.launch(
                 headless=self.headless,
                 args=launch_args,
-                locale="pt-BR",
-                timezone_id="America/Sao_Paulo",
-                user_agent=DEFAULT_USER_AGENT
             )
+
+        self._context = await self._browser.new_context(
+            locale="pt-BR",
+            timezone_id="America/Sao_Paulo",
+            user_agent=DEFAULT_USER_AGENT,
+        )
 
         await self._context.add_init_script(
             "Object.defineProperty(navigator, 'webdriver', {get: () => undefined});"
@@ -299,10 +300,26 @@ class GoogleEnricher:
         return self
 
     async def __aexit__(self, exc_type, exc, tb):
-        if self._context:
-            await self._context.close()
-        if self._playwright:
-            await self._playwright.stop()
+        try:
+            if self._page:
+                await self._page.close()
+        except Exception:
+            pass
+        try:
+            if self._context:
+                await self._context.close()
+        except Exception:
+            pass
+        try:
+            if self._browser:
+                await self._browser.close()
+        except Exception:
+            pass
+        try:
+            if self._playwright:
+                await self._playwright.stop()
+        except Exception:
+            pass
 
     def _load_cache(self) -> Dict[str, Dict[str, str]]:
         default_cache = {

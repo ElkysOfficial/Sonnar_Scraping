@@ -30,33 +30,70 @@ def get_scraper():
 
 
 async def get_bne_job_ids() -> list:
-    """Extrai IDs das vagas de emprego da BNE."""
-    job_ids = []
+    """Extrai IDs das vagas de emprego da BNE com paginação automática."""
+    job_ids = set()  # Usar set para evitar duplicatas
     scraper = get_scraper()
 
-    for page in range(1, 3):
-        try:
-            if page > 1:
-                await asyncio.sleep(random.uniform(1, 3))
+    # Áreas de TI para buscar
+    areas = [
+        'Inform%C3%A1tica',  # Informática
+        'Tecnologia',
+        'Desenvolvimento',
+        'Programador',
+        'Software',
+    ]
 
-            response = await asyncio.to_thread(
-                scraper.get,
-                f'https://www.bne.com.br/vagas-de-emprego-na-area-de-Inform%C3%A1tica?Area=Inform%C3%A1tica&Sort=0&Page={page}',
-                timeout=30
-            )
+    for area in areas:
+        page = 1
+        consecutive_empty = 0
+        max_pages = 50  # Limite de segurança
 
-            if response.status_code == 200:
-                soup = BeautifulSoup(response.text, 'html.parser')
-                # Nova estrutura: section com class job__card__container
-                jobs = soup.find_all('section', class_='job__card__container')
-                for job in jobs:
-                    # Extrair job_id do atributo id="job-XXXXXX"
-                    job_id = job.get('id', '').replace('job-', '')
-                    if job_id:
-                        job_ids.append(job_id)
-        except Exception:
-            continue
-    return job_ids
+        while page <= max_pages and consecutive_empty < 2:
+            try:
+                if page > 1 or area != areas[0]:
+                    await asyncio.sleep(random.uniform(1, 2))
+
+                url = f'https://www.bne.com.br/vagas-de-emprego-na-area-de-{area}?Area={area}&Sort=0&Page={page}'
+                response = await asyncio.to_thread(
+                    scraper.get,
+                    url,
+                    timeout=30
+                )
+
+                if response.status_code == 200:
+                    soup = BeautifulSoup(response.text, 'html.parser')
+                    # Nova estrutura: section com class job__card__container
+                    jobs = soup.find_all('section', class_='job__card__container')
+
+                    if not jobs:
+                        consecutive_empty += 1
+                        page += 1
+                        continue
+
+                    consecutive_empty = 0
+                    jobs_found_this_page = 0
+
+                    for job in jobs:
+                        # Extrair job_id do atributo id="job-XXXXXX"
+                        job_id = job.get('id', '').replace('job-', '')
+                        if job_id and job_id not in job_ids:
+                            job_ids.add(job_id)
+                            jobs_found_this_page += 1
+
+                    # Se não encontrou vagas novas, pode estar no fim
+                    if jobs_found_this_page == 0:
+                        consecutive_empty += 1
+
+                    page += 1
+                else:
+                    consecutive_empty += 1
+                    page += 1
+
+            except Exception:
+                consecutive_empty += 1
+                page += 1
+
+    return list(job_ids)
 
 
 async def fetch_job_details(job_id, semaphore):

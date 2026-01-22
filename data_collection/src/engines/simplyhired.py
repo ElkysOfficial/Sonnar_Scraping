@@ -4,11 +4,46 @@ import os
 import re
 import sys
 import urllib.parse
+from datetime import datetime, timedelta
 from curl_cffi import requests
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from utils.google_enricher import GoogleEnricher, is_missing_field
 from variavel import stacks
+
+
+def parse_relative_date(date_text: str) -> str:
+    """Converte datas relativas para formato DD/MM/YYYY."""
+    if not date_text:
+        return ''
+
+    date_text = date_text.lower().strip()
+    today = datetime.now()
+
+    if 'hoje' in date_text or 'today' in date_text or 'just' in date_text:
+        return today.strftime('%d/%m/%Y')
+    if 'ontem' in date_text or 'yesterday' in date_text:
+        return (today - timedelta(days=1)).strftime('%d/%m/%Y')
+
+    # "X dias" ou "X days"
+    days_match = re.search(r'(\d+)\s*(dias?|days?)', date_text)
+    if days_match:
+        days = int(days_match.group(1))
+        return (today - timedelta(days=days)).strftime('%d/%m/%Y')
+
+    # "X semanas" ou "X weeks"
+    weeks_match = re.search(r'(\d+)\s*(semanas?|weeks?)', date_text)
+    if weeks_match:
+        weeks = int(weeks_match.group(1))
+        return (today - timedelta(weeks=weeks)).strftime('%d/%m/%Y')
+
+    # "X meses" ou "X months"
+    months_match = re.search(r'(\d+)\s*(m[eê]s(es)?|months?)', date_text)
+    if months_match:
+        months = int(months_match.group(1))
+        return (today - timedelta(days=months * 30)).strftime('%d/%m/%Y')
+
+    return ''
 
 
 # Sessão global
@@ -80,26 +115,39 @@ async def get_simplyhired_jobs() -> list:
                         if not job_title:
                             continue
 
-                        # Empresa (geralmente no título após " - ")
-                        company = ''
-                        if ' - ' in job_title:
+                        # Empresa - buscar em vários campos possíveis
+                        company = item.get('company', '') or item.get('companyName', '') or item.get('employer', '')
+                        if not company:
+                            # Tentar extrair do campo companyRating ou similar
+                            company_info = item.get('companyInfo', {})
+                            if isinstance(company_info, dict):
+                                company = company_info.get('name', '') or company_info.get('companyName', '')
+
+                        # Fallback: extrair do título se ainda não tiver
+                        if not company and ' - ' in job_title:
                             parts = job_title.rsplit(' - ', 1)
                             job_title = parts[0].strip()
                             company = parts[1].strip() if len(parts) > 1 else ''
 
-                        # Localização e work_type
+                        # Localização
+                        location_str = item.get('location', '') or item.get('formattedLocation', '')
+                        if isinstance(location_str, str) and location_str:
+                            location = [p.strip() for p in location_str.split(',') if p.strip()][:2]
+                        else:
+                            location = []
+
+                        # Work type
                         remote_attrs = item.get('remoteAttributes', [])
                         title_lower = job_title.lower()
+                        location_lower = location_str.lower() if isinstance(location_str, str) else ''
 
-                        if remote_attrs or 'remoto' in title_lower or 'remote' in title_lower:
+                        if remote_attrs or 'remoto' in title_lower or 'remote' in title_lower or 'remoto' in location_lower:
                             work_type = 'Remoto'
                             location = []
-                        elif 'híbrido' in title_lower or 'hybrid' in title_lower:
+                        elif 'híbrido' in title_lower or 'hybrid' in title_lower or 'híbrido' in location_lower:
                             work_type = 'Híbrido'
-                            location = []
                         else:
                             work_type = 'Presencial'
-                            location = []
 
                         # Regime de contratação
                         job_types = item.get('jobTypes', [])
@@ -117,11 +165,22 @@ async def get_simplyhired_jobs() -> list:
                             elif 'freelance' in jt_lower or 'contract' in jt_lower:
                                 hiring_regime = 'PJ'
 
-                        # Salário (não disponível na listagem)
-                        salary = ''
+                        # Salário
+                        salary = item.get('salary', '') or item.get('salaryText', '') or item.get('formattedSalary', '')
 
-                        # Data de publicação (não disponível na listagem)
+                        # Data de publicação
                         publication_date = ''
+                        date_field = item.get('postedAt', '') or item.get('datePosted', '') or item.get('postedDate', '') or item.get('formattedDate', '')
+                        if date_field:
+                            # Tentar formato ISO primeiro
+                            if isinstance(date_field, str) and len(date_field) >= 10 and '-' in date_field:
+                                date_raw = date_field[:10]
+                                parts = date_raw.split('-')
+                                if len(parts) == 3:
+                                    publication_date = f"{parts[2]}/{parts[1]}/{parts[0]}"
+                            else:
+                                # Tentar formato relativo
+                                publication_date = parse_relative_date(str(date_field))
 
                         job = [link, job_title, company, location, work_type, hiring_regime, salary, publication_date]
                         jobs.append(job)

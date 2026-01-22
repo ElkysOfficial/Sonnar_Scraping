@@ -169,9 +169,35 @@ async def get_michaelpage_jobs() -> list:
                                 parts = [p.strip() for p in location_raw.split(',') if p.strip()]
                                 location = parts[:2] if parts else []
 
+                            # Regime de contratação
                             hiring_regime = ''
+                            regime_elem = card.find('span', class_=lambda x: x and ('type' in str(x).lower() or 'contract' in str(x).lower()))
+                            if regime_elem:
+                                regime_text = regime_elem.get_text(strip=True).lower()
+                                if 'permanente' in regime_text or 'efetivo' in regime_text or 'full' in regime_text:
+                                    hiring_regime = 'CLT'
+                                elif 'temporário' in regime_text or 'temporary' in regime_text:
+                                    hiring_regime = 'Temporário'
+                                elif 'contrato' in regime_text or 'contract' in regime_text:
+                                    hiring_regime = 'PJ'
+
+                            # Salário
                             salary = ''
+                            salary_elem = card.find('span', class_=lambda x: x and 'salary' in str(x).lower())
+                            if salary_elem:
+                                salary = salary_elem.get_text(strip=True)
+
+                            # Data de publicação
                             publication_date = ''
+                            date_elem = card.find('time') or card.find('span', class_=lambda x: x and 'date' in str(x).lower())
+                            if date_elem:
+                                date_raw = date_elem.get('datetime', '') or date_elem.get_text(strip=True)
+                                if date_raw and len(date_raw) >= 10:
+                                    date_raw = date_raw[:10]
+                                    if '-' in date_raw:
+                                        parts = date_raw.split('-')
+                                        if len(parts) == 3:
+                                            publication_date = f"{parts[2]}/{parts[1]}/{parts[0]}"
 
                             job = [link, job_title, company, location, work_type, hiring_regime, salary, publication_date]
                             jobs.append(job)

@@ -36,6 +36,58 @@ function getNextInterval() {
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 const PROMO_STATE_PATH = path.resolve(__dirname, "..", "..", "database", "vip-promo-state.json")
+const JOB_SENDER_STATE_PATH = path.resolve(__dirname, "..", "..", "database", "job-sender-state.json")
+
+/**
+ * Lê o estado do job sender (timestamp do último envio)
+ */
+function readJobSenderState() {
+  try {
+    if (!fs.existsSync(JOB_SENDER_STATE_PATH)) {
+      return { lastSentAt: 0 }
+    }
+    const raw = fs.readFileSync(JOB_SENDER_STATE_PATH, "utf8")
+    if (!raw.trim()) {
+      return { lastSentAt: 0 }
+    }
+    const data = JSON.parse(raw)
+    return { lastSentAt: data?.lastSentAt || 0 }
+  } catch (err) {
+    errorLog(`Erro ao ler estado do job sender: ${err.message}`)
+    return { lastSentAt: 0 }
+  }
+}
+
+/**
+ * Salva o estado do job sender
+ */
+function writeJobSenderState(state) {
+  try {
+    const payload = JSON.stringify(state, null, 2)
+    writeJsonAtomic(JOB_SENDER_STATE_PATH, payload)
+  } catch (err) {
+    errorLog(`Erro ao salvar estado do job sender: ${err.message}`)
+  }
+}
+
+/**
+ * Calcula o tempo restante até o próximo envio baseado no último envio
+ * @returns {number} Tempo em milissegundos (mínimo 5 segundos, máximo FIXED_INTERVAL)
+ */
+function getTimeUntilNextSend() {
+  const state = readJobSenderState()
+  const now = Date.now()
+  const elapsed = now - state.lastSentAt
+
+  if (elapsed >= FIXED_INTERVAL) {
+    // Já passou o intervalo, enviar em 5 segundos
+    return 5000
+  }
+
+  // Calcula tempo restante
+  const remaining = FIXED_INTERVAL - elapsed
+  return Math.max(5000, remaining) // Mínimo 5 segundos
+}
 
 const VIP_PROMO_MESSAGE = `🚀 Quer receber vagas do seu stack em prioridade? Vira VIP.
 
@@ -313,6 +365,9 @@ async function processNextJob() {
     // Registra no histórico local (para cooldown e diversidade)
     markAsSent(JOB_GROUP_ID, jobId, stack)
 
+    // Persiste o timestamp do envio para sobreviver a reinicializações
+    writeJobSenderState({ lastSentAt: Date.now() })
+
     successLog(`✅ Vaga enviada com sucesso: ${title}`)
   }
 }
@@ -369,6 +424,11 @@ export function startJobSender(socket) {
   // Limpa registros antigos do histórico
   cleanOldRecords(COOLDOWN_DAYS)
 
+  // Calcula tempo restante baseado no último envio (persistido)
+  const timeUntilNext = getTimeUntilNextSend()
+  const state = readJobSenderState()
+  const lastSentAgo = state.lastSentAt > 0 ? Math.floor((Date.now() - state.lastSentAt) / 1000) : 0
+
   infoLog("════════════════════════════════════════════════════")
   infoLog("       📋 SERVIÇO DE VAGAS DO GRUPO INICIADO")
   infoLog("════════════════════════════════════════════════════")
@@ -377,17 +437,25 @@ export function startJobSender(socket) {
   infoLog(`🔄 Cooldown: ${COOLDOWN_DAYS * 24} horas`)
   infoLog(`📍 Grupo: ${JOB_GROUP_ID}`)
   infoLog(`📁 Arquivo: ${EMBEDS_FILE_PATH}`)
+  if (state.lastSentAt > 0) {
+    infoLog(`📅 Último envio: há ${lastSentAgo} segundos`)
+  } else {
+    infoLog(`📅 Último envio: nunca (primeiro ciclo)`)
+  }
   infoLog("════════════════════════════════════════════════════")
 
-  // Primeira execução após 30 segundos para permitir conexão estabilizar
-  infoLog(`⏱️ Primeira vaga do grupo será enviada em 30 segundos`)
+  // Primeira execução usando tempo restante calculado (mantém o ciclo mesmo após reinício)
+  const minutes = Math.floor(timeUntilNext / 60000)
+  const seconds = Math.floor((timeUntilNext % 60000) / 1000)
+  infoLog(`⏱️ Próxima vaga do grupo será enviada em ${minutes}m ${seconds}s`)
+
   jobSenderTimeoutId = setTimeout(async () => {
     if (token !== jobSenderToken) {
       return
     }
-    infoLog("[GRUPO] Executando primeiro envio de vaga...")
+    infoLog("[GRUPO] Executando envio de vaga...")
     await processNextJob()
     await maybeSendVipPromo()
     scheduleNextJob() // Inicia o ciclo de envios fixos
-  }, 30 * 1000)
+  }, timeUntilNext)
 }

@@ -50,16 +50,36 @@ async def get_linkedin_jobs() -> list:
                             parts = [p.strip() for p in location_raw.split(',') if p.strip()]
                             location = parts[:2] if parts else []
 
-                        # Tenta extrair regime do título (heurística)
-                        title_lower = job_title.lower()
-                        if 'estágio' in title_lower or 'estagio' in title_lower or 'intern' in title_lower:
-                            hiring_regime = "Estágio"
-                        elif 'freelance' in title_lower or 'freelancer' in title_lower:
-                            hiring_regime = "Freelancer"
-                        elif 'temporário' in title_lower or 'temporario' in title_lower:
-                            hiring_regime = "Temporário"
-                        else:
-                            hiring_regime = ""
+                        # Tenta extrair regime do HTML primeiro
+                        hiring_regime = ""
+                        # LinkedIn pode ter um elemento com o tipo de emprego
+                        employment_type_elem = cell.find('span', class_='job-search-card__job-insight')
+                        if employment_type_elem:
+                            emp_text = employment_type_elem.get_text(strip=True).lower()
+                            if 'tempo integral' in emp_text or 'full-time' in emp_text or 'full time' in emp_text:
+                                hiring_regime = "CLT"
+                            elif 'meio período' in emp_text or 'part-time' in emp_text or 'part time' in emp_text:
+                                hiring_regime = "Meio Período"
+                            elif 'contrato' in emp_text or 'contract' in emp_text:
+                                hiring_regime = "PJ"
+                            elif 'estágio' in emp_text or 'internship' in emp_text:
+                                hiring_regime = "Estágio"
+                            elif 'temporário' in emp_text or 'temporary' in emp_text:
+                                hiring_regime = "Temporário"
+                            elif 'voluntário' in emp_text or 'volunteer' in emp_text:
+                                hiring_regime = "Voluntário"
+
+                        # Fallback: heurística do título
+                        if not hiring_regime:
+                            title_lower = job_title.lower()
+                            if 'estágio' in title_lower or 'estagio' in title_lower or 'intern' in title_lower:
+                                hiring_regime = "Estágio"
+                            elif 'freelance' in title_lower or 'freelancer' in title_lower:
+                                hiring_regime = "Freelancer"
+                            elif 'temporário' in title_lower or 'temporario' in title_lower:
+                                hiring_regime = "Temporário"
+                            elif 'pj' in title_lower or 'pessoa jurídica' in title_lower:
+                                hiring_regime = "PJ"
 
                         salary = ""
                         time_element = cell.find('time', class_='job-search-card__listdate')

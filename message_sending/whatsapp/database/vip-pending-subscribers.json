@@ -1,0 +1,42 @@
+[
+  {
+    "name": "Lucelho Silva",
+    "lid": "120152280592452@lid",
+    "stacks": [],
+    "filters": {
+      "roles": [],
+      "stacks": [],
+      "seniority": [],
+      "locations": [],
+      "workMode": [],
+      "contract": [],
+      "languages": [],
+      "weights": {
+        "roles": 20,
+        "stacks": 30,
+        "seniority": 15,
+        "locations": 10,
+        "workMode": 10,
+        "contract": 10,
+        "languages": 5
+      },
+      "must": {
+        "roles": true,
+        "stacks": true,
+        "workMode": false,
+        "contract": false,
+        "languages": false
+      },
+      "ignoreUnknown": true
+    },
+    "paymentProof": {
+      "type": "image",
+      "receivedAt": "2026-01-22T02:57:18.587Z"
+    },
+    "status": "pending",
+    "requestedAt": "2026-01-22T02:51:06.043Z",
+    "decidedAt": null,
+    "decidedBy": null,
+    "paymentReceivedAt": "2026-01-22T02:57:18.597Z"
+  }
+]

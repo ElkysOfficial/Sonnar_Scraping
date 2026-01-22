@@ -1,12 +1,8 @@
 import asyncio
-import os
-import sys
+import re
+from datetime import datetime, timedelta
 from curl_cffi import requests
 from bs4 import BeautifulSoup
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-from utils.google_enricher import GoogleEnricher, is_missing_field
-from variavel import stacks
 
 
 # Sessão global
@@ -17,14 +13,51 @@ def get_session():
     """Retorna a sessão global, criando se necessário."""
     global _session
     if _session is None:
-        _session = requests.Session(impersonate='chrome')
+        # IMPORTANTE: Não adicionar headers personalizados!
+        # impersonate='chrome120' já configura todos os headers corretos.
+        # Headers extras conflitam e causam 403.
+        _session = requests.Session(impersonate='chrome120')
     return _session
+
+
+def parse_relative_date(date_text: str) -> str:
+    """Converte datas relativas do Remote.co para formato DD/MM/YYYY."""
+    if not date_text:
+        return ''
+
+    date_text = date_text.lower().strip()
+    today = datetime.now()
+
+    if 'today' in date_text or 'just now' in date_text:
+        return today.strftime('%d/%m/%Y')
+    if 'yesterday' in date_text:
+        return (today - timedelta(days=1)).strftime('%d/%m/%Y')
+
+    # "X days ago"
+    days_match = re.search(r'(\d+)\s*days?\s*ago', date_text)
+    if days_match:
+        days = int(days_match.group(1))
+        return (today - timedelta(days=days)).strftime('%d/%m/%Y')
+
+    # "X weeks ago"
+    weeks_match = re.search(r'(\d+)\s*weeks?\s*ago', date_text)
+    if weeks_match:
+        weeks = int(weeks_match.group(1))
+        return (today - timedelta(weeks=weeks)).strftime('%d/%m/%Y')
+
+    # "X months ago"
+    months_match = re.search(r'(\d+)\s*months?\s*ago', date_text)
+    if months_match:
+        months = int(months_match.group(1))
+        return (today - timedelta(days=months * 30)).strftime('%d/%m/%Y')
+
+    return ''
 
 
 async def get_remoteco_jobs() -> list:
     """
     Extrai vagas do Remote.co.
-    NOTA: Remote.co usa JavaScript para renderizar vagas, resultados limitados.
+    NOTA: Remote.co usa JavaScript para renderizar vagas, resultados podem ser limitados.
     Returns: [[link, title, company, location, work_type, hiring_regime, salary, publication_date], ...]
     """
     jobs = []
@@ -48,25 +81,24 @@ async def get_remoteco_jobs() -> list:
             if response.status_code == 200:
                 soup = BeautifulSoup(response.text, 'html.parser')
 
-                # Tentar encontrar links de vagas
-                # Remote.co estrutura: links dentro de divs com class específica
-                job_links = soup.find_all('a', href=True)
+                # Buscar links de vagas diretamente
+                all_links = soup.find_all('a', href=True)
 
-                for link_elem in job_links:
+                for link_elem in all_links:
                     try:
                         href = link_elem.get('href', '')
                         text = link_elem.get_text(strip=True)
 
-                        # Filtrar apenas links de vagas individuais
+                        # Filtrar apenas links de vagas específicas
                         if not href or not text:
                             continue
                         if '/remote-jobs/' not in href:
                             continue
-                        # Vagas têm mais de 2 barras e não são categorias
-                        if href.count('/') < 3:
+                        # Ignorar links de categorias (terminam em /)
+                        if href.endswith('/') and href.count('/') <= 3:
                             continue
-                        # Evitar links de categoria
-                        if any(cat in href for cat in ['developer/', 'it/', 'software/', 'devops/', 'qa/', 'feed']):
+                        # Ignorar links que são apenas categorias
+                        if any(cat + '/' == href.split('/')[-2] + '/' for cat in categories):
                             if href.endswith('/'):
                                 continue
 
@@ -77,11 +109,16 @@ async def get_remoteco_jobs() -> list:
                         seen_links.add(link)
 
                         job_title = text
-                        if not job_title or len(job_title) < 3:
+                        if not job_title or len(job_title) < 3 or len(job_title) > 200:
                             continue
 
-                        # Empresa (geralmente não disponível na listagem)
+                        # Tentar extrair empresa do título (formato: "Company: Job Title")
                         company = ''
+                        if ':' in job_title:
+                            parts = job_title.split(':', 1)
+                            if len(parts[0]) < 50:  # Nome de empresa razoável
+                                company = parts[0].strip()
+                                job_title = parts[1].strip()
 
                         # Remote.co é 100% remoto
                         location = []
@@ -91,7 +128,7 @@ async def get_remoteco_jobs() -> list:
                         title_lower = job_title.lower()
                         if 'contract' in title_lower:
                             hiring_regime = 'Contractor'
-                        elif 'part-time' in title_lower:
+                        elif 'part-time' in title_lower or 'part time' in title_lower:
                             hiring_regime = 'Part-time'
                         elif 'intern' in title_lower:
                             hiring_regime = 'Internship'
@@ -111,20 +148,6 @@ async def get_remoteco_jobs() -> list:
             continue
 
         await asyncio.sleep(0.3)
-
-    # Enriquecer vagas com salary vazio usando Google
-    if jobs:
-        async with GoogleEnricher() as enricher:
-            for job_data in jobs:
-                if is_missing_field(job_data[6]):  # salary está no índice 6
-                    enriched = await enricher.enrich_job({
-                        "company": job_data[2],
-                        "job_title": job_data[1],
-                        "location": job_data[3] if isinstance(job_data[3], str) else ", ".join(job_data[3]) if job_data[3] else "",
-                        "salary": job_data[6]
-                    })
-                    if enriched.get("salary"):
-                        job_data[6] = enriched["salary"]
 
     print(f'Foram obtidas {len(jobs)} vagas do site Remote.co')
     return jobs
