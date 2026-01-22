@@ -1,8 +1,13 @@
 import asyncio
 import json
+import os
 import re
+import sys
 import urllib.parse
 from curl_cffi import requests
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+from utils.google_enricher import GoogleEnricher, is_missing_field
 from variavel import stacks
 
 
@@ -128,6 +133,25 @@ async def get_simplyhired_jobs() -> list:
 
             except Exception:
                 break
+
+    # Enriquecer vagas com location e salary vazios usando Google
+    if jobs:
+        async with GoogleEnricher() as enricher:
+            for job_data in jobs:
+                needs_location = job_data[4] != 'Remoto' and is_missing_field(job_data[3] if isinstance(job_data[3], str) else ", ".join(job_data[3]) if job_data[3] else "")
+                needs_salary = is_missing_field(job_data[6])
+
+                if needs_location or needs_salary:
+                    enriched = await enricher.enrich_job({
+                        "company": job_data[2],
+                        "job_title": job_data[1],
+                        "location": job_data[3] if isinstance(job_data[3], str) else ", ".join(job_data[3]) if job_data[3] else "",
+                        "salary": job_data[6]
+                    })
+                    if needs_location and enriched.get("location"):
+                        job_data[3] = enriched["location"]
+                    if needs_salary and enriched.get("salary"):
+                        job_data[6] = enriched["salary"]
 
     print(f'Foram obtidas {len(jobs)} vagas do site SimplyHired')
     return jobs

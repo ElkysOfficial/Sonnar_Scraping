@@ -1,0 +1,34 @@
+{
+  "cache": {},
+  "company_location": {
+    "prix tech software": "Catarina - FA",
+    "nava technology for business": "Barueri, SP, Brasil",
+    "kartado": "Florianopolis, SC, Brasil",
+    "atelie de software": "em Palhoca, na Grande Florianopolis, foi selecionado pela Clutch, plataforma global de avaliacao de desenvolvedores",
+    "br.tk sistemas e solucoes": "Belo Horizonte, MG, Brasil",
+    "grid monitor": "Belo Horizonte, MG, Brasil",
+    "venha ser #sanguelaranja": "Brazil, Brazil",
+    "seazone": "Florianopolis, SC, Brasil",
+    "houer consultoria e concessoes ltda": "Belo Horizonte, MG, Brasil",
+    "sysmiddle": "Florianopolis, SC, Brasil",
+    "ey": "Belo Horizonte, MG, Brasil",
+    "finch solucoes / jbm (mandaliti e prado sociedade de advogados)": "Bauru, SP, Brasil",
+    "naavor consultoria ltda.": "Cafe, MG, Brasil",
+    "avanade": "Selecione, Brasil"
+  },
+  "salary_by_company_role": {
+    "grid monitor|product manager / product owner (b2b saas regulatory tech)": "12.000|12.000",
+    "venha ser #sanguelaranja|banco de talentos | desenvolvedor backend senior (java/node)": "6.400|6.400",
+    "venha ser #sanguelaranja|desenvolvedor backend java jr": "4.150|4.150",
+    "nava technology for business|product owner (po) tesouraria": "10.200|10.200",
+    "espacolaser|biomedica / esteticista / fisioterapeuta para o cargo de especialista do laser - tocantins e regiao": "2.873|2.873",
+    "venha ser #sanguelaranja|banco de talentos | desenvolvedor backend senior (php/node)": "7.296|7.296",
+    "proxxima telecom|banco de talentos call center, financeiro, redes e comercial": "1.625|1.625",
+    "sysmiddle|desenvolvedor(a) fullstack sysmiddle (remoto)": "130.447|130.447",
+    "artium solucoes|account manager ti alocacao de profissionais de ti sao paulo": "14.837|14.837",
+    "finch solucoes / jbm (mandaliti e prado sociedade de advogados)|analista desenvolvedor(a) back end sr java": "6.500|6.500",
+    "grid monitor|transcript reviewer / english editor (remote based in brazil)": "3.000|3.000",
+    "avanade|engenheiro de dados microsoft fabric (english required)": "9.176|9.176"
+  },
+  "updated_at": 1769042680.3245225
+}

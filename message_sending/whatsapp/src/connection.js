@@ -106,7 +106,18 @@ export async function connect() {
 
     const code = await socket.requestPairingCode(onlyNumbers(phoneNumber));
 
-    sayLog(`Código de pareamento: ${code}`);
+    // Exibe código de pareamento SEMPRE (não usa sayLog que pode ser filtrado)
+    console.log("\n");
+    console.log("╔════════════════════════════════════════════╗");
+    console.log("║                                            ║");
+    console.log(`║     📱 CÓDIGO DE PAREAMENTO: ${code}       ║`);
+    console.log("║                                            ║");
+    console.log("║  Digite este código no WhatsApp do celular ║");
+    console.log("║  Configurações > Dispositivos conectados   ║");
+    console.log("║  > Conectar dispositivo                    ║");
+    console.log("║                                            ║");
+    console.log("╚════════════════════════════════════════════╝");
+    console.log("\n");
   }
 
   const scheduleReconnect = async () => {

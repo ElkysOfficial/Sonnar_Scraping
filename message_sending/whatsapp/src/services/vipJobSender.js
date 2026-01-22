@@ -36,8 +36,8 @@ let vipPendingTimeoutId = null
 // Buscas VIP pendentes quando a conexao esta fechada
 const pendingVipSearches = new Map()
 
-function queueVipSearch(lid, stacks) {
-  pendingVipSearches.set(lid, { stacks, queuedAt: Date.now() })
+function queueVipSearch(lid, filters) {
+  pendingVipSearches.set(lid, { filters, queuedAt: Date.now() })
 }
 
 async function processPendingVipSearches() {
@@ -46,7 +46,7 @@ async function processPendingVipSearches() {
   }
 
   for (const [lid, data] of pendingVipSearches.entries()) {
-    const result = await triggerVipSearch(lid, data.stacks, { allowQueue: false })
+    const result = await triggerVipSearch(lid, data.filters, { allowQueue: false })
 
     if (result.success && (result.jobsFound === 0 || result.jobsSent > 0)) {
       pendingVipSearches.delete(lid)
@@ -91,159 +91,235 @@ function normalizeStack(stack) {
 }
 
 /**
- * Verifica se a vaga corresponde às stacks do assinante
- * IMPORTANTE: Somente retorna true se a vaga corresponder EXATAMENTE ao que o assinante deseja
+ * Verifica se a vaga corresponde aos filtros do assinante
+ * Usa sistema de pontuação com weights e must fields
  * @param {Object} job - Vaga
- * @param {string[]} subscriberStacks - Stacks do assinante
- * @returns {boolean}
+ * @param {Object} filters - Filtros do assinante (roles, stacks, seniority, locations, workMode, contract, languages, weights, must)
+ * @returns {boolean|{match: boolean, score: number}}
  */
-function jobMatchesStacks(job, subscriberStacks) {
-  const jobTitle = (job.title || job.job_title || "").toLowerCase()
-  const normalizedJobTitle = normalizeStack(jobTitle)
+function jobMatchesFilters(job, filters, returnScore = false) {
+  if (!filters) return returnScore ? { match: false, score: 0 } : false
 
-  // Termos que indicam vagas de nível junior/estagiário (para exclusão em algumas stacks)
-  const juniorTerms = ["junior", "jr", "estagio", "estágio", "intern", "trainee", "aprendiz"]
+  const jobTitle = normalizeStack(job.title || job.job_title || "")
+  const jobDescription = normalizeStack(job.description || "")
+  const jobText = `${jobTitle} ${jobDescription}`
+  const jobLocation = normalizeStack(job.location || "")
+  const jobWorkType = normalizeStack(job.work_type || "")
+  const jobRegime = normalizeStack(job.hiring_regime || "")
 
-  for (const stack of subscriberStacks) {
-    const normalizedStack = normalizeStack(stack)
+  // Pesos padrão para cada categoria
+  const weights = filters.weights || {
+    roles: 20,
+    stacks: 30,
+    seniority: 15,
+    locations: 10,
+    workMode: 10,
+    contract: 10,
+    languages: 5
+  }
 
-    // Se o assinante quer "todas" as vagas
-    if (normalizedStack === "todas" || normalizedStack === "all") {
-      return true
-    }
+  // Campos obrigatórios (must match)
+  const must = filters.must || {
+    roles: true,
+    stacks: true,
+    workMode: false,
+    contract: false,
+    languages: false
+  }
 
-    // Mapeamentos específicos e restritos
-    const stackMappings = {
-      // Tech Lead - vagas de liderança técnica, senior e pleno (NUNCA junior/estagiário)
-      "tech lead": {
-        terms: ["tech lead", "lider tecnico", "lider de tecnologia", "technical lead", "lead developer", "lead engineer", "engineering lead", "lider de engenharia", "lider de desenvolvimento", "senior", "sr.", "pleno", "pl.", "especialista", "arquiteto", "architect", "principal", "staff", "gerente", "manager", "coordenador", "head"],
-        excludeJunior: true
-      },
-
-      // Design - vagas de design
-      "design": {
-        terms: ["design", "designer", "ux", "ui", "ux/ui", "ui/ux", "product design", "product designer", "grafico", "visual design", "web design", "web designer"],
-        excludeJunior: false
-      },
-
-      // Frontend
-      "frontend": {
-        terms: ["frontend", "front-end", "front end"],
-        excludeJunior: false
-      },
-
-      // Backend
-      "backend": {
-        terms: ["backend", "back-end", "back end"],
-        excludeJunior: false
-      },
-
-      // Fullstack
-      "fullstack": {
-        terms: ["fullstack", "full-stack", "full stack"],
-        excludeJunior: false
-      },
-
-      // Mobile
-      "mobile": {
-        terms: ["mobile", "android", "ios", "flutter", "react native"],
-        excludeJunior: false
-      },
-
-      // DevOps
-      "devops": {
-        terms: ["devops", "dev ops", "sre", "site reliability"],
-        excludeJunior: false
-      },
-
-      // Data
-      "data": {
-        terms: ["data", "dados", "data science", "data engineer", "cientista de dados", "engenheiro de dados"],
-        excludeJunior: false
-      },
-
-      // QA
-      "qa": {
-        terms: ["qa", "quality", "teste", "tester", "testing", "qualidade"],
-        excludeJunior: false
-      },
-
-      // Estágio
-      "estagio": {
-        terms: ["estagio", "estágio", "intern", "internship"],
-        excludeJunior: false
-      },
-
-      // Python
-      "python": {
-        terms: ["python"],
-        excludeJunior: false
-      },
-
-      // Java
-      "java": {
-        terms: ["java"],
-        excludeJunior: false
-      },
-
-      // Node
-      "node": {
-        terms: ["node", "nodejs", "node.js"],
-        excludeJunior: false
-      },
-
-      // React
-      "react": {
-        terms: ["react", "reactjs", "react.js"],
-        excludeJunior: false
-      },
-
-      // Angular
-      "angular": {
-        terms: ["angular", "angularjs"],
-        excludeJunior: false
-      },
-
-      // Vue
-      "vue": {
-        terms: ["vue", "vuejs", "vue.js"],
-        excludeJunior: false
-      },
-    }
-
-    // Verifica se a stack aparece diretamente no título
-    if (normalizedJobTitle.includes(normalizedStack)) {
-      // Se for tech lead, verificar se não é junior/estagiário
-      if (normalizedStack === "tech lead") {
-        const isJunior = juniorTerms.some(term => normalizedJobTitle.includes(normalizeStack(term)))
-        if (isJunior) {
-          return false
-        }
-      }
-      return true
-    }
-
-    // Verifica mapeamentos específicos
-    const mapping = stackMappings[normalizedStack]
-    if (mapping) {
-      // Se deve excluir junior, verifica primeiro
-      if (mapping.excludeJunior) {
-        const isJunior = juniorTerms.some(term => normalizedJobTitle.includes(normalizeStack(term)))
-        if (isJunior) {
-          continue // Pula para a próxima stack do assinante
-        }
-      }
-
-      // Verifica se algum termo corresponde
-      for (const term of mapping.terms) {
-        if (normalizedJobTitle.includes(normalizeStack(term))) {
-          return true
-        }
-      }
+  // Sinônimos expandidos para melhor matching
+  const synonyms = {
+    // Senioridade
+    seniority: {
+      "junior": ["junior", "jr", "jr.", "júnior", "nivel i", "nivel 1", "n1"],
+      "pleno": ["pleno", "pl", "pl.", "mid", "mid-level", "middle", "nivel ii", "nivel 2", "n2"],
+      "senior": ["senior", "sr", "sr.", "sênior", "especialista", "nivel iii", "nivel 3", "n3", "expert"],
+      "estagio": ["estagio", "estágio", "intern", "internship", "estagiario", "estagiária"],
+      "trainee": ["trainee", "aprendiz", "jovem aprendiz"]
+    },
+    // Modalidade de trabalho
+    workMode: {
+      "remoto": ["remoto", "remote", "home office", "trabalho remoto", "100% remoto", "anywhere", "full remote"],
+      "hibrido": ["hibrido", "híbrido", "hybrid", "semi-presencial", "semi presencial", "parcialmente remoto"],
+      "presencial": ["presencial", "on-site", "onsite", "in-office", "no escritorio", "local"]
+    },
+    // Tipo de contrato
+    contract: {
+      "clt": ["clt", "efetivo", "carteira assinada", "regime clt", "contratacao clt"],
+      "pj": ["pj", "pessoa juridica", "pessoa jurídica", "freelance", "contractor", "contrato pj", "mei"],
+      "estagio": ["estagio", "estágio", "intern", "internship", "contrato de estagio"]
+    },
+    // Stacks/tecnologias expandidas
+    stacks: {
+      "frontend": ["frontend", "front-end", "front end"],
+      "backend": ["backend", "back-end", "back end"],
+      "fullstack": ["fullstack", "full-stack", "full stack"],
+      "mobile": ["mobile", "android", "ios", "flutter", "react native", "kotlin", "swift", "mobile developer"],
+      "devops": ["devops", "dev ops", "sre", "site reliability", "kubernetes", "docker", "aws", "azure", "gcp", "cloud", "infraestrutura", "infra"],
+      "data": ["data", "dados", "data science", "data engineer", "cientista de dados", "machine learning", "ml", "ai", "big data", "analytics", "bi"],
+      "qa": ["qa", "quality", "teste", "tester", "testing", "qualidade", "automacao", "quality assurance"],
+      "design": ["design", "designer", "ux", "ui", "ux/ui", "ui/ux", "product design", "grafico", "figma"],
+      "python": ["python", "django", "flask", "fastapi", "pandas", "numpy"],
+      "java": ["java", "spring", "springboot", "spring boot", "maven", "gradle"],
+      "javascript": ["javascript", "js", "ecmascript", "es6"],
+      "typescript": ["typescript", "ts"],
+      "node": ["node", "nodejs", "node.js", "express", "nestjs", "nest.js"],
+      "react": ["react", "reactjs", "react.js", "next", "nextjs", "next.js", "redux"],
+      "angular": ["angular", "angularjs", "angular.js"],
+      "vue": ["vue", "vuejs", "vue.js", "nuxt", "nuxtjs"],
+      "csharp": ["c#", "csharp", ".net", "dotnet", "asp.net", "blazor"],
+      "go": ["go", "golang"],
+      "rust": ["rust", "rustlang"],
+      "php": ["php", "laravel", "symfony", "wordpress"],
+      "ruby": ["ruby", "rails", "ruby on rails"],
+      "sql": ["sql", "mysql", "postgresql", "postgres", "oracle", "sql server", "database", "banco de dados"],
+      "spring": ["spring", "springboot", "spring boot", "spring framework"]
+    },
+    // Cargos/roles expandidos
+    roles: {
+      "desenvolvedor": ["desenvolvedor", "developer", "dev", "programador", "engineer", "engenheiro", "software engineer"],
+      "analista": ["analista", "analyst", "analista de sistemas"],
+      "tech lead": ["tech lead", "lider tecnico", "lider de tecnologia", "technical lead", "lead developer", "lead engineer"],
+      "arquiteto": ["arquiteto", "architect", "solution architect", "software architect"],
+      "gerente": ["gerente", "manager", "coordenador", "head", "diretor", "supervisor"],
+      "backend": ["backend", "back-end", "back end", "desenvolvedor backend"],
+      "frontend": ["frontend", "front-end", "front end", "desenvolvedor frontend"]
     }
   }
 
-  return false
+  let totalScore = 0
+  let maxScore = 0
+
+  // Função para verificar match com sinônimos
+  const checkMatch = (terms, text, synonymGroup) => {
+    if (!terms || terms.length === 0) return { matched: true, isEmpty: true }
+
+    for (const term of terms) {
+      const normalized = normalizeStack(term)
+
+      // Verifica sinônimos do grupo específico
+      if (synonymGroup) {
+        for (const [key, syns] of Object.entries(synonymGroup)) {
+          if (normalized === key || syns.includes(normalized)) {
+            if (syns.some(s => text.includes(s))) return { matched: true, isEmpty: false }
+          }
+        }
+      }
+
+      // Verifica diretamente
+      if (text.includes(normalized)) return { matched: true, isEmpty: false }
+    }
+    return { matched: false, isEmpty: false }
+  }
+
+  // Verifica STACKS (peso: weights.stacks)
+  const stacks = filters.stacks || []
+  if (stacks.length > 0) {
+    maxScore += weights.stacks
+    const stackResult = checkMatch(stacks, jobText, synonyms.stacks)
+    if (stackResult.matched && !stackResult.isEmpty) {
+      totalScore += weights.stacks
+    } else if (must.stacks && !stackResult.matched) {
+      return returnScore ? { match: false, score: 0 } : false
+    }
+  }
+
+  // Verifica ROLES (peso: weights.roles)
+  const roles = filters.roles || []
+  if (roles.length > 0) {
+    maxScore += weights.roles
+    const roleResult = checkMatch(roles, jobText, synonyms.roles)
+    if (roleResult.matched && !roleResult.isEmpty) {
+      totalScore += weights.roles
+    } else if (must.roles && !roleResult.matched) {
+      return returnScore ? { match: false, score: 0 } : false
+    }
+  }
+
+  // Verifica SENIORITY (peso: weights.seniority)
+  const seniority = filters.seniority || []
+  if (seniority.length > 0) {
+    maxScore += weights.seniority
+    const seniorityResult = checkMatch(seniority, jobText, synonyms.seniority)
+    if (seniorityResult.matched && !seniorityResult.isEmpty) {
+      totalScore += weights.seniority
+    } else if (must.seniority && !seniorityResult.matched) {
+      return returnScore ? { match: false, score: 0 } : false
+    }
+  }
+
+  // Verifica WORK MODE (peso: weights.workMode)
+  const workMode = filters.workMode || []
+  if (workMode.length > 0) {
+    maxScore += weights.workMode
+    const workText = `${jobWorkType} ${jobText}`
+    const workResult = checkMatch(workMode, workText, synonyms.workMode)
+    if (workResult.matched && !workResult.isEmpty) {
+      totalScore += weights.workMode
+    } else if (must.workMode && !workResult.matched) {
+      return returnScore ? { match: false, score: 0 } : false
+    }
+  }
+
+  // Verifica CONTRACT (peso: weights.contract)
+  const contract = filters.contract || []
+  if (contract.length > 0) {
+    maxScore += weights.contract
+    const contractText = `${jobRegime} ${jobText}`
+    const contractResult = checkMatch(contract, contractText, synonyms.contract)
+    if (contractResult.matched && !contractResult.isEmpty) {
+      totalScore += weights.contract
+    } else if (must.contract && !contractResult.matched) {
+      return returnScore ? { match: false, score: 0 } : false
+    }
+  }
+
+  // Verifica LOCATIONS (peso: weights.locations)
+  const locations = filters.locations || []
+  if (locations.length > 0) {
+    maxScore += weights.locations
+    const locationMatch = locations.some(loc => {
+      const normalized = normalizeStack(loc)
+      return jobLocation.includes(normalized) || jobText.includes(normalized)
+    })
+    if (locationMatch) {
+      totalScore += weights.locations
+    } else if (must.locations && !locationMatch) {
+      return returnScore ? { match: false, score: 0 } : false
+    }
+  }
+
+  // Precisa ter pelo menos uma stack ou role (se ambos estiverem definidos)
+  if (stacks.length === 0 && roles.length === 0) {
+    return returnScore ? { match: false, score: 0 } : false
+  }
+
+  // Calcula score mínimo para match (30% do máximo possível)
+  const minScore = maxScore * 0.3
+  const matched = totalScore >= minScore
+
+  if (returnScore) {
+    return { match: matched, score: totalScore, maxScore, percentage: maxScore > 0 ? (totalScore / maxScore * 100).toFixed(1) : 0 }
+  }
+
+  return matched
+}
+
+/**
+ * Verifica se a vaga corresponde às stacks do assinante (compatibilidade legada)
+ * @param {Object} job - Vaga
+ * @param {string[]|Object} stacksOrFilters - Stacks do assinante ou objeto de filtros
+ * @returns {boolean}
+ */
+function jobMatchesStacks(job, stacksOrFilters) {
+  // Se recebeu um objeto de filtros, usa a nova função
+  if (stacksOrFilters && typeof stacksOrFilters === 'object' && !Array.isArray(stacksOrFilters)) {
+    return jobMatchesFilters(job, stacksOrFilters)
+  }
+
+  // Se recebeu array de stacks, converte para filtros
+  const filters = { stacks: stacksOrFilters || [] }
+  return jobMatchesFilters(job, filters)
 }
 
 /**
@@ -333,6 +409,12 @@ function lidToJid(lid) {
  */
 async function sendJobToSubscriber(lid, job) {
   try {
+    // Valida LID
+    if (!lid || lid.trim() === "") {
+      warningLog("[VIP] Tentativa de envio para LID vazio")
+      return { success: false, reason: "invalid_lid" }
+    }
+
     const socket = getCurrentSocket()
     if (!isCurrentSocketReady()) {
       warningLog("Conexao fechada. Envio VIP aguardando reconexao.")
@@ -394,6 +476,12 @@ async function processVipJobs() {
   infoLog(`[VIP] Verificando vagas para ${subscribers.length} assinantes`)
 
   for (const subscriber of subscribers) {
+    // Pula assinantes sem LID válido
+    if (!subscriber.lid || subscriber.lid.trim() === "") {
+      warningLog(`[VIP] Assinante ${subscriber.name || "desconhecido"} sem LID válido, pulando...`)
+      continue
+    }
+
     // Verifica cooldown de 5 minutos (persistido)
     if (!canSendToSubscriber(subscriber.lid)) {
       continue
@@ -401,6 +489,9 @@ async function processVipJobs() {
 
     // Obtém IDs de vagas já enviadas nas últimas 48h
     const sentJobIds = getSentJobIds(subscriber.lid)
+
+    // Usa filtros completos se disponível, senão usa stacks (compatibilidade legada)
+    const filters = subscriber.filters || { stacks: subscriber.stacks || [] }
 
     for (const job of embeds.slice(-200)) {
       const jobId = job.id || job.url || job.job_url
@@ -410,8 +501,8 @@ async function processVipJobs() {
         continue
       }
 
-      // Verifica se a vaga corresponde às stacks
-      if (!jobMatchesStacks(job, subscriber.stacks)) {
+      // Verifica se a vaga corresponde aos filtros
+      if (!jobMatchesFilters(job, filters)) {
         continue
       }
 
@@ -463,7 +554,14 @@ export function startVipJobSender(socket) {
 
   if (subscribers.length > 0) {
     subscribers.forEach((s) => {
-      infoLog(`   └─ ${s.lid}: ${s.stacks.join(", ")}`)
+      const filters = s.filters || { stacks: s.stacks || [] }
+      const filterSummary = []
+      if (filters.stacks?.length) filterSummary.push(`stacks: ${filters.stacks.join(",")}`)
+      if (filters.roles?.length) filterSummary.push(`roles: ${filters.roles.join(",")}`)
+      if (filters.seniority?.length) filterSummary.push(`seniority: ${filters.seniority.join(",")}`)
+      if (filters.workMode?.length) filterSummary.push(`workMode: ${filters.workMode.join(",")}`)
+      const lidStatus = s.lid && s.lid.trim() !== "" ? s.lid : "SEM LID!"
+      infoLog(`   └─ ${s.name || "Sem nome"} (${lidStatus}): ${filterSummary.join(" | ") || "sem filtros"}`)
     })
   }
 
@@ -479,15 +577,15 @@ export function startVipJobSender(socket) {
     await processPendingVipSearches()
   }, 5000)
 
-  // Primeira execução após 30 segundos
-  infoLog(`⏱️ Primeira verificação VIP em 30 segundos`)
+  // Primeira execução IMEDIATA (após 5 segundos para garantir conexão estável)
+  infoLog(`⏱️ Primeira verificação VIP em 5 segundos (envio imediato)`)
   vipTimeoutId = setTimeout(async () => {
     if (token != vipRunToken) {
       return
     }
-    infoLog(`[VIP] Executando primeira verificação de vagas...`)
+    infoLog(`[VIP] Executando primeira verificação de vagas (envio imediato)...`)
     await processVipJobs()
-  }, 30 * 1000)
+  }, 5 * 1000)
 
   // Execuções periódicas
   vipIntervalId = setInterval(async () => {
@@ -521,6 +619,9 @@ export async function forceVipJobCheck(lid) {
   // Obtém vagas já enviadas
   const sentJobIds = getSentJobIds(lid)
 
+  // Usa filtros completos se disponível
+  const filters = subscriber.filters || { stacks: subscriber.stacks || [] }
+
   for (const job of embeds.slice(-50)) {
     const jobId = job.id || job.url || job.job_url
 
@@ -529,7 +630,7 @@ export async function forceVipJobCheck(lid) {
       continue
     }
 
-    if (!jobMatchesStacks(job, subscriber.stacks)) {
+    if (!jobMatchesFilters(job, filters)) {
       continue
     }
 
@@ -552,18 +653,23 @@ export async function forceVipJobCheck(lid) {
 
 /**
  * Dispara busca VIP dedicada para um cliente
- * Busca vagas no embeds.json que correspondem às stacks do assinante
+ * Busca vagas no embeds.json que correspondem aos filtros do assinante
  * @param {string} lid - LID do assinante
- * @param {string[]} stacks - Stacks/keywords para buscar
+ * @param {string[]|Object} stacksOrFilters - Stacks/keywords para buscar ou objeto de filtros
  * @param {Object} options - Opções adicionais
  * @returns {Promise<{success: boolean, jobsFound: number, jobsSent: number, error?: string}>}
  */
-export async function triggerVipSearch(lid, stacks, options = {}) {
+export async function triggerVipSearch(lid, stacksOrFilters, options = {}) {
+  // Normaliza para objeto de filtros
+  const filters = (stacksOrFilters && typeof stacksOrFilters === 'object' && !Array.isArray(stacksOrFilters))
+    ? stacksOrFilters
+    : { stacks: stacksOrFilters || [] }
+
   try {
     if (!isCurrentSocketReady()) {
       warningLog("Conexao fechada. Busca VIP aguardando reconexao.")
       if (options.allowQueue !== false) {
-        queueVipSearch(lid, stacks)
+        queueVipSearch(lid, filters)
         infoLog(`[VIP] Busca enfileirada para ${lid} (conexao fechada).`)
         return {
           success: true,
@@ -581,7 +687,11 @@ export async function triggerVipSearch(lid, stacks, options = {}) {
       }
     }
 
-    infoLog(`[VIP SEARCH] Disparando busca para ${lid} com stacks: ${stacks.join(", ")}`)
+    const filterSummary = []
+    if (filters.stacks?.length) filterSummary.push(`stacks: ${filters.stacks.join(",")}`)
+    if (filters.roles?.length) filterSummary.push(`roles: ${filters.roles.join(",")}`)
+    if (filters.seniority?.length) filterSummary.push(`seniority: ${filters.seniority.join(",")}`)
+    infoLog(`[VIP SEARCH] Disparando busca para ${lid} com ${filterSummary.join(" | ") || "filtros vazios"}`)
 
     // Verifica cooldown de 5 minutos
     if (!canSendToSubscriber(lid)) {
@@ -612,7 +722,7 @@ export async function triggerVipSearch(lid, stacks, options = {}) {
     // Obtém IDs de vagas já enviadas nas últimas 48h
     const sentJobIds = getSentJobIds(lid)
 
-    // Filtra vagas que correspondem às stacks e não foram enviadas recentemente
+    // Filtra vagas que correspondem aos filtros e não foram enviadas recentemente
     const matchingJobs = []
     for (const job of embeds) {
       const jobId = job.id || job.url || job.job_url
@@ -622,8 +732,8 @@ export async function triggerVipSearch(lid, stacks, options = {}) {
         continue
       }
 
-      // Verifica se a vaga corresponde às stacks
-      if (jobMatchesStacks(job, stacks)) {
+      // Verifica se a vaga corresponde aos filtros
+      if (jobMatchesFilters(job, filters)) {
         matchingJobs.push(job)
       }
     }
@@ -635,7 +745,7 @@ export async function triggerVipSearch(lid, stacks, options = {}) {
         success: true,
         jobsFound: 0,
         jobsSent: 0,
-        error: "Nenhuma vaga nova encontrada para as stacks informadas",
+        error: "Nenhuma vaga nova encontrada para os filtros informados",
       }
     }
 

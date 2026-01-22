@@ -1,0 +1,66 @@
+{
+  "Nata Vitor Vaguel Reis": {
+    "lid": "200712562700474@lid",
+    "stacks": ["python", "javascript", "csharp"],
+    "filters": {
+      "roles": ["desenvolvedor"],
+      "stacks": ["python", "javascript", "csharp"],
+      "seniority": ["trainee", "junior"],
+      "locations": ["recife/pe"],
+      "workMode": ["remoto", "hibrido"],
+      "contract": ["clt", "pj"],
+      "languages": ["pt", "en"],
+      "weights": {
+        "roles": 20,
+        "stacks": 30,
+        "seniority": 15,
+        "locations": 10,
+        "workMode": 10,
+        "contract": 10,
+        "languages": 5
+      },
+      "must": {
+        "roles": true,
+        "stacks": true,
+        "workMode": false,
+        "contract": false,
+        "languages": false
+      },
+      "ignoreUnknown": true
+    },
+    "addedAt": "2026-01-20T12:40:57.406Z",
+    "active": true
+  },
+  "Wilson Rosa": {
+    "lid": "103676500775001@lid",
+    "stacks": ["java", "spring", "sql"],
+    "filters": {
+      "roles": ["desenvolvedor", "developer", "backend", "back-end"],
+      "stacks": ["java", "spring", "sql"],
+      "seniority": ["senior"],
+      "locations": ["brasil"],
+      "workMode": ["remoto"],
+      "contract": ["pj"],
+      "languages": ["pt"],
+      "weights": {
+        "roles": 20,
+        "stacks": 30,
+        "seniority": 15,
+        "locations": 10,
+        "workMode": 10,
+        "contract": 10,
+        "languages": 5
+      },
+      "must": {
+        "roles": true,
+        "stacks": true,
+        "workMode": false,
+        "contract": false,
+        "languages": false
+      },
+      "ignoreUnknown": true
+    },
+    "addedAt": "2026-01-21T00:00:00.000Z",
+    "active": true
+  }
+}

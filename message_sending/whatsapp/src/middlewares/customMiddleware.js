@@ -19,10 +19,17 @@ import {
   PAYMENT_LINK_PRIVATE,
   JOB_GROUP_LINK,
   TIMEOUT_IN_MILLISECONDS_BY_EVENT,
-  PREFIX
+  PREFIX,
+  OWNER_LID
 } from "../config.js"
-import { extractDataFromMessage } from "../utils/index.js"
+import { extractDataFromMessage, toUserLid } from "../utils/index.js"
 import { errorLog, infoLog } from "../utils/logger.js"
+import {
+  addVipPendingSubscriber,
+  approveVipSubscriber,
+  rejectVipSubscriber,
+  updateVipPendingPaymentProof
+} from "../utils/database.js"
 
 // Timeout de 5 minutos em milissegundos
 const SESSION_TIMEOUT_MS = 5 * 60 * 1000
@@ -658,6 +665,10 @@ export async function customMiddleware({ socket, webMessage, type, commonFunctio
         await handlePaymentReceiptPrivate(socket, remoteJid, messageText, userId, webMessage)
         break
 
+      case "awaiting_vip_release_decision":
+        await handleVipReleaseDecision(socket, remoteJid, messageText, userId)
+        break
+
       default:
         conversationStates.set(userId, { state: "menu", timestamp: Date.now() })
         await sendWithDelay(socket, remoteJid, { text: getMainMenu() })
@@ -1166,6 +1177,7 @@ async function handlePaymentReceiptGroup(socket, remoteJid, messageText, userId,
 
 /**
  * Processa comprovante de pagamento para vagas privadas
+ * Agora salva como PENDENTE e aguarda aprovação do owner
  */
 async function handlePaymentReceiptPrivate(socket, remoteJid, messageText, userId, webMessage) {
   try {
@@ -1179,29 +1191,97 @@ async function handlePaymentReceiptPrivate(socket, remoteJid, messageText, userI
 
     if (webMessage?.message?.imageMessage || webMessage?.message?.documentMessage) {
       const clientNumber = remoteJid.replace("@s.whatsapp.net", "").replace("@lid", "")
+      const clientLid = `${clientNumber}@lid`
       const leadData = userState?.leadData || {}
+      const clientName = leadData?.name || "Não informado"
+      const vipFilters = userState?.vipFilters || null
 
-      for (const targetNumber of PAYMENT_NOTIFICATION_NUMBERS) {
+      // Salva como PENDENTE (NÃO como VIP ainda)
+      addVipPendingSubscriber(clientName, clientLid, vipFilters)
+      updateVipPendingPaymentProof(clientLid, {
+        type: webMessage.message.imageMessage ? "image" : "document",
+        receivedAt: new Date().toISOString()
+      })
+
+      infoLog(`[VIP] Cliente ${clientName} (${clientLid}) salvo como PENDENTE. Aguardando aprovação.`)
+
+      // Notifica os aprovadores
+      const approvalTargets = [...(PAYMENT_NOTIFICATION_NUMBERS || [])]
+      if (OWNER_LID && !approvalTargets.includes(OWNER_LID)) {
+        approvalTargets.push(OWNER_LID)
+      }
+
+      for (const targetNumber of approvalTargets) {
         try {
           await sendWithDelay(socket, targetNumber, {
             image: webMessage.message.imageMessage || webMessage.message.documentMessage,
-            caption: `*Comprovante de Pagamento - Vagas Personalizadas*
+            caption: `*COMPROVANTE VIP*
 
-*Cliente:* ${clientNumber}
-*Data:* ${new Date().toLocaleString("pt-BR")}`
+Cliente: ${clientName}
+Número: ${clientNumber}
+Data: ${new Date().toLocaleString("pt-BR")}`
           })
 
-          await sendWithDelay(socket, targetNumber, {
-            text: getPaymentNotificationPrivate(clientNumber, leadData)
+          // Formata os filtros para exibição
+          let filtersSummary = "Nenhum filtro definido"
+          if (vipFilters) {
+            const lines = []
+            if (vipFilters.roles?.length) lines.push(`Cargos: ${vipFilters.roles.join(", ")}`)
+            if (vipFilters.stacks?.length) lines.push(`Stacks: ${vipFilters.stacks.join(", ")}`)
+            if (vipFilters.seniority?.length) lines.push(`Senioridade: ${vipFilters.seniority.join(", ")}`)
+            if (vipFilters.locations?.length) lines.push(`Local: ${vipFilters.locations.join(", ")}`)
+            if (vipFilters.workMode?.length) lines.push(`Modalidade: ${vipFilters.workMode.join(", ")}`)
+            if (vipFilters.contract?.length) lines.push(`Contrato: ${vipFilters.contract.join(", ")}`)
+            if (lines.length) filtersSummary = lines.join("\n")
+          }
+
+          const approvalMessage = `*SOLICITAÇÃO DE VIP*
+━━━━━━━━━━━━━━━━━━━━━
+Nome: ${clientName}
+Número: ${clientNumber}
+Data: ${new Date().toLocaleString("pt-BR")}
+━━━━━━━━━━━━━━━━━━━━━
+
+*FILTROS SOLICITADOS:*
+${filtersSummary}
+
+━━━━━━━━━━━━━━━━━━━━━
+*Deseja liberar o VIP?*
+
+*1* - Liberar VIP
+*2* - Não liberar
+━━━━━━━━━━━━━━━━━━━━━`
+
+          await sendWithDelay(socket, targetNumber, { text: approvalMessage })
+
+          // Salva estado para aguardar decisão
+          conversationStates.set(targetNumber, {
+            state: "awaiting_vip_release_decision",
+            timestamp: Date.now(),
+            approval: {
+              clientNumber,
+              clientLid,
+              clientName,
+              vipFilters
+            }
           })
 
-          infoLog(`[HANDLE PAYMENT RECEIPT PRIVATE] Comprovante enviado para ${targetNumber}`)
+          infoLog(`[HANDLE PAYMENT RECEIPT PRIVATE] Aguardando aprovação de ${targetNumber}`)
         } catch (error) {
           errorLog(`[HANDLE PAYMENT RECEIPT PRIVATE] Erro ao enviar para ${targetNumber}: ${error.message}`)
         }
       }
 
-      await sendWithDelay(socket, remoteJid, { text: getPrivateAccessMessage() })
+      // Informa o cliente que o comprovante foi recebido
+      await sendWithDelay(socket, remoteJid, {
+        text: `*Comprovante recebido!*
+
+Seu pagamento está sendo verificado.
+Você receberá uma confirmação assim que for aprovado.
+
+_Aguarde a liberação do seu acesso VIP._`
+      })
+
       conversationStates.set(userId, { state: "menu", timestamp: Date.now() })
     } else {
       await sendWithDelay(socket, remoteJid, { text: getPaymentReceiptRequestMessage() })
@@ -1209,5 +1289,90 @@ async function handlePaymentReceiptPrivate(socket, remoteJid, messageText, userI
   } catch (error) {
     errorLog(`[HANDLE PAYMENT RECEIPT PRIVATE] Erro: ${error.message}`)
     errorLog(`[HANDLE PAYMENT RECEIPT PRIVATE] Stack: ${error.stack}`)
+  }
+}
+
+/**
+ * Processa a decisão de liberação do VIP (1-Liberar / 2-Negar)
+ */
+async function handleVipReleaseDecision(socket, remoteJid, messageText, userId) {
+  try {
+    const userState = conversationStates.get(userId)
+    const approval = userState?.approval
+    if (!approval) {
+      conversationStates.set(userId, { state: "menu", timestamp: Date.now() })
+      return
+    }
+
+    const clientLid = approval.clientLid
+    const approverLid = remoteJid.includes("@lid") ? remoteJid : `${remoteJid.replace("@s.whatsapp.net", "")}@lid`
+
+    if (messageText === "1") {
+      // Aprova o VIP
+      const result = approveVipSubscriber(clientLid, approverLid)
+
+      if (result.ok) {
+        const successMsg = `*VIP LIBERADO!*
+
+Cliente: ${approval.clientName || approval.clientNumber}
+LID: ${clientLid}
+
+O cliente agora receberá vagas personalizadas.`
+
+        await sendWithDelay(socket, remoteJid, { text: successMsg })
+
+        // Notifica o cliente que foi aprovado
+        try {
+          const clientJid = clientLid.replace("@lid", "@s.whatsapp.net")
+          await sendWithDelay(socket, clientJid, {
+            text: `*Parabéns! Seu VIP foi ativado!*
+
+Você agora receberá vagas personalizadas de acordo com seu perfil.
+
+Fique atento às notificações!`
+          })
+        } catch (notifyError) {
+          errorLog(`[VIP RELEASE] Erro ao notificar cliente: ${notifyError.message}`)
+        }
+
+        infoLog(`[VIP] Cliente ${approval.clientName} (${clientLid}) APROVADO por ${approverLid}`)
+      } else {
+        await sendWithDelay(socket, remoteJid, { text: `Erro ao liberar VIP: ${result.reason}` })
+      }
+
+      conversationStates.set(userId, { state: "menu", timestamp: Date.now() })
+      return
+    }
+
+    if (messageText === "2") {
+      // Rejeita o VIP
+      const result = rejectVipSubscriber(clientLid, approverLid, "Pagamento não confirmado")
+
+      if (result.ok) {
+        await sendWithDelay(socket, remoteJid, {
+          text: `*VIP NÃO LIBERADO*
+
+Cliente: ${approval.clientName || approval.clientNumber}
+
+O cliente não foi adicionado como VIP.`
+        })
+
+        infoLog(`[VIP] Cliente ${approval.clientName} (${clientLid}) REJEITADO por ${approverLid}`)
+      } else {
+        await sendWithDelay(socket, remoteJid, { text: `Erro ao rejeitar: ${result.reason}` })
+      }
+
+      conversationStates.set(userId, { state: "menu", timestamp: Date.now() })
+      return
+    }
+
+    await sendWithDelay(socket, remoteJid, {
+      text: `*Opção inválida*
+
+Digite *1* para LIBERAR o VIP
+Digite *2* para NÃO liberar`
+    })
+  } catch (error) {
+    errorLog(`[HANDLE VIP RELEASE] Erro: ${error.message}`)
   }
 }

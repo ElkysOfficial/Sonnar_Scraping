@@ -1,0 +1,5 @@
+# Perfil do Chrome (contém cache e dados do navegador)
+chrome_profile/
+
+# Cache do Google Enricher (opcional - remova se quiser versionar)
+# google_cache.json

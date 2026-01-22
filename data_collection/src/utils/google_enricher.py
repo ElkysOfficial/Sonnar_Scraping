@@ -9,7 +9,9 @@ from typing import Dict, Optional, Tuple
 from playwright.async_api import async_playwright
 
 
-CACHE_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "data", "google_cache.json")
+DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "data")
+CACHE_PATH = os.path.join(DATA_DIR, "google_cache.json")
+CHROME_PROFILE_PATH = os.path.join(DATA_DIR, "chrome_profile")
 MISSING_VALUES = {"", "nao informado", "nao informada", "n/a", "na"}
 DEFAULT_USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -245,8 +247,9 @@ def _clean_salary(value: str) -> str:
 
 
 class GoogleEnricher:
-    def __init__(self, headless: Optional[bool] = None, cache_path: Optional[str] = None):
+    def __init__(self, headless: Optional[bool] = None, cache_path: Optional[str] = None, profile_path: Optional[str] = None):
         self.cache_path = cache_path or CACHE_PATH
+        self.profile_path = profile_path or CHROME_PROFILE_PATH
         env_headless = os.getenv("PLAYWRIGHT_HEADLESS")
         if headless is not None:
             self.headless = headless
@@ -264,22 +267,31 @@ class GoogleEnricher:
     async def __aenter__(self):
         self._playwright = await async_playwright().start()
         launch_args = ["--disable-blink-features=AutomationControlled", "--disable-dev-shm-usage"]
+
+        # Garante que o diretório do perfil existe
+        os.makedirs(self.profile_path, exist_ok=True)
+
         try:
-            self._browser = await self._playwright.chromium.launch(
+            # Usa perfil persistente para manter cookies e dados entre execuções
+            self._context = await self._playwright.chromium.launch_persistent_context(
+                self.profile_path,
                 channel="chrome",
                 headless=self.headless,
-                args=launch_args
+                args=launch_args,
+                locale="pt-BR",
+                timezone_id="America/Sao_Paulo",
+                user_agent=DEFAULT_USER_AGENT
             )
         except Exception:
-            self._browser = await self._playwright.chromium.launch(
+            self._context = await self._playwright.chromium.launch_persistent_context(
+                self.profile_path,
                 headless=self.headless,
-                args=launch_args
+                args=launch_args,
+                locale="pt-BR",
+                timezone_id="America/Sao_Paulo",
+                user_agent=DEFAULT_USER_AGENT
             )
-        self._context = await self._browser.new_context(
-            locale="pt-BR",
-            timezone_id="America/Sao_Paulo",
-            user_agent=DEFAULT_USER_AGENT
-        )
+
         await self._context.add_init_script(
             "Object.defineProperty(navigator, 'webdriver', {get: () => undefined});"
         )
@@ -289,8 +301,6 @@ class GoogleEnricher:
     async def __aexit__(self, exc_type, exc, tb):
         if self._context:
             await self._context.close()
-        if self._browser:
-            await self._browser.close()
         if self._playwright:
             await self._playwright.stop()
 

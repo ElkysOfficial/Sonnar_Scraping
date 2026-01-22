@@ -1,6 +1,12 @@
+import sys
+import os
+
 import httpx
-from variavel import stacks
 from bs4 import BeautifulSoup
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+from utils.google_enricher import GoogleEnricher, is_missing_field
+from variavel import stacks
 
 async def get_linkedin_jobs() -> list:
     '''
@@ -68,6 +74,20 @@ async def get_linkedin_jobs() -> list:
 
                         job = [link, job_title, company, location, work_type, hiring_regime, salary, publication_date]
                         jobs.append(job)
+
+    # Enriquecer vagas com salary vazio usando Google
+    if jobs:
+        async with GoogleEnricher() as enricher:
+            for job_data in jobs:
+                if is_missing_field(job_data[6]):  # salary está no índice 6
+                    enriched = await enricher.enrich_job({
+                        "company": job_data[2],
+                        "job_title": job_data[1],
+                        "location": job_data[3] if isinstance(job_data[3], str) else ", ".join(job_data[3]),
+                        "salary": job_data[6]
+                    })
+                    if enriched.get("salary"):
+                        job_data[6] = enriched["salary"]
 
     print(f'Foram obtidas {len(jobs)} vagas do site LinkedIn')
     return jobs

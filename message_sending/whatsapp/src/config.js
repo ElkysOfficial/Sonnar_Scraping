@@ -85,7 +85,7 @@ export const JOB_GROUP_ID = "120363421632065613@g.us"
 export const JOB_SEND_INTERVAL = 5 * 60 * 1000
 
 // Caminho do arquivo de vagas (embeds.json)
-export const EMBEDS_FILE_PATH = path.resolve(__dirname, "..", "..", "message_formatting", "discord", "src", "data", "embeds.json")
+export const EMBEDS_FILE_PATH = path.resolve(__dirname, "..", "..", "..", "message_formatting", "discord", "src", "data", "embeds.json")
 
 // ======= CONFIGURAÇÕES DA ELKYS =======
 // Número da Elkys (formato: numero@s.whatsapp.net ou numero@lid)

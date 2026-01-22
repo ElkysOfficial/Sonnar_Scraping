@@ -497,67 +497,197 @@ export function getSpiderApiToken() {
 
 // ======= ASSINANTES VIP (Vagas Personalizadas) =======
 const VIP_SUBSCRIBERS_FILE = "vip-subscribers";
+const VIP_PENDING_FILE = "vip-pending-subscribers";
 
 /**
- * Obtém todos os assinantes VIP
- * @returns {Array<{lid: string, stacks: string[], addedAt: string}>}
+ * Normaliza filtros VIP com valores padrão
  */
-export function getVipSubscribers() {
-  return readJSON(VIP_SUBSCRIBERS_FILE, []);
+function normalizeVipFilters(filtersInput) {
+  if (!filtersInput || typeof filtersInput !== "object") {
+    return {
+      roles: [],
+      stacks: [],
+      seniority: [],
+      locations: [],
+      workMode: [],
+      contract: [],
+      languages: [],
+      weights: { roles: 20, stacks: 30, seniority: 15, locations: 10, workMode: 10, contract: 10, languages: 5 },
+      must: { roles: true, stacks: true, workMode: false, contract: false, languages: false },
+      ignoreUnknown: true
+    };
+  }
+
+  return {
+    roles: filtersInput.roles || [],
+    stacks: filtersInput.stacks || [],
+    seniority: filtersInput.seniority || [],
+    locations: filtersInput.locations || [],
+    workMode: filtersInput.workMode || [],
+    contract: filtersInput.contract || [],
+    languages: filtersInput.languages || [],
+    weights: filtersInput.weights || { roles: 20, stacks: 30, seniority: 15, locations: 10, workMode: 10, contract: 10, languages: 5 },
+    must: filtersInput.must || { roles: true, stacks: true, workMode: false, contract: false, languages: false },
+    ignoreUnknown: filtersInput.ignoreUnknown !== false
+  };
 }
 
 /**
- * Adiciona um assinante VIP
- * @param {string} lid - ID do usuário (formato: 123456789@lid)
- * @param {string[]} stacks - Lista de stacks (ex: ["estágio", "frontend"])
- * @returns {boolean} True se adicionou, false se já existia
+ * Retorna todos os VIPs aprovados como objeto indexado por nome
+ * Estrutura: { "Nome Completo": { lid, stacks, filters, addedAt, ... } }
  */
-export function addVipSubscriber(lid, stacks) {
-  const subscribers = getVipSubscribers();
+export function getVipSubscribersObject() {
+  return readJSON(VIP_SUBSCRIBERS_FILE, {});
+}
 
-  const existingIndex = subscribers.findIndex((s) => s.lid === lid);
+/**
+ * Retorna array de VIPs para compatibilidade
+ * @param {boolean} onlyActive - Se true, retorna apenas VIPs ativos (default: true)
+ */
+export function getVipSubscribers(onlyActive = true) {
+  const data = readJSON(VIP_SUBSCRIBERS_FILE, {});
 
-  if (existingIndex !== -1) {
-    // Atualiza stacks se já existe
-    subscribers[existingIndex].stacks = stacks;
-    subscribers[existingIndex].updatedAt = new Date().toISOString();
-    writeJSON(VIP_SUBSCRIBERS_FILE, subscribers, []);
+  // Se for array (formato antigo), converte para novo formato
+  if (Array.isArray(data)) {
+    const newFormat = {};
+    for (const subscriber of data) {
+      const name = subscriber.name || `VIP_${subscriber.lid.replace("@lid", "")}`;
+      newFormat[name] = {
+        lid: subscriber.lid,
+        stacks: subscriber.stacks || subscriber.filters?.stacks || [],
+        filters: subscriber.filters || normalizeVipFilters({ stacks: subscriber.stacks || [] }),
+        addedAt: subscriber.addedAt || new Date().toISOString(),
+        active: true
+      };
+    }
+    writeJSON(VIP_SUBSCRIBERS_FILE, newFormat, {});
+    return Object.entries(newFormat).map(([name, d]) => ({ name, ...d }));
+  }
+
+  const allSubscribers = Object.entries(data).map(([name, subscriberData]) => ({
+    name,
+    ...subscriberData
+  }));
+
+  // Filtra apenas ativos se solicitado
+  if (onlyActive) {
+    return allSubscribers.filter(s => s.active !== false);
+  }
+
+  return allSubscribers;
+}
+
+/**
+ * Adiciona/atualiza VIP aprovado
+ * @param {string} name - Nome completo do cliente (obrigatório)
+ * @param {string} lid - LID do WhatsApp
+ * @param {object} filtersInput - Filtros do VIP
+ * @returns {boolean} true se criou, false se atualizou
+ */
+export function addVipSubscriber(name, lid, filtersInput) {
+  if (!name || !name.trim()) {
+    throw new Error("Nome é obrigatório para adicionar VIP");
+  }
+  if (!lid) {
+    throw new Error("LID é obrigatório para adicionar VIP");
+  }
+
+  const subscribers = getVipSubscribersObject();
+  const filters = normalizeVipFilters(filtersInput);
+  const stacks = filters.stacks || [];
+  const now = new Date().toISOString();
+  const normalizedName = name.trim();
+
+  const existingName = Object.keys(subscribers).find(n => subscribers[n].lid === lid);
+
+  if (existingName) {
+    const existingData = subscribers[existingName];
+    delete subscribers[existingName];
+
+    subscribers[normalizedName] = {
+      lid,
+      stacks,
+      filters,
+      addedAt: existingData.addedAt || now,
+      updatedAt: now,
+      active: true
+    };
+    writeJSON(VIP_SUBSCRIBERS_FILE, subscribers, {});
     return false;
   }
 
-  subscribers.push({
+  subscribers[normalizedName] = {
     lid,
     stacks,
-    addedAt: new Date().toISOString(),
-  });
+    filters,
+    addedAt: now,
+    active: true
+  };
 
-  writeJSON(VIP_SUBSCRIBERS_FILE, subscribers, []);
+  writeJSON(VIP_SUBSCRIBERS_FILE, subscribers, {});
   return true;
 }
 
 /**
- * Remove um assinante VIP
- * @param {string} lid - ID do usuário
- * @returns {boolean} True se removeu, false se não existia
+ * Ativa ou desativa um VIP
+ * @param {string} lid - LID do VIP
+ * @param {boolean} active - true para ativar, false para desativar
+ */
+export function setVipActive(lid, active) {
+  const subscribers = getVipSubscribersObject();
+  const name = Object.keys(subscribers).find(n => subscribers[n].lid === lid);
+
+  if (!name) return false;
+
+  subscribers[name].active = active;
+  subscribers[name].updatedAt = new Date().toISOString();
+  writeJSON(VIP_SUBSCRIBERS_FILE, subscribers, {});
+  return true;
+}
+
+/**
+ * Ativa ou desativa um VIP pelo nome
+ */
+export function setVipActiveByName(name, active) {
+  const subscribers = getVipSubscribersObject();
+
+  if (!subscribers[name]) return false;
+
+  subscribers[name].active = active;
+  subscribers[name].updatedAt = new Date().toISOString();
+  writeJSON(VIP_SUBSCRIBERS_FILE, subscribers, {});
+  return true;
+}
+
+/**
+ * Remove um assinante VIP pelo LID
  */
 export function removeVipSubscriber(lid) {
-  const subscribers = getVipSubscribers();
+  const subscribers = getVipSubscribersObject();
+  const nameToRemove = Object.keys(subscribers).find(name => subscribers[name].lid === lid);
 
-  const index = subscribers.findIndex((s) => s.lid === lid);
+  if (!nameToRemove) return false;
 
-  if (index === -1) {
-    return false;
-  }
+  delete subscribers[nameToRemove];
+  writeJSON(VIP_SUBSCRIBERS_FILE, subscribers, {});
+  return true;
+}
 
-  subscribers.splice(index, 1);
-  writeJSON(VIP_SUBSCRIBERS_FILE, subscribers, []);
+/**
+ * Remove um assinante VIP pelo nome
+ */
+export function removeVipSubscriberByName(name) {
+  const subscribers = getVipSubscribersObject();
+
+  if (!subscribers[name]) return false;
+
+  delete subscribers[name];
+  writeJSON(VIP_SUBSCRIBERS_FILE, subscribers, {});
   return true;
 }
 
 /**
  * Verifica se um usuário é assinante VIP
- * @param {string} lid - ID do usuário
- * @returns {Object|null} Dados do assinante ou null
  */
 export function getVipSubscriber(lid) {
   const subscribers = getVipSubscribers();
@@ -565,15 +695,152 @@ export function getVipSubscriber(lid) {
 }
 
 /**
+ * Busca VIP pelo nome
+ */
+export function getVipSubscriberByName(name) {
+  const subscribers = getVipSubscribersObject();
+  if (!subscribers[name]) return null;
+  return { name, ...subscribers[name] };
+}
+
+/**
+ * Verifica se um LID é VIP aprovado
+ */
+export function isVipSubscriber(lid) {
+  return getVipSubscriber(lid) !== null;
+}
+
+/**
  * Obtém assinantes VIP por stack
- * @param {string} stack - Stack para filtrar
- * @returns {Array} Lista de assinantes que querem essa stack
  */
 export function getSubscribersByStack(stack) {
   const subscribers = getVipSubscribers();
   const stackLower = stack.toLowerCase();
 
   return subscribers.filter((s) =>
-    s.stacks.some((st) => st.toLowerCase() === stackLower || st.toLowerCase() === "todas")
+    (s.filters?.stacks || s.stacks || []).some((st) => st.toLowerCase() === stackLower || st.toLowerCase() === "todas")
   );
+}
+
+// ======= VIP PENDENTES (Aguardando Aprovação) =======
+
+/**
+ * Retorna todos os VIPs pendentes de aprovação
+ */
+export function getVipPendingSubscribers() {
+  return readJSON(VIP_PENDING_FILE, []);
+}
+
+/**
+ * Busca um pendente pelo LID
+ */
+export function getVipPendingByLid(lid) {
+  const pending = getVipPendingSubscribers();
+  return pending.find(p => p.lid === lid && p.status === "pending") || null;
+}
+
+/**
+ * Busca um pendente pelo número do cliente
+ */
+export function getVipPendingByNumber(clientNumber) {
+  const pending = getVipPendingSubscribers();
+  const normalized = clientNumber.replace("@lid", "").replace("@s.whatsapp.net", "");
+  return pending.find(p => {
+    const pendingNumber = p.lid?.replace("@lid", "").replace("@s.whatsapp.net", "") || "";
+    return pendingNumber === normalized && p.status === "pending";
+  }) || null;
+}
+
+/**
+ * Adiciona um cliente como pendente de aprovação VIP
+ * NÃO adiciona como VIP aprovado - apenas aguarda confirmação do pagamento
+ */
+export function addVipPendingSubscriber(name, lid, filtersInput, paymentProof = null) {
+  const pending = getVipPendingSubscribers();
+  const filters = normalizeVipFilters(filtersInput);
+  const stacks = filters.stacks || [];
+  const now = new Date().toISOString();
+
+  const idx = pending.findIndex(p => p.lid === lid && p.status === "pending");
+
+  const payload = {
+    name: name?.trim() || "",
+    lid,
+    stacks,
+    filters,
+    paymentProof,
+    status: "pending",
+    requestedAt: now,
+    decidedAt: null,
+    decidedBy: null
+  };
+
+  if (idx !== -1) {
+    pending[idx] = { ...pending[idx], ...payload, requestedAt: pending[idx].requestedAt || now };
+    writeJSON(VIP_PENDING_FILE, pending, []);
+    return false;
+  }
+
+  pending.push(payload);
+  writeJSON(VIP_PENDING_FILE, pending, []);
+  return true;
+}
+
+/**
+ * Atualiza o comprovante de pagamento de um pendente
+ */
+export function updateVipPendingPaymentProof(lid, paymentProof) {
+  const pending = getVipPendingSubscribers();
+  const idx = pending.findIndex(p => p.lid === lid && p.status === "pending");
+  if (idx === -1) return false;
+
+  pending[idx].paymentProof = paymentProof;
+  pending[idx].paymentReceivedAt = new Date().toISOString();
+  writeJSON(VIP_PENDING_FILE, pending, []);
+  return true;
+}
+
+/**
+ * Aprova um VIP pendente - move para a lista de aprovados
+ */
+export function approveVipSubscriber(lid, decidedBy) {
+  const pending = getVipPendingSubscribers();
+  const idx = pending.findIndex(p => p.lid === lid && p.status === "pending");
+  if (idx === -1) return { ok: false, reason: "not_found" };
+
+  const pendingSubscriber = pending[idx];
+
+  pending[idx].status = "approved";
+  pending[idx].decidedAt = new Date().toISOString();
+  pending[idx].decidedBy = decidedBy || null;
+  writeJSON(VIP_PENDING_FILE, pending, []);
+
+  addVipSubscriber(pendingSubscriber.name, pendingSubscriber.lid, pendingSubscriber.filters);
+
+  return {
+    ok: true,
+    subscriber: {
+      name: pendingSubscriber.name,
+      lid: pendingSubscriber.lid,
+      filters: pendingSubscriber.filters
+    }
+  };
+}
+
+/**
+ * Rejeita um VIP pendente
+ */
+export function rejectVipSubscriber(lid, decidedBy, reason = null) {
+  const pending = getVipPendingSubscribers();
+  const idx = pending.findIndex(p => p.lid === lid && p.status === "pending");
+  if (idx === -1) return { ok: false, reason: "not_found" };
+
+  pending[idx].status = "rejected";
+  pending[idx].decidedAt = new Date().toISOString();
+  pending[idx].decidedBy = decidedBy || null;
+  pending[idx].rejectReason = reason || null;
+
+  writeJSON(VIP_PENDING_FILE, pending, []);
+
+  return { ok: true, subscriber: pending[idx] };
 }

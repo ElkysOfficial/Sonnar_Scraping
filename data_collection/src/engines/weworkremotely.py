@@ -1,7 +1,12 @@
 import asyncio
+import os
+import sys
 import xml.etree.ElementTree as ET
 from curl_cffi import requests
 from datetime import datetime
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+from utils.google_enricher import GoogleEnricher, is_missing_field
 
 
 # Sessão global
@@ -139,6 +144,20 @@ async def get_weworkremotely_jobs() -> list:
 
         except Exception:
             continue
+
+    # Enriquecer vagas com salary vazio usando Google
+    if jobs:
+        async with GoogleEnricher() as enricher:
+            for job_data in jobs:
+                if is_missing_field(job_data[6]):  # salary está no índice 6
+                    enriched = await enricher.enrich_job({
+                        "company": job_data[2],
+                        "job_title": job_data[1],
+                        "location": job_data[3] if isinstance(job_data[3], str) else ", ".join(job_data[3]) if job_data[3] else "",
+                        "salary": job_data[6]
+                    })
+                    if enriched.get("salary"):
+                        job_data[6] = enriched["salary"]
 
     print(f'Foram obtidas {len(jobs)} vagas do site WeWorkRemotely')
     return jobs
