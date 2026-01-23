@@ -65,7 +65,10 @@ def extract_hiring_regime(text: str) -> str:
         return 'Full-time'
     if 'part-time' in text_lower or 'part time' in text_lower:
         return 'Part-time'
-    if 'contract' in text_lower or 'contractor' in text_lower:
+    if 'contract' in text_lower or 'contractor' in text_lower or 'c2c' in text_lower or 'w2' in text_lower:
+        return 'Contractor'
+    # Detectar duracao de contrato (ex: "12 months", "6 month contract")
+    if re.search(r'\d+\s*months?', text_lower):
         return 'Contractor'
     if 'intern' in text_lower:
         return 'Internship'
@@ -213,8 +216,15 @@ async def get_dice_jobs() -> list:
                             text_lower = text.lower()
                             # "Depends on Experience" ou valores como "$100k - $150k"
                             if '$' in text or 'depends' in text_lower or 'competitive' in text_lower or 'negotiable' in text_lower:
-                                salary = text
-                                break
+                                # Se texto curto (<50 chars), usar inteiro
+                                if len(text) <= 50:
+                                    salary = text
+                                    break
+                                # Para textos maiores, extrair apenas o valor do salario via regex
+                                salary_match = re.search(r'\$[\d,]+(?:k)?(?:\.\d{2})?(?:\s*[-–]\s*\$?[\d,]+(?:k)?(?:\.\d{2})?)?(?:\s*/\s*(?:hr|hour|yr|year|mo|month|week))?', text, re.IGNORECASE)
+                                if salary_match:
+                                    salary = salary_match.group(0)
+                                    break
 
                         # Data de publicacao - procurar "Today", "X days ago", etc
                         publication_date = ''

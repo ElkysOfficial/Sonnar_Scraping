@@ -469,14 +469,14 @@ class GoogleEnricher:
 
     async def _search_salary(self, company: str, job_title: str) -> Optional[Tuple[str, str]]:
         query = (
-            f"Com base no glassdoor qual e a media salarial oferecida para a funcao {job_title}"
+            f"Com base no glassdoor qual e a media salarial mensal oferecida para a funcao {job_title}"
         )
         if company:
             query += f" pela empresa {company}"
         query += (
             "? A resposta deve sair no seguinte template: "
             "a media salarial por mes oferecida pela empresa com base no glassdoor "
-            "para essa funcao e entre X reais e X reais"
+            "para essa funcao e entre X reais e X reais por mes"
         )
         await self._search(query)
         salary = await self._extract_salary()

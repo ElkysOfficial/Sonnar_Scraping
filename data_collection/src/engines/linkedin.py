@@ -93,6 +93,7 @@ async def get_linkedin_jobs() -> list:
 
                         job = [link, job_title, company, location, work_type, hiring_regime, salary, publication_date]
                         jobs.append(job)
+    print(f'Foram encontradas {len(jobs)} vagas preliminares no LinkedIn, iniciando enriquecimento...')
 
     # Enriquecer vagas com location/salary vazios usando Google
     if jobs:
