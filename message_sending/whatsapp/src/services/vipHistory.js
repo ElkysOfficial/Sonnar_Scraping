@@ -1,7 +1,7 @@
 /**
  * Serviço de persistência do histórico de envios VIP
  * Garante que:
- * - Apenas 1 vaga seja enviada a cada 5 minutos por assinante
+ * - Apenas 1 vaga seja enviada a cada 7 minutos por assinante
  * - A mesma vaga não seja enviada duas vezes (exceto após 48 horas)
  * - O estado persiste mesmo após reiniciar o bot
  *
@@ -19,8 +19,8 @@ const __dirname = path.dirname(__filename)
 // Caminho do arquivo de histórico
 const VIP_HISTORY_PATH = path.resolve(__dirname, "..", "..", "database", "vip-history.json")
 
-// Intervalo mínimo entre envios (5 minutos em ms)
-const MIN_SEND_INTERVAL = 5 * 60 * 1000
+// Intervalo mínimo entre envios (7 minutos em ms)
+const MIN_SEND_INTERVAL = 7 * 60 * 1000
 
 // Cooldown para reenvio da mesma vaga (48 horas em ms)
 const JOB_REPOST_COOLDOWN = 48 * 60 * 60 * 1000
@@ -81,7 +81,7 @@ function saveHistory(history) {
 }
 
 /**
- * Verifica se pode enviar vaga para o assinante (intervalo de 5 minutos)
+ * Verifica se pode enviar vaga para o assinante (intervalo de 7 minutos)
  * @param {string} lid - LID do assinante
  * @returns {boolean}
  */

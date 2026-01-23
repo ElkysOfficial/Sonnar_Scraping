@@ -3,7 +3,7 @@
  * Envia vagas filtradas por stack para o privado dos assinantes
  *
  * REGRAS:
- * - Apenas 1 vaga enviada a cada 5 minutos por assinante
+ * - Apenas 1 vaga enviada a cada 7 minutos por assinante
  * - Mesma vaga não é enviada duas vezes (exceto após 48 horas)
  * - Estado persistido em arquivo para sobreviver a reinicializações
  *
@@ -11,9 +11,10 @@
  */
 
 import fs from "node:fs"
+import axios from "axios"
 import { delay } from "baileys"
 import { infoLog, infoLogAlways, successLog, warningLog, errorLog } from "../utils/logger.js"
-import { EMBEDS_FILE_PATH, BOT_EMOJI, TIMEOUT_IN_MILLISECONDS_BY_EVENT } from "../config.js"
+import { EMBEDS_FILE_PATH, BOT_EMOJI, TIMEOUT_IN_MILLISECONDS_BY_EVENT, CARD_API_URL } from "../config.js"
 import { extractStack } from "./jobDistributor.js"
 import { getVipSubscribers } from "../utils/database.js"
 import { getCurrentSocket, isCurrentSocketReady } from "../utils/socketManager.js"
@@ -26,8 +27,8 @@ import {
   cleanOldEntries
 } from "./vipHistory.js"
 
-// Intervalo entre verificações (5 minutos)
-const CHECK_INTERVAL = 5 * 60 * 1000
+// Intervalo entre verificações (7 minutos)
+const CHECK_INTERVAL = 7 * 60 * 1000
 let vipTimeoutId = null
 let vipIntervalId = null
 let vipRunToken = 0
@@ -401,8 +402,57 @@ function lidToJid(lid) {
 }
 
 /**
+ * Solicita ao serviço de cards um card para a vaga
+ * @param {Object} job
+ * @param {string} to
+ * @returns {Object|null}
+ */
+async function fetchJobCard(job, to) {
+  try {
+    const response = await axios.post(
+      `${CARD_API_URL}/cards/generate`,
+      { embed: job, to },
+      { timeout: 30000 }
+    )
+    return response.data || null
+  } catch (err) {
+    errorLog(`[VIP CARD] Erro ao gerar card: ${err.message}`)
+    return null
+  }
+}
+
+/**
+ * Envia o card gerado para o assinante
+ * @param {string} jid
+ * @param {Object} cardData
+ * @param {Object} socket
+ * @returns {boolean}
+ */
+async function sendCardPayload(jid, jobId, cardData, socket) {
+  if (!cardData?.image?.base64) {
+    return false
+  }
+
+  try {
+    const buffer = Buffer.from(cardData.image.base64, "base64")
+    await delay(TIMEOUT_IN_MILLISECONDS_BY_EVENT)
+    await socket.sendMessage(jid, {
+      image: buffer,
+      caption: cardData.text,
+      mimetype: cardData.image.mimeType
+    })
+    const timestamp = new Date().toISOString()
+    successLog(`[VIP CARD] Job ${jobId} sent to ${jid} at ${timestamp}`)
+    return true
+  } catch (err) {
+    errorLog(`[VIP CARD] Falha ao enviar card para ${jid}: ${err.message}`)
+    return false
+  }
+}
+
+/**
  * Envia uma vaga para um assinante VIP
- * IMPORTANTE: Verifica intervalo de 5 minutos e histórico de 48h via persistência
+ * IMPORTANTE: Verifica intervalo de 7 minutos e histórico de 48h via persistência
  * @param {string} lid - LID do assinante
  * @param {Object} job - Vaga a enviar
  * @returns {{success: boolean, reason?: string}}
@@ -421,7 +471,7 @@ async function sendJobToSubscriber(lid, job) {
       return { success: false, reason: "connection_closed" }
     }
 
-    // Verifica intervalo de 5 minutos (persistido)
+    // Verifica intervalo de 7 minutos (persistido)
     if (!canSendToSubscriber(lid)) {
       const remaining = getTimeUntilCanSend(lid)
       const remainingMin = Math.ceil(remaining / 60000)
@@ -437,10 +487,19 @@ async function sendJobToSubscriber(lid, job) {
     }
 
     const jid = lidToJid(lid)
-    const message = formatJobMessage(job)
+    const cardPayload = await fetchJobCard(job, jid)
+    if (!cardPayload) {
+      const reason = "card_generation_failed"
+      warningLog(`[VIP] Card não gerado para ${lid}: ${reason}`)
+      return { success: false, reason }
+    }
 
-    await delay(TIMEOUT_IN_MILLISECONDS_BY_EVENT)
-    await socket.sendMessage(jid, { text: message })
+    const sent = await sendCardPayload(jid, jobId, cardPayload, socket)
+    if (!sent) {
+      const reason = "card_send_failed"
+      warningLog(`[VIP] Falha ao enviar card para ${lid}: ${reason}`)
+      return { success: false, reason }
+    }
 
     // Registra o envio (persiste em arquivo)
     recordJobSent(lid, jobId)
@@ -482,7 +541,7 @@ async function processVipJobs() {
       continue
     }
 
-    // Verifica cooldown de 5 minutos (persistido)
+    // Verifica cooldown de 7 minutos (persistido)
     if (!canSendToSubscriber(subscriber.lid)) {
       continue
     }
@@ -493,7 +552,7 @@ async function processVipJobs() {
     // Usa filtros completos se disponível, senão usa stacks (compatibilidade legada)
     const filters = subscriber.filters || { stacks: subscriber.stacks || [] }
 
-    for (const job of embeds.slice(-200)) {
+    for (const job of embeds) {
       const jobId = job.id || job.url || job.job_url
 
       // Pula vagas já enviadas nas últimas 48h
@@ -548,7 +607,7 @@ export function startVipJobSender(socket) {
   infoLog("════════════════════════════════════════════════════")
   infoLogAlways(`👥 Assinantes ativos: ${subscribers.length}`)
   infoLog(`⏱️  Intervalo de verificação: ${CHECK_INTERVAL / 60000} minutos`)
-  infoLog(`⏱️  Cooldown por assinante: 5 minutos`)
+  infoLog(`⏱️  Cooldown por assinante: 7 minutos`)
   infoLog(`⏱️  Cooldown para reenvio: 48 horas`)
   infoLog("════════════════════════════════════════════════════")
 
@@ -693,7 +752,7 @@ export async function triggerVipSearch(lid, stacksOrFilters, options = {}) {
     if (filters.seniority?.length) filterSummary.push(`seniority: ${filters.seniority.join(",")}`)
     infoLog(`[VIP SEARCH] Disparando busca para ${lid} com ${filterSummary.join(" | ") || "filtros vazios"}`)
 
-    // Verifica cooldown de 5 minutos
+    // Verifica cooldown de 7 minutos
     if (!canSendToSubscriber(lid)) {
       const remaining = getTimeUntilCanSend(lid)
       const remainingMin = Math.ceil(remaining / 60000)
@@ -749,7 +808,7 @@ export async function triggerVipSearch(lid, stacksOrFilters, options = {}) {
       }
     }
 
-    // Envia apenas uma vaga (regra: 1 vaga a cada 5 minutos)
+    // Envia apenas uma vaga (regra: 1 vaga a cada 7 minutos)
     let jobsSent = 0
     const job = matchingJobs[0]
 

@@ -87,7 +87,7 @@ async def scrape_jobs(max_tasks=3):
                             job_title = job_data.get('job_title', '')
                             job_data['salary'] = process_salary(job_data.get('salary', ''), job_title)
                             needs_location = is_missing_field(job_data.get('location'))
-                            needs_salary = is_missing_field(job_data.get('salary')) or job_data.get('salary') == 'a combinar'
+                            needs_salary = is_missing_field(job_data.get('salary'))
                             if needs_location or needs_salary:
                                 job_data = await enricher.enrich_job(job_data)
                                 if needs_salary and job_data.get('salary'):

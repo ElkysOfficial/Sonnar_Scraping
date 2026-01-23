@@ -81,8 +81,8 @@ export const OPENAI_API_KEY = ""
 // ID do grupo para envio de vagas (use /get-group-id para obter)
 export const JOB_GROUP_ID = "120363421632065613@g.us"
 
-// Intervalo de envio em ms (5 minutos)
-export const JOB_SEND_INTERVAL = 5 * 60 * 1000
+// Intervalo de envio em ms (7 minutos)
+export const JOB_SEND_INTERVAL = 7 * 60 * 1000
 
 // Caminho do arquivo de vagas (embeds.json)
 export const EMBEDS_FILE_PATH = path.resolve(__dirname, "..", "..", "..", "message_formatting", "discord", "src", "data", "embeds.json")
@@ -115,3 +115,17 @@ export const PAYMENT_LINK_PRIVATE = "https://buy.stripe.com/14AcMY2mQbEpcgwg4Ybf
 
 // Link do grupo de vagas (será enviado após confirmação de pagamento)
 export const JOB_GROUP_LINK = "https://chat.whatsapp.com/HGtEZLt5jys7aOONUUhF6a"
+
+// ======= CONFIGURAÇÕES DO CARD SENDER =======
+// Habilita o envio de cards com imagem (se false, usa apenas texto)
+export const USE_CARD_SENDER = process.env.USE_CARD_SENDER === "true" || true
+
+// URL da API de geração de cards
+export const CARD_API_URL = process.env.CARD_API_URL || "http://localhost:3001"
+
+// ======= CONFIGURAÇÕES DO API RECEIVER =======
+// Habilita o servidor de API para receber mensagens externas
+export const ENABLE_API_RECEIVER = process.env.ENABLE_API_RECEIVER === "true" || true
+
+// Porta do servidor de API
+export const WHATSAPP_API_PORT = process.env.WHATSAPP_API_PORT || 3002

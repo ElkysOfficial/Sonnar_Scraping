@@ -83,15 +83,25 @@ import {
 } from "./utils/logger.js";
 
 const originalConsoleWarn = console.warn.bind(console);
+const originalConsoleLog = console.log.bind(console);
+const shouldSuppressSessionLog = (message) =>
+  message.includes("Closing stale open session for new outgoing prekey bundle") ||
+  message.includes("Closing session: SessionEntry");
+
 console.warn = (...args) => {
   const message = args.map(String).join(" ");
-  if (
-    message.includes("Closing stale open session for new outgoing prekey bundle") ||
-    message.includes("Closing session: SessionEntry")
-  ) {
+  if (shouldSuppressSessionLog(message)) {
     return;
   }
   originalConsoleWarn(...args);
+};
+
+console.log = (...args) => {
+  const message = args.map(String).join(" ");
+  if (shouldSuppressSessionLog(message)) {
+    return;
+  }
+  originalConsoleLog(...args);
 };
 
 process.on("uncaughtException", (error) => {
