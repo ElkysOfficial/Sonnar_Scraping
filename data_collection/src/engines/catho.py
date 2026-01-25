@@ -30,11 +30,14 @@ async def get_catho_links() -> list:
     links = []
     session = get_session()
 
+    max_pages = int(os.getenv("CATHO_MAX_PAGES", "20"))
+    max_empty_pages = int(os.getenv("CATHO_MAX_EMPTY_PAGES", "1"))
+
     for stack in stacks:
         page = 1
         consecutive_empty = 0
 
-        while consecutive_empty < 2:  # Para após 2 páginas vazias consecutivas
+        while page <= max_pages and consecutive_empty < max_empty_pages:
             try:
                 if page > 1:
                     await asyncio.sleep(random.uniform(0.5, 1.5))
@@ -64,10 +67,6 @@ async def get_catho_links() -> list:
                                 links.append(href)
 
                     page += 1
-
-                    # Limitar páginas por stack para não demorar muito
-                    if page > 10:
-                        break
                 else:
                     consecutive_empty += 1
                     page += 1

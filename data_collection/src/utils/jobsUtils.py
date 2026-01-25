@@ -134,6 +134,11 @@ def process_salary(salary: str, title: str, is_estimated: bool = False) -> str:
     if "combinar" in salary.lower():
         return "a combinar"
 
+    # Se já vier formatado como faixa igual ("R$ X - R$ X"), reduzir para um valor
+    repeated_match = re.match(r"^\s*R\$\s*([\d\.]+,\d{2}|\d[\d\.]*)\s*-\s*R\$\s*([\d\.]+,\d{2}|\d[\d\.]*)\s*$", salary)
+    if repeated_match and repeated_match.group(1) == repeated_match.group(2):
+        return f"R$ {repeated_match.group(1)}"
+
     # Salário em USD - mantém como está
     lowered = salary.lower()
     if "usd" in lowered or ("$" in salary and "R$" not in salary):
@@ -158,11 +163,7 @@ def process_salary(salary: str, title: str, is_estimated: bool = False) -> str:
 
     # Adiciona prefixo se for estimativa
     if is_estimated:
-        seniority, _ = classify_seniority(title)
-        if seniority:
-            result = f"com base no valor medio pago para {seniority} {result}"
-        else:
-            result = f"com base no valor medio pago de acordo com a senioridade {result}"
+        result = f"com base no glassdoor valor medio pago por mes para essa vaga por essa empresa e {result}"
 
     return result
 

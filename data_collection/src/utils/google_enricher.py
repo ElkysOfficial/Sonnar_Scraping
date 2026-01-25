@@ -12,7 +12,7 @@ from playwright.async_api import async_playwright
 DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "data")
 CACHE_PATH = os.path.join(DATA_DIR, "google_cache.json")
 CHROME_PROFILE_PATH = os.path.join(DATA_DIR, "chrome_profile")
-MISSING_VALUES = {"", "nao informado", "nao informada", "n/a", "na"}
+MISSING_VALUES = {"", "nao informado", "nao informada", "n/a", "na", "a combinar"}
 DEFAULT_USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
     "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -365,7 +365,7 @@ class GoogleEnricher:
                 salary_range = await self._get_salary_from_glassdoor(company, job_title)
                 if salary_range:
                     min_salary, max_salary = salary_range
-                    job_data["salary"] = f"{min_salary} reais - {max_salary} reais"
+                    job_data["salary"] = f"R$ {min_salary} - R$ {max_salary}"
 
         return job_data
 
@@ -475,8 +475,8 @@ class GoogleEnricher:
             query += f" pela empresa {company}"
         query += (
             "? A resposta deve sair no seguinte template: "
-            "a media salarial por mes oferecida pela empresa com base no glassdoor "
-            "para essa funcao e entre X reais e X reais por mes"
+            "com base no glassdoor valor medio pago por mes para essa vaga por essa empresa "
+            "e R$ X - R$ X"
         )
         await self._search(query)
         salary = await self._extract_salary()

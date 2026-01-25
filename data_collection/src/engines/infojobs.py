@@ -1,5 +1,6 @@
 import httpx
 import json
+import os
 from bs4 import BeautifulSoup
 from variavel import stacks
 
@@ -8,9 +9,13 @@ async def get_infojobs_links() -> list:
     Coleta links de vagas do InfoJobs com base em stacks.
     """
     links = []
+    max_pages = int(os.getenv("INFOJOBS_MAX_PAGES", "20"))
+    max_empty_pages = int(os.getenv("INFOJOBS_MAX_EMPTY_PAGES", "1"))
 
     for stack in stacks:
-        for page in range(1, 2):
+        page = 1
+        empty_pages = 0
+        while page <= max_pages and empty_pages < max_empty_pages:
             async with httpx.AsyncClient() as client:
                 response = await client.get(f'https://www.infojobs.com.br/empregos.aspx?palabra={stack}&page={page}&limit=20')
 
@@ -18,9 +23,19 @@ async def get_infojobs_links() -> list:
                     soup = BeautifulSoup(response.text, 'html.parser')
 
                     cells = soup.find_all('div', class_='js_vacancyLoad')
+                    if not cells:
+                        empty_pages += 1
+                        page += 1
+                        continue
+
+                    empty_pages = 0
                     for cell in cells:
                         link = f'https://www.infojobs.com.br{cell["data-href"]}'
                         links.append(link)
+                    page += 1
+                else:
+                    empty_pages += 1
+                    page += 1
 
     return links
 

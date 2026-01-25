@@ -84,23 +84,41 @@ import {
 
 const originalConsoleWarn = console.warn.bind(console);
 const originalConsoleLog = console.log.bind(console);
-const shouldSuppressSessionLog = (message) =>
-  message.includes("Closing stale open session for new outgoing prekey bundle") ||
-  message.includes("Closing session: SessionEntry");
+
+const suppressPatterns = [
+  "Closing stale open session for new outgoing prekey bundle",
+  "Closing session: SessionEntry",
+  "Closing session:",
+  "SessionEntry",
+  "_chains:",
+  "registrationId:",
+  "currentRatchet:",
+  "ephemeralKeyPair:",
+  "lastRemoteEphemeralKey:",
+  "previousCounter:",
+  "rootKey:",
+  "indexInfo:",
+  "baseKey:",
+  "baseKeyType:",
+  "remoteIdentityKey:",
+  "pendingPreKey:",
+  "signedKeyId:",
+];
+
+const shouldSuppressLog = (...args) => {
+  const message = args
+    .map((arg) => (typeof arg === "object" ? JSON.stringify(arg) : String(arg)))
+    .join(" ");
+  return suppressPatterns.some((pattern) => message.includes(pattern));
+};
 
 console.warn = (...args) => {
-  const message = args.map(String).join(" ");
-  if (shouldSuppressSessionLog(message)) {
-    return;
-  }
+  if (shouldSuppressLog(...args)) return;
   originalConsoleWarn(...args);
 };
 
 console.log = (...args) => {
-  const message = args.map(String).join(" ");
-  if (shouldSuppressSessionLog(message)) {
-    return;
-  }
+  if (shouldSuppressLog(...args)) return;
   originalConsoleLog(...args);
 };
 

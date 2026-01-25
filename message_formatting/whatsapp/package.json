@@ -5,7 +5,7 @@
   "type": "module",
   "main": "src/server.js",
   "scripts": {
-    "start": "node --watch src/server.js",
+    "start": "node src/server.js",
     "dev": "node --watch src/server.js",
     "setup": "node scripts/setup-assets.js",
     "generate-icon": "node scripts/generate-pin-icon.js"

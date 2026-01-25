@@ -114,7 +114,8 @@ async def get_dice_jobs() -> list:
         # Percorrer todas as paginas ate nao encontrar mais vagas
         page = 1
         consecutive_empty = 0
-        max_pages = 50  # Limite de seguranca
+        max_pages = int(os.getenv("DICE_MAX_PAGES", "50"))
+        max_empty_pages = int(os.getenv("DICE_MAX_EMPTY_PAGES", "2"))
 
         while page <= max_pages:
             try:
@@ -131,7 +132,7 @@ async def get_dice_jobs() -> list:
 
                 if not cards:
                     consecutive_empty += 1
-                    if consecutive_empty >= 2:
+                    if consecutive_empty >= max_empty_pages:
                         break
                     page += 1
                     continue
@@ -247,7 +248,7 @@ async def get_dice_jobs() -> list:
                 # Se nao encontrou novas vagas nesta pagina (todas duplicadas), parar
                 if jobs_found_this_page == 0:
                     consecutive_empty += 1
-                    if consecutive_empty >= 2:
+                    if consecutive_empty >= max_empty_pages:
                         break
 
                 page += 1

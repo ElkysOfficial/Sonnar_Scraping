@@ -2,7 +2,9 @@ import asyncio
 import cloudscraper
 import json
 import random
+import os
 from bs4 import BeautifulSoup
+from variavel import stacks
 
 
 def create_scraper_session():
@@ -34,26 +36,19 @@ async def get_bne_job_ids() -> list:
     job_ids = set()  # Usar set para evitar duplicatas
     scraper = get_scraper()
 
-    # Áreas de TI para buscar
-    areas = [
-        'Inform%C3%A1tica',  # Informática
-        'Tecnologia',
-        'Desenvolvimento',
-        'Programador',
-        'Software',
-    ]
+    max_pages = int(os.getenv("BNE_MAX_PAGES", "50"))
+    max_empty_pages = int(os.getenv("BNE_MAX_EMPTY_PAGES", "1"))
 
-    for area in areas:
+    for stack in stacks:
         page = 1
         consecutive_empty = 0
-        max_pages = 50  # Limite de segurança
 
-        while page <= max_pages and consecutive_empty < 2:
+        while page <= max_pages and consecutive_empty < max_empty_pages:
             try:
-                if page > 1 or area != areas[0]:
+                if page > 1:
                     await asyncio.sleep(random.uniform(1, 2))
 
-                url = f'https://www.bne.com.br/vagas-de-emprego-na-area-de-{area}?Area={area}&Sort=0&Page={page}'
+                url = f'https://www.bne.com.br/vagas-de-emprego/{stack}?Page={page}'
                 response = await asyncio.to_thread(
                     scraper.get,
                     url,

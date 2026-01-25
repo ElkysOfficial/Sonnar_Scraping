@@ -67,33 +67,47 @@ async def get_simplyhired_jobs() -> list:
     seen_links = set()
     session = get_session()
 
+    max_pages = int(os.getenv("SIMPLYHIRED_MAX_PAGES", "20"))
+    max_empty_pages = int(os.getenv("SIMPLYHIRED_MAX_EMPTY_PAGES", "1"))
+
     for stack in stacks:
-        # Percorrer 10 páginas por stack
-        for page in range(1, 11):
+        page = 1
+        empty_pages = 0
+        while page <= max_pages and empty_pages < max_empty_pages:
             try:
                 url = f'https://www.simplyhired.com.br/search?q={stack}&l=&pn={page}'
                 response = await asyncio.to_thread(session.get, url, timeout=30)
 
                 if response.status_code != 200:
-                    break
+                    empty_pages += 1
+                    page += 1
+                    continue
 
                 # Extrair __NEXT_DATA__ do HTML
                 match = re.search(r'<script id="__NEXT_DATA__" type="application/json">(.+?)</script>', response.text)
                 if not match:
-                    break
+                    empty_pages += 1
+                    page += 1
+                    continue
 
                 try:
                     data = json.loads(match.group(1))
                 except json.JSONDecodeError:
-                    break
+                    empty_pages += 1
+                    page += 1
+                    continue
 
                 # Navegar até as vagas
                 page_props = data.get('props', {}).get('pageProps', {})
                 job_list = page_props.get('jobs', [])
 
-                # Se não tem vagas, para de paginar
+                # Se não tem vagas, conta página vazia
                 if not job_list:
-                    break
+                    empty_pages += 1
+                    page += 1
+                    continue
+
+                empty_pages = 0
 
                 for item in job_list:
                     try:
@@ -188,10 +202,12 @@ async def get_simplyhired_jobs() -> list:
                     except Exception:
                         continue
 
+                page += 1
                 await asyncio.sleep(0.3)
 
             except Exception:
-                break
+                empty_pages += 1
+                page += 1
 
     # Enriquecer vagas com location e salary vazios usando Google
     if jobs:

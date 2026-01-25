@@ -31,9 +31,13 @@ async def get_indeed_links() -> list:
     links = []
     session = get_session()
     seen_jks = set()
+    max_pages = int(os.getenv("INDEED_MAX_PAGES", "10"))
+    max_empty_pages = int(os.getenv("INDEED_MAX_EMPTY_PAGES", "1"))
 
     for stack in stacks:
-        for page in range(2):
+        page = 0
+        empty_pages = 0
+        while page < max_pages and empty_pages < max_empty_pages:
             try:
                 if page > 0 or links:
                     await asyncio.sleep(random.uniform(0.5, 1.5))
@@ -46,7 +50,11 @@ async def get_indeed_links() -> list:
                     cells = soup.find_all('div', class_='job_seen_beacon')
 
                     if not cells:
-                        break
+                        empty_pages += 1
+                        page += 1
+                        continue
+
+                    empty_pages = 0
 
                     for cell in cells:
                         link_elem = cell.find('a', attrs={'data-jk': True})
@@ -55,11 +63,14 @@ async def get_indeed_links() -> list:
                             if jk and jk not in seen_jks:
                                 seen_jks.add(jk)
                                 links.append(f'https://br.indeed.com/viewjob?jk={jk}')
+                    page += 1
                 else:
-                    break
+                    empty_pages += 1
+                    page += 1
 
             except Exception:
-                break
+                empty_pages += 1
+                page += 1
     return links
 
 

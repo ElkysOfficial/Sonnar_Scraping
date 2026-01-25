@@ -11,13 +11,13 @@ from ..utils.jobsUtils import process_salary
 # Definindo sent_jobs como uma variável global
 sent_jobs = set()
 
-logging.basicConfig(filename="errors.log", level=logging.ERROR)
+logging.basicConfig(filename="errors.log", level=logging.ERROR, encoding="utf-8")
 
 def load_existing_job_links():
     existing_links = set()
     csv_path = os.path.join("src", "data", "job_vacancies.csv")
     if os.path.exists(csv_path):
-        with open(csv_path, "r", newline="", encoding="latin-1") as f:
+        with open(csv_path, "r", newline="", encoding="utf-8") as f:
             csv_reader = csv.reader(f)
             next(csv_reader, None)  # Pula o cabeçalho se existir
             for row in csv_reader:
@@ -85,9 +85,10 @@ async def scrape_jobs(max_tasks=3):
 
                         try:
                             job_title = job_data.get('job_title', '')
-                            job_data['salary'] = process_salary(job_data.get('salary', ''), job_title)
+                            raw_salary = job_data.get('salary', '')
+                            needs_salary = is_missing_field(raw_salary)
+                            job_data['salary'] = process_salary(raw_salary, job_title)
                             needs_location = is_missing_field(job_data.get('location'))
-                            needs_salary = is_missing_field(job_data.get('salary'))
                             if needs_location or needs_salary:
                                 job_data = await enricher.enrich_job(job_data)
                                 if needs_salary and job_data.get('salary'):
@@ -140,7 +141,7 @@ def save_job_to_csv(job):
     if not os.path.exists(data_dir):
         os.makedirs(data_dir)
 
-    with open(os.path.join(data_dir, 'job_vacancies.csv'), 'a+', newline='', encoding='latin-1') as f:
+    with open(os.path.join(data_dir, 'job_vacancies.csv'), 'a+', newline='', encoding='utf-8') as f:
         csv_writer = csv.writer(f)
         # Usa o método to_dict() para obter os dados da vaga
         csv_writer.writerow(job.to_dict().values())

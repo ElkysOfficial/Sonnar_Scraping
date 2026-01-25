@@ -1,5 +1,6 @@
 import asyncio
 import json
+import os
 import re
 from datetime import datetime, timedelta
 from curl_cffi import requests
@@ -113,33 +114,51 @@ async def get_jooble_jobs() -> list:
     seen_ids = set()
     session = get_session()
 
+    max_pages = int(os.getenv("JOOBLE_MAX_PAGES", "20"))
+    max_empty_pages = int(os.getenv("JOOBLE_MAX_EMPTY_PAGES", "1"))
+
     for stack in stacks:
-        # Percorrer até 10 páginas por stack (~200 vagas por stack)
-        for page in range(1, 11):
+        page = 1
+        empty_pages = 0
+        while page <= max_pages and empty_pages < max_empty_pages:
             try:
                 url = f'https://br.jooble.org/SearchResult?ukw={stack}&p={page}'
                 response = await asyncio.to_thread(session.get, url, timeout=30)
 
                 if response.status_code != 200:
-                    break
+                    empty_pages += 1
+                    page += 1
+                    continue
 
                 # Extrair __INITIAL_STATE__ do HTML
                 match = re.search(r'__INITIAL_STATE__\s*=\s*({.+?});?\s*</script>', response.text, re.DOTALL)
                 if not match:
+                    empty_pages += 1
+                    page += 1
                     continue
 
                 try:
                     data = json.loads(match.group(1))
                 except json.JSONDecodeError:
+                    empty_pages += 1
+                    page += 1
                     continue
 
                 # Navegar até as vagas
                 serp_jobs = data.get('serpJobs', {})
                 jobs_pages = serp_jobs.get('jobs', [])
                 if not jobs_pages:
+                    empty_pages += 1
+                    page += 1
                     continue
 
                 items = jobs_pages[0].get('items', [])
+                if not items:
+                    empty_pages += 1
+                    page += 1
+                    continue
+
+                empty_pages = 0
 
                 for item in items:
                     try:
@@ -273,15 +292,12 @@ async def get_jooble_jobs() -> list:
                     except Exception:
                         continue
 
-                # Continuar paginando mesmo com duplicatas
-                # Apenas parar se a página não tiver nenhum item (fim dos resultados)
-                if len(items) == 0:
-                    break
-
+                page += 1
                 await asyncio.sleep(0.3)
 
             except Exception:
-                break
+                empty_pages += 1
+                page += 1
 
     print(f'Foram obtidas {len(jobs)} vagas do site Jooble')
     return jobs

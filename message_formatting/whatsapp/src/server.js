@@ -4,26 +4,38 @@
  */
 
 import express from "express"
-import fs from "node:fs"
-import path from "node:path"
-import { fileURLToPath } from "node:url"
 import { createJobCard, extractJobDataFromEmbed } from "./services/cardGenerator.js"
 import { shortenUrl } from "./services/urlShortener.js"
 import { v4 as uuidv4 } from "uuid"
-import { infoLog, successLog, warningLog, errorLog, requestLog, banner, divider, cardLog, statsLog } from "./utils/logger.js"
-
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = path.dirname(__filename)
+import {
+  infoLog,
+  successLog,
+  warningLog,
+  errorLog,
+  requestLog,
+  banner,
+  divider,
+  cardLog,
+  statsLog
+} from "./utils/logger.js"
+import { fetchJobData, markJobStatus } from "./utils/jobDataClient.js"
 
 const app = express()
 app.use(express.json({ limit: "10mb" }))
 
 const PORT = process.env.WHATSAPP_CARD_PORT || 3001
 
-// Path to embeds.json (shared with Discord service)
-const EMBEDS_FILE_PATH = path.resolve(__dirname, "..", "..", "discord", "src", "data", "embeds.json")
+function parseDate(dateStr) {
+  if (!dateStr) return null
+  if (dateStr.includes("/")) {
+    const [day, month, year] = dateStr.split("/")
+    const parsed = new Date(`${year}-${month}-${day}`)
+    return isNaN(parsed.getTime()) ? null : parsed
+  }
+  const parsed = new Date(dateStr)
+  return isNaN(parsed.getTime()) ? null : parsed
+}
 
-// Request logging middleware
 app.use((req, res, next) => {
   const start = Date.now()
   res.on("finish", () => {
@@ -33,29 +45,35 @@ app.use((req, res, next) => {
   next()
 })
 
-/**
- * Load embeds from file
- */
-function loadEmbeds() {
-  try {
-    if (!fs.existsSync(EMBEDS_FILE_PATH)) {
-      warningLog(`Embeds file not found: ${EMBEDS_FILE_PATH}`)
-      return []
-    }
-    const data = fs.readFileSync(EMBEDS_FILE_PATH, "utf8")
-    if (!data.trim()) {
-      return []
-    }
-    return JSON.parse(data)
-  } catch (error) {
-    errorLog(`Error loading embeds: ${error.message}`)
-    return []
+function jobDataToEmbed(job) {
+  const fields = []
+  if (job.company) fields.push({ name: "Empresa", value: job.company, inline: true })
+  if (job.location) fields.push({ name: "Localidade", value: job.location, inline: true })
+  if (job.hiring_regime) fields.push({ name: "Regime", value: job.hiring_regime, inline: true })
+  if (job.work_type) fields.push({ name: "Modalidade de Trabalho", value: job.work_type, inline: true })
+  if (job.salary) fields.push({ name: "Salário", value: job.salary, inline: true })
+  if (job.publication_date) fields.push({ name: "Data de Publicação", value: job.publication_date, inline: true })
+
+  const timestamp = parseDate(job.publication_date) || new Date()
+
+  return {
+    title: job.job_title || job.title || "",
+    url: job.job_url || job.url || "",
+    fields,
+    timestamp: timestamp.toISOString(),
+    id: job.id || job.job_url || ""
   }
 }
 
-/**
- * Format WhatsApp caption text
- */
+function resolveEmbedPayload(payload) {
+  const candidate = payload?.embed || payload?.job || payload
+  if (!candidate) return null
+  if (candidate.fields) {
+    return candidate
+  }
+  return jobDataToEmbed(candidate)
+}
+
 function formatCaption(jobData, shortUrl) {
   let caption = `*${jobData.title}*\n`
   caption += `${jobData.company}\n\n`
@@ -75,104 +93,86 @@ function formatCaption(jobData, shortUrl) {
   return caption
 }
 
-/**
- * POST /cards/generate
- * Generate a single card from embed data
- */
+async function buildCardPayload(payload, to) {
+  if (!to) {
+    throw new Error("Parâmetro 'to' obrigatório")
+  }
+  const embed = resolveEmbedPayload(payload)
+  if (!embed) {
+    throw new Error("Dados da vaga inválidos")
+  }
+  const jobData = extractJobDataFromEmbed(embed)
+  if (!jobData) {
+    throw new Error("Não foi possível extrair os dados da vaga")
+  }
+
+  const imageBuffer = await createJobCard(jobData)
+  const shortUrl = await shortenUrl(jobData.url)
+  const caption = formatCaption(jobData, shortUrl)
+
+  return {
+    to,
+    image: {
+      mimeType: "image/jpeg",
+      filename: `job-card-${jobData.id || uuidv4()}.jpg`,
+      base64: imageBuffer.toString("base64")
+    },
+    text: caption,
+    metadata: {
+      jobId: jobData.id || null,
+      source: jobData.source,
+      createdAtISO: new Date().toISOString()
+    }
+  }
+}
+
 app.post("/cards/generate", async (req, res) => {
   try {
-    const { embed, to } = req.body
-
-    if (!embed) {
-      warningLog("Request missing embed data")
-      return res.status(400).json({ error: "Missing embed data" })
-    }
-
+    const { embed, job, to } = req.body
     if (!to) {
       warningLog("Request missing 'to' recipient")
       return res.status(400).json({ error: "Missing 'to' recipient" })
     }
 
-    const jobData = extractJobDataFromEmbed(embed)
-    cardLog(jobData.title, jobData.source, "Generating...")
-
-    const imageBuffer = await createJobCard(jobData)
-    const base64Image = imageBuffer.toString("base64")
-    const shortUrl = await shortenUrl(jobData.url)
-    const caption = formatCaption(jobData, shortUrl)
-
-    const response = {
-      to,
-      image: {
-        mimeType: "image/jpeg",
-        filename: `job-card-${embed.id || uuidv4()}.jpg`,
-        base64: base64Image
-      },
-      text: caption,
-      metadata: {
-        jobId: embed.id || null,
-        source: jobData.source,
-        createdAtISO: new Date().toISOString()
-      }
-    }
-
-    successLog(`Card generated: ${jobData.title}`)
-    res.json(response)
+    const card = await buildCardPayload(job || embed || req.body, to)
+    successLog(`Card generated: ${card.metadata.jobId || "unknown"}`)
+    res.json(card)
   } catch (error) {
     errorLog(`Error generating card: ${error.message}`)
     res.status(500).json({ error: "Failed to generate card", details: error.message })
   }
 })
 
-/**
- * POST /cards/generate-batch
- * Generate multiple cards from embed array
- */
 app.post("/cards/generate-batch", async (req, res) => {
   try {
-    const { embeds, to, limit = 10 } = req.body
-
-    if (!embeds || !Array.isArray(embeds)) {
-      warningLog("Request missing or invalid embeds array")
-      return res.status(400).json({ error: "Missing or invalid embeds array" })
-    }
-
+    const { embeds, jobs, to, limit = 10 } = req.body
     if (!to) {
       warningLog("Request missing 'to' recipient")
       return res.status(400).json({ error: "Missing 'to' recipient" })
     }
 
-    infoLog(`Batch request: ${embeds.length} embeds (limit: ${limit})`)
+    const sources = embeds || jobs || []
+    if (!Array.isArray(sources)) {
+      warningLog("Request missing or invalid embeds array")
+      return res.status(400).json({ error: "Missing or invalid embeds array" })
+    }
 
+    infoLog(`Batch request: ${sources.length} embeds (limit: ${limit})`)
+
+    const jobsToProcess = sources.slice(0, limit)
     const results = []
-    const jobsToProcess = embeds.slice(0, limit)
 
-    for (const embed of jobsToProcess) {
+    for (const entry of jobsToProcess) {
       try {
-        const jobData = extractJobDataFromEmbed(embed)
-        cardLog(jobData.title, jobData.source, "Processing...")
-
-        const imageBuffer = await createJobCard(jobData)
-        const base64Image = imageBuffer.toString("base64")
-        const shortUrl = await shortenUrl(jobData.url)
-        const caption = formatCaption(jobData, shortUrl)
-
+        const card = await buildCardPayload(entry, to)
         results.push({
           to,
-          image: {
-            mimeType: "image/jpeg",
-            filename: `job-card-${embed.id || uuidv4()}.jpg`,
-            base64: base64Image
-          },
-          text: caption,
-          metadata: {
-            jobId: embed.id || null,
-            source: jobData.source,
-            createdAtISO: new Date().toISOString()
-          }
+          image: card.image,
+          text: card.text,
+          metadata: card.metadata
         })
-      } catch (error) {
-        errorLog(`Error generating card for embed ${embed.id}: ${error.message}`)
+      } catch (err) {
+        errorLog(`Error generating batch card: ${err.message}`)
       }
     }
 
@@ -184,131 +184,86 @@ app.post("/cards/generate-batch", async (req, res) => {
   }
 })
 
-/**
- * GET /cards/next
- * Get next pending job card for WhatsApp
- */
 app.get("/cards/next", async (req, res) => {
   try {
     const { to } = req.query
-
     if (!to) {
       warningLog("Request missing 'to' recipient in query")
       return res.status(400).json({ error: "Missing 'to' recipient in query" })
     }
 
-    const embeds = loadEmbeds()
-    const pendingEmbed = embeds.find(e => e.whatsappSent !== true)
+    const jobs = await fetchJobData()
+    const pendingJob = jobs.find((job) => !(job.statuses?.whatsapp))
 
-    if (!pendingEmbed) {
+    if (!pendingJob) {
       infoLog("No pending jobs available")
       return res.json({ card: null, message: "No pending jobs" })
     }
 
-    const jobData = extractJobDataFromEmbed(pendingEmbed)
-    cardLog(jobData.title, jobData.source, "Fetching next...")
-
-    const imageBuffer = await createJobCard(jobData)
-    const base64Image = imageBuffer.toString("base64")
-    const shortUrl = await shortenUrl(jobData.url)
-    const caption = formatCaption(jobData, shortUrl)
-
-    const response = {
-      card: {
-        to,
-        image: {
-          mimeType: "image/jpeg",
-          filename: `job-card-${pendingEmbed.id || uuidv4()}.jpg`,
-          base64: base64Image
-        },
-        text: caption,
-        metadata: {
-          jobId: pendingEmbed.id || null,
-          source: jobData.source,
-          createdAtISO: new Date().toISOString()
-        }
-      }
-    }
-
-    successLog(`Next card ready: ${jobData.title}`)
-    res.json(response)
+    const cardPayload = await buildCardPayload(pendingJob, to)
+    successLog(`Next card ready: ${cardPayload.metadata.jobId}`)
+    res.json({ card: cardPayload })
   } catch (error) {
     errorLog(`Error getting next card: ${error.message}`)
     res.status(500).json({ error: "Failed to get next card", details: error.message })
   }
 })
 
-/**
- * GET /cards/pending
- * Get count of pending jobs
- */
-app.get("/cards/pending", (req, res) => {
+app.get("/cards/pending", async (req, res) => {
   try {
-    const embeds = loadEmbeds()
-    const pending = embeds.filter(e => e.whatsappSent !== true)
+    const jobs = await fetchJobData()
+    const pending = jobs.filter((job) => !(job.statuses?.whatsapp))
 
-    statsLog(embeds.length, pending.length, embeds.length - pending.length)
+    statsLog(jobs.length, pending.length, jobs.length - pending.length)
 
     res.json({
-      total: embeds.length,
+      total: jobs.length,
       pending: pending.length,
-      sent: embeds.length - pending.length
+      sent: jobs.length - pending.length
     })
   } catch (error) {
     errorLog(`Failed to get pending count: ${error.message}`)
-    res.status(500).json({ error: "Failed to get pending count" })
+    res.status(500).json({ error: "Failed to get pending count", details: error.message })
   }
 })
 
-/**
- * POST /cards/mark-sent
- * Mark a job as sent to WhatsApp
- */
-app.post("/cards/mark-sent", (req, res) => {
+app.post("/cards/mark-sent", async (req, res) => {
   try {
     const { jobId } = req.body
-
     if (!jobId) {
       warningLog("Request missing jobId")
       return res.status(400).json({ error: "Missing jobId" })
     }
 
-    const embeds = loadEmbeds()
-    const index = embeds.findIndex(e => e.id === jobId)
-
-    if (index === -1) {
-      warningLog(`Job not found: ${jobId}`)
-      return res.status(404).json({ error: "Job not found" })
-    }
-
-    embeds[index].whatsappSent = true
-
-    // Atomic write
-    const tempPath = EMBEDS_FILE_PATH + ".tmp"
-    fs.writeFileSync(tempPath, JSON.stringify(embeds, null, 2), "utf8")
-    fs.renameSync(tempPath, EMBEDS_FILE_PATH)
+    await markJobStatus(jobId, "whatsapp", true)
 
     successLog(`Job marked as sent: ${jobId}`)
     res.json({ success: true, jobId })
   } catch (error) {
     errorLog(`Error marking job as sent: ${error.message}`)
-    res.status(500).json({ error: "Failed to mark as sent" })
+    res.status(500).json({ error: "Failed to mark as sent", details: error.message })
   }
 })
 
-/**
- * Health check
- */
 app.get("/health", (req, res) => {
   res.json({ status: "ok", service: "whatsapp-card-generator" })
 })
 
-// Start server
-app.listen(PORT, () => {
+async function logInitialStats() {
+  try {
+    const jobs = await fetchJobData()
+    const pending = jobs.filter((job) => !(job.statuses?.whatsapp))
+    statsLog(jobs.length, pending.length, jobs.length - pending.length)
+  } catch (error) {
+    warningLog("Não foi possível carregar o status inicial das vagas.")
+  }
+}
+
+app.listen(PORT, async () => {
   banner("WHATSAPP CARD GENERATOR")
 
   infoLog(`Server running on port ${PORT}`)
-  infoLog(`Embeds file: ${EMBEDS_FILE_PATH}`)
+  infoLog(`Core job data: ${process.env.MESSAGE_FORMATTING_CORE_URL || "http://localhost:3100"}`)
   divider()
 
   console.log("")
@@ -321,14 +276,9 @@ app.listen(PORT, () => {
   console.log("  GET  /health               - Health check")
   divider()
 
-  // Show initial stats
-  const embeds = loadEmbeds()
-  const pending = embeds.filter(e => e.whatsappSent !== true)
-  statsLog(embeds.length, pending.length, embeds.length - pending.length)
+  await logInitialStats()
 
   console.log("")
   successLog("Server ready and waiting for requests...")
   console.log("")
 })
-
-export default app

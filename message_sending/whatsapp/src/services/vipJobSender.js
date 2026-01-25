@@ -10,11 +10,10 @@
  * @author Sonar Bot
  */
 
-import fs from "node:fs"
 import axios from "axios"
 import { delay } from "baileys"
 import { infoLog, infoLogAlways, successLog, warningLog, errorLog } from "../utils/logger.js"
-import { EMBEDS_FILE_PATH, BOT_EMOJI, TIMEOUT_IN_MILLISECONDS_BY_EVENT, CARD_API_URL } from "../config.js"
+import { BOT_EMOJI, TIMEOUT_IN_MILLISECONDS_BY_EVENT, CARD_API_URL, CORE_API_URL } from "../config.js"
 import { extractStack } from "./jobDistributor.js"
 import { getVipSubscribers } from "../utils/database.js"
 import { getCurrentSocket, isCurrentSocketReady } from "../utils/socketManager.js"
@@ -58,21 +57,15 @@ async function processPendingVipSearches() {
 }
 
 /**
- * Carrega as vagas do arquivo embeds.json
- * @returns {Array} Array de vagas
+ * Carrega as vagas da API Core (job_data.json)
+ * @returns {Promise<Array>} Array de vagas
  */
-function loadEmbeds() {
+async function loadJobs() {
   try {
-    if (!fs.existsSync(EMBEDS_FILE_PATH)) {
-      return []
-    }
-    const data = fs.readFileSync(EMBEDS_FILE_PATH, "utf8")
-    if (!data.trim()) {
-      return []
-    }
-    return JSON.parse(data)
+    const response = await axios.get(`${CORE_API_URL}/jobs`, { timeout: 10000 })
+    return response.data || []
   } catch (err) {
-    errorLog(`[VIP] Erro ao carregar embeds.json: ${err.message}`)
+    errorLog(`[VIP] Erro ao carregar vagas da API Core: ${err.message}`)
     return []
   }
 }
@@ -249,6 +242,15 @@ function jobMatchesFilters(job, filters, returnScore = false) {
     }
   }
 
+  // Verifica EXCLUDE SENIORITY (exclui vagas com senioridade específica)
+  const excludeSeniority = filters.excludeSeniority || []
+  if (excludeSeniority.length > 0) {
+    const excludeResult = checkMatch(excludeSeniority, jobText, synonyms.seniority)
+    if (excludeResult.matched && !excludeResult.isEmpty) {
+      return returnScore ? { match: false, score: 0 } : false
+    }
+  }
+
   // Verifica WORK MODE (peso: weights.workMode)
   const workMode = filters.workMode || []
   if (workMode.length > 0) {
@@ -295,8 +297,8 @@ function jobMatchesFilters(job, filters, returnScore = false) {
     return returnScore ? { match: false, score: 0 } : false
   }
 
-  // Calcula score mínimo para match (30% do máximo possível)
-  const minScore = maxScore * 0.3
+  // Calcula score mínimo para match (70% do máximo possível)
+  const minScore = maxScore * 0.7
   const matched = totalScore >= minScore
 
   if (returnScore) {
@@ -525,14 +527,14 @@ async function processVipJobs() {
   // Limpa entradas antigas periodicamente
   cleanOldEntries()
 
-  const embeds = loadEmbeds()
+  const jobs = await loadJobs()
   const subscribers = getVipSubscribers()
 
-  if (embeds.length === 0 || subscribers.length === 0) {
+  if (jobs.length === 0 || subscribers.length === 0) {
     return
   }
 
-  infoLog(`[VIP] Verificando vagas para ${subscribers.length} assinantes`)
+  infoLog(`[VIP] Verificando ${jobs.length} vagas para ${subscribers.length} assinantes`)
 
   for (const subscriber of subscribers) {
     // Pula assinantes sem LID válido
@@ -552,7 +554,7 @@ async function processVipJobs() {
     // Usa filtros completos se disponível, senão usa stacks (compatibilidade legada)
     const filters = subscriber.filters || { stacks: subscriber.stacks || [] }
 
-    for (const job of embeds) {
+    for (const job of jobs) {
       const jobId = job.id || job.url || job.job_url
 
       // Pula vagas já enviadas nas últimas 48h
@@ -661,7 +663,7 @@ export function startVipJobSender(socket) {
  * @param {string} lid - LID do assinante
  */
 export async function forceVipJobCheck(lid) {
-  const embeds = loadEmbeds()
+  const jobs = await loadJobs()
   const subscriber = getVipSubscribers().find((s) => s.lid === lid)
 
   if (!subscriber) {
@@ -681,7 +683,7 @@ export async function forceVipJobCheck(lid) {
   // Usa filtros completos se disponível
   const filters = subscriber.filters || { stacks: subscriber.stacks || [] }
 
-  for (const job of embeds.slice(-50)) {
+  for (const job of jobs.slice(-50)) {
     const jobId = job.id || job.url || job.job_url
 
     // Pula vagas já enviadas nas últimas 48h
@@ -765,11 +767,11 @@ export async function triggerVipSearch(lid, stacksOrFilters, options = {}) {
       }
     }
 
-    // Carrega todas as vagas do embeds.json
-    const embeds = loadEmbeds()
+    // Carrega todas as vagas da API Core
+    const jobs = await loadJobs()
 
-    if (embeds.length === 0) {
-      warningLog("[VIP SEARCH] Nenhuma vaga disponível no embeds.json")
+    if (jobs.length === 0) {
+      warningLog("[VIP SEARCH] Nenhuma vaga disponível na API Core")
       return {
         success: false,
         jobsFound: 0,
@@ -783,7 +785,7 @@ export async function triggerVipSearch(lid, stacksOrFilters, options = {}) {
 
     // Filtra vagas que correspondem aos filtros e não foram enviadas recentemente
     const matchingJobs = []
-    for (const job of embeds) {
+    for (const job of jobs) {
       const jobId = job.id || job.url || job.job_url
 
       // Pula vagas já enviadas nas últimas 48h

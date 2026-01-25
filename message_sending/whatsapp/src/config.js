@@ -123,6 +123,9 @@ export const USE_CARD_SENDER = process.env.USE_CARD_SENDER === "true" || true
 // URL da API de geração de cards
 export const CARD_API_URL = process.env.CARD_API_URL || "http://localhost:3001"
 
+// URL da API Core (job_data.json)
+export const CORE_API_URL = process.env.CORE_API_URL || "http://localhost:3100"
+
 // ======= CONFIGURAÇÕES DO API RECEIVER =======
 // Habilita o servidor de API para receber mensagens externas
 export const ENABLE_API_RECEIVER = process.env.ENABLE_API_RECEIVER === "true" || true

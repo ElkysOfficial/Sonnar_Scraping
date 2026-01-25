@@ -1,7 +1,62 @@
 from bs4 import BeautifulSoup
 import json
+import os
 import httpx
 from variavel import stacks
+
+
+def _extract_icon_text(soup: BeautifulSoup, icon_name: str) -> str:
+    for li in soup.find_all("li"):
+        svg = li.find("use")
+        if not svg:
+            continue
+        href = svg.get("xlink:href") or svg.get("href") or ""
+        if icon_name in href:
+            return li.get_text(separator=" ", strip=True)
+    return ""
+
+
+def _extract_header_texts(soup: BeautifulSoup) -> list:
+    texts = []
+    for li in soup.find_all("li"):
+        svg = li.find("use")
+        if not svg:
+            continue
+        text = li.get_text(separator=" ", strip=True)
+        if text:
+            texts.append(text)
+    return texts
+
+
+def extract_dom_details(soup: BeautifulSoup) -> dict:
+    header_texts = _extract_header_texts(soup)
+    location = _extract_icon_text(soup, "icon-location")
+    salary = _extract_icon_text(soup, "icon-money")
+    contract = _extract_icon_text(soup, "icon-contract")
+    duration = _extract_icon_text(soup, "icon-duration")
+
+    work_type = ""
+    for text in header_texts:
+        lowered = text.lower()
+        if "remoto" in lowered or "home office" in lowered:
+            work_type = "Remoto"
+            break
+        if "híbrido" in lowered or "hibrido" in lowered:
+            work_type = "Híbrido"
+            break
+        if "presencial" in lowered:
+            work_type = "Presencial"
+            break
+
+    hiring_regime = contract
+
+    return {
+        "location": location,
+        "salary": salary,
+        "work_type": work_type,
+        "hiring_regime": hiring_regime,
+        "work_schedule": duration,
+    }
 
 async def get_careerjet_links() -> list:
     '''
@@ -13,20 +68,34 @@ async def get_careerjet_links() -> list:
     '''
 
     links = []
+    max_pages = int(os.getenv("CAREERJET_MAX_PAGES", "20"))
+    max_empty_pages = int(os.getenv("CAREERJET_MAX_EMPTY_PAGES", "1"))
 
-    for stack in stacks:
-        for page in range(1, 2):
-            async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient() as client:
+        for stack in stacks:
+            empty_pages = 0
+            for page in range(1, max_pages + 1):
                 response = await client.get(f'https://www.careerjet.com.br/vagas?s={stack}&l=Brasil&p={page}')
-                if response.status_code == 200:
-                    soup = BeautifulSoup(response.text, 'html.parser')
-                    cells = soup.find_all('article', class_='job clicky')
-                    for cell in cells:
-                        link = cell.find('a').get('href')
-                        link = 'https://www.careerjet.com.br' + link
+                if response.status_code != 200:
+                    break
+                soup = BeautifulSoup(response.text, 'html.parser')
+                cells = soup.find_all('article', class_='job clicky')
+                if not cells:
+                    empty_pages += 1
+                    if empty_pages >= max_empty_pages:
+                        break
+                    continue
+                empty_pages = 0
+                for cell in cells:
+                    anchor = cell.find('a')
+                    if not anchor:
+                        continue
+                    link = anchor.get('href')
+                    if not link:
+                        continue
+                    link = 'https://www.careerjet.com.br' + link
+                    links.append(link)
 
-                        links.append(link)
-                        
     return links
 
 async def get_careerjet_jobs() -> list:
@@ -58,6 +127,8 @@ async def get_careerjet_jobs() -> list:
                 if not company:
                     company = ''
 
+                dom_details = extract_dom_details(soup)
+
                 # Localização
                 job_location = data.get('jobLocation', {})
                 address = job_location.get('address', {}) if job_location else {}
@@ -81,10 +152,11 @@ async def get_careerjet_jobs() -> list:
                     work_type = 'Remoto'
                 elif 'híbrido' in title_lower or 'hybrid' in title_lower:
                     work_type = 'Híbrido'
-                elif location:
-                    work_type = 'Presencial'
                 else:
-                    work_type = 'Remoto'  # Se não tem localização, assume remoto
+                    work_type = ''
+
+                if dom_details.get("work_type"):
+                    work_type = dom_details["work_type"]
 
                 # Regime de contratação
                 employment_type = data.get('employmentType', '')
@@ -109,32 +181,36 @@ async def get_careerjet_jobs() -> list:
                 else:
                     hiring_regime = ''
 
+                if dom_details.get("hiring_regime"):
+                    hiring_regime = dom_details["hiring_regime"]
+
                 # Salário
-                try:
-                    base_salary = data.get('baseSalary', {})
-                    if base_salary:
-                        currency = base_salary.get('currency', 'BRL')
-                        value = base_salary.get('value', {})
+                base_salary = data.get('baseSalary', {})
+                if base_salary:
+                    currency = base_salary.get('currency', 'BRL')
+                    value = base_salary.get('value', {})
 
-                        if isinstance(value, dict):
-                            min_value = value.get('minValue', '')
-                            max_value = value.get('maxValue', '')
+                    if isinstance(value, dict):
+                        min_value = value.get('minValue', '')
+                        max_value = value.get('maxValue', '')
 
-                            if min_value and max_value:
-                                if min_value == max_value:
-                                    salary = f'{currency} {min_value}'
-                                else:
-                                    salary = f'{currency} {min_value} - {max_value}'
-                            elif min_value:
+                        if min_value and max_value:
+                            if min_value == max_value:
                                 salary = f'{currency} {min_value}'
                             else:
-                                salary = ''
+                                salary = f'{currency} {min_value} - {max_value}'
+                        elif min_value:
+                            salary = f'{currency} {min_value}'
                         else:
-                            salary = f'{currency} {value}' if value else ''
+                            salary = ''
                     else:
-                        salary = ''
-                except:
+                        salary = f'{currency} {value}' if value else ''
+                else:
                     salary = ''
+                if dom_details.get("salary"):
+                    salary = dom_details["salary"]
+                if dom_details.get("location"):
+                    location = dom_details["location"]
 
                 # Data de publicação no formato brasileiro DD/MM/YYYY
                 date_posted = data.get('datePosted', '')
