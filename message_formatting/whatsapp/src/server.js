@@ -18,7 +18,7 @@ import {
   cardLog,
   statsLog
 } from "./utils/logger.js"
-import { fetchJobData, markJobStatus } from "./utils/jobDataClient.js"
+import { fetchJobData, fetchPendingJobs, markJobStatus, getJobStats } from "./utils/jobDataClient.js"
 
 const app = express()
 app.use(express.json({ limit: "10mb" }))
@@ -192,8 +192,9 @@ app.get("/cards/next", async (req, res) => {
       return res.status(400).json({ error: "Missing 'to' recipient in query" })
     }
 
-    const jobs = await fetchJobData()
-    const pendingJob = jobs.find((job) => !(job.statuses?.whatsapp))
+    // Busca diretamente do Supabase apenas vagas pendentes (mais eficiente)
+    const pendingJobs = await fetchPendingJobs(1)
+    const pendingJob = pendingJobs[0]
 
     if (!pendingJob) {
       infoLog("No pending jobs available")
@@ -211,16 +212,12 @@ app.get("/cards/next", async (req, res) => {
 
 app.get("/cards/pending", async (req, res) => {
   try {
-    const jobs = await fetchJobData()
-    const pending = jobs.filter((job) => !(job.statuses?.whatsapp))
+    // Busca estatísticas diretamente do Supabase (mais eficiente)
+    const stats = await getJobStats()
 
-    statsLog(jobs.length, pending.length, jobs.length - pending.length)
+    statsLog(stats.total, stats.pending, stats.sent)
 
-    res.json({
-      total: jobs.length,
-      pending: pending.length,
-      sent: jobs.length - pending.length
-    })
+    res.json(stats)
   } catch (error) {
     errorLog(`Failed to get pending count: ${error.message}`)
     res.status(500).json({ error: "Failed to get pending count", details: error.message })
@@ -251,9 +248,8 @@ app.get("/health", (req, res) => {
 
 async function logInitialStats() {
   try {
-    const jobs = await fetchJobData()
-    const pending = jobs.filter((job) => !(job.statuses?.whatsapp))
-    statsLog(jobs.length, pending.length, jobs.length - pending.length)
+    const stats = await getJobStats()
+    statsLog(stats.total, stats.pending, stats.sent)
   } catch (error) {
     warningLog("Não foi possível carregar o status inicial das vagas.")
   }
@@ -263,7 +259,7 @@ app.listen(PORT, async () => {
   banner("WHATSAPP CARD GENERATOR")
 
   infoLog(`Server running on port ${PORT}`)
-  infoLog(`Core job data: ${process.env.MESSAGE_FORMATTING_CORE_URL || "http://localhost:3100"}`)
+  infoLog(`Data source: Supabase (${process.env.SUPABASE_URL || "not configured"})`)
   divider()
 
   console.log("")

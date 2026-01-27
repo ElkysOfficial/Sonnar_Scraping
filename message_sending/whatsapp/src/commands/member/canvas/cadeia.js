@@ -43,7 +43,7 @@ export default {
       );
     }
 
-    const url = canvas("jail", link);
+    const url = await canvas("jail", link);
 
     const response = await fetch(url);
 

@@ -31,9 +31,9 @@ export default {
       );
     }
     const hasActive =
-      antiAudioOn && isActiveGroupRestriction(remoteJid, "anti-audio");
+      antiAudioOn && await isActiveGroupRestriction(remoteJid, "anti-audio");
     const hasInactive =
-      antiAudioOff && !isActiveGroupRestriction(remoteJid, "anti-audio");
+      antiAudioOff && !await isActiveGroupRestriction(remoteJid, "anti-audio");
     if (hasActive || hasInactive) {
       throw new WarningError(
         `O recurso de anti-audio já está ${
@@ -41,7 +41,7 @@ export default {
         }!`
       );
     }
-    updateIsActiveGroupRestriction(remoteJid, "anti-audio", antiAudioOn);
+    await updateIsActiveGroupRestriction(remoteJid, "anti-audio", antiAudioOn);
     const status = antiAudioOn ? "ativado" : "desativado";
     await sendSuccessReply(`Anti-audio ${status} com sucesso!`);
   },

@@ -13,10 +13,11 @@
 import axios from "axios"
 import { delay } from "baileys"
 import { infoLog, infoLogAlways, successLog, warningLog, errorLog } from "../utils/logger.js"
-import { BOT_EMOJI, TIMEOUT_IN_MILLISECONDS_BY_EVENT, CARD_API_URL, CORE_API_URL } from "../config.js"
+import { BOT_EMOJI, TIMEOUT_IN_MILLISECONDS_BY_EVENT, CARD_API_URL } from "../config.js"
 import { extractStack } from "./jobDistributor.js"
 import { getVipSubscribers } from "../utils/database.js"
 import { getCurrentSocket, isCurrentSocketReady } from "../utils/socketManager.js"
+import { getAllJobs } from "./database.js"
 import {
   canSendToSubscriber,
   wasJobSentRecently,
@@ -57,15 +58,15 @@ async function processPendingVipSearches() {
 }
 
 /**
- * Carrega as vagas da API Core (job_data.json)
+ * Carrega as vagas direto do Supabase
  * @returns {Promise<Array>} Array de vagas
  */
 async function loadJobs() {
   try {
-    const response = await axios.get(`${CORE_API_URL}/jobs`, { timeout: 10000 })
-    return response.data || []
+    const jobs = await getAllJobs()
+    return jobs || []
   } catch (err) {
-    errorLog(`[VIP] Erro ao carregar vagas da API Core: ${err.message}`)
+    errorLog(`[VIP] Erro ao carregar vagas do Supabase: ${err.message}`)
     return []
   }
 }
@@ -474,8 +475,8 @@ async function sendJobToSubscriber(lid, job) {
     }
 
     // Verifica intervalo de 7 minutos (persistido)
-    if (!canSendToSubscriber(lid)) {
-      const remaining = getTimeUntilCanSend(lid)
+    if (!(await canSendToSubscriber(lid))) {
+      const remaining = await getTimeUntilCanSend(lid)
       const remainingMin = Math.ceil(remaining / 60000)
       warningLog(`[VIP] Cooldown ativo para ${lid}. Aguardar ${remainingMin} minutos.`)
       return { success: false, reason: "cooldown" }
@@ -484,7 +485,7 @@ async function sendJobToSubscriber(lid, job) {
     const jobId = job.id || job.url || job.job_url
 
     // Verifica se a vaga já foi enviada nas últimas 48h (persistido)
-    if (wasJobSentRecently(lid, jobId)) {
+    if (await wasJobSentRecently(lid, jobId)) {
       return { success: false, reason: "already_sent" }
     }
 
@@ -504,7 +505,7 @@ async function sendJobToSubscriber(lid, job) {
     }
 
     // Registra o envio (persiste em arquivo)
-    recordJobSent(lid, jobId)
+    await recordJobSent(lid, jobId)
 
     return { success: true }
   } catch (err) {
@@ -525,10 +526,10 @@ async function processVipJobs() {
   await processPendingVipSearches()
 
   // Limpa entradas antigas periodicamente
-  cleanOldEntries()
+  await cleanOldEntries()
 
   const jobs = await loadJobs()
-  const subscribers = getVipSubscribers()
+  const subscribers = await getVipSubscribers()
 
   if (jobs.length === 0 || subscribers.length === 0) {
     return
@@ -544,12 +545,12 @@ async function processVipJobs() {
     }
 
     // Verifica cooldown de 7 minutos (persistido)
-    if (!canSendToSubscriber(subscriber.lid)) {
+    if (!(await canSendToSubscriber(subscriber.lid))) {
       continue
     }
 
     // Obtém IDs de vagas já enviadas nas últimas 48h
-    const sentJobIds = getSentJobIds(subscriber.lid)
+    const sentJobIds = await getSentJobIds(subscriber.lid)
 
     // Usa filtros completos se disponível, senão usa stacks (compatibilidade legada)
     const filters = subscriber.filters || { stacks: subscriber.stacks || [] }
@@ -585,7 +586,7 @@ async function processVipJobs() {
  * Inicia o serviço de envio de vagas VIP
  * @param {Object} socket - Socket do Baileys (usado apenas para registrar evento)
  */
-export function startVipJobSender(socket) {
+export async function startVipJobSender(socket) {
   if (vipTimeoutId) {
     clearTimeout(vipTimeoutId)
     vipTimeoutId = null
@@ -599,10 +600,10 @@ export function startVipJobSender(socket) {
     vipPendingTimeoutId = null
   }
   vipRunToken += 1
-  const subscribers = getVipSubscribers()
+  const subscribers = await getVipSubscribers()
 
   // Limpa entradas antigas do histórico ao iniciar
-  cleanOldEntries()
+  await cleanOldEntries()
 
   infoLog("════════════════════════════════════════════════════")
   infoLog("       ⭐ SERVIÇO DE VAGAS VIP INICIADO")
@@ -664,21 +665,21 @@ export function startVipJobSender(socket) {
  */
 export async function forceVipJobCheck(lid) {
   const jobs = await loadJobs()
-  const subscriber = getVipSubscribers().find((s) => s.lid === lid)
+  const subscriber = (await getVipSubscribers()).find((s) => s.lid === lid)
 
   if (!subscriber) {
     return { success: false, message: "Assinante não encontrado" }
   }
 
   // Verifica cooldown
-  if (!canSendToSubscriber(lid)) {
-    const remaining = getTimeUntilCanSend(lid)
+  if (!(await canSendToSubscriber(lid))) {
+    const remaining = await getTimeUntilCanSend(lid)
     const remainingMin = Math.ceil(remaining / 60000)
     return { success: false, message: `Aguarde ${remainingMin} minutos para o próximo envio` }
   }
 
   // Obtém vagas já enviadas
-  const sentJobIds = getSentJobIds(lid)
+  const sentJobIds = await getSentJobIds(lid)
 
   // Usa filtros completos se disponível
   const filters = subscriber.filters || { stacks: subscriber.stacks || [] }
@@ -701,7 +702,7 @@ export async function forceVipJobCheck(lid) {
     }
 
     if (result.reason === "cooldown") {
-      const remaining = getTimeUntilCanSend(lid)
+      const remaining = await getTimeUntilCanSend(lid)
       const remainingMin = Math.ceil(remaining / 60000)
       return { success: false, message: `Aguarde ${remainingMin} minutos para o próximo envio` }
     }
@@ -755,8 +756,8 @@ export async function triggerVipSearch(lid, stacksOrFilters, options = {}) {
     infoLog(`[VIP SEARCH] Disparando busca para ${lid} com ${filterSummary.join(" | ") || "filtros vazios"}`)
 
     // Verifica cooldown de 7 minutos
-    if (!canSendToSubscriber(lid)) {
-      const remaining = getTimeUntilCanSend(lid)
+    if (!(await canSendToSubscriber(lid))) {
+      const remaining = await getTimeUntilCanSend(lid)
       const remainingMin = Math.ceil(remaining / 60000)
       warningLog(`[VIP SEARCH] Cooldown ativo para ${lid}. Aguardar ${remainingMin} minutos.`)
       return {
@@ -767,11 +768,11 @@ export async function triggerVipSearch(lid, stacksOrFilters, options = {}) {
       }
     }
 
-    // Carrega todas as vagas da API Core
+    // Carrega todas as vagas do Supabase
     const jobs = await loadJobs()
 
     if (jobs.length === 0) {
-      warningLog("[VIP SEARCH] Nenhuma vaga disponível na API Core")
+      warningLog("[VIP SEARCH] Nenhuma vaga disponível no Supabase")
       return {
         success: false,
         jobsFound: 0,
@@ -781,7 +782,7 @@ export async function triggerVipSearch(lid, stacksOrFilters, options = {}) {
     }
 
     // Obtém IDs de vagas já enviadas nas últimas 48h
-    const sentJobIds = getSentJobIds(lid)
+    const sentJobIds = await getSentJobIds(lid)
 
     // Filtra vagas que correspondem aos filtros e não foram enviadas recentemente
     const matchingJobs = []

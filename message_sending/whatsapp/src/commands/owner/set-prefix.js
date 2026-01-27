@@ -29,7 +29,7 @@ export default {
       throw new InvalidParameterError("O prefixo deve ser apenas 1 caractere!");
     }
     const newPrefix = args[0];
-    setPrefix(remoteJid, newPrefix);
+    await setPrefix(remoteJid, newPrefix);
     await sendSuccessReply(`Prefixo alterado para: ${newPrefix} neste grupo!`);
   },
 };

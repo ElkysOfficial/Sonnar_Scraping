@@ -64,7 +64,9 @@ export function load(socket) {
   // startJobSender(socket);
 
   // Inicia o serviço de vagas VIP (personalizadas)
-  startVipJobSender(socket);
+  startVipJobSender(socket).catch((error) => {
+    errorLog(`Erro ao iniciar serviÃ§o VIP: ${error.message}`);
+  });
 
   // Inicia o serviço de envio de cards (imagens com caption)
   infoLog("Card sender enabled, starting service...");

@@ -30,10 +30,10 @@ export default {
       : args[0]
       ? `${args[0].replace(/[^0-9]/g, "")}@lid`
       : null;
-    if (!checkIfMemberIsMuted(remoteJid, userId)) {
+    if (!(await checkIfMemberIsMuted(remoteJid, userId))) {
       throw new WarningError("Este usuário não está silenciado!");
     }
-    unmuteMember(remoteJid, userId);
+    await unmuteMember(remoteJid, userId);
     await sendSuccessReply("Usuário desmutado com sucesso!");
   },
 };

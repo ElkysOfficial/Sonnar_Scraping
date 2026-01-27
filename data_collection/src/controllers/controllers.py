@@ -1,32 +1,20 @@
 import asyncio
 import logging
-import os
-import csv
+import time
 from .job_getters import getters
-from ..routes.routes import send_to_embed_service_job
+from ..routes.routes import send_to_embed_service_job, get_existing_job_urls, record_scraper_stats
 from ..models.models import Job
 from ..utils.google_enricher import GoogleEnricher, is_missing_field
 from ..utils.jobsUtils import process_salary
 
-# Definindo sent_jobs como uma variável global
+# Global set to track processed jobs (loaded from database at startup)
 sent_jobs = set()
 
 logging.basicConfig(filename="errors.log", level=logging.ERROR, encoding="utf-8")
 
-def load_existing_job_links():
-    existing_links = set()
-    csv_path = os.path.join("src", "data", "job_vacancies.csv")
-    if os.path.exists(csv_path):
-        with open(csv_path, "r", newline="", encoding="utf-8") as f:
-            csv_reader = csv.reader(f)
-            next(csv_reader, None)  # Pula o cabeçalho se existir
-            for row in csv_reader:
-                if row:  # Verifica se a linha não está vazia
-                    # O link está na primeira coluna
-                    existing_links.add(row[0])
-    return existing_links
 
 def normalize_job_result(result):
+    """Normalize job result from scraper to standard format."""
     location = result[3] if len(result) > 3 else ''
     if isinstance(location, list):
         location = ' - '.join(str(item) for item in location if item)
@@ -42,46 +30,71 @@ def normalize_job_result(result):
         'publication_date': str(result[7]) if len(result) > 7 else ''
     }
 
+
+def get_source_name(getter) -> str:
+    """Extract source name from getter function name."""
+    try:
+        name = getter.__name__
+        # getter functions are named like "getter_indeed", "getter_linkedin"
+        if name.startswith("getter_"):
+            return name.replace("getter_", "")
+        return name
+    except Exception:
+        return "unknown"
+
+
 async def scrape_jobs(max_tasks=3):
     """
-    Busca vagas de emprego de várias fontes, processa e salva os resultados de forma assíncrona.
+    Fetch job vacancies from multiple sources, process and save results asynchronously.
 
-    Esta função executa continuamente, buscando vagas de emprego de múltiplas fontes (getters)
-    de forma concorrente. Ela limita o número de buscas simultâneas, processa os resultados
-    imediatamente após cada busca e salva os novos jobs encontrados.
+    This function runs continuously, fetching job vacancies from multiple sources (getters)
+    concurrently. It limits the number of simultaneous fetches, processes results
+    immediately after each fetch, and saves new jobs to the database.
 
     Args:
-        max_tasks (int): Número máximo de tarefas concorrentes. Padrão é 2.
+        max_tasks (int): Maximum number of concurrent tasks. Default is 3.
 
-    O processo inclui:
-    1. Busca de vagas usando diferentes getters.
-    2. Processamento e envio dos resultados para um serviço de embed.
-    3. Salvamento dos novos jobs em CSV.
-    4. Execução contínua com intervalos de 1 hora entre os ciclos.
+    The process includes:
+    1. Fetching vacancies using different getters
+    2. Processing and sending results directly to Supabase database
+    3. Continuous execution with 5-second intervals between cycles
+    4. Recording scraper statistics for monitoring
 
-    A função usa um Semaphore para limitar o número de buscas simultâneas e um conjunto
-    global para rastrear os jobs já processados, evitando duplicações.
+    Uses a Semaphore to limit concurrent fetches and a global set
+    to track already processed jobs, avoiding duplications.
     """
     global sent_jobs
     semaphore = asyncio.Semaphore(max_tasks)
 
-    # Inicializa sent_jobs com os links existentes
-    sent_jobs = load_existing_job_links()
+    # Load existing job URLs from database
+    print("[scraper] Loading existing job URLs from database...")
+    sent_jobs = get_existing_job_urls()
+    print(f"[scraper] Loaded {len(sent_jobs)} existing jobs")
 
     async with GoogleEnricher() as enricher:
         async def process_getter(getter):
-            """
-            Funcao interna para processar um getter especifico.
-            """
+            """Internal function to process a specific getter."""
+            source_name = get_source_name(getter)
+            start_time = time.time()
+            stats = {
+                "jobs_found": 0,
+                "jobs_new": 0,
+                "jobs_enriched": 0,
+                "errors": 0,
+            }
+
             async with semaphore:
                 try:
-                    print(f'Buscando em {getter.__name__.split("_")[1]}...')
-                    results = await getter()  # Executa o getter para obter os resultados
+                    print(f'[{source_name}] Searching...')
+                    results = await getter()
+                    stats["jobs_found"] = len(results) if results else 0
+
                     for result in results:
                         job_data = normalize_job_result(result)
                         job_url = job_data.get('job_url')
+
                         if not job_url or job_url in sent_jobs:
-                            continue  # Verifica se o job ja foi processado
+                            continue
 
                         try:
                             job_title = job_data.get('job_title', '')
@@ -89,13 +102,20 @@ async def scrape_jobs(max_tasks=3):
                             needs_salary = is_missing_field(raw_salary)
                             job_data['salary'] = process_salary(raw_salary, job_title)
                             needs_location = is_missing_field(job_data.get('location'))
+
                             if needs_location or needs_salary:
                                 job_data = await enricher.enrich_job(job_data)
+                                stats["jobs_enriched"] += 1
                                 if needs_salary and job_data.get('salary'):
-                                    job_data['salary'] = process_salary(job_data.get('salary', ''), job_title, is_estimated=True)
+                                    job_data['salary'] = process_salary(
+                                        job_data.get('salary', ''),
+                                        job_title,
+                                        is_estimated=True
+                                    )
                         except Exception as e:
-                            logging.error(f"Erro ao enriquecer job: {e}")
-                            logging.error(f"Detalhes do job: {job_data}")
+                            logging.error(f"Error enriching job: {e}")
+                            logging.error(f"Job details: {job_data}")
+                            stats["errors"] += 1
 
                         job = Job(
                             job_data.get('job_url', ''),
@@ -107,41 +127,55 @@ async def scrape_jobs(max_tasks=3):
                             job_data.get('salary', ''),
                             job_data.get('publication_date', '')
                         )
+
                         try:
-                            # Envia o job para o servico de embed
-                            response = await send_to_embed_service_job(job.to_dict())
+                            # Send job directly to database
+                            response = await send_to_embed_service_job(
+                                job.to_dict(),
+                                source=source_name
+                            )
+
                             if response and response.get("success"):
-                                # Adiciona o job ao conjunto de jobs processados
                                 sent_jobs.add(job_url)
-                                save_job_to_csv(job)  # Salva o job no CSV
+                                stats["jobs_new"] += 1
                             else:
-                                print(f"Falha ao enviar job: {job.job_title}")
+                                print(f"[{source_name}] Failed to save job: {job.job_title}")
+                                stats["errors"] += 1
                         except Exception as e:
-                            logging.error(f"Erro ao enviar job para o servico de embed: {e}")
-                            logging.error(f"Detalhes do job: {job.to_dict()}")
+                            logging.error(f"Error saving job to database: {e}")
+                            logging.error(f"Job details: {job.to_dict()}")
+                            stats["errors"] += 1
+
                 except Exception as e:
-                    logging.error(f"Erro ao executar {getter.__name__.split('_')[1]}: {e}")
+                    logging.error(f"Error executing {source_name}: {e}")
+                    stats["errors"] += 1
+
+                # Record scraper statistics
+                duration_ms = int((time.time() - start_time) * 1000)
+                try:
+                    await record_scraper_stats(
+                        source=source_name,
+                        jobs_found=stats["jobs_found"],
+                        jobs_new=stats["jobs_new"],
+                        jobs_enriched=stats["jobs_enriched"],
+                        errors=stats["errors"],
+                        duration_ms=duration_ms,
+                    )
+                except Exception as e:
+                    logging.error(f"Error recording stats for {source_name}: {e}")
+
+                if stats["jobs_new"] > 0:
+                    print(f"[{source_name}] Found {stats['jobs_found']} jobs, {stats['jobs_new']} new")
 
         while True:
-            # Cria uma tarefa assincrona para cada getter
-            tasks = [asyncio.create_task(process_getter(getter))for getter in getters]
+            # Create an async task for each getter
+            tasks = [asyncio.create_task(process_getter(getter)) for getter in getters]
 
             try:
-                # Aguarda a conclusao de todas as tarefas
+                # Wait for all tasks to complete
                 await asyncio.gather(*tasks)
             except Exception as e:
-                logging.error(f"Erro geral durante a execucao das tarefas: {e}")
+                logging.error(f"General error during task execution: {e}")
 
-            await asyncio.sleep(5 * 1)  # Pausa de 1 hora antes do proximo ciclo
-
-
-def save_job_to_csv(job):
-    """Salva os dados da vaga em um arquivo CSV."""
-    data_dir = os.path.join('src', 'data')
-    if not os.path.exists(data_dir):
-        os.makedirs(data_dir)
-
-    with open(os.path.join(data_dir, 'job_vacancies.csv'), 'a+', newline='', encoding='utf-8') as f:
-        csv_writer = csv.writer(f)
-        # Usa o método to_dict() para obter os dados da vaga
-        csv_writer.writerow(job.to_dict().values())
+            # Pause before next cycle
+            await asyncio.sleep(5)

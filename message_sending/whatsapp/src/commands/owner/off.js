@@ -14,7 +14,7 @@ export default {
     if (!isGroup) {
       throw new WarningError("Este comando deve ser usado dentro de um grupo.");
     }
-    deactivateGroup(remoteJid);
+    await deactivateGroup(remoteJid);
     await sendSuccessReply("Bot desativado no grupo!");
   },
 };

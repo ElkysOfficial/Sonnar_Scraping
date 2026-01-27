@@ -27,8 +27,8 @@ export default {
         "Você precisa digitar 1 ou 0 (ligar ou desligar)!"
       );
     }
-    const hasActive = antiLinkOn && isActiveAntiLinkGroup(remoteJid);
-    const hasInactive = antiLinkOff && !isActiveAntiLinkGroup(remoteJid);
+    const hasActive = antiLinkOn && (await isActiveAntiLinkGroup(remoteJid));
+    const hasInactive = antiLinkOff && !(await isActiveAntiLinkGroup(remoteJid));
     if (hasActive || hasInactive) {
       throw new WarningError(
         `O recurso de anti-link já está ${
@@ -37,9 +37,9 @@ export default {
       );
     }
     if (antiLinkOn) {
-      activateAntiLinkGroup(remoteJid);
+      await activateAntiLinkGroup(remoteJid);
     } else {
-      deactivateAntiLinkGroup(remoteJid);
+      await deactivateAntiLinkGroup(remoteJid);
     }
     await sendSuccessReact();
     const context = antiLinkOn ? "ativado" : "desativado";

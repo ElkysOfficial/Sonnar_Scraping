@@ -59,7 +59,7 @@ export async function onMessagesUpsert({ socket, messages, startProcess }) {
       }
 
       if (webMessage?.message) {
-        messageHandler(socket, webMessage);
+        await messageHandler(socket, webMessage);
       }
 
       if (isAtLeastMinutesInPast(timestamp)) {
@@ -93,7 +93,7 @@ export async function onMessagesUpsert({ socket, messages, startProcess }) {
         return;
       }
       if (
-        checkIfMemberIsMuted(
+        await checkIfMemberIsMuted(
           webMessage?.key?.remoteJid,
           webMessage?.key?.participant?.replace(/:[0-9][0-9]|:[0-9]/g, "")
         )

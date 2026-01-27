@@ -73,14 +73,14 @@ export default {
       throw new DangerError("Você não pode mutar um administrador.");
     }
 
-    if (checkIfMemberIsMuted(remoteJid, userId)) {
+    if (await checkIfMemberIsMuted(remoteJid, userId)) {
       return sendErrorReply(
         `O usuário @${targetUserNumber} já está silenciado neste grupo.`,
         [userId]
       );
     }
 
-    muteMember(remoteJid, userId);
+    await muteMember(remoteJid, userId);
 
     await sendSuccessReply(
       `@${targetUserNumber} foi mutado com sucesso neste grupo!`,

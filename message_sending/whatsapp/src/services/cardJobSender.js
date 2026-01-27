@@ -2,23 +2,17 @@
  * Card Job Sender Service
  * Fetches job cards from the card generator API and sends them to WhatsApp
  * with image + caption format
+ * Uses Supabase for state persistence
  *
  * @author Sonar Bot
  */
 
-import fs from "node:fs"
-import path from "node:path"
-import { fileURLToPath } from "node:url"
+import "dotenv/config"
 import axios from "axios"
 import { infoLog, successLog, warningLog, errorLog } from "../utils/logger.js"
 import { JOB_GROUP_ID, JOB_SEND_INTERVAL, CARD_API_URL } from "../config.js"
 import { getCurrentSocket, isCurrentSocketReady } from "../utils/socketManager.js"
-
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = path.dirname(__filename)
-
-// State file for persistence
-const CARD_SENDER_STATE_PATH = path.resolve(__dirname, "..", "..", "database", "card-sender-state.json")
+import { getSenderState, updateSenderState } from "./database.js"
 
 // Intervals
 const FIXED_INTERVAL = JOB_SEND_INTERVAL || 5 * 60 * 1000
@@ -27,18 +21,14 @@ let cardSenderTimeoutId = null
 let cardSenderToken = 0
 
 /**
- * Read sender state from file
+ * Read sender state from Supabase
  */
-function readCardSenderState() {
+async function readCardSenderState() {
   try {
-    if (!fs.existsSync(CARD_SENDER_STATE_PATH)) {
-      return { lastSentAt: 0 }
+    const state = await getSenderState("card")
+    return {
+      lastSentAt: state?.last_sent_at ? new Date(state.last_sent_at).getTime() : 0
     }
-    const raw = fs.readFileSync(CARD_SENDER_STATE_PATH, "utf8")
-    if (!raw.trim()) {
-      return { lastSentAt: 0 }
-    }
-    return JSON.parse(raw)
   } catch (err) {
     errorLog(`Error reading card sender state: ${err.message}`)
     return { lastSentAt: 0 }
@@ -46,18 +36,11 @@ function readCardSenderState() {
 }
 
 /**
- * Write sender state to file
+ * Write sender state to Supabase
  */
-function writeCardSenderState(state) {
+async function writeCardSenderState(lastSentAt) {
   try {
-    const dir = path.dirname(CARD_SENDER_STATE_PATH)
-    const base = path.basename(CARD_SENDER_STATE_PATH)
-    const tempPath = path.join(dir, `.tmp-${base}-${process.pid}-${Date.now()}`)
-    fs.writeFileSync(tempPath, JSON.stringify(state, null, 2), "utf8")
-    if (fs.existsSync(CARD_SENDER_STATE_PATH)) {
-      fs.rmSync(CARD_SENDER_STATE_PATH, { force: true })
-    }
-    fs.renameSync(tempPath, CARD_SENDER_STATE_PATH)
+    await updateSenderState("card", new Date(lastSentAt))
   } catch (err) {
     errorLog(`Error saving card sender state: ${err.message}`)
   }
@@ -66,8 +49,8 @@ function writeCardSenderState(state) {
 /**
  * Calculate time until next send
  */
-function getTimeUntilNextSend() {
-  const state = readCardSenderState()
+async function getTimeUntilNextSend() {
+  const state = await readCardSenderState()
   const now = Date.now()
   const elapsed = now - state.lastSentAt
 
@@ -174,8 +157,8 @@ async function processNextCard() {
       await markJobAsSent(jobId)
     }
 
-    // Update state
-    writeCardSenderState({ lastSentAt: Date.now() })
+    // Update state in Supabase
+    await writeCardSenderState(Date.now())
 
     const timestamp = new Date().toISOString()
     successLog(`[CARD] Card sent successfully for job: ${jobId} at ${timestamp}`)
@@ -205,7 +188,7 @@ function scheduleNextCard() {
 /**
  * Start card sender service
  */
-export function startCardSender() {
+export async function startCardSender() {
   if (cardSenderTimeoutId) {
     clearTimeout(cardSenderTimeoutId)
     cardSenderTimeoutId = null
@@ -218,8 +201,8 @@ export function startCardSender() {
     return
   }
 
-  const timeUntilNext = getTimeUntilNextSend()
-  const state = readCardSenderState()
+  const timeUntilNext = await getTimeUntilNextSend()
+  const state = await readCardSenderState()
   const lastSentAgo = state.lastSentAt > 0 ? Math.floor((Date.now() - state.lastSentAt) / 1000) : 0
 
   infoLog("════════════════════════════════════════════════════")
@@ -228,6 +211,7 @@ export function startCardSender() {
   infoLog(`⏱️  Interval: ${FIXED_INTERVAL / 60000} minutes`)
   infoLog(`📍 Group: ${JOB_GROUP_ID}`)
   infoLog(`🌐 API: ${CARD_API_URL}`)
+  infoLog(`💾 Storage: Supabase (database)`)
   if (state.lastSentAt > 0) {
     infoLog(`📅 Last sent: ${lastSentAgo} seconds ago`)
   } else {

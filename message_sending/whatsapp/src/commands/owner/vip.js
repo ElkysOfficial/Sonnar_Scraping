@@ -156,7 +156,7 @@ ${PREFIX}vip search <lid>`;
           return await sendErrorReply("Nenhum filtro válido encontrado. Informe ao menos uma stack ou cargo.");
         }
 
-        const isNew = addVipSubscriber(name, normalizedLid, filters);
+        const isNew = await addVipSubscriber(name, normalizedLid, filters);
         const formattedFilters = formatFilters(filters);
 
         if (isNew) {
@@ -186,7 +186,7 @@ ${PREFIX}vip search <lid>`;
 
       case "pending":
       case "pendentes": {
-        const pending = getVipPendingSubscribers().filter(p => p.status === "pending");
+        const pending = (await getVipPendingSubscribers()).filter(p => p.status === "pending");
 
         if (pending.length === 0) {
           return await sendReply("Nenhum VIP pendente de aprovação.");
@@ -218,7 +218,7 @@ ${PREFIX}vip search <lid>`;
         }
 
         const normalizedLid = lid.includes("@lid") ? lid : `${lid}@lid`;
-        const result = approveVipSubscriber(normalizedLid, "owner_command");
+        const result = await approveVipSubscriber(normalizedLid, "owner_command");
 
         if (result.ok) {
           return await sendSuccessReply(`VIP aprovado!\n\nNome: ${result.subscriber?.name || "N/A"}\nLID: ${normalizedLid}\n\nO cliente agora receberá vagas personalizadas.`);
@@ -237,7 +237,7 @@ ${PREFIX}vip search <lid>`;
         }
 
         const normalizedLid = lid.includes("@lid") ? lid : `${lid}@lid`;
-        const result = rejectVipSubscriber(normalizedLid, "owner_command", reason);
+        const result = await rejectVipSubscriber(normalizedLid, "owner_command", reason);
 
         if (result.ok) {
           return await sendSuccessReply(`VIP rejeitado!\n\nLID: ${normalizedLid}\nMotivo: ${reason}`);
@@ -255,7 +255,7 @@ ${PREFIX}vip search <lid>`;
         }
 
         const normalizedLid = lid.includes("@lid") ? lid : `${lid}@lid`;
-        const subscriber = getVipSubscriber(normalizedLid);
+        const subscriber = await getVipSubscriber(normalizedLid);
 
         if (!subscriber) {
           return await sendWarningReply(`Assinante não encontrado: ${normalizedLid}`);
@@ -292,7 +292,7 @@ ${PREFIX}vip search <lid>`;
         }
 
         const normalizedLid = lid.includes("@lid") ? lid : `${lid}@lid`;
-        const removed = removeVipSubscriber(normalizedLid);
+        const removed = await removeVipSubscriber(normalizedLid);
 
         if (removed) {
           return await sendSuccessReply(`Assinante VIP removido!\n\nLID: ${normalizedLid}`);
@@ -304,7 +304,7 @@ ${PREFIX}vip search <lid>`;
       case "list":
       case "listar":
       case "ls": {
-        const subscribers = getVipSubscribers();
+        const subscribers = await getVipSubscribers();
 
         if (subscribers.length === 0) {
           return await sendReply("Nenhum assinante VIP cadastrado.");
@@ -332,7 +332,7 @@ ${PREFIX}vip search <lid>`;
         }
 
         const normalizedLid = lid.includes("@lid") ? lid : `${lid}@lid`;
-        const subscriber = getVipSubscriber(normalizedLid);
+        const subscriber = await getVipSubscriber(normalizedLid);
 
         if (!subscriber) {
           return await sendWarningReply(`Assinante não encontrado: ${normalizedLid}`);

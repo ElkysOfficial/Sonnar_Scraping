@@ -26,13 +26,13 @@ export async function onGroupParticipantsUpdate({
       return;
     }
 
-    if (!isActiveGroup(remoteJid)) {
+    if (!(await isActiveGroup(remoteJid))) {
       return;
     }
 
     const userLid = extractUserLid(data);
 
-    if (isActiveWelcomeGroup(remoteJid) && action === "add") {
+    if (await isActiveWelcomeGroup(remoteJid) && action === "add") {
       const { buffer, profileImage } = await getProfileImageData(
         socket,
         userLid
@@ -75,7 +75,7 @@ export async function onGroupParticipantsUpdate({
       if (!profileImage.includes("default-user")) {
         fs.unlinkSync(profileImage);
       }
-    } else if (isActiveExitGroup(remoteJid) && action === "remove") {
+    } else if (await isActiveExitGroup(remoteJid) && action === "remove") {
       const { buffer, profileImage } = await getProfileImageData(
         socket,
         userLid

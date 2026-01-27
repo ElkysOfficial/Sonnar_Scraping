@@ -13,8 +13,8 @@ import { delay } from "baileys";
 import { OWNER_LID } from "../config.js";
 import { getPrefix } from "../utils/database.js";
 
-export function verifyPrefix(prefix, groupJid) {
-  const groupPrefix = getPrefix(groupJid);
+export async function verifyPrefix(prefix, groupJid) {
+  const groupPrefix = await getPrefix(groupJid);
   return groupPrefix === prefix;
 }
 

@@ -31,9 +31,9 @@ export default {
       );
     }
     const hasActive =
-      antiImageOn && isActiveGroupRestriction(remoteJid, "anti-image");
+      antiImageOn && await isActiveGroupRestriction(remoteJid, "anti-image");
     const hasInactive =
-      antiImageOff && !isActiveGroupRestriction(remoteJid, "anti-image");
+      antiImageOff && !await isActiveGroupRestriction(remoteJid, "anti-image");
     if (hasActive || hasInactive) {
       throw new WarningError(
         `O recurso de anti-image já está ${
@@ -41,7 +41,7 @@ export default {
         }!`
       );
     }
-    updateIsActiveGroupRestriction(remoteJid, "anti-image", antiImageOn);
+    await updateIsActiveGroupRestriction(remoteJid, "anti-image", antiImageOn);
     const status = antiImageOn ? "ativado" : "desativado";
     await sendSuccessReply(`Anti-image ${status} com sucesso!`);
   },

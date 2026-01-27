@@ -1,0 +1,25 @@
+{
+  "name": "@sonar/database",
+  "version": "1.0.0",
+  "description": "Supabase database client for Sonar services",
+  "type": "module",
+  "main": "lib/supabase.js",
+  "exports": {
+    ".": "./lib/supabase.js"
+  },
+  "scripts": {
+    "migrate": "node scripts/run-migrations.js",
+    "seed": "node scripts/migrate-json-to-db.js",
+    "supabase:link": "supabase link --project-ref bjlxmqpxnsmswbfbkivq",
+    "supabase:db:push": "supabase db push",
+    "supabase:db:reset": "supabase db reset",
+    "supabase:db:diff": "supabase db diff",
+    "supabase:migration:up": "supabase migration up",
+    "supabase:migration:list": "supabase migration list",
+    "supabase:gen:types": "supabase gen types typescript --project-id bjlxmqpxnsmswbfbkivq > lib/supabase-types.ts"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.49.1",
+    "dotenv": "^16.4.7"
+  }
+}

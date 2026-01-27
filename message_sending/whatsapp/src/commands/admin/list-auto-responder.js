@@ -14,7 +14,7 @@ export default {
   handle: async ({ sendSuccessReply, sendWaitReact }) => {
     await sendWaitReact();
     await delay(1000);
-    const items = listAutoResponderItems();
+    const items = await listAutoResponderItems();
     if (items.length === 0) {
       await sendSuccessReply("Não há termos cadastrados no auto-responder.");
       return;

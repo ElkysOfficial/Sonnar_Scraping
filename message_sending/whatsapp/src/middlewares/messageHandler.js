@@ -5,7 +5,7 @@
  */
 import { OWNER_LID } from "../config.js";
 import {
-  readGroupRestrictions,
+  isActiveGroupRestriction,
   readRestrictedMessageTypes,
 } from "../utils/database.js";
 import { hasDirectMedia } from "../utils/index.js";
@@ -42,8 +42,6 @@ export async function messageHandler(socket, webMessage) {
       return;
     }
 
-    const antiGroups = readGroupRestrictions();
-
     const messageType = Object.keys(readRestrictedMessageTypes()).find((type) =>
       hasDirectMedia(webMessage, type)
     );
@@ -52,7 +50,10 @@ export async function messageHandler(socket, webMessage) {
       return;
     }
 
-    const isAntiActive = !!antiGroups[remoteJid]?.[`anti-${messageType}`];
+    const isAntiActive = await isActiveGroupRestriction(
+      remoteJid,
+      `anti-${messageType}`
+    );
 
     if (!isAntiActive) {
       return;

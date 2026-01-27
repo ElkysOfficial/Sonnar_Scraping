@@ -28,17 +28,17 @@ export default {
         "Você precisa digitar 1 ou 0 (ligar ou desligar)!"
       );
     }
-    const hasActive = exit && isActiveExitGroup(remoteJid);
-    const hasInactive = notExit && !isActiveExitGroup(remoteJid);
+    const hasActive = exit && await isActiveExitGroup(remoteJid);
+    const hasInactive = notExit && !await isActiveExitGroup(remoteJid);
     if (hasActive || hasInactive) {
       throw new WarningError(
         `O recurso de saída já está ${exit ? "ativado" : "desativado"}!`
       );
     }
     if (exit) {
-      activateExitGroup(remoteJid);
+      await activateExitGroup(remoteJid);
     } else {
-      deactivateExitGroup(remoteJid);
+      await deactivateExitGroup(remoteJid);
     }
     await sendSuccessReact();
     const context = exit ? "ativado" : "desativado";

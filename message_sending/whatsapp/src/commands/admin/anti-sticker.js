@@ -31,9 +31,9 @@ export default {
       );
     }
     const hasActive =
-      antiStickerOn && isActiveGroupRestriction(remoteJid, "anti-sticker");
+      antiStickerOn && await isActiveGroupRestriction(remoteJid, "anti-sticker");
     const hasInactive =
-      antiStickerOff && !isActiveGroupRestriction(remoteJid, "anti-sticker");
+      antiStickerOff && !await isActiveGroupRestriction(remoteJid, "anti-sticker");
     if (hasActive || hasInactive) {
       throw new WarningError(
         `O recurso de anti-sticker já está ${
@@ -41,7 +41,7 @@ export default {
         }!`
       );
     }
-    updateIsActiveGroupRestriction(remoteJid, "anti-sticker", antiStickerOn);
+    await updateIsActiveGroupRestriction(remoteJid, "anti-sticker", antiStickerOn);
     const status = antiStickerOn ? "ativado" : "desativado";
     await sendSuccessReply(`Anti-sticker ${status} com sucesso!`);
   },

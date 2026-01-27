@@ -51,9 +51,9 @@ export async function dynamicCommand(paramsHandler, startProcess) {
     webMessage,
   } = paramsHandler;
 
-  const activeGroup = isActiveGroup(remoteJid);
+  const activeGroup = await isActiveGroup(remoteJid);
 
-  if (activeGroup && isActiveAntiLinkGroup(remoteJid) && isLink(fullMessage)) {
+  if (activeGroup && (await isActiveAntiLinkGroup(remoteJid)) && isLink(fullMessage)) {
     if (!userLid) {
       return;
     }
@@ -78,7 +78,7 @@ export async function dynamicCommand(paramsHandler, startProcess) {
     }
   }
 
-  if (activeGroup && isActiveAutoStickerGroup(remoteJid)) {
+  if (activeGroup && (await isActiveAutoStickerGroup(remoteJid))) {
     const processed = await processAutoSticker(paramsHandler);
 
     if (processed) {
@@ -94,11 +94,11 @@ export async function dynamicCommand(paramsHandler, startProcess) {
 
   if (activeGroup) {
     if (
-      !verifyPrefix(prefix, remoteJid) ||
+      !(await verifyPrefix(prefix, remoteJid)) ||
       !hasTypeAndCommand({ type, command })
     ) {
-      if (isActiveAutoResponderGroup(remoteJid)) {
-        const response = getAutoResponderResponse(fullMessage);
+      if (await isActiveAutoResponderGroup(remoteJid)) {
+        const response = await getAutoResponderResponse(fullMessage, remoteJid);
 
         if (response) {
           await sendReply(response);
@@ -107,7 +107,7 @@ export async function dynamicCommand(paramsHandler, startProcess) {
 
       if (fullMessage.toLocaleLowerCase().includes("prefixo")) {
         await sendReact(BOT_EMOJI);
-        const groupPrefix = getPrefix(remoteJid);
+        const groupPrefix = await getPrefix(remoteJid);
         await sendReply(
           `O padrão é: ${groupPrefix}\nUse ${groupPrefix}menu para ver os comandos disponíveis!`
         );
@@ -124,7 +124,7 @@ export async function dynamicCommand(paramsHandler, startProcess) {
     }
 
     if (
-      isActiveOnlyAdmins(remoteJid) &&
+      await isActiveOnlyAdmins(remoteJid) &&
       !(await isAdmin({ remoteJid, userLid, socket }))
     ) {
       await sendWarningReply(
@@ -136,7 +136,7 @@ export async function dynamicCommand(paramsHandler, startProcess) {
 
   if (!isBotOwner({ userLid }) && !activeGroup) {
     if (
-      verifyPrefix(prefix, remoteJid) &&
+      await verifyPrefix(prefix, remoteJid) &&
       hasTypeAndCommand({ type, command })
     ) {
       if (command.name !== "on") {
@@ -157,11 +157,11 @@ export async function dynamicCommand(paramsHandler, startProcess) {
     }
   }
 
-  if (!verifyPrefix(prefix, remoteJid)) {
+  if (!(await verifyPrefix(prefix, remoteJid))) {
     return;
   }
 
-  const groupPrefix = getPrefix(remoteJid);
+  const groupPrefix = await getPrefix(remoteJid);
 
   if (fullMessage === groupPrefix) {
     await sendReact(BOT_EMOJI);

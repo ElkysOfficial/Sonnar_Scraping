@@ -43,7 +43,7 @@ export default {
       );
     }
 
-    const url = canvas("rip", link);
+    const url = await canvas("rip", link);
 
     const response = await fetch(url);
 

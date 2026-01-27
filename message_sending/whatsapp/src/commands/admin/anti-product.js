@@ -31,9 +31,9 @@ export default {
       );
     }
     const hasActive =
-      antiProductOn && isActiveGroupRestriction(remoteJid, "anti-product");
+      antiProductOn && await isActiveGroupRestriction(remoteJid, "anti-product");
     const hasInactive =
-      antiProductOff && !isActiveGroupRestriction(remoteJid, "anti-product");
+      antiProductOff && !await isActiveGroupRestriction(remoteJid, "anti-product");
     if (hasActive || hasInactive) {
       throw new WarningError(
         `O recurso de anti-product já está ${
@@ -41,7 +41,7 @@ export default {
         }!`
       );
     }
-    updateIsActiveGroupRestriction(remoteJid, "anti-product", antiProductOn);
+    await updateIsActiveGroupRestriction(remoteJid, "anti-product", antiProductOn);
     const status = antiProductOn ? "ativado" : "desativado";
     await sendSuccessReply(`Anti-product ${status} com sucesso!`);
   },

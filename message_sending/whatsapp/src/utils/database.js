@@ -1,507 +1,316 @@
 /**
- * Funções úteis para trabalhar
- * com dados.
- *
- * @author Dev Gui
+ * Supabase-backed data helpers
  */
-import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-import { PREFIX, SPIDER_API_TOKEN } from "../config.js";
+import { PREFIX, SPIDER_API_TOKEN } from "../config.js"
+import {
+  supabase,
+  isFeatureEnabled,
+  setFeatureEnabled,
+  getAutoResponders,
+  addAutoResponder,
+  removeAutoResponder,
+  removeAutoResponderByMatch,
+  isUserMuted,
+  muteUser,
+  unmuteUser,
+  getMutedUsers
+} from "../services/database.js"
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const GLOBAL_CONFIG_GROUP_ID = "__global__"
 
-const databasePath = path.resolve(__dirname, "..", "..", "database");
+const RESTRICTION_FEATURES = [
+  "anti_audio",
+  "anti_document",
+  "anti_image",
+  "anti_video",
+  "anti_product",
+  "anti_event",
+  "anti_sticker"
+]
 
-const ANTI_LINK_GROUPS_FILE = "anti-link-groups";
-const AUTO_RESPONDER_FILE = "auto-responder";
-const AUTO_RESPONDER_GROUPS_FILE = "auto-responder-groups";
-const AUTO_STICKER_GROUPS_FILE = "auto-sticker-groups";
-const CONFIG_FILE = "config";
-const EXIT_GROUPS_FILE = "exit-groups";
-const GROUP_RESTRICTIONS_FILE = "group-restrictions";
-const INACTIVE_GROUPS_FILE = "inactive-groups";
-const MUTE_FILE = "muted";
-const ONLY_ADMINS_FILE = "only-admins";
-const PREFIX_GROUPS_FILE = "prefix-groups";
-const RESTRICTED_MESSAGES_FILE = "restricted-messages";
-const WELCOME_GROUPS_FILE = "welcome-groups";
-
-function createIfNotExists(fullPath, formatIfNotExists = []) {
-  if (!fs.existsSync(fullPath)) {
-    fs.writeFileSync(fullPath, JSON.stringify(formatIfNotExists));
-  }
+function normalizeFeature(feature) {
+  return (feature || "").toString().trim().toLowerCase().replace(/-/g, "_")
 }
 
-function readJSON(jsonFile, formatIfNotExists = []) {
-  const fullPath = path.resolve(databasePath, `${jsonFile}.json`);
-
-  createIfNotExists(fullPath, formatIfNotExists);
-
-  return JSON.parse(fs.readFileSync(fullPath, "utf8"));
+function denormalizeFeature(feature) {
+  return (feature || "").toString().trim().toLowerCase().replace(/_/g, "-")
 }
 
-function writeJSON(jsonFile, data, formatIfNotExists = []) {
-  const fullPath = path.resolve(databasePath, `${jsonFile}.json`);
+async function getFeatureConfig(groupId, feature) {
+  const { data, error } = await supabase
+    .from("group_features")
+    .select("config")
+    .eq("group_id", groupId)
+    .eq("feature", feature)
+    .maybeSingle()
 
-  createIfNotExists(fullPath, formatIfNotExists);
-
-  fs.writeFileSync(fullPath, JSON.stringify(data, null, 2), "utf8");
+  if (error) throw error
+  return data?.config || null
 }
 
-export function activateExitGroup(groupId) {
-  const filename = EXIT_GROUPS_FILE;
-
-  const exitGroups = readJSON(filename);
-
-  if (!exitGroups.includes(groupId)) {
-    exitGroups.push(groupId);
-  }
-
-  writeJSON(filename, exitGroups);
+async function setFeatureConfig(groupId, feature, config) {
+  await setFeatureEnabled(groupId, feature, true, config || {})
 }
 
-export function deactivateExitGroup(groupId) {
-  const filename = EXIT_GROUPS_FILE;
+// ===== GROUP FEATURES =====
 
-  const exitGroups = readJSON(filename);
-
-  const index = exitGroups.indexOf(groupId);
-
-  if (index === -1) {
-    return;
-  }
-
-  exitGroups.splice(index, 1);
-
-  writeJSON(filename, exitGroups);
+export async function activateExitGroup(groupId) {
+  await setFeatureEnabled(groupId, "exit", true)
 }
 
-export function isActiveExitGroup(groupId) {
-  const filename = EXIT_GROUPS_FILE;
-
-  const exitGroups = readJSON(filename);
-
-  return exitGroups.includes(groupId);
+export async function deactivateExitGroup(groupId) {
+  await setFeatureEnabled(groupId, "exit", false)
 }
 
-export function activateWelcomeGroup(groupId) {
-  const filename = WELCOME_GROUPS_FILE;
-
-  const welcomeGroups = readJSON(filename);
-
-  if (!welcomeGroups.includes(groupId)) {
-    welcomeGroups.push(groupId);
-  }
-
-  writeJSON(filename, welcomeGroups);
+export async function isActiveExitGroup(groupId) {
+  return await isFeatureEnabled(groupId, "exit")
 }
 
-export function deactivateWelcomeGroup(groupId) {
-  const filename = WELCOME_GROUPS_FILE;
-
-  const welcomeGroups = readJSON(filename);
-
-  const index = welcomeGroups.indexOf(groupId);
-
-  if (index === -1) {
-    return;
-  }
-
-  welcomeGroups.splice(index, 1);
-
-  writeJSON(filename, welcomeGroups);
+export async function activateWelcomeGroup(groupId) {
+  await setFeatureEnabled(groupId, "welcome", true)
 }
 
-export function isActiveWelcomeGroup(groupId) {
-  const filename = WELCOME_GROUPS_FILE;
-
-  const welcomeGroups = readJSON(filename);
-
-  return welcomeGroups.includes(groupId);
+export async function deactivateWelcomeGroup(groupId) {
+  await setFeatureEnabled(groupId, "welcome", false)
 }
 
-export function activateGroup(groupId) {
-  const filename = INACTIVE_GROUPS_FILE;
-
-  const inactiveGroups = readJSON(filename);
-
-  const index = inactiveGroups.indexOf(groupId);
-
-  if (index === -1) {
-    return;
-  }
-
-  inactiveGroups.splice(index, 1);
-
-  writeJSON(filename, inactiveGroups);
+export async function isActiveWelcomeGroup(groupId) {
+  return await isFeatureEnabled(groupId, "welcome")
 }
 
-export function deactivateGroup(groupId) {
-  const filename = INACTIVE_GROUPS_FILE;
-
-  const inactiveGroups = readJSON(filename);
-
-  if (!inactiveGroups.includes(groupId)) {
-    inactiveGroups.push(groupId);
-  }
-
-  writeJSON(filename, inactiveGroups);
+export async function activateGroup(groupId) {
+  await setFeatureEnabled(groupId, "inactive", false)
 }
 
-export function isActiveGroup(groupId) {
-  const filename = INACTIVE_GROUPS_FILE;
-
-  const inactiveGroups = readJSON(filename);
-
-  return !inactiveGroups.includes(groupId);
+export async function deactivateGroup(groupId) {
+  await setFeatureEnabled(groupId, "inactive", true)
 }
 
-export function getAutoResponderResponse(match) {
-  const filename = AUTO_RESPONDER_FILE;
+export async function isActiveGroup(groupId) {
+  const inactive = await isFeatureEnabled(groupId, "inactive")
+  return !inactive
+}
 
-  const responses = readJSON(filename);
+export async function activateAutoResponderGroup(groupId) {
+  await setFeatureEnabled(groupId, "auto_responder", true)
+}
 
-  const matchUpperCase = match.toLocaleUpperCase();
+export async function deactivateAutoResponderGroup(groupId) {
+  await setFeatureEnabled(groupId, "auto_responder", false)
+}
 
-  const data = responses.find(
-    (response) => response.match.toLocaleUpperCase() === matchUpperCase
-  );
+export async function isActiveAutoResponderGroup(groupId) {
+  return await isFeatureEnabled(groupId, "auto_responder")
+}
 
-  if (!data) {
-    return null;
+export async function activateAntiLinkGroup(groupId) {
+  await setFeatureEnabled(groupId, "anti_link", true)
+}
+
+export async function deactivateAntiLinkGroup(groupId) {
+  await setFeatureEnabled(groupId, "anti_link", false)
+}
+
+export async function isActiveAntiLinkGroup(groupId) {
+  return await isFeatureEnabled(groupId, "anti_link")
+}
+
+export async function activateAutoStickerGroup(groupId) {
+  await setFeatureEnabled(groupId, "auto_sticker", true)
+}
+
+export async function deactivateAutoStickerGroup(groupId) {
+  await setFeatureEnabled(groupId, "auto_sticker", false)
+}
+
+export async function isActiveAutoStickerGroup(groupId) {
+  return await isFeatureEnabled(groupId, "auto_sticker")
+}
+
+export async function activateOnlyAdmins(groupId) {
+  await setFeatureEnabled(groupId, "only_admins", true)
+}
+
+export async function deactivateOnlyAdmins(groupId) {
+  await setFeatureEnabled(groupId, "only_admins", false)
+}
+
+export async function isActiveOnlyAdmins(groupId) {
+  return await isFeatureEnabled(groupId, "only_admins")
+}
+
+// ===== GROUP RESTRICTIONS =====
+
+export async function readGroupRestrictions() {
+  const { data, error } = await supabase
+    .from("group_features")
+    .select("group_id, feature, enabled")
+    .in("feature", RESTRICTION_FEATURES)
+
+  if (error) throw error
+
+  const restrictions = {}
+  for (const row of data || []) {
+    if (!restrictions[row.group_id]) {
+      restrictions[row.group_id] = {}
+    }
+    restrictions[row.group_id][denormalizeFeature(row.feature)] = !!row.enabled
   }
 
-  return data.answer;
+  return restrictions
 }
 
-export function activateAutoResponderGroup(groupId) {
-  const filename = AUTO_RESPONDER_GROUPS_FILE;
+export async function saveGroupRestrictions(restrictions) {
+  const entries = restrictions || {}
+  const tasks = []
 
-  const autoResponderGroups = readJSON(filename);
-
-  if (!autoResponderGroups.includes(groupId)) {
-    autoResponderGroups.push(groupId);
+  for (const [groupId, rules] of Object.entries(entries)) {
+    for (const [restriction, enabled] of Object.entries(rules || {})) {
+      tasks.push(setFeatureEnabled(groupId, normalizeFeature(restriction), !!enabled))
+    }
   }
 
-  writeJSON(filename, autoResponderGroups);
+  await Promise.all(tasks)
 }
 
-export function deactivateAutoResponderGroup(groupId) {
-  const filename = AUTO_RESPONDER_GROUPS_FILE;
-
-  const autoResponderGroups = readJSON(filename);
-
-  const index = autoResponderGroups.indexOf(groupId);
-
-  if (index === -1) {
-    return;
-  }
-
-  autoResponderGroups.splice(index, 1);
-
-  writeJSON(filename, autoResponderGroups);
+export async function isActiveGroupRestriction(groupId, restriction) {
+  return await isFeatureEnabled(groupId, normalizeFeature(restriction))
 }
 
-export function isActiveAutoResponderGroup(groupId) {
-  const filename = AUTO_RESPONDER_GROUPS_FILE;
-
-  const autoResponderGroups = readJSON(filename);
-
-  return autoResponderGroups.includes(groupId);
-}
-
-export function activateAntiLinkGroup(groupId) {
-  const filename = ANTI_LINK_GROUPS_FILE;
-
-  const antiLinkGroups = readJSON(filename);
-
-  if (!antiLinkGroups.includes(groupId)) {
-    antiLinkGroups.push(groupId);
-  }
-
-  writeJSON(filename, antiLinkGroups);
-}
-
-export function deactivateAntiLinkGroup(groupId) {
-  const filename = ANTI_LINK_GROUPS_FILE;
-
-  const antiLinkGroups = readJSON(filename);
-
-  const index = antiLinkGroups.indexOf(groupId);
-
-  if (index === -1) {
-    return;
-  }
-
-  antiLinkGroups.splice(index, 1);
-
-  writeJSON(filename, antiLinkGroups);
-}
-
-export function isActiveAntiLinkGroup(groupId) {
-  const filename = ANTI_LINK_GROUPS_FILE;
-
-  const antiLinkGroups = readJSON(filename);
-
-  return antiLinkGroups.includes(groupId);
-}
-
-export function activateAutoStickerGroup(groupId) {
-  const filename = AUTO_STICKER_GROUPS_FILE;
-
-  const autoStickerGroups = readJSON(filename);
-
-  if (!autoStickerGroups.includes(groupId)) {
-    autoStickerGroups.push(groupId);
-  }
-
-  writeJSON(filename, autoStickerGroups);
-}
-
-export function deactivateAutoStickerGroup(groupId) {
-  const filename = AUTO_STICKER_GROUPS_FILE;
-
-  const autoStickerGroups = readJSON(filename);
-
-  const index = autoStickerGroups.indexOf(groupId);
-
-  if (index === -1) {
-    return;
-  }
-
-  autoStickerGroups.splice(index, 1);
-
-  writeJSON(filename, autoStickerGroups);
-}
-
-export function isActiveAutoStickerGroup(groupId) {
-  const filename = AUTO_STICKER_GROUPS_FILE;
-
-  const autoStickerGroups = readJSON(filename);
-
-  return autoStickerGroups.includes(groupId);
-}
-
-export function muteMember(groupId, memberId) {
-  const filename = MUTE_FILE;
-
-  const mutedMembers = readJSON(filename, JSON.stringify({}));
-
-  if (!mutedMembers[groupId]) {
-    mutedMembers[groupId] = [];
-  }
-
-  if (!mutedMembers[groupId]?.includes(memberId)) {
-    mutedMembers[groupId].push(memberId);
-  }
-
-  writeJSON(filename, mutedMembers);
-}
-
-export function unmuteMember(groupId, memberId) {
-  const filename = MUTE_FILE;
-
-  const mutedMembers = readJSON(filename, JSON.stringify({}));
-
-  if (!mutedMembers[groupId]) {
-    return;
-  }
-
-  const index = mutedMembers[groupId].indexOf(memberId);
-
-  if (index !== -1) {
-    mutedMembers[groupId].splice(index, 1);
-  }
-
-  writeJSON(filename, mutedMembers);
-}
-
-export function checkIfMemberIsMuted(groupId, memberId) {
-  const filename = MUTE_FILE;
-
-  const mutedMembers = readJSON(filename, JSON.stringify({}));
-
-  if (!mutedMembers[groupId]) {
-    return false;
-  }
-
-  return mutedMembers[groupId]?.includes(memberId);
-}
-
-export function activateOnlyAdmins(groupId) {
-  const filename = ONLY_ADMINS_FILE;
-
-  const onlyAdminsGroups = readJSON(filename, []);
-
-  if (!onlyAdminsGroups.includes(groupId)) {
-    onlyAdminsGroups.push(groupId);
-  }
-
-  writeJSON(filename, onlyAdminsGroups);
-}
-
-export function deactivateOnlyAdmins(groupId) {
-  const filename = ONLY_ADMINS_FILE;
-
-  const onlyAdminsGroups = readJSON(filename, []);
-
-  const index = onlyAdminsGroups.indexOf(groupId);
-  if (index === -1) {
-    return;
-  }
-
-  onlyAdminsGroups.splice(index, 1);
-
-  writeJSON(filename, onlyAdminsGroups);
-}
-
-export function isActiveOnlyAdmins(groupId) {
-  const filename = ONLY_ADMINS_FILE;
-
-  const onlyAdminsGroups = readJSON(filename, []);
-
-  return onlyAdminsGroups.includes(groupId);
-}
-
-export function readGroupRestrictions() {
-  return readJSON(GROUP_RESTRICTIONS_FILE, {});
-}
-
-export function saveGroupRestrictions(restrictions) {
-  writeJSON(GROUP_RESTRICTIONS_FILE, restrictions, {});
-}
-
-export function isActiveGroupRestriction(groupId, restriction) {
-  const restrictions = readGroupRestrictions();
-
-  if (!restrictions[groupId]) {
-    return false;
-  }
-
-  return restrictions[groupId][restriction] === true;
-}
-
-export function updateIsActiveGroupRestriction(groupId, restriction, isActive) {
-  const restrictions = readGroupRestrictions();
-
-  if (!restrictions[groupId]) {
-    restrictions[groupId] = {};
-  }
-
-  restrictions[groupId][restriction] = isActive;
-
-  saveGroupRestrictions(restrictions);
+export async function updateIsActiveGroupRestriction(groupId, restriction, isActive) {
+  await setFeatureEnabled(groupId, normalizeFeature(restriction), !!isActive)
 }
 
 export function readRestrictedMessageTypes() {
-  return readJSON(RESTRICTED_MESSAGES_FILE, {
+  return {
     sticker: "stickerMessage",
     video: "videoMessage",
     image: "imageMessage",
     audio: "audioMessage",
     product: "productMessage",
     document: "documentMessage",
-    event: "eventMessage",
-  });
+    event: "eventMessage"
+  }
 }
 
-export function setPrefix(groupJid, prefix) {
-  const filename = PREFIX_GROUPS_FILE;
+// ===== PREFIX =====
 
-  const prefixGroups = readJSON(filename, {});
-
-  prefixGroups[groupJid] = prefix;
-
-  writeJSON(filename, prefixGroups, {});
+export async function setPrefix(groupJid, prefix) {
+  await setFeatureConfig(groupJid, "prefix", { prefix })
 }
 
-export function getPrefix(groupJid) {
-  const filename = PREFIX_GROUPS_FILE;
+export async function getPrefix(groupJid) {
+  const groupConfig = await getFeatureConfig(groupJid, "prefix")
+  if (groupConfig?.prefix) {
+    return groupConfig.prefix
+  }
 
-  const prefixGroups = readJSON(filename, {});
+  const globalConfig = await getFeatureConfig(GLOBAL_CONFIG_GROUP_ID, "prefix")
+  if (globalConfig?.prefix) {
+    return globalConfig.prefix
+  }
 
-  return prefixGroups[groupJid] || PREFIX;
+  return PREFIX
 }
 
-export function listAutoResponderItems() {
-  const filename = AUTO_RESPONDER_FILE;
-  const responses = readJSON(filename, []);
+// ===== AUTO RESPONDER =====
+
+async function listAutoRespondersRaw() {
+  const { data, error } = await supabase
+    .from("auto_responders")
+    .select("id, match_pattern, answer")
+    .is("group_id", null)
+    .order("created_at", { ascending: true })
+
+  if (error) throw error
+  return data || []
+}
+
+export async function getAutoResponderResponse(match, groupId = null) {
+  const value = (match || "").toString().trim()
+  if (!value) {
+    return null
+  }
+
+  const normalized = value.toLowerCase()
+  const responders = await getAutoResponders(groupId)
+  const found = responders.find((r) =>
+    (r.match_pattern || "").toLowerCase() === normalized
+  )
+
+  return found ? found.answer : null
+}
+
+export async function listAutoResponderItems() {
+  const responses = await listAutoRespondersRaw()
 
   return responses.map((item, index) => ({
     key: index + 1,
-    match: item.match,
-    answer: item.answer,
-  }));
+    id: item.id,
+    match: item.match_pattern,
+    answer: item.answer
+  }))
 }
 
-export function addAutoResponderItem(match, answer) {
-  const filename = AUTO_RESPONDER_FILE;
-  const responses = readJSON(filename, []);
-
-  const matchUpperCase = match.toLocaleUpperCase();
-
-  const existingItem = responses.find(
-    (response) => response.match.toLocaleUpperCase() === matchUpperCase
-  );
-
-  if (existingItem) {
-    return false;
+export async function addAutoResponderItem(match, answer) {
+  const matchText = (match || "").toString().trim()
+  const answerText = (answer || "").toString().trim()
+  if (!matchText || !answerText) {
+    return false
   }
 
-  responses.push({
-    match: match.trim(),
-    answer: answer.trim(),
-  });
+  const existing = await listAutoRespondersRaw()
+  const exists = existing.some(
+    (item) => (item.match_pattern || "").toLowerCase() === matchText.toLowerCase()
+  )
 
-  writeJSON(filename, responses, []);
+  if (exists) {
+    return false
+  }
 
-  return true;
+  await addAutoResponder(matchText, answerText, null)
+  return true
 }
 
-export function removeAutoResponderItemByKey(key) {
-  const filename = AUTO_RESPONDER_FILE;
-  const responses = readJSON(filename, []);
-
-  const index = key - 1;
+export async function removeAutoResponderItemByKey(key) {
+  const responses = await listAutoRespondersRaw()
+  const index = key - 1
 
   if (index < 0 || index >= responses.length) {
-    return false;
+    return false
   }
 
-  responses.splice(index, 1);
-
-  writeJSON(filename, responses, []);
-
-  return true;
+  await removeAutoResponder(responses[index].id)
+  return true
 }
 
-export function setSpiderApiToken(token) {
-  const filename = CONFIG_FILE;
+// ===== SPIDER API TOKEN =====
 
-  const config = readJSON(filename, {});
-
-  config.spider_api_token = token;
-
-  writeJSON(filename, config, {});
+export async function setSpiderApiToken(token) {
+  await setFeatureConfig(GLOBAL_CONFIG_GROUP_ID, "spider_api_token", { token })
 }
 
-export function getSpiderApiToken() {
-  const filename = CONFIG_FILE;
-
-  const config = readJSON(filename, {});
-
-  return config.spider_api_token || SPIDER_API_TOKEN;
+export async function getSpiderApiToken() {
+  const config = await getFeatureConfig(GLOBAL_CONFIG_GROUP_ID, "spider_api_token")
+  return config?.token || SPIDER_API_TOKEN
 }
 
-// ======= ASSINANTES VIP (Vagas Personalizadas) =======
-const VIP_SUBSCRIBERS_FILE = "vip-subscribers";
-const VIP_PENDING_FILE = "vip-pending-subscribers";
+// ===== MUTES =====
 
-/**
- * Normaliza filtros VIP com valores padrão
- */
+export async function muteMember(groupId, memberId) {
+  await muteUser(groupId, memberId)
+}
+
+export async function unmuteMember(groupId, memberId) {
+  await unmuteUser(groupId, memberId)
+}
+
+export async function checkIfMemberIsMuted(groupId, memberId) {
+  return await isUserMuted(groupId, memberId)
+}
+
+// ===== VIP SUBSCRIBERS =====
+
 function normalizeVipFilters(filtersInput) {
   if (!filtersInput || typeof filtersInput !== "object") {
     return {
@@ -512,10 +321,24 @@ function normalizeVipFilters(filtersInput) {
       workMode: [],
       contract: [],
       languages: [],
-      weights: { roles: 20, stacks: 30, seniority: 15, locations: 10, workMode: 10, contract: 10, languages: 5 },
-      must: { roles: true, stacks: true, workMode: false, contract: false, languages: false },
+      weights: {
+        roles: 20,
+        stacks: 30,
+        seniority: 15,
+        locations: 10,
+        workMode: 10,
+        contract: 10,
+        languages: 5
+      },
+      must: {
+        roles: true,
+        stacks: true,
+        workMode: false,
+        contract: false,
+        languages: false
+      },
       ignoreUnknown: true
-    };
+    }
   }
 
   return {
@@ -526,321 +349,336 @@ function normalizeVipFilters(filtersInput) {
     workMode: filtersInput.workMode || [],
     contract: filtersInput.contract || [],
     languages: filtersInput.languages || [],
-    weights: filtersInput.weights || { roles: 20, stacks: 30, seniority: 15, locations: 10, workMode: 10, contract: 10, languages: 5 },
-    must: filtersInput.must || { roles: true, stacks: true, workMode: false, contract: false, languages: false },
+    weights: filtersInput.weights || {
+      roles: 20,
+      stacks: 30,
+      seniority: 15,
+      locations: 10,
+      workMode: 10,
+      contract: 10,
+      languages: 5
+    },
+    must: filtersInput.must || {
+      roles: true,
+      stacks: true,
+      workMode: false,
+      contract: false,
+      languages: false
+    },
     ignoreUnknown: filtersInput.ignoreUnknown !== false
-  };
-}
-
-/**
- * Retorna todos os VIPs aprovados como objeto indexado por nome
- * Estrutura: { "Nome Completo": { lid, stacks, filters, addedAt, ... } }
- */
-export function getVipSubscribersObject() {
-  return readJSON(VIP_SUBSCRIBERS_FILE, {});
-}
-
-/**
- * Retorna array de VIPs para compatibilidade
- * @param {boolean} onlyActive - Se true, retorna apenas VIPs ativos (default: true)
- */
-export function getVipSubscribers(onlyActive = true) {
-  const data = readJSON(VIP_SUBSCRIBERS_FILE, {});
-
-  // Se for array (formato antigo), converte para novo formato
-  if (Array.isArray(data)) {
-    const newFormat = {};
-    for (const subscriber of data) {
-      const name = subscriber.name || `VIP_${subscriber.lid.replace("@lid", "")}`;
-      newFormat[name] = {
-        lid: subscriber.lid,
-        stacks: subscriber.stacks || subscriber.filters?.stacks || [],
-        filters: subscriber.filters || normalizeVipFilters({ stacks: subscriber.stacks || [] }),
-        addedAt: subscriber.addedAt || new Date().toISOString(),
-        active: true
-      };
-    }
-    writeJSON(VIP_SUBSCRIBERS_FILE, newFormat, {});
-    return Object.entries(newFormat).map(([name, d]) => ({ name, ...d }));
   }
+}
 
-  const allSubscribers = Object.entries(data).map(([name, subscriberData]) => ({
-    name,
-    ...subscriberData
-  }));
+function mapVipSubscriber(row) {
+  const filters = row.filters || normalizeVipFilters({ stacks: row.stacks || [] })
+  return {
+    name: row.user_name || row.name || "",
+    lid: row.lid,
+    phone: row.phone || null,
+    stacks: row.stacks || filters.stacks || [],
+    filters,
+    active: row.active ?? true,
+    addedAt: row.added_at,
+    updatedAt: row.updated_at
+  }
+}
 
-  // Filtra apenas ativos se solicitado
+export async function getVipSubscribersObject() {
+  const subscribers = await getVipSubscribers(false)
+  return Object.fromEntries(subscribers.map((s) => [s.name, { ...s }]))
+}
+
+export async function getVipSubscribers(onlyActive = true) {
+  let query = supabase.from("vip_subscribers").select("*").order("added_at", { ascending: true })
   if (onlyActive) {
-    return allSubscribers.filter(s => s.active !== false);
+    query = query.eq("active", true)
   }
 
-  return allSubscribers;
+  const { data, error } = await query
+  if (error) throw error
+
+  return (data || []).map(mapVipSubscriber)
 }
 
-/**
- * Adiciona/atualiza VIP aprovado
- * @param {string} name - Nome completo do cliente (obrigatório)
- * @param {string} lid - LID do WhatsApp
- * @param {object} filtersInput - Filtros do VIP
- * @returns {boolean} true se criou, false se atualizou
- */
-export function addVipSubscriber(name, lid, filtersInput) {
+export async function addVipSubscriber(name, lid, filtersInput) {
   if (!name || !name.trim()) {
-    throw new Error("Nome é obrigatório para adicionar VIP");
+    throw new Error("Nome e obrigatorio para adicionar VIP")
   }
   if (!lid) {
-    throw new Error("LID é obrigatório para adicionar VIP");
+    throw new Error("LID e obrigatorio para adicionar VIP")
   }
 
-  const subscribers = getVipSubscribersObject();
-  const filters = normalizeVipFilters(filtersInput);
-  const stacks = filters.stacks || [];
-  const now = new Date().toISOString();
-  const normalizedName = name.trim();
+  const normalizedName = name.trim()
+  const filters = normalizeVipFilters(filtersInput)
+  const stacks = filters.stacks || []
+  const now = new Date().toISOString()
 
-  const existingName = Object.keys(subscribers).find(n => subscribers[n].lid === lid);
+  const { data: existing, error: existingError } = await supabase
+    .from("vip_subscribers")
+    .select("id")
+    .eq("lid", lid)
+    .maybeSingle()
 
-  if (existingName) {
-    const existingData = subscribers[existingName];
-    delete subscribers[existingName];
-
-    subscribers[normalizedName] = {
-      lid,
-      stacks,
-      filters,
-      addedAt: existingData.addedAt || now,
-      updatedAt: now,
-      active: true
-    };
-    writeJSON(VIP_SUBSCRIBERS_FILE, subscribers, {});
-    return false;
-  }
-
-  subscribers[normalizedName] = {
-    lid,
-    stacks,
-    filters,
-    addedAt: now,
-    active: true
-  };
-
-  writeJSON(VIP_SUBSCRIBERS_FILE, subscribers, {});
-  return true;
-}
-
-/**
- * Ativa ou desativa um VIP
- * @param {string} lid - LID do VIP
- * @param {boolean} active - true para ativar, false para desativar
- */
-export function setVipActive(lid, active) {
-  const subscribers = getVipSubscribersObject();
-  const name = Object.keys(subscribers).find(n => subscribers[n].lid === lid);
-
-  if (!name) return false;
-
-  subscribers[name].active = active;
-  subscribers[name].updatedAt = new Date().toISOString();
-  writeJSON(VIP_SUBSCRIBERS_FILE, subscribers, {});
-  return true;
-}
-
-/**
- * Ativa ou desativa um VIP pelo nome
- */
-export function setVipActiveByName(name, active) {
-  const subscribers = getVipSubscribersObject();
-
-  if (!subscribers[name]) return false;
-
-  subscribers[name].active = active;
-  subscribers[name].updatedAt = new Date().toISOString();
-  writeJSON(VIP_SUBSCRIBERS_FILE, subscribers, {});
-  return true;
-}
-
-/**
- * Remove um assinante VIP pelo LID
- */
-export function removeVipSubscriber(lid) {
-  const subscribers = getVipSubscribersObject();
-  const nameToRemove = Object.keys(subscribers).find(name => subscribers[name].lid === lid);
-
-  if (!nameToRemove) return false;
-
-  delete subscribers[nameToRemove];
-  writeJSON(VIP_SUBSCRIBERS_FILE, subscribers, {});
-  return true;
-}
-
-/**
- * Remove um assinante VIP pelo nome
- */
-export function removeVipSubscriberByName(name) {
-  const subscribers = getVipSubscribersObject();
-
-  if (!subscribers[name]) return false;
-
-  delete subscribers[name];
-  writeJSON(VIP_SUBSCRIBERS_FILE, subscribers, {});
-  return true;
-}
-
-/**
- * Verifica se um usuário é assinante VIP
- */
-export function getVipSubscriber(lid) {
-  const subscribers = getVipSubscribers();
-  return subscribers.find((s) => s.lid === lid) || null;
-}
-
-/**
- * Busca VIP pelo nome
- */
-export function getVipSubscriberByName(name) {
-  const subscribers = getVipSubscribersObject();
-  if (!subscribers[name]) return null;
-  return { name, ...subscribers[name] };
-}
-
-/**
- * Verifica se um LID é VIP aprovado
- */
-export function isVipSubscriber(lid) {
-  return getVipSubscriber(lid) !== null;
-}
-
-/**
- * Obtém assinantes VIP por stack
- */
-export function getSubscribersByStack(stack) {
-  const subscribers = getVipSubscribers();
-  const stackLower = stack.toLowerCase();
-
-  return subscribers.filter((s) =>
-    (s.filters?.stacks || s.stacks || []).some((st) => st.toLowerCase() === stackLower || st.toLowerCase() === "todas")
-  );
-}
-
-// ======= VIP PENDENTES (Aguardando Aprovação) =======
-
-/**
- * Retorna todos os VIPs pendentes de aprovação
- */
-export function getVipPendingSubscribers() {
-  return readJSON(VIP_PENDING_FILE, []);
-}
-
-/**
- * Busca um pendente pelo LID
- */
-export function getVipPendingByLid(lid) {
-  const pending = getVipPendingSubscribers();
-  return pending.find(p => p.lid === lid && p.status === "pending") || null;
-}
-
-/**
- * Busca um pendente pelo número do cliente
- */
-export function getVipPendingByNumber(clientNumber) {
-  const pending = getVipPendingSubscribers();
-  const normalized = clientNumber.replace("@lid", "").replace("@s.whatsapp.net", "");
-  return pending.find(p => {
-    const pendingNumber = p.lid?.replace("@lid", "").replace("@s.whatsapp.net", "") || "";
-    return pendingNumber === normalized && p.status === "pending";
-  }) || null;
-}
-
-/**
- * Adiciona um cliente como pendente de aprovação VIP
- * NÃO adiciona como VIP aprovado - apenas aguarda confirmação do pagamento
- */
-export function addVipPendingSubscriber(name, lid, filtersInput, paymentProof = null) {
-  const pending = getVipPendingSubscribers();
-  const filters = normalizeVipFilters(filtersInput);
-  const stacks = filters.stacks || [];
-  const now = new Date().toISOString();
-
-  const idx = pending.findIndex(p => p.lid === lid && p.status === "pending");
+  if (existingError) throw existingError
 
   const payload = {
-    name: name?.trim() || "",
+    user_name: normalizedName,
     lid,
     stacks,
     filters,
-    paymentProof,
-    status: "pending",
-    requestedAt: now,
-    decidedAt: null,
-    decidedBy: null
-  };
-
-  if (idx !== -1) {
-    pending[idx] = { ...pending[idx], ...payload, requestedAt: pending[idx].requestedAt || now };
-    writeJSON(VIP_PENDING_FILE, pending, []);
-    return false;
+    active: true,
+    updated_at: now
   }
 
-  pending.push(payload);
-  writeJSON(VIP_PENDING_FILE, pending, []);
-  return true;
+  if (!existing) {
+    payload.added_at = now
+  }
+
+  const { error } = await supabase
+    .from("vip_subscribers")
+    .upsert(payload, { onConflict: "lid" })
+
+  if (error) throw error
+  return !existing
 }
 
-/**
- * Atualiza o comprovante de pagamento de um pendente
- */
-export function updateVipPendingPaymentProof(lid, paymentProof) {
-  const pending = getVipPendingSubscribers();
-  const idx = pending.findIndex(p => p.lid === lid && p.status === "pending");
-  if (idx === -1) return false;
+export async function setVipActive(lid, active) {
+  const { data, error } = await supabase
+    .from("vip_subscribers")
+    .update({ active: !!active, updated_at: new Date().toISOString() })
+    .eq("lid", lid)
+    .select("id")
+    .maybeSingle()
 
-  pending[idx].paymentProof = paymentProof;
-  pending[idx].paymentReceivedAt = new Date().toISOString();
-  writeJSON(VIP_PENDING_FILE, pending, []);
-  return true;
+  if (error) throw error
+  return !!data
 }
 
-/**
- * Aprova um VIP pendente - move para a lista de aprovados
- */
-export function approveVipSubscriber(lid, decidedBy) {
-  const pending = getVipPendingSubscribers();
-  const idx = pending.findIndex(p => p.lid === lid && p.status === "pending");
-  if (idx === -1) return { ok: false, reason: "not_found" };
+export async function setVipActiveByName(name, active) {
+  const { data, error } = await supabase
+    .from("vip_subscribers")
+    .update({ active: !!active, updated_at: new Date().toISOString() })
+    .eq("user_name", name)
+    .select("id")
+    .maybeSingle()
 
-  const pendingSubscriber = pending[idx];
+  if (error) throw error
+  return !!data
+}
 
-  pending[idx].status = "approved";
-  pending[idx].decidedAt = new Date().toISOString();
-  pending[idx].decidedBy = decidedBy || null;
-  writeJSON(VIP_PENDING_FILE, pending, []);
+export async function removeVipSubscriber(lid) {
+  const { error } = await supabase
+    .from("vip_subscribers")
+    .delete()
+    .eq("lid", lid)
 
-  addVipSubscriber(pendingSubscriber.name, pendingSubscriber.lid, pendingSubscriber.filters);
+  if (error) throw error
+  return true
+}
+
+export async function removeVipSubscriberByName(name) {
+  const { error } = await supabase
+    .from("vip_subscribers")
+    .delete()
+    .eq("user_name", name)
+
+  if (error) throw error
+  return true
+}
+
+export async function getVipSubscriber(lid) {
+  const { data, error } = await supabase
+    .from("vip_subscribers")
+    .select("*")
+    .eq("lid", lid)
+    .eq("active", true)
+    .maybeSingle()
+
+  if (error) throw error
+  return data ? mapVipSubscriber(data) : null
+}
+
+export async function getVipSubscriberByName(name) {
+  const { data, error } = await supabase
+    .from("vip_subscribers")
+    .select("*")
+    .eq("user_name", name)
+    .maybeSingle()
+
+  if (error) throw error
+  return data ? mapVipSubscriber(data) : null
+}
+
+export async function isVipSubscriber(lid) {
+  const subscriber = await getVipSubscriber(lid)
+  return subscriber !== null
+}
+
+export async function getSubscribersByStack(stack) {
+  const subscribers = await getVipSubscribers(true)
+  const stackLower = (stack || "").toLowerCase()
+
+  return subscribers.filter((s) =>
+    (s.filters?.stacks || s.stacks || []).some(
+      (st) => st.toLowerCase() === stackLower || st.toLowerCase() === "todas"
+    )
+  )
+}
+
+// ===== VIP PENDING =====
+
+function mapVipPending(row) {
+  return {
+    name: row.user_name || row.name || "",
+    lid: row.lid,
+    phone: row.phone || null,
+    stacks: row.stacks || [],
+    filters: row.filters || {},
+    paymentProof: row.payment_proof || null,
+    status: row.status || "pending",
+    requestedAt: row.requested_at,
+    decidedAt: row.decided_at,
+    decidedBy: row.decided_by,
+    paymentReceivedAt: row.payment_received_at,
+    rejectReason: row.reject_reason || null
+  }
+}
+
+export async function getVipPendingSubscribers() {
+  const { data, error } = await supabase
+    .from("vip_pending_subscribers")
+    .select("*")
+    .order("requested_at", { ascending: true })
+
+  if (error) throw error
+  return (data || []).map(mapVipPending)
+}
+
+export async function getVipPendingByLid(lid) {
+  const pending = await getVipPendingSubscribers()
+  return pending.find((p) => p.lid === lid && p.status === "pending") || null
+}
+
+export async function getVipPendingByNumber(clientNumber) {
+  const pending = await getVipPendingSubscribers()
+  const normalized = (clientNumber || "").replace("@lid", "").replace("@s.whatsapp.net", "")
+  return (
+    pending.find((p) => {
+      const pendingNumber = p.lid?.replace("@lid", "").replace("@s.whatsapp.net", "") || ""
+      return pendingNumber === normalized && p.status === "pending"
+    }) || null
+  )
+}
+
+export async function addVipPendingSubscriber(name, lid, filtersInput, paymentProof = null) {
+  const filters = normalizeVipFilters(filtersInput)
+  const stacks = filters.stacks || []
+  const now = new Date().toISOString()
+
+  const { data: existing, error: existingError } = await supabase
+    .from("vip_pending_subscribers")
+    .select("requested_at")
+    .eq("lid", lid)
+    .maybeSingle()
+
+  if (existingError) throw existingError
+
+  const payload = {
+    user_name: (name || "").trim(),
+    lid,
+    stacks,
+    filters,
+    payment_proof: paymentProof,
+    status: "pending",
+    requested_at: existing?.requested_at || now
+  }
+
+  const { error } = await supabase
+    .from("vip_pending_subscribers")
+    .upsert(payload, { onConflict: "lid" })
+
+  if (error) throw error
+  return !existing
+}
+
+export async function updateVipPendingPaymentProof(lid, paymentProof) {
+  const { data, error } = await supabase
+    .from("vip_pending_subscribers")
+    .update({
+      payment_proof: paymentProof,
+      payment_received_at: new Date().toISOString()
+    })
+    .eq("lid", lid)
+    .eq("status", "pending")
+    .select("lid")
+    .maybeSingle()
+
+  if (error) throw error
+  return !!data
+}
+
+export async function approveVipSubscriber(lid, decidedBy) {
+  const { data: pending, error } = await supabase
+    .from("vip_pending_subscribers")
+    .select("*")
+    .eq("lid", lid)
+    .eq("status", "pending")
+    .maybeSingle()
+
+  if (error) throw error
+  if (!pending) return { ok: false, reason: "not_found" }
+
+  const { error: updateError } = await supabase
+    .from("vip_pending_subscribers")
+    .update({
+      status: "approved",
+      decided_at: new Date().toISOString(),
+      decided_by: decidedBy || null
+    })
+    .eq("lid", lid)
+
+  if (updateError) throw updateError
+
+  await addVipSubscriber(pending.user_name || pending.name || "VIP", pending.lid, pending.filters)
 
   return {
     ok: true,
     subscriber: {
-      name: pendingSubscriber.name,
-      lid: pendingSubscriber.lid,
-      filters: pendingSubscriber.filters
+      name: pending.user_name || pending.name || "",
+      lid: pending.lid,
+      filters: pending.filters
     }
-  };
+  }
 }
 
-/**
- * Rejeita um VIP pendente
- */
-export function rejectVipSubscriber(lid, decidedBy, reason = null) {
-  const pending = getVipPendingSubscribers();
-  const idx = pending.findIndex(p => p.lid === lid && p.status === "pending");
-  if (idx === -1) return { ok: false, reason: "not_found" };
+export async function rejectVipSubscriber(lid, decidedBy, reason = null) {
+  const { data: pending, error } = await supabase
+    .from("vip_pending_subscribers")
+    .select("*")
+    .eq("lid", lid)
+    .eq("status", "pending")
+    .maybeSingle()
 
-  pending[idx].status = "rejected";
-  pending[idx].decidedAt = new Date().toISOString();
-  pending[idx].decidedBy = decidedBy || null;
-  pending[idx].rejectReason = reason || null;
+  if (error) throw error
+  if (!pending) return { ok: false, reason: "not_found" }
 
-  writeJSON(VIP_PENDING_FILE, pending, []);
+  const { error: updateError } = await supabase
+    .from("vip_pending_subscribers")
+    .update({
+      status: "rejected",
+      decided_at: new Date().toISOString(),
+      decided_by: decidedBy || null,
+      reject_reason: reason || null
+    })
+    .eq("lid", lid)
 
-  return { ok: true, subscriber: pending[idx] };
+  if (updateError) throw updateError
+
+  return { ok: true, subscriber: mapVipPending(pending) }
+}
+
+// ===== MUTED LIST (compat) =====
+
+export async function getMutedUsersList(groupId) {
+  return await getMutedUsers(groupId)
 }

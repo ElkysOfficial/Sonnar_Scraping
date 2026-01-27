@@ -36,8 +36,8 @@ export default {
         "Você precisa digitar 1 ou 0 (ligar ou desligar)!"
       );
     }
-    const hasActive = welcome && isActiveWelcomeGroup(remoteJid);
-    const hasInactive = notWelcome && !isActiveWelcomeGroup(remoteJid);
+    const hasActive = welcome && await isActiveWelcomeGroup(remoteJid);
+    const hasInactive = notWelcome && !await isActiveWelcomeGroup(remoteJid);
     if (hasActive || hasInactive) {
       throw new WarningError(
         `O recurso de boas-vindas já está ${
@@ -46,9 +46,9 @@ export default {
       );
     }
     if (welcome) {
-      activateWelcomeGroup(remoteJid);
+      await activateWelcomeGroup(remoteJid);
     } else {
-      deactivateWelcomeGroup(remoteJid);
+      await deactivateWelcomeGroup(remoteJid);
     }
     await sendSuccessReact();
     const context = welcome ? "ativado" : "desativado";

@@ -1516,8 +1516,8 @@ async function handlePaymentReceiptPrivate(socket, remoteJid, messageText, userI
       infoLog(`[HANDLE PAYMENT RECEIPT PRIVATE] Mídia baixada com sucesso: ${media.isImage ? 'imagem' : 'documento'}`)
 
       // Salva como PENDENTE (NÃO como VIP ainda)
-      addVipPendingSubscriber(clientName, clientLid, vipFilters)
-      updateVipPendingPaymentProof(clientLid, {
+      await addVipPendingSubscriber(clientName, clientLid, vipFilters)
+      await updateVipPendingPaymentProof(clientLid, {
         type: media.isImage ? "image" : "document",
         receivedAt: new Date().toISOString()
       })
@@ -1632,7 +1632,7 @@ async function handleVipReleaseDecision(socket, remoteJid, messageText, userId) 
 
     if (messageText === "1") {
       // Aprova o VIP
-      const result = approveVipSubscriber(clientLid, approverLid)
+      const result = await approveVipSubscriber(clientLid, approverLid)
 
       if (result.ok) {
         const successMsg = `*VIP LIBERADO!*
@@ -1669,7 +1669,7 @@ Fique atento às notificações!`
 
     if (messageText === "2") {
       // Rejeita o VIP
-      const result = rejectVipSubscriber(clientLid, approverLid, "Pagamento não confirmado")
+      const result = await rejectVipSubscriber(clientLid, approverLid, "Pagamento não confirmado")
 
       if (result.ok) {
         await sendWithDelay(socket, remoteJid, {

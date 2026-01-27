@@ -36,7 +36,7 @@ Use ${prefix}list-auto-responder para ver todos os IDs`);
 Use ${prefix}list-auto-responder para ver todos os IDs`);
     }
 
-    const success = removeAutoResponderItemByKey(id);
+    const success = await removeAutoResponderItemByKey(id);
 
     if (!success) {
       await sendErrorReply(

@@ -30,8 +30,8 @@ export default {
       );
     }
 
-    const hasActive = autoStickerOn && isActiveAutoStickerGroup(remoteJid);
-    const hasInactive = autoStickerOff && !isActiveAutoStickerGroup(remoteJid);
+    const hasActive = autoStickerOn && await isActiveAutoStickerGroup(remoteJid);
+    const hasInactive = autoStickerOff && !await isActiveAutoStickerGroup(remoteJid);
 
     if (hasActive || hasInactive) {
       throw new WarningError(
@@ -42,9 +42,9 @@ export default {
     }
 
     if (autoStickerOn) {
-      activateAutoStickerGroup(remoteJid);
+      await activateAutoStickerGroup(remoteJid);
     } else {
-      deactivateAutoStickerGroup(remoteJid);
+      await deactivateAutoStickerGroup(remoteJid);
     }
 
     await sendSuccessReact();

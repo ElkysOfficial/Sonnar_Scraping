@@ -10,20 +10,31 @@ import * as config from "../config.js";
 import { getSpiderApiToken } from "../utils/database.js";
 
 let { SPIDER_API_TOKEN, SPIDER_API_BASE_URL } = config;
+let cachedSpiderToken = null;
+let tokenLoaded = false;
 
-const spiderApiTokenConfig = getSpiderApiToken();
-
-if (spiderApiTokenConfig) {
-  SPIDER_API_TOKEN = spiderApiTokenConfig;
+async function resolveSpiderToken() {
+  if (!tokenLoaded) {
+    const token = await getSpiderApiToken();
+    if (token) {
+      cachedSpiderToken = token;
+    }
+    tokenLoaded = true;
+  }
+  return cachedSpiderToken || SPIDER_API_TOKEN;
 }
 
-/**
- * Não configure o token da Spider X API aqui, configure em: src/config.js
- */
-let spiderAPITokenConfigured =
-  SPIDER_API_TOKEN &&
-  SPIDER_API_TOKEN.trim() !== "" &&
-  SPIDER_API_TOKEN !== "seu_token_aqui";
+function isTokenConfigured(token) {
+  return token && token.trim() !== "" && token !== "seu_token_aqui";
+}
+
+async function requireSpiderToken() {
+  const token = await resolveSpiderToken();
+  if (!isTokenConfigured(token)) {
+    throw new Error(messageIfTokenNotConfigured);
+  }
+  return token;
+}
 
 const messageIfTokenNotConfigured = `Token da API do Spider X não configurado!
       
@@ -46,21 +57,17 @@ Para obter o seu token,
 crie uma conta em: https://api.spiderx.com.br
 e contrate um plano!`;
 
-export { spiderAPITokenConfigured };
-
 export async function play(type, search) {
   if (!search) {
     throw new Error("Você precisa informar o que deseja buscar!");
   }
 
-  if (!spiderAPITokenConfigured) {
-    throw new Error(messageIfTokenNotConfigured);
-  }
+  const token = await requireSpiderToken();
 
   const { data } = await axios.get(
     `${SPIDER_API_BASE_URL}/downloads/play-${type}?search=${encodeURIComponent(
       search
-    )}&api_key=${SPIDER_API_TOKEN}`
+    )}&api_key=${token}`
   );
 
   return data;
@@ -71,14 +78,12 @@ export async function download(type, url) {
     throw new Error("Você precisa informar uma URL do que deseja buscar!");
   }
 
-  if (!spiderAPITokenConfigured) {
-    throw new Error(messageIfTokenNotConfigured);
-  }
+  const token = await requireSpiderToken();
 
   const { data } = await axios.get(
     `${SPIDER_API_BASE_URL}/downloads/${type}?url=${encodeURIComponent(
       url
-    )}&api_key=${SPIDER_API_TOKEN}`
+    )}&api_key=${token}`
   );
 
   return data;
@@ -89,12 +94,10 @@ export async function gemini(text) {
     throw new Error("Você precisa informar o parâmetro de texto!");
   }
 
-  if (!spiderAPITokenConfigured) {
-    throw new Error(messageIfTokenNotConfigured);
-  }
+  const token = await requireSpiderToken();
 
   const { data } = await axios.post(
-    `${SPIDER_API_BASE_URL}/ai/gemini?api_key=${SPIDER_API_TOKEN}`,
+    `${SPIDER_API_BASE_URL}/ai/gemini?api_key=${token}`,
     {
       text,
     }
@@ -108,12 +111,10 @@ export async function gpt5Mini(text) {
     throw new Error("Você precisa informar o parâmetro de texto!");
   }
 
-  if (!spiderAPITokenConfigured) {
-    throw new Error(messageIfTokenNotConfigured);
-  }
+  const token = await requireSpiderToken();
 
   const { data } = await axios.post(
-    `${SPIDER_API_BASE_URL}/ai/gpt-5-mini?api_key=${SPIDER_API_TOKEN}`,
+    `${SPIDER_API_BASE_URL}/ai/gpt-5-mini?api_key=${token}`,
     {
       text,
     }
@@ -127,13 +128,11 @@ export async function attp(text) {
     throw new Error("Você precisa informar o parâmetro de texto!");
   }
 
-  if (!spiderAPITokenConfigured) {
-    throw new Error(messageIfTokenNotConfigured);
-  }
+  const token = await requireSpiderToken();
 
   return `${SPIDER_API_BASE_URL}/stickers/attp?text=${encodeURIComponent(
     text
-  )}&api_key=${SPIDER_API_TOKEN}`;
+  )}&api_key=${token}`;
 }
 
 export async function ttp(text) {
@@ -141,13 +140,11 @@ export async function ttp(text) {
     throw new Error("Você precisa informar o parâmetro de texto!");
   }
 
-  if (!spiderAPITokenConfigured) {
-    throw new Error(messageIfTokenNotConfigured);
-  }
+  const token = await requireSpiderToken();
 
   return `${SPIDER_API_BASE_URL}/stickers/ttp?text=${encodeURIComponent(
     text
-  )}&api_key=${SPIDER_API_TOKEN}`;
+  )}&api_key=${token}`;
 }
 
 export async function search(type, search) {
@@ -155,53 +152,47 @@ export async function search(type, search) {
     throw new Error("Você precisa informar o parâmetro de pesquisa!");
   }
 
-  if (!spiderAPITokenConfigured) {
-    throw new Error(messageIfTokenNotConfigured);
-  }
+  const token = await requireSpiderToken();
 
   const { data } = await axios.get(
     `${SPIDER_API_BASE_URL}/search/${type}?search=${encodeURIComponent(
       search
-    )}&api_key=${SPIDER_API_TOKEN}`
+    )}&api_key=${token}`
   );
 
   return data;
 }
 
-export function welcome(title, description, imageURL) {
+export async function welcome(title, description, imageURL) {
   if (!title || !description || !imageURL) {
     throw new Error(
       "Você precisa informar o título, descrição e URL da imagem!"
     );
   }
 
-  if (!spiderAPITokenConfigured) {
-    throw new Error(messageIfTokenNotConfigured);
-  }
+  const token = await requireSpiderToken();
 
   return `${SPIDER_API_BASE_URL}/canvas/welcome?title=${encodeURIComponent(
     title
   )}&description=${encodeURIComponent(
     description
-  )}&image_url=${encodeURIComponent(imageURL)}&api_key=${SPIDER_API_TOKEN}`;
+  )}&image_url=${encodeURIComponent(imageURL)}&api_key=${token}`;
 }
 
-export function exit(title, description, imageURL) {
+export async function exit(title, description, imageURL) {
   if (!title || !description || !imageURL) {
     throw new Error(
       "Você precisa informar o título, descrição e URL da imagem!"
     );
   }
 
-  if (!spiderAPITokenConfigured) {
-    throw new Error(messageIfTokenNotConfigured);
-  }
+  const token = await requireSpiderToken();
 
   return `${SPIDER_API_BASE_URL}/canvas/goodbye?title=${encodeURIComponent(
     title
   )}&description=${encodeURIComponent(
     description
-  )}&image_url=${encodeURIComponent(imageURL)}&api_key=${SPIDER_API_TOKEN}`;
+  )}&image_url=${encodeURIComponent(imageURL)}&api_key=${token}`;
 }
 
 export async function imageAI(description) {
@@ -209,31 +200,27 @@ export async function imageAI(description) {
     throw new Error("Você precisa informar a descrição da imagem!");
   }
 
-  if (!spiderAPITokenConfigured) {
-    throw new Error(messageIfTokenNotConfigured);
-  }
+  const token = await requireSpiderToken();
 
   const { data } = await axios.get(
     `${SPIDER_API_BASE_URL}/ai/flux?text=${encodeURIComponent(
       description
-    )}&api_key=${SPIDER_API_TOKEN}`
+    )}&api_key=${token}`
   );
 
   return data;
 }
 
-export function canvas(type, imageURL) {
+export async function canvas(type, imageURL) {
   if (!imageURL) {
     throw new Error("Você precisa informar a URL da imagem!");
   }
 
-  if (!spiderAPITokenConfigured) {
-    throw new Error(messageIfTokenNotConfigured);
-  }
+  const token = await requireSpiderToken();
 
   return `${SPIDER_API_BASE_URL}/canvas/${type}?image_url=${encodeURIComponent(
     imageURL
-  )}&api_key=${SPIDER_API_TOKEN}`;
+  )}&api_key=${token}`;
 }
 
 export async function setProxy(name) {
@@ -242,12 +229,10 @@ export async function setProxy(name) {
       throw new Error("Você precisa informar o nome da nova proxy!");
     }
 
-    if (!spiderAPITokenConfigured) {
-      throw new Error(messageIfTokenNotConfigured);
-    }
+    const token = await requireSpiderToken();
 
     const { data } = await axios.post(
-      `${SPIDER_API_BASE_URL}/internal/set-node-js-proxy-active?api_key=${SPIDER_API_TOKEN}`,
+      `${SPIDER_API_BASE_URL}/internal/set-node-js-proxy-active?api_key=${token}`,
       {
         name,
       }
@@ -263,8 +248,10 @@ export async function setProxy(name) {
 }
 
 export async function updatePlanUser(email, plan) {
+  const token = await requireSpiderToken();
+
   const { data } = await axios.post(
-    `${SPIDER_API_BASE_URL}/internal/update-plan-user?api_key=${SPIDER_API_TOKEN}`,
+    `${SPIDER_API_BASE_URL}/internal/update-plan-user?api_key=${token}`,
     {
       email,
       plan,
@@ -279,16 +266,14 @@ export async function toGif(buffer) {
     throw new Error("Você precisa informar o buffer do arquivo!");
   }
 
-  if (!spiderAPITokenConfigured) {
-    throw new Error(messageIfTokenNotConfigured);
-  }
+  const token = await requireSpiderToken();
 
   const formData = new FormData();
   const blob = new Blob([buffer], { type: "image/webp" });
   formData.append("file", blob, "sticker.webp");
 
   const { data } = await axios.post(
-    `${SPIDER_API_BASE_URL}/utilities/to-gif?api_key=${SPIDER_API_TOKEN}`,
+    `${SPIDER_API_BASE_URL}/utilities/to-gif?api_key=${token}`,
     formData,
     {
       headers: {

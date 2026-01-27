@@ -8,10 +8,10 @@ import { BOT_NAME } from "./config.js";
 import { getPrefix } from "./utils/database.js";
 import { readMore } from "./utils/index.js";
 
-export function menuMessage(groupJid) {
+export async function menuMessage(groupJid) {
   const date = new Date();
 
-  const prefix = getPrefix(groupJid);
+  const prefix = await getPrefix(groupJid);
 
   return `╭━━⪩ BEM VINDO! ⪨━━${readMore()}
 ▢

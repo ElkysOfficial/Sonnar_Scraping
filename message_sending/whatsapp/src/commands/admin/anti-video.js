@@ -31,9 +31,9 @@ export default {
       );
     }
     const hasActive =
-      antiVideoOn && isActiveGroupRestriction(remoteJid, "anti-video");
+      antiVideoOn && await isActiveGroupRestriction(remoteJid, "anti-video");
     const hasInactive =
-      antiVideoOff && !isActiveGroupRestriction(remoteJid, "anti-video");
+      antiVideoOff && !await isActiveGroupRestriction(remoteJid, "anti-video");
     if (hasActive || hasInactive) {
       throw new WarningError(
         `O recurso de anti-video já está ${
@@ -41,7 +41,7 @@ export default {
         }!`
       );
     }
-    updateIsActiveGroupRestriction(remoteJid, "anti-video", antiVideoOn);
+    await updateIsActiveGroupRestriction(remoteJid, "anti-video", antiVideoOn);
     const status = antiVideoOn ? "ativado" : "desativado";
     await sendSuccessReply(`Anti-video ${status} com sucesso!`);
   },

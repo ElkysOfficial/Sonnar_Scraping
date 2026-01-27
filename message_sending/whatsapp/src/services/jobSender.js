@@ -1,57 +1,55 @@
 /**
  * Serviço de envio automático de vagas para WhatsApp
- * Envia vagas do embeds.json para o grupo configurado com intervalo fixo de 5 minutos
+ * Busca vagas do Supabase e envia para o grupo configurado
  * Utiliza seleção aleatória justa com diversidade de stacks.
  *
  * @author Sonar Bot
  */
 
-import fs from "node:fs"
-import path from "node:path"
-import { fileURLToPath } from "node:url"
+import "dotenv/config"
 import { infoLog, successLog, warningLog, errorLog } from "../utils/logger.js"
-import { JOB_GROUP_ID, EMBEDS_FILE_PATH, BOT_EMOJI, JOB_SEND_INTERVAL } from "../config.js"
+import { JOB_GROUP_ID, BOT_EMOJI, JOB_SEND_INTERVAL } from "../config.js"
 import { selectNextJob, extractStack } from "./jobDistributor.js"
-import { getSentIds, getRecentStacks, markAsSent, cleanOldRecords } from "./sentHistory.js"
 import { getCurrentSocket, isCurrentSocketReady } from "../utils/socketManager.js"
+import {
+  getPendingWhatsAppJobs,
+  markJobSentToWhatsApp,
+  getSenderState,
+  updateSenderState,
+  recordGroupDelivery,
+  getGroupSentJobsToday
+} from "./database.js"
 
 // Intervalo fixo entre envios (em milissegundos)
 const FIXED_INTERVAL = JOB_SEND_INTERVAL || 5 * 60 * 1000
 const VIP_PROMO_INTERVAL = 2 * 60 * 60 * 1000
 
 // Configurações de distribuição
-const COOLDOWN_DAYS = 1 // Dias antes de reenviar mesma vaga (24 horas)
-const MAX_CONSECUTIVE_SAME_STACK = 1 // Máximo de vagas consecutivas da mesma stack (1 = nunca repete seguidas)
+const MAX_CONSECUTIVE_SAME_STACK = 1
+
 let jobSenderTimeoutId = null
 let jobSenderToken = 0
 
+// Cache local de stacks recentes (para diversidade)
+const recentStacksCache = []
+const MAX_RECENT_STACKS = 10
+
 /**
  * Gera o intervalo de envio
- * @returns {number} Intervalo em milissegundos
  */
 function getNextInterval() {
   return FIXED_INTERVAL
 }
 
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = path.dirname(__filename)
-const PROMO_STATE_PATH = path.resolve(__dirname, "..", "..", "database", "vip-promo-state.json")
-const JOB_SENDER_STATE_PATH = path.resolve(__dirname, "..", "..", "database", "job-sender-state.json")
-
 /**
- * Lê o estado do job sender (timestamp do último envio)
+ * Lê o estado do job sender do Supabase
  */
-function readJobSenderState() {
+async function readJobSenderState() {
   try {
-    if (!fs.existsSync(JOB_SENDER_STATE_PATH)) {
-      return { lastSentAt: 0 }
+    const state = await getSenderState("job")
+    return {
+      lastSentAt: state?.last_sent_at ? new Date(state.last_sent_at).getTime() : 0
     }
-    const raw = fs.readFileSync(JOB_SENDER_STATE_PATH, "utf8")
-    if (!raw.trim()) {
-      return { lastSentAt: 0 }
-    }
-    const data = JSON.parse(raw)
-    return { lastSentAt: data?.lastSentAt || 0 }
   } catch (err) {
     errorLog(`Erro ao ler estado do job sender: ${err.message}`)
     return { lastSentAt: 0 }
@@ -59,34 +57,56 @@ function readJobSenderState() {
 }
 
 /**
- * Salva o estado do job sender
+ * Salva o estado do job sender no Supabase
  */
-function writeJobSenderState(state) {
+async function writeJobSenderState(lastSentAt) {
   try {
-    const payload = JSON.stringify(state, null, 2)
-    writeJsonAtomic(JOB_SENDER_STATE_PATH, payload)
+    await updateSenderState("job", new Date(lastSentAt))
   } catch (err) {
     errorLog(`Erro ao salvar estado do job sender: ${err.message}`)
   }
 }
 
 /**
- * Calcula o tempo restante até o próximo envio baseado no último envio
- * @returns {number} Tempo em milissegundos (mínimo 5 segundos, máximo FIXED_INTERVAL)
+ * Calcula o tempo restante até o próximo envio
  */
-function getTimeUntilNextSend() {
-  const state = readJobSenderState()
+async function getTimeUntilNextSend() {
+  const state = await readJobSenderState()
   const now = Date.now()
   const elapsed = now - state.lastSentAt
 
   if (elapsed >= FIXED_INTERVAL) {
-    // Já passou o intervalo, enviar em 5 segundos
     return 5000
   }
 
-  // Calcula tempo restante
   const remaining = FIXED_INTERVAL - elapsed
-  return Math.max(5000, remaining) // Mínimo 5 segundos
+  return Math.max(5000, remaining)
+}
+
+/**
+ * Lê o estado do VIP promo do Supabase
+ */
+async function readPromoState() {
+  try {
+    const state = await getSenderState("vip_promo")
+    return {
+      lastSentAt: state?.last_sent_at ? new Date(state.last_sent_at).getTime() : 0
+    }
+  } catch (err) {
+    errorLog(`Erro ao ler estado da promo VIP: ${err.message}`)
+    return { lastSentAt: 0 }
+  }
+}
+
+/**
+ * Salva o estado do VIP promo no Supabase
+ */
+async function writePromoState(lastSentAt) {
+  try {
+    await updateSenderState("vip_promo", new Date(lastSentAt))
+  } catch (err) {
+    errorLog(`Erro ao salvar estado da promo VIP: ${err.message}`)
+  }
 }
 
 const VIP_PROMO_MESSAGE = `🚀 Quer receber vagas do seu stack em prioridade? Vira VIP.
@@ -101,55 +121,8 @@ No VIP, você não depende do fluxo geral:
 📌 É literalmente o bot trabalhando pra você, em vez de você perder tempo filtrando vaga ruim.`
 
 /**
- * Carrega as vagas do arquivo embeds.json
- * @returns {Array} Array de vagas ou array vazio se arquivo não existir
+ * Envia mensagem de promo VIP se necessário
  */
-function loadEmbeds() {
-  try {
-    if (!fs.existsSync(EMBEDS_FILE_PATH)) {
-      return []
-    }
-    const data = fs.readFileSync(EMBEDS_FILE_PATH, "utf8")
-    if (!data.trim()) {
-      return []
-    }
-    return JSON.parse(data)
-  } catch (err) {
-    if (err instanceof SyntaxError) {
-      errorLog("Erro de sintaxe no embeds.json")
-    } else {
-      errorLog(`Erro ao carregar embeds.json: ${err.message}`)
-    }
-    return []
-  }
-}
-
-function readPromoState() {
-  try {
-    if (!fs.existsSync(PROMO_STATE_PATH)) {
-      return { lastSentAt: 0 }
-    }
-    const raw = fs.readFileSync(PROMO_STATE_PATH, "utf8")
-    if (!raw.trim()) {
-      return { lastSentAt: 0 }
-    }
-    const data = JSON.parse(raw)
-    return { lastSentAt: data?.lastSentAt || 0 }
-  } catch (err) {
-    errorLog(`Erro ao ler estado da promo VIP: ${err.message}`)
-    return { lastSentAt: 0 }
-  }
-}
-
-function writePromoState(state) {
-  try {
-    const payload = JSON.stringify(state, null, 2)
-    writeJsonAtomic(PROMO_STATE_PATH, payload)
-  } catch (err) {
-    errorLog(`Erro ao salvar estado da promo VIP: ${err.message}`)
-  }
-}
-
 async function maybeSendVipPromo() {
   try {
     const socket = getCurrentSocket()
@@ -158,7 +131,7 @@ async function maybeSendVipPromo() {
       return false
     }
 
-    const state = readPromoState()
+    const state = await readPromoState()
     const now = Date.now()
     if (now - state.lastSentAt < VIP_PROMO_INTERVAL) {
       infoLog("[PROMO] Promo VIP ainda em cooldown (2h)")
@@ -167,7 +140,7 @@ async function maybeSendVipPromo() {
 
     infoLog(`[PROMO] Enviando promo VIP para o grupo ${JOB_GROUP_ID}...`)
     await socket.sendMessage(JOB_GROUP_ID, { text: VIP_PROMO_MESSAGE })
-    writePromoState({ lastSentAt: now })
+    await writePromoState(now)
     successLog("[PROMO] Promo VIP enviada com sucesso!")
     return true
   } catch (err) {
@@ -176,82 +149,19 @@ async function maybeSendVipPromo() {
   }
 }
 
-function writeJsonAtomic(filePath, data) {
-  const dir = path.dirname(filePath)
-  const base = path.basename(filePath)
-  const tempPath = path.join(dir, `.tmp-${base}-${process.pid}-${Date.now()}`)
-  fs.writeFileSync(tempPath, data, "utf8")
-  try {
-    if (fs.existsSync(filePath)) {
-      fs.rmSync(filePath, { force: true })
-    }
-    fs.renameSync(tempPath, filePath)
-  } catch (error) {
-    if (fs.existsSync(tempPath)) {
-      fs.rmSync(tempPath, { force: true })
-    }
-    throw error
-  }
-}
-
-/**
- * Salva as vagas no arquivo embeds.json
- * @param {Array} embeds - Array de vagas
- */
-function saveEmbeds(embeds) {
-  try {
-    const payload = JSON.stringify(embeds, null, 2)
-    writeJsonAtomic(EMBEDS_FILE_PATH, payload)
-  } catch (err) {
-    errorLog(`Erro ao salvar embeds.json: ${err.message}`)
-  }
-}
-
 /**
  * Formata a mensagem da vaga para envio no WhatsApp
- * @param {Object} job - Objeto da vaga
- * @returns {string} Mensagem formatada
  */
 function formatJobMessage(job) {
-  // Extrai dados do embed (formato Discord) ou dados diretos
-  const title = job.title || job.job_title || "Não informado"
+  const title = job.job_title || "Não informado"
+  const company = job.company || "Não informado"
+  const location = job.location || "Não informado"
+  const salary = job.salary || "Não informado"
+  const regime = job.hiring_regime || "Não informado"
+  const workType = job.work_type || "Não informado"
+  const publicationDate = job.publication_date || "Não informado"
+  const jobUrl = job.job_url || ""
 
-  // Extrai campos do embed Discord (normalizando nome para evitar mismatch)
-  const fields = job.fields || []
-  const normalize = (value) => {
-    if (!value) {
-      return ""
-    }
-    return value
-      .toString()
-      .toLowerCase()
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .trim()
-  }
-
-  const getFieldValue = (keys) => {
-    for (const field of fields) {
-      const fieldName = normalize(field?.name)
-      if (!fieldName) {
-        continue
-      }
-      for (const key of keys) {
-        if (fieldName.includes(key)) {
-          return field?.value || null
-        }
-      }
-    }
-    return null
-  }
-
-  const company = getFieldValue(["empresa", "company"]) || job.author?.name || job.company || "Não informado"
-  const location = getFieldValue(["localidade", "localizacao", "local"]) || job.location || "Não informado"
-  const salary = getFieldValue(["salario", "remuneracao"]) || job.salary || "Não informado"
-  const regime = getFieldValue(["regime", "contratacao"]) || job.hiring_regime || "Não informado"
-  const workType = getFieldValue(["modalidade", "tipo"]) || job.work_type || "Não informado"
-  const publicationDate = getFieldValue(["data de publicacao", "publicacao"]) || job.publication_date || "Não informado"
-  const jobUrl = job.url || job.job_url || ""
   let message = `💼 *NOVA VAGA DE EMPREGO*\n\n`
   message += `📌 *Título:* ${title}\n`
   message += `🏢 *Empresa:* ${company}\n`
@@ -272,8 +182,6 @@ function formatJobMessage(job) {
 
 /**
  * Envia uma vaga para o grupo do WhatsApp
- * @param {Object} job - Objeto da vaga
- * @returns {boolean} True se enviou com sucesso
  */
 async function sendJob(job) {
   try {
@@ -306,69 +214,63 @@ async function processNextJob() {
     return
   }
 
-  infoLog("[GRUPO] Socket pronto. Carregando embeds...")
-  const embeds = loadEmbeds()
+  infoLog("[GRUPO] Socket pronto. Buscando vagas pendentes do Supabase...")
 
-  if (embeds.length === 0) {
-    warningLog("[GRUPO] Nenhuma vaga no arquivo embeds.json")
-    return
-  }
+  try {
+    // Busca vagas pendentes do Supabase
+    const pendingJobs = await getPendingWhatsAppJobs(100)
 
-  infoLog(`[GRUPO] Total de vagas carregadas: ${embeds.length}`)
-
-  // Filtra apenas vagas ainda não marcadas como enviadas no arquivo
-  const pendingJobs = embeds.filter(job => job.whatsappSent !== true)
-
-  infoLog(`[GRUPO] Vagas pendentes (whatsappSent != true): ${pendingJobs.length}`)
-
-  if (pendingJobs.length === 0) {
-    infoLog("📭 [GRUPO] Todas as vagas do arquivo já foram enviadas")
-    return
-  }
-
-  // Obtém histórico de envios (cooldown) e stacks recentes (diversidade)
-  const sentIds = getSentIds(JOB_GROUP_ID, COOLDOWN_DAYS)
-  const recentStacks = getRecentStacks()
-
-  infoLog(`[GRUPO] IDs em cooldown: ${sentIds.size}, Stacks recentes: ${recentStacks.length}`)
-
-  // Seleciona próxima vaga com algoritmo justo
-  const job = selectNextJob({
-    jobs: pendingJobs,
-    groupId: JOB_GROUP_ID,
-    sentIds,
-    recentStacks,
-    maxConsecutive: MAX_CONSECUTIVE_SAME_STACK
-  })
-
-  if (!job) {
-    infoLog("📭 [GRUPO] Nenhuma vaga disponível (todas em cooldown ou diversidade)")
-    return
-  }
-
-  const title = job.title || job.job_title || "Vaga"
-  const stack = extractStack(job)
-  const jobId = job.id || job.url || job.job_url
-
-  infoLog(`📤 Enviando vaga: ${title} [stack: ${stack}]`)
-
-  const success = await sendJob(job)
-
-  if (success) {
-    // Marca no arquivo embeds.json
-    const jobIndex = embeds.findIndex(e => (e.id || e.url || e.job_url) === jobId)
-    if (jobIndex !== -1) {
-      embeds[jobIndex].whatsappSent = true
-      saveEmbeds(embeds)
+    if (!pendingJobs || pendingJobs.length === 0) {
+      infoLog("📭 [GRUPO] Nenhuma vaga pendente no banco de dados")
+      return
     }
 
-    // Registra no histórico local (para cooldown e diversidade)
-    markAsSent(JOB_GROUP_ID, jobId, stack)
+    infoLog(`[GRUPO] Total de vagas pendentes: ${pendingJobs.length}`)
 
-    // Persiste o timestamp do envio para sobreviver a reinicializações
-    writeJobSenderState({ lastSentAt: Date.now() })
+    // Obtém vagas já enviadas hoje para esse grupo (cooldown)
+    const sentToday = await getGroupSentJobsToday(JOB_GROUP_ID)
 
-    successLog(`✅ Vaga enviada com sucesso: ${title}`)
+    infoLog(`[GRUPO] Vagas já enviadas hoje para este grupo: ${sentToday.size}`)
+
+    // Seleciona próxima vaga com algoritmo justo
+    const job = selectNextJob({
+      jobs: pendingJobs,
+      groupId: JOB_GROUP_ID,
+      sentIds: sentToday,
+      recentStacks: recentStacksCache,
+      maxConsecutive: MAX_CONSECUTIVE_SAME_STACK
+    })
+
+    if (!job) {
+      infoLog("📭 [GRUPO] Nenhuma vaga disponível (todas em cooldown ou diversidade)")
+      return
+    }
+
+    const stack = extractStack(job)
+    infoLog(`📤 Enviando vaga: ${job.job_title} [stack: ${stack}]`)
+
+    const success = await sendJob(job)
+
+    if (success) {
+      // Marca como enviada no Supabase
+      await markJobSentToWhatsApp(job.id)
+
+      // Registra no histórico de entrega do grupo
+      await recordGroupDelivery(job.id, JOB_GROUP_ID)
+
+      // Atualiza cache de stacks recentes
+      recentStacksCache.push(stack)
+      if (recentStacksCache.length > MAX_RECENT_STACKS) {
+        recentStacksCache.shift()
+      }
+
+      // Persiste o timestamp do envio
+      await writeJobSenderState(Date.now())
+
+      successLog(`✅ Vaga enviada com sucesso: ${job.job_title}`)
+    }
+  } catch (err) {
+    errorLog(`[GRUPO] Erro ao processar vaga: ${err.message}`)
   }
 }
 
@@ -389,15 +291,14 @@ function scheduleNextJob() {
     }
     await processNextJob()
     await maybeSendVipPromo()
-    scheduleNextJob() // Agenda o próximo após enviar
+    scheduleNextJob()
   }, interval)
 }
 
 /**
  * Inicia o serviço de envio automático de vagas
- * @param {Object} socket - Socket do Baileys (usado apenas para inicialização)
  */
-export function startJobSender(socket) {
+export async function startJobSender(socket) {
   if (jobSenderTimeoutId) {
     clearTimeout(jobSenderTimeoutId)
     jobSenderTimeoutId = null
@@ -411,22 +312,9 @@ export function startJobSender(socket) {
     return
   }
 
-  if (!EMBEDS_FILE_PATH) {
-    warningLog("⚠️ EMBEDS_FILE_PATH não configurado. Serviço de vagas desativado.")
-    return
-  }
-
-  if (!fs.existsSync(EMBEDS_FILE_PATH)) {
-    warningLog(`⚠️ Arquivo de vagas não encontrado: ${EMBEDS_FILE_PATH}`)
-    warningLog("   O serviço aguardará o arquivo ser criado.")
-  }
-
-  // Limpa registros antigos do histórico
-  cleanOldRecords(COOLDOWN_DAYS)
-
-  // Calcula tempo restante baseado no último envio (persistido)
-  const timeUntilNext = getTimeUntilNextSend()
-  const state = readJobSenderState()
+  // Calcula tempo restante baseado no último envio (persistido no Supabase)
+  const timeUntilNext = await getTimeUntilNextSend()
+  const state = await readJobSenderState()
   const lastSentAgo = state.lastSentAt > 0 ? Math.floor((Date.now() - state.lastSentAt) / 1000) : 0
 
   infoLog("════════════════════════════════════════════════════")
@@ -434,9 +322,8 @@ export function startJobSender(socket) {
   infoLog("════════════════════════════════════════════════════")
   infoLog(`⏱️  Intervalo: ${FIXED_INTERVAL / 60000} minutos`)
   infoLog(`🔀 Seleção: aleatória com diversidade de stacks`)
-  infoLog(`🔄 Cooldown: ${COOLDOWN_DAYS * 24} horas`)
+  infoLog(`💾 Storage: Supabase (database)`)
   infoLog(`📍 Grupo: ${JOB_GROUP_ID}`)
-  infoLog(`📁 Arquivo: ${EMBEDS_FILE_PATH}`)
   if (state.lastSentAt > 0) {
     infoLog(`📅 Último envio: há ${lastSentAgo} segundos`)
   } else {
@@ -444,7 +331,6 @@ export function startJobSender(socket) {
   }
   infoLog("════════════════════════════════════════════════════")
 
-  // Primeira execução usando tempo restante calculado (mantém o ciclo mesmo após reinício)
   const minutes = Math.floor(timeUntilNext / 60000)
   const seconds = Math.floor((timeUntilNext % 60000) / 1000)
   infoLog(`⏱️ Próxima vaga do grupo será enviada em ${minutes}m ${seconds}s`)
@@ -456,6 +342,20 @@ export function startJobSender(socket) {
     infoLog("[GRUPO] Executando envio de vaga...")
     await processNextJob()
     await maybeSendVipPromo()
-    scheduleNextJob() // Inicia o ciclo de envios fixos
+    scheduleNextJob()
   }, timeUntilNext)
 }
+
+/**
+ * Para o serviço de envio de vagas
+ */
+export function stopJobSender() {
+  if (jobSenderTimeoutId) {
+    clearTimeout(jobSenderTimeoutId)
+    jobSenderTimeoutId = null
+  }
+  jobSenderToken += 1
+  infoLog("[GRUPO] Job sender stopped")
+}
+
+export default { startJobSender, stopJobSender }

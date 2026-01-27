@@ -30,7 +30,7 @@ export default {
 
     const newToken = args[0];
 
-    setSpiderApiToken(newToken);
+    await setSpiderApiToken(newToken);
 
     await sendSuccessReply(`Token da Spider API alterado com sucesso!`);
   },

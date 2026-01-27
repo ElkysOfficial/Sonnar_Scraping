@@ -14,7 +14,7 @@ export default {
     if (!isGroup) {
       throw new WarningError("Este comando deve ser usado dentro de um grupo.");
     }
-    activateGroup(remoteJid);
+    await activateGroup(remoteJid);
     await sendSuccessReply("Bot ativado no grupo!");
   },
 };

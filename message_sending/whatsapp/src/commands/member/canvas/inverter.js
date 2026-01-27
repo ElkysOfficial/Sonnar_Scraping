@@ -42,7 +42,7 @@ export default {
       );
     }
 
-    const url = canvas("invert", link);
+    const url = await canvas("invert", link);
 
     const response = await fetch(url);
 

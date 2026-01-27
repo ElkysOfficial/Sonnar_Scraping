@@ -31,9 +31,9 @@ export default {
       );
     }
     const hasActive =
-      antiDocumentOn && isActiveGroupRestriction(remoteJid, "anti-document");
+      antiDocumentOn && await isActiveGroupRestriction(remoteJid, "anti-document");
     const hasInactive =
-      antiDocumentOff && !isActiveGroupRestriction(remoteJid, "anti-document");
+      antiDocumentOff && !await isActiveGroupRestriction(remoteJid, "anti-document");
     if (hasActive || hasInactive) {
       throw new WarningError(
         `O recurso de anti-document já está ${
@@ -41,7 +41,7 @@ export default {
         }!`
       );
     }
-    updateIsActiveGroupRestriction(remoteJid, "anti-document", antiDocumentOn);
+    await updateIsActiveGroupRestriction(remoteJid, "anti-document", antiDocumentOn);
     const status = antiDocumentOn ? "ativado" : "desativado";
     await sendSuccessReply(`Anti-document ${status} com sucesso!`);
   },

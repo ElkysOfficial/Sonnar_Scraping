@@ -39,7 +39,7 @@ export default {
         "Não consegui fazer o upload da imagem, tente novamente mais tarde!"
       );
     }
-    const url = canvas("bolsonaro", link);
+    const url = await canvas("bolsonaro", link);
     const response = await fetch(url);
     if (!response.ok) {
       const data = await response.json();

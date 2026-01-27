@@ -31,9 +31,9 @@ export default {
       );
     }
     const hasActive =
-      antiEventOn && isActiveGroupRestriction(remoteJid, "anti-event");
+      antiEventOn && await isActiveGroupRestriction(remoteJid, "anti-event");
     const hasInactive =
-      antiEventOff && !isActiveGroupRestriction(remoteJid, "anti-event");
+      antiEventOff && !await isActiveGroupRestriction(remoteJid, "anti-event");
     if (hasActive || hasInactive) {
       throw new WarningError(
         `O recurso de anti-event já está ${
@@ -41,7 +41,7 @@ export default {
         }!`
       );
     }
-    updateIsActiveGroupRestriction(remoteJid, "anti-event", antiEventOn);
+    await updateIsActiveGroupRestriction(remoteJid, "anti-event", antiEventOn);
     const status = antiEventOn ? "ativado" : "desativado";
     await sendSuccessReply(`Anti-event ${status} com sucesso!`);
   },

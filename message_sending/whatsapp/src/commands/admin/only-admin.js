@@ -38,8 +38,8 @@ export default {
         "Você precisa digitar 1 ou 0 (ligar ou desligar)!"
       );
     }
-    const hasActive = onlyAdminOn && isActiveOnlyAdmins(remoteJid);
-    const hasInactive = onlyAdminOff && !isActiveOnlyAdmins(remoteJid);
+    const hasActive = onlyAdminOn && await isActiveOnlyAdmins(remoteJid);
+    const hasInactive = onlyAdminOff && !await isActiveOnlyAdmins(remoteJid);
     if (hasActive || hasInactive) {
       throw new WarningError(
         `O recurso de somente admins usarem meus comandos já está ${
@@ -48,9 +48,9 @@ export default {
       );
     }
     if (onlyAdminOn) {
-      activateOnlyAdmins(remoteJid);
+      await activateOnlyAdmins(remoteJid);
     } else {
-      deactivateOnlyAdmins(remoteJid);
+      await deactivateOnlyAdmins(remoteJid);
     }
     await sendSuccessReact();
     const context = onlyAdminOn ? "ativado" : "desativado";

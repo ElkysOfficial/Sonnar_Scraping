@@ -27,9 +27,9 @@ export default {
       );
     }
     if (autoResponder) {
-      activateAutoResponderGroup(remoteJid);
+      await activateAutoResponderGroup(remoteJid);
     } else {
-      deactivateAutoResponderGroup(remoteJid);
+      await deactivateAutoResponderGroup(remoteJid);
     }
     await sendSuccessReact();
     const context = autoResponder ? "ativado" : "desativado";
