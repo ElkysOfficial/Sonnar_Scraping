@@ -87,20 +87,29 @@ function normalizeStack(stack) {
 
 /**
  * Verifica se a vaga corresponde aos filtros do assinante
- * Usa sistema de pontuação com weights e must fields
+ * Sistema INTELIGENTE de matching com:
+ * - Threshold dinâmico (campos must = 100%, opcionais = flexível)
+ * - Inferência semântica (Full Stack → backend + frontend)
+ * - Tratamento especial para vagas 100% remotas
+ * - Score graduado (exato > sinônimo > inferência)
+ * - Filtro de idiomas funcional
+ * - Fallback inteligente para maximizar matches
+ *
  * @param {Object} job - Vaga
- * @param {Object} filters - Filtros do assinante (roles, stacks, seniority, locations, workMode, contract, languages, weights, must)
- * @returns {boolean|{match: boolean, score: number}}
+ * @param {Object} filters - Filtros do assinante
+ * @returns {boolean|{match: boolean, score: number, details: Object}}
  */
 function jobMatchesFilters(job, filters, returnScore = false) {
-  if (!filters) return returnScore ? { match: false, score: 0 } : false
+  // Se não tem filtros, aceita tudo (fallback inteligente)
+  if (!filters || Object.keys(filters).length === 0) {
+    return returnScore ? { match: true, score: 100, maxScore: 100, percentage: "100.0", details: { reason: "no_filters" } } : true
+  }
 
   const jobTitle = normalizeStack(job.title || job.job_title || "")
   const jobDescription = normalizeStack(job.description || "")
   const jobUrl = normalizeStack(job.url || job.job_url || "")
   const jobSource = normalizeStack(job.source || "")
   const jobCompany = normalizeStack(job.company || "")
-  // Combina todos os campos relevantes para matching de stacks/roles
   const jobText = `${jobTitle} ${jobDescription} ${jobUrl} ${jobSource} ${jobCompany}`
   const jobLocation = normalizeStack(job.location || "")
   const jobWorkType = normalizeStack(job.work_type || "")
@@ -123,191 +132,744 @@ function jobMatchesFilters(job, filters, returnScore = false) {
     stacks: true,
     workMode: false,
     contract: false,
-    languages: false
+    languages: false,
+    locations: false,
+    seniority: false
   }
 
-  // Sinônimos expandidos para melhor matching
+  // ═══════════════════════════════════════════════════════════════
+  // SINÔNIMOS EXPANDIDOS + MÁXIMA COBERTURA
+  // Sistema inteligente para nunca perder uma vaga relevante
+  // ═══════════════════════════════════════════════════════════════
   const synonyms = {
-    // Senioridade
+    // ─────────────────────────────────────────────────────────────
+    // SENIORITY - Todos os níveis e variações
+    // ─────────────────────────────────────────────────────────────
     seniority: {
-      "junior": ["junior", "jr", "jr.", "júnior", "nivel i", "nivel 1", "n1"],
-      "pleno": ["pleno", "pl", "pl.", "mid", "mid-level", "middle", "nivel ii", "nivel 2", "n2"],
-      "senior": ["senior", "sr", "sr.", "sênior", "especialista", "nivel iii", "nivel 3", "n3", "expert"],
-      "estagio": ["estagio", "estágio", "intern", "internship", "estagiario", "estagiária"],
-      "trainee": ["trainee", "aprendiz", "jovem aprendiz"]
+      "junior": ["junior", "jr", "jr.", "júnior", "nivel i", "nivel 1", "n1", "entry level", "entry-level", "iniciante", "associate", "i", "level 1", "l1", "p1", "grade 1", "g1", "beginning", "beginner", "novato", "junior i", "junior ii"],
+      "pleno": ["pleno", "pl", "pl.", "mid", "mid-level", "middle", "nivel ii", "nivel 2", "n2", "intermediario", "ii", "level 2", "l2", "p2", "grade 2", "g2", "regular", "mid-senior", "semi-senior", "semi senior", "pleno i", "pleno ii", "pleno iii"],
+      "senior": ["senior", "sr", "sr.", "sênior", "especialista", "nivel iii", "nivel 3", "n3", "expert", "iii", "level 3", "l3", "p3", "grade 3", "g3", "iv", "l4", "p4", "lead", "senior i", "senior ii", "senior iii", "avancado", "advanced", "experienced"],
+      "staff": ["staff", "staff engineer", "staff developer", "l5", "p5", "level 5", "distinguished", "principal engineer", "principal", "fellow", "distinguished engineer", "staff software engineer"],
+      "estagio": ["estagio", "estágio", "intern", "internship", "estagiario", "estagiária", "estagiario(a)", "summer intern", "intern developer"],
+      "trainee": ["trainee", "aprendiz", "jovem aprendiz", "menor aprendiz", "apprentice", "graduate", "graduate program", "programa trainee"]
     },
-    // Modalidade de trabalho
+    // ─────────────────────────────────────────────────────────────
+    // WORK MODE - Modalidades de trabalho
+    // ─────────────────────────────────────────────────────────────
     workMode: {
-      "remoto": ["remoto", "remote", "home office", "trabalho remoto", "100% remoto", "anywhere", "full remote"],
-      "hibrido": ["hibrido", "híbrido", "hybrid", "semi-presencial", "semi presencial", "parcialmente remoto"],
-      "presencial": ["presencial", "on-site", "onsite", "in-office", "no escritorio", "local"]
+      "remoto": ["remoto", "remote", "home office", "trabalho remoto", "100% remoto", "anywhere", "full remote", "fully remote", "trabalho de casa", "wfh", "work from home", "a distancia", "remote first", "remote only", "worldwide", "global remote", "remote friendly", "distributed", "anywhere in"],
+      "hibrido": ["hibrido", "híbrido", "hybrid", "semi-presencial", "semi presencial", "parcialmente remoto", "flexivel", "flexible", "2x presencial", "3x presencial", "4x presencial", "dias no escritorio", "part remote", "partial remote", "hybrid remote"],
+      "presencial": ["presencial", "on-site", "onsite", "in-office", "no escritorio", "local", "in loco", "alocado", "office based", "office-based", "in person", "in-person", "at office"]
     },
-    // Tipo de contrato
+    // ─────────────────────────────────────────────────────────────
+    // CONTRACT - Tipos de contrato (Brasil + Internacional)
+    // ─────────────────────────────────────────────────────────────
     contract: {
-      "clt": ["clt", "efetivo", "carteira assinada", "regime clt", "contratacao clt"],
-      "pj": ["pj", "pessoa juridica", "pessoa jurídica", "freelance", "contractor", "contrato pj", "mei"],
-      "estagio": ["estagio", "estágio", "intern", "internship", "contrato de estagio"]
+      "clt": ["clt", "efetivo", "carteira assinada", "regime clt", "contratacao clt", "clt flex", "contrato clt", "celetista", "full-time", "full time", "permanent", "permanente", "integral"],
+      "pj": ["pj", "pessoa juridica", "pessoa jurídica", "freelance", "contractor", "contrato pj", "mei", "cnpj", "cooperado", "cooperativa", "autonomo", "autônomo", "prestador", "consultant", "consultoria", "self-employed", "independent contractor", "1099"],
+      "estagio": ["estagio", "estágio", "intern", "internship", "contrato de estagio", "contrato estagio", "bolsa", "bolsista"],
+      "temporario": ["temporario", "temporário", "temporary", "contract", "contrato temporario", "prazo determinado", "fixed term", "short term", "project based"],
+      "terceirizado": ["terceirizado", "outsourcing", "outsourced", "alocado", "alocacao", "body shop", "staffing", "staff augmentation"]
     },
-    // Stacks/tecnologias expandidas
+    // ─────────────────────────────────────────────────────────────
+    // STACKS - Tecnologias (MASSIVAMENTE EXPANDIDO)
+    // ─────────────────────────────────────────────────────────────
     stacks: {
-      "frontend": ["frontend", "front-end", "front end"],
-      "backend": ["backend", "back-end", "back end"],
-      "fullstack": ["fullstack", "full-stack", "full stack"],
-      "mobile": ["mobile", "android", "ios", "flutter", "react native", "kotlin", "swift", "mobile developer"],
-      "devops": ["devops", "dev ops", "sre", "site reliability", "kubernetes", "docker", "aws", "azure", "gcp", "cloud", "infraestrutura", "infra"],
-      "data": ["data", "dados", "data science", "data engineer", "cientista de dados", "machine learning", "ml", "ai", "big data", "analytics", "bi"],
-      "qa": ["qa", "quality", "teste", "tester", "testing", "qualidade", "automacao", "quality assurance"],
-      "design": ["design", "designer", "ux", "ui", "ux/ui", "ui/ux", "product design", "grafico", "figma"],
-      "python": ["python", "django", "flask", "fastapi", "pandas", "numpy"],
-      "java": ["java", "spring", "springboot", "spring boot", "maven", "gradle"],
-      "javascript": ["javascript", "js", "ecmascript", "es6"],
-      "typescript": ["typescript", "ts"],
-      "node": ["node", "nodejs", "node.js", "express", "nestjs", "nest.js"],
-      "react": ["react", "reactjs", "react.js", "next", "nextjs", "next.js", "redux"],
-      "angular": ["angular", "angularjs", "angular.js"],
-      "vue": ["vue", "vuejs", "vue.js", "nuxt", "nuxtjs"],
-      "csharp": ["c#", "csharp", ".net", "dotnet", "asp.net", "blazor"],
-      "go": ["go", "golang"],
-      "rust": ["rust", "rustlang"],
-      "php": ["php", "laravel", "symfony", "wordpress"],
-      "ruby": ["ruby", "rails", "ruby on rails"],
-      "sql": ["sql", "mysql", "postgresql", "postgres", "oracle", "sql server", "database", "banco de dados"],
-      "spring": ["spring", "springboot", "spring boot", "spring framework"]
+      // Categorias gerais
+      "frontend": ["frontend", "front-end", "front end", "client-side", "client side", "ui developer"],
+      "backend": ["backend", "back-end", "back end", "server-side", "server side", "api developer"],
+      "fullstack": ["fullstack", "full-stack", "full stack", "full-stack developer", "desenvolvedor fullstack", "generalista"],
+
+      // Mobile
+      "mobile": ["mobile", "android", "ios", "flutter", "react native", "mobile developer", "app", "aplicativo", "nativo", "native"],
+      "ios": ["ios", "swift", "swiftui", "uikit", "objective-c", "objc", "xcode", "apple developer", "iphone", "ipad"],
+      "android": ["android", "kotlin", "jetpack compose", "android studio", "google play", "android developer"],
+      "flutter": ["flutter", "dart", "cross-platform", "cross platform"],
+      "reactnative": ["react native", "react-native", "expo", "rn"],
+
+      // JavaScript ecosystem
+      "javascript": ["javascript", "js", "ecmascript", "es6", "es2020", "es2021", "es2022", "es2023", "vanilla js", "vanilla javascript"],
+      "typescript": ["typescript", "ts", "typed javascript"],
+      "node": ["node", "nodejs", "node.js", "express", "expressjs", "nestjs", "nest.js", "koa", "fastify", "hapi", "adonis", "adonisjs"],
+      "react": ["react", "reactjs", "react.js", "next", "nextjs", "next.js", "redux", "react query", "tanstack", "remix", "gatsby", "create react app", "cra"],
+      "angular": ["angular", "angularjs", "angular.js", "ngrx", "rxjs", "angular material"],
+      "vue": ["vue", "vuejs", "vue.js", "nuxt", "nuxtjs", "vuex", "pinia", "vue router", "quasar"],
+      "svelte": ["svelte", "sveltekit", "svelte kit"],
+
+      // Python ecosystem
+      "python": ["python", "django", "flask", "fastapi", "pandas", "numpy", "pytorch", "tensorflow", "scikit", "scikit-learn", "scipy", "matplotlib", "jupyter", "anaconda", "pip"],
+
+      // Java ecosystem
+      "java": ["java", "spring", "springboot", "spring boot", "maven", "gradle", "quarkus", "micronaut", "jvm", "jakarta", "hibernate", "jpa"],
+      "spring": ["spring", "springboot", "spring boot", "spring framework", "spring cloud", "spring security", "spring data", "spring mvc", "spring webflux"],
+      "kotlin": ["kotlin", "kotlinx", "ktor", "android kotlin", "kotlin multiplatform", "kmp"],
+      "scala": ["scala", "akka", "play framework", "playframework", "spark scala", "cats", "zio"],
+
+      // .NET ecosystem
+      "csharp": ["c#", "csharp", ".net", "dotnet", "asp.net", "blazor", ".net core", "entity framework", "ef core", ".net 6", ".net 7", ".net 8", "maui", "xamarin", "wpf", "winforms"],
+
+      // Other languages
+      "go": ["go", "golang", "gin", "fiber", "echo", "gorilla", "beego"],
+      "rust": ["rust", "rustlang", "actix", "axum", "rocket", "tokio", "wasm", "webassembly"],
+      "php": ["php", "laravel", "symfony", "wordpress", "codeigniter", "yii", "drupal", "magento", "composer"],
+      "ruby": ["ruby", "rails", "ruby on rails", "ror", "sinatra", "hanami"],
+      "elixir": ["elixir", "phoenix", "ecto", "erlang", "otp", "beam"],
+      "clojure": ["clojure", "clojurescript", "leiningen", "ring"],
+
+      // Databases
+      "sql": ["sql", "mysql", "postgresql", "postgres", "oracle", "sql server", "mssql", "database", "banco de dados", "mariadb", "sqlite", "rdbms", "relational"],
+      "nosql": ["nosql", "mongodb", "mongo", "redis", "cassandra", "dynamodb", "couchdb", "firestore", "fauna", "faunadb"],
+      "mongodb": ["mongodb", "mongo", "mongoose", "atlas"],
+      "postgresql": ["postgresql", "postgres", "pg", "postgis"],
+      "redis": ["redis", "memcached", "cache", "caching"],
+      "elasticsearch": ["elasticsearch", "elastic", "opensearch", "lucene", "solr"],
+      "neo4j": ["neo4j", "graph database", "graphdb", "cypher", "dgraph"],
+
+      // DevOps & Cloud
+      "devops": ["devops", "dev ops", "sre", "site reliability", "platform", "infrastructure", "infra", "devsecops"],
+      "aws": ["aws", "amazon web services", "ec2", "s3", "lambda", "dynamodb", "rds", "cloudformation", "cdk", "eks", "ecs", "fargate", "sagemaker", "redshift"],
+      "azure": ["azure", "microsoft azure", "azure devops", "azure functions", "aks", "cosmos db", "azure sql", "blob storage"],
+      "gcp": ["gcp", "google cloud", "google cloud platform", "bigquery", "cloud run", "cloud functions", "gke", "dataflow", "pubsub"],
+      "kubernetes": ["kubernetes", "k8s", "kube", "eks", "aks", "gke", "openshift", "helm", "kubectl", "k3s", "rancher"],
+      "docker": ["docker", "container", "containerization", "dockerfile", "docker-compose", "docker compose", "podman", "containerd"],
+      "terraform": ["terraform", "tf", "iac", "infrastructure as code", "terragrunt", "pulumi", "cloudformation"],
+      "cicd": ["ci/cd", "cicd", "github actions", "gitlab ci", "jenkins", "circleci", "travis", "azure pipelines", "bitbucket pipelines", "drone", "argocd", "argo cd", "gitops"],
+      "ansible": ["ansible", "playbook", "puppet", "chef", "saltstack"],
+
+      // Monitoring & Observability
+      "monitoring": ["prometheus", "grafana", "datadog", "newrelic", "new relic", "splunk", "dynatrace", "observability", "apm", "elk", "logstash", "kibana"],
+
+      // Data & Analytics
+      "data": ["data", "dados", "data science", "data engineer", "cientista de dados", "machine learning", "ml", "ai", "big data", "analytics", "bi", "etl", "dataops", "spark", "hadoop", "databricks", "snowflake", "dbt", "airflow"],
+      "machinelearning": ["machine learning", "ml", "deep learning", "neural network", "ai", "artificial intelligence", "nlp", "computer vision", "reinforcement learning"],
+      "llm": ["llm", "large language model", "chatgpt", "openai", "claude", "gpt", "langchain", "huggingface", "transformers", "genai", "gen ai", "generative ai", "prompt engineering"],
+
+      // QA & Testing
+      "qa": ["qa", "quality", "teste", "tester", "testing", "qualidade", "automacao", "quality assurance", "sdet", "test engineer", "test automation"],
+      "testing": ["jest", "vitest", "cypress", "playwright", "selenium", "webdriver", "pytest", "junit", "testng", "mocha", "chai", "jasmine", "karma", "e2e", "unit test", "integration test"],
+
+      // Design
+      "design": ["design", "designer", "ux", "ui", "ux/ui", "ui/ux", "product design", "grafico", "figma", "sketch", "adobe xd", "invision", "zeplin", "framer"],
+
+      // APIs & Communication
+      "api": ["api", "rest", "restful", "graphql", "grpc", "soap", "openapi", "swagger", "postman", "insomnia"],
+      "graphql": ["graphql", "apollo", "hasura", "relay", "graph ql"],
+      "websocket": ["websocket", "socket.io", "ws", "real-time", "realtime", "sse", "server-sent events"],
+      "kafka": ["kafka", "apache kafka", "confluent", "event streaming", "event-driven"],
+      "rabbitmq": ["rabbitmq", "rabbit mq", "amqp", "message queue", "message broker"],
+
+      // Specialty stacks
+      "blockchain": ["blockchain", "web3", "solidity", "ethereum", "smart contract", "crypto", "defi", "nft", "hardhat", "truffle"],
+      "gamedev": ["unity", "unity3d", "unreal", "unreal engine", "ue4", "ue5", "game dev", "game development", "godot", "c++ games"],
+      "embedded": ["embedded", "iot", "arduino", "raspberry pi", "firmware", "rtos", "microcontroller", "plc"],
+      "security": ["security", "cybersecurity", "infosec", "appsec", "pentesting", "penetration testing", "soc", "siem", "owasp"],
+
+      // Low-code / No-code
+      "lowcode": ["n8n", "make", "integromat", "zapier", "power automate", "appsmith", "retool", "budibase", "webflow", "bubble", "airtable"],
+
+      // Enterprise
+      "salesforce": ["salesforce", "sfdc", "apex", "lightning", "salesforce developer"],
+      "sap": ["sap", "abap", "hana", "sap developer", "sap consultant"]
     },
-    // Cargos/roles expandidos
+    // ─────────────────────────────────────────────────────────────
+    // ROLES - Cargos e funções (EXPANDIDO)
+    // ─────────────────────────────────────────────────────────────
     roles: {
-      "desenvolvedor": ["desenvolvedor", "developer", "dev", "programador", "engineer", "engenheiro", "software engineer"],
-      "analista": ["analista", "analyst", "analista de sistemas"],
-      "tech lead": ["tech lead", "lider tecnico", "lider de tecnologia", "technical lead", "lead developer", "lead engineer"],
-      "arquiteto": ["arquiteto", "architect", "solution architect", "software architect"],
-      "gerente": ["gerente", "manager", "coordenador", "head", "diretor", "supervisor"],
-      "backend": ["backend", "back-end", "back end", "desenvolvedor backend"],
-      "frontend": ["frontend", "front-end", "front end", "desenvolvedor frontend"]
+      "desenvolvedor": ["desenvolvedor", "developer", "dev", "programador", "engineer", "engenheiro", "software engineer", "software developer", "swe", "coder", "programmer"],
+      "analista": ["analista", "analyst", "analista de sistemas", "systems analyst", "analista de ti", "it analyst", "analista de desenvolvimento"],
+      "tech lead": ["tech lead", "lider tecnico", "lider de tecnologia", "technical lead", "lead developer", "lead engineer", "engineering lead", "team lead", "squad lead"],
+      "arquiteto": ["arquiteto", "architect", "solution architect", "software architect", "solutions architect", "cloud architect", "enterprise architect", "system architect"],
+      "gerente": ["gerente", "manager", "coordenador", "head", "diretor", "supervisor", "engineering manager", "em", "head of engineering", "development manager"],
+      "backend": ["backend", "back-end", "back end", "desenvolvedor backend", "backend developer", "backend engineer", "server-side developer"],
+      "frontend": ["frontend", "front-end", "front end", "desenvolvedor frontend", "frontend developer", "frontend engineer", "ui developer", "web developer"],
+      "fullstack": ["fullstack", "full-stack", "full stack", "desenvolvedor fullstack", "fullstack developer", "fullstack engineer"],
+      "mobile": ["mobile developer", "desenvolvedor mobile", "mobile engineer", "app developer", "ios developer", "android developer"],
+      "product": ["product manager", "pm", "product owner", "po", "gerente de produto", "product lead"],
+      "devops": ["devops engineer", "sre", "platform engineer", "infrastructure engineer", "cloud engineer", "reliability engineer", "site reliability engineer"],
+      "data_scientist": ["data scientist", "cientista de dados", "ml engineer", "machine learning engineer", "ai engineer", "research scientist", "pesquisador", "research engineer"],
+      "data_engineer": ["data engineer", "engenheiro de dados", "analytics engineer", "bi developer", "etl developer", "dataops engineer", "data platform engineer"],
+      "security": ["security engineer", "appsec", "infosec", "cybersecurity engineer", "security analyst", "soc analyst", "devsecops", "pentester", "engenheiro de seguranca"],
+      "ux_designer": ["ux designer", "ui designer", "product designer", "designer de produto", "ux researcher", "ui/ux designer", "ux/ui designer", "interaction designer"],
+      "scrum": ["scrum master", "agile coach", "agile master", "kanban master", "delivery manager"],
+      "executive": ["cto", "vp engineering", "vpe", "engineering director", "head of engineering", "chief architect", "cio", "tech director", "diretor de tecnologia"]
+    },
+    // ─────────────────────────────────────────────────────────────
+    // LANGUAGES - Idiomas (COMPLETO)
+    // ─────────────────────────────────────────────────────────────
+    languages: {
+      "pt": ["portugues", "portuguese", "pt-br", "pt_br", "brasil", "brasileiro", "fluente portugues", "nativo portugues", "portuguese native", "portuguese fluent", "lingua portuguesa"],
+      "en": ["ingles", "english", "en-us", "en_us", "fluent english", "inglês fluente", "english native", "inglês nativo", "intermediate english", "ingles intermediario", "advanced english", "ingles avancado", "conversational english"],
+      "es": ["espanhol", "spanish", "español", "castellano", "espanol", "spanish fluent"],
+      "fr": ["frances", "french", "français", "francais", "francês"],
+      "de": ["alemao", "german", "deutsch", "alemão", "deutsche"],
+      "it": ["italiano", "italian", "italiana"],
+      "zh": ["chines", "chinese", "mandarin", "mandarim", "中文", "putonghua"],
+      "ja": ["japones", "japanese", "日本語", "nihongo", "japonês"],
+      "ko": ["coreano", "korean", "한국어", "hangul"]
     }
   }
 
-  let totalScore = 0
-  let maxScore = 0
+  // ═══════════════════════════════════════════════════════════════
+  // INFERÊNCIAS SEMÂNTICAS - MASSIVAMENTE EXPANDIDO
+  // Mapeia frameworks/ferramentas para tecnologias base
+  // ═══════════════════════════════════════════════════════════════
+  const semanticInferences = {
+    // Full Stack
+    "fullstack": ["backend", "frontend"],
+    "full-stack": ["backend", "frontend"],
+    "full stack": ["backend", "frontend"],
+    "mern": ["mongodb", "express", "react", "node", "javascript"],
+    "mean": ["mongodb", "express", "angular", "node", "javascript"],
+    "lamp": ["linux", "apache", "mysql", "php"],
+    "jamstack": ["javascript", "api", "frontend"],
 
-  // Função para verificar match com sinônimos
-  const checkMatch = (terms, text, synonymGroup) => {
-    if (!terms || terms.length === 0) return { matched: true, isEmpty: true }
+    // Java ecosystem
+    "spring": ["java"],
+    "springboot": ["java"],
+    "spring boot": ["java"],
+    "quarkus": ["java"],
+    "micronaut": ["java"],
+    "hibernate": ["java", "sql"],
+    "maven": ["java"],
+    "gradle": ["java", "kotlin"],
+
+    // Python ecosystem
+    "django": ["python"],
+    "flask": ["python"],
+    "fastapi": ["python"],
+    "pandas": ["python", "data"],
+    "numpy": ["python", "data"],
+    "pytorch": ["python", "machine learning"],
+    "tensorflow": ["python", "machine learning"],
+    "scikit": ["python", "machine learning"],
+    "airflow": ["python", "data", "etl"],
+    "sqlalchemy": ["python", "database"],
+
+    // JavaScript/Node ecosystem
+    "react native": ["javascript", "mobile", "react"],
+    "next.js": ["react", "javascript", "typescript"],
+    "nextjs": ["react", "javascript", "typescript"],
+    "gatsby": ["react", "javascript", "graphql"],
+    "remix": ["react", "javascript", "typescript"],
+    "nuxt": ["vue", "javascript"],
+    "nuxtjs": ["vue", "javascript"],
+    "nestjs": ["node", "typescript"],
+    "express": ["node", "javascript"],
+    "fastify": ["node", "javascript"],
+    "koa": ["node", "javascript"],
+    "prisma": ["typescript", "node", "database"],
+    "typeorm": ["typescript", "node", "database"],
+    "sequelize": ["javascript", "node", "database"],
+    "mongoose": ["javascript", "node", "mongodb"],
+
+    // Frontend
+    "angular": ["typescript", "frontend"],
+    "vue": ["javascript", "frontend"],
+    "svelte": ["javascript", "frontend"],
+    "sveltekit": ["javascript", "typescript", "frontend"],
+    "vite": ["javascript", "typescript", "frontend"],
+    "webpack": ["javascript", "frontend"],
+
+    // Mobile
+    "flutter": ["mobile", "dart"],
+    "expo": ["react native", "javascript", "mobile"],
+    "swiftui": ["swift", "ios", "mobile"],
+    "jetpack compose": ["kotlin", "android", "mobile"],
+    "xamarin": ["csharp", "mobile"],
+
+    // .NET ecosystem
+    ".net": ["csharp"],
+    "blazor": ["csharp", "frontend"],
+    "asp.net": ["csharp"],
+    "entity framework": ["csharp", "database"],
+    "maui": ["csharp", "mobile"],
+
+    // Ruby ecosystem
+    "rails": ["ruby"],
+    "ruby on rails": ["ruby"],
+    "sinatra": ["ruby"],
+
+    // PHP ecosystem
+    "laravel": ["php"],
+    "symfony": ["php"],
+    "wordpress": ["php"],
+    "eloquent": ["php", "laravel", "database"],
+
+    // Go ecosystem
+    "gin": ["go"],
+    "fiber": ["go"],
+    "echo": ["go"],
+
+    // Rust ecosystem
+    "actix": ["rust"],
+    "axum": ["rust"],
+    "rocket": ["rust"],
+    "tokio": ["rust"],
+
+    // Elixir/Erlang
+    "phoenix": ["elixir"],
+    "ecto": ["elixir", "database"],
+
+    // Kotlin
+    "ktor": ["kotlin"],
+
+    // DevOps & Cloud
+    "terraform": ["devops", "infrastructure", "cloud"],
+    "kubernetes": ["devops", "docker", "cloud"],
+    "k8s": ["devops", "docker", "cloud", "kubernetes"],
+    "docker": ["devops", "infrastructure"],
+    "aws": ["cloud", "devops"],
+    "azure": ["cloud", "devops"],
+    "gcp": ["cloud", "devops"],
+    "github actions": ["devops", "cicd"],
+    "gitlab ci": ["devops", "cicd"],
+    "jenkins": ["devops", "cicd"],
+    "argocd": ["devops", "kubernetes", "gitops"],
+    "helm": ["kubernetes", "devops"],
+
+    // Data & AI
+    "spark": ["data", "big data", "python", "scala"],
+    "hadoop": ["data", "big data"],
+    "databricks": ["data", "spark", "cloud"],
+    "snowflake": ["data", "sql", "cloud"],
+    "dbt": ["data", "analytics", "sql"],
+    "bigquery": ["data", "sql", "gcp"],
+    "redshift": ["data", "sql", "aws"],
+    "langchain": ["python", "ai", "llm"],
+    "huggingface": ["python", "machine learning", "ai"],
+
+    // Testing
+    "jest": ["javascript", "testing"],
+    "vitest": ["javascript", "typescript", "testing"],
+    "cypress": ["javascript", "testing", "e2e"],
+    "playwright": ["javascript", "typescript", "testing", "e2e"],
+    "pytest": ["python", "testing"],
+    "junit": ["java", "testing"],
+    "rspec": ["ruby", "testing"],
+    "selenium": ["testing", "e2e", "qa"],
+
+    // APIs
+    "graphql": ["api"],
+    "apollo": ["graphql", "javascript"],
+    "hasura": ["graphql", "database"],
+
+    // Databases
+    "mongodb": ["nosql", "database"],
+    "postgresql": ["sql", "database"],
+    "mysql": ["sql", "database"],
+    "redis": ["nosql", "cache", "database"],
+    "elasticsearch": ["search", "database"],
+    "neo4j": ["graph", "database"],
+    "dynamodb": ["nosql", "aws", "database"],
+    "cosmos db": ["nosql", "azure", "database"],
+
+    // Message queues
+    "kafka": ["event-driven", "messaging"],
+    "rabbitmq": ["messaging", "queue"]
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // GRUPOS DE TECNOLOGIAS - Para matching por categoria
+  // ═══════════════════════════════════════════════════════════════
+  const technologyGroups = {
+    "relational_db": ["sql", "mysql", "postgresql", "postgres", "oracle", "sql server", "mariadb", "sqlite"],
+    "nosql_db": ["mongodb", "cassandra", "dynamodb", "couchdb", "redis", "firestore", "fauna"],
+    "cloud": ["aws", "azure", "gcp", "digitalocean", "heroku", "vercel", "netlify"],
+    "containers": ["docker", "kubernetes", "podman", "containerd"],
+    "cicd": ["github actions", "gitlab ci", "jenkins", "circleci", "travis", "azure devops"],
+    "monitoring": ["prometheus", "grafana", "datadog", "newrelic", "splunk", "elastic"],
+    "frontend_framework": ["react", "angular", "vue", "svelte", "solid"],
+    "backend_lang": ["java", "python", "node", "go", "rust", "php", "ruby", "csharp", "kotlin", "scala", "elixir"]
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // CORREÇÃO DE TYPOS COMUNS
+  // ═══════════════════════════════════════════════════════════════
+  const commonTypos = {
+    "javascrip": "javascript", "javasript": "javascript", "javscript": "javascript",
+    "typescrip": "typescript", "typscript": "typescript",
+    "phyton": "python", "pyhton": "python", "pytohn": "python",
+    "developper": "developer", "develper": "developer",
+    "desenvoledor": "desenvolvedor", "desenvolvedro": "desenvolvedor",
+    "engenehiro": "engenheiro", "engenhero": "engenheiro",
+    "seniro": "senior", "senir": "senior",
+    "junio": "junior", "júnio": "junior",
+    "postgress": "postgresql", "postgressql": "postgresql",
+    "kubernets": "kubernetes", "kubernates": "kubernetes",
+    "angualr": "angular", "anglar": "angular",
+    "recat": "react", "raect": "react"
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // DETECÇÃO INTELIGENTE DE PAÍS
+  // ═══════════════════════════════════════════════════════════════
+  const countryKeywords = {
+    brasil: ["brasil", "brazil", "br", "sao paulo", "rio de janeiro", "belo horizonte", "curitiba", "porto alegre", "salvador", "recife", "fortaleza", "brasilia"],
+    eua: ["usa", "eua", "estados unidos", "united states", "us", "new york", "california", "texas", "florida", "seattle", "san francisco", "silicon valley"],
+    canada: ["canada", "canadá", "toronto", "vancouver", "montreal"],
+    portugal: ["portugal", "pt", "lisboa", "porto"],
+    alemanha: ["alemanha", "germany", "deutschland", "berlin", "munich", "frankfurt"],
+    reino_unido: ["uk", "united kingdom", "reino unido", "england", "inglaterra", "london", "manchester"],
+    espanha: ["espanha", "spain", "españa", "madrid", "barcelona"],
+    franca: ["franca", "france", "frança", "paris", "lyon"],
+    holanda: ["holanda", "netherlands", "paises baixos", "amsterdam", "rotterdam"],
+    irlanda: ["irlanda", "ireland", "dublin"],
+    argentina: ["argentina", "buenos aires"],
+    chile: ["chile", "santiago"],
+    mexico: ["mexico", "méxico", "ciudad de mexico"],
+    colombia: ["colombia", "colômbia", "bogota", "medellin"],
+    india: ["india", "índia", "bangalore", "mumbai", "delhi"],
+    australia: ["australia", "austrália", "sydney", "melbourne"]
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // FUNÇÕES AUXILIARES
+  // ═══════════════════════════════════════════════════════════════
+
+  // Detecta país do usuário
+  const getUserCountry = (locs) => {
+    for (const loc of locs) {
+      const normalized = normalizeStack(loc)
+      for (const [country, keywords] of Object.entries(countryKeywords)) {
+        if (keywords.some(kw => normalized.includes(kw) || kw.includes(normalized))) {
+          return country
+        }
+      }
+    }
+    return null
+  }
+
+  // Detecta país da vaga
+  const getJobCountry = (jobLoc) => {
+    const normalized = normalizeStack(jobLoc)
+    for (const [country, keywords] of Object.entries(countryKeywords)) {
+      if (keywords.some(kw => normalized.includes(kw))) {
+        return country
+      }
+    }
+    return null
+  }
+
+  // Verifica se a vaga é 100% remota
+  const isFullyRemote = (workType, text) => {
+    const remoteKeywords = ["100% remoto", "full remote", "fully remote", "remote anywhere", "worldwide remote", "global remote", "trabalho remoto", "remote first"]
+    const combined = `${workType} ${text}`.toLowerCase()
+    return remoteKeywords.some(kw => combined.includes(kw)) ||
+           (combined.includes("remote") && !combined.includes("hybrid") && !combined.includes("hibrido"))
+  }
+
+  // Aplica correção de typos ao texto
+  const fixTypos = (text) => {
+    let fixed = text
+    for (const [typo, correction] of Object.entries(commonTypos)) {
+      if (fixed.includes(typo)) {
+        fixed = fixed.replace(new RegExp(typo, 'g'), correction)
+      }
+    }
+    return fixed
+  }
+
+  // Aplica inferências semânticas ao texto da vaga
+  const applyInferences = (text) => {
+    let expandedText = text
+    for (const [term, implications] of Object.entries(semanticInferences)) {
+      if (text.includes(term)) {
+        expandedText += " " + implications.join(" ")
+      }
+    }
+    return expandedText
+  }
+
+  // Verifica se o termo pertence a um grupo de tecnologias
+  const getTermGroup = (term) => {
+    for (const [groupName, members] of Object.entries(technologyGroups)) {
+      if (members.includes(term)) {
+        return { groupName, members }
+      }
+    }
+    return null
+  }
+
+  // Função de match com scoring graduado
+  // PESOS: exato=100%, synonym=90%, typo=85%, inference=75%, group=60%
+  const checkMatchWithScore = (terms, text, synonymGroup, weight) => {
+    if (!terms || terms.length === 0) return { matched: true, isEmpty: true, matchType: "none", score: 0 }
+
+    // Aplica correção de typos ao texto da vaga
+    const fixedText = fixTypos(text)
+    const expandedText = applyInferences(fixedText)
+    let bestMatch = { matched: false, isEmpty: false, matchType: "none", score: 0 }
 
     for (const term of terms) {
       const normalized = normalizeStack(term)
+      const fixedNormalized = fixTypos(normalized)
 
-      // Verifica sinônimos do grupo específico
+      // 1. Match EXATO (100% do peso)
+      if (fixedText.includes(normalized)) {
+        return { matched: true, isEmpty: false, matchType: "exact", score: weight }
+      }
+
+      // 2. Match por SINÔNIMO (90% do peso)
       if (synonymGroup) {
         for (const [key, syns] of Object.entries(synonymGroup)) {
           if (normalized === key || syns.includes(normalized)) {
-            if (syns.some(s => text.includes(s))) return { matched: true, isEmpty: false }
+            if (syns.some(s => fixedText.includes(s))) {
+              if (bestMatch.score < weight * 0.9) {
+                bestMatch = { matched: true, isEmpty: false, matchType: "synonym", score: weight * 0.9 }
+              }
+            }
           }
         }
       }
 
-      // Verifica diretamente
-      if (text.includes(normalized)) return { matched: true, isEmpty: false }
+      // 3. Match por CORREÇÃO DE TYPO (85% do peso)
+      if (fixedNormalized !== normalized && fixedText.includes(fixedNormalized)) {
+        if (bestMatch.score < weight * 0.85) {
+          bestMatch = { matched: true, isEmpty: false, matchType: "typo_corrected", score: weight * 0.85 }
+        }
+      }
+
+      // 4. Match por INFERÊNCIA SEMÂNTICA (75% do peso)
+      if (expandedText.includes(normalized) && !fixedText.includes(normalized)) {
+        if (bestMatch.score < weight * 0.75) {
+          bestMatch = { matched: true, isEmpty: false, matchType: "inference", score: weight * 0.75 }
+        }
+      }
+
+      // 5. Match por GRUPO de tecnologias (60% do peso)
+      const group = getTermGroup(normalized)
+      if (group && bestMatch.score < weight * 0.6) {
+        const groupMatch = group.members.some(member => fixedText.includes(member))
+        if (groupMatch) {
+          bestMatch = { matched: true, isEmpty: false, matchType: "group", score: weight * 0.6, group: group.groupName }
+        }
+      }
     }
-    return { matched: false, isEmpty: false }
+
+    return bestMatch
   }
 
-  // Verifica STACKS (peso: weights.stacks)
+  // Função de match simples (sem scoring)
+  const checkMatch = (terms, text, synonymGroup) => {
+    const result = checkMatchWithScore(terms, text, synonymGroup, 1)
+    return { matched: result.matched, isEmpty: result.isEmpty }
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // LÓGICA DE MATCHING
+  // ═══════════════════════════════════════════════════════════════
+
+  let totalScore = 0
+  let maxScore = 0
+  let mustFieldsFailed = false
+  const matchDetails = {}
+
+  // ─────────────────────────────────────────────────────────────
+  // 1. STACKS (peso: weights.stacks)
+  // ─────────────────────────────────────────────────────────────
   const stacks = filters.stacks || []
   if (stacks.length > 0) {
     maxScore += weights.stacks
-    const stackResult = checkMatch(stacks, jobText, synonyms.stacks)
+    const stackResult = checkMatchWithScore(stacks, jobText, synonyms.stacks, weights.stacks)
+    matchDetails.stacks = stackResult
+
     if (stackResult.matched && !stackResult.isEmpty) {
-      totalScore += weights.stacks
-    } else if (must.stacks && !stackResult.matched) {
-      return returnScore ? { match: false, score: 0 } : false
+      totalScore += stackResult.score
+    } else if (must.stacks) {
+      mustFieldsFailed = true
+      matchDetails.failReason = "stacks_required_not_found"
     }
   }
 
-  // Verifica ROLES (peso: weights.roles)
+  // ─────────────────────────────────────────────────────────────
+  // 2. ROLES (peso: weights.roles)
+  // ─────────────────────────────────────────────────────────────
   const roles = filters.roles || []
   if (roles.length > 0) {
     maxScore += weights.roles
-    const roleResult = checkMatch(roles, jobText, synonyms.roles)
+    const roleResult = checkMatchWithScore(roles, jobText, synonyms.roles, weights.roles)
+    matchDetails.roles = roleResult
+
     if (roleResult.matched && !roleResult.isEmpty) {
-      totalScore += weights.roles
-    } else if (must.roles && !roleResult.matched) {
-      return returnScore ? { match: false, score: 0 } : false
+      totalScore += roleResult.score
+    } else if (must.roles) {
+      mustFieldsFailed = true
+      matchDetails.failReason = "roles_required_not_found"
     }
   }
 
-  // Verifica SENIORITY (peso: weights.seniority)
+  // ─────────────────────────────────────────────────────────────
+  // 3. SENIORITY (peso: weights.seniority)
+  // ─────────────────────────────────────────────────────────────
   const seniority = filters.seniority || []
   if (seniority.length > 0) {
     maxScore += weights.seniority
-    const seniorityResult = checkMatch(seniority, jobText, synonyms.seniority)
+    const seniorityResult = checkMatchWithScore(seniority, jobText, synonyms.seniority, weights.seniority)
+    matchDetails.seniority = seniorityResult
+
     if (seniorityResult.matched && !seniorityResult.isEmpty) {
-      totalScore += weights.seniority
-    } else if (must.seniority && !seniorityResult.matched) {
-      return returnScore ? { match: false, score: 0 } : false
+      totalScore += seniorityResult.score
+    } else if (must.seniority) {
+      mustFieldsFailed = true
+      matchDetails.failReason = "seniority_required_not_found"
     }
   }
 
-  // Verifica EXCLUDE SENIORITY (exclui vagas com senioridade específica)
+  // ─────────────────────────────────────────────────────────────
+  // 4. EXCLUDE SENIORITY (hard reject)
+  // ─────────────────────────────────────────────────────────────
   const excludeSeniority = filters.excludeSeniority || []
   if (excludeSeniority.length > 0) {
     const excludeResult = checkMatch(excludeSeniority, jobText, synonyms.seniority)
     if (excludeResult.matched && !excludeResult.isEmpty) {
-      return returnScore ? { match: false, score: 0 } : false
+      matchDetails.failReason = "excluded_seniority_found"
+      return returnScore ? { match: false, score: 0, maxScore, percentage: "0", details: matchDetails } : false
     }
   }
 
-  // Verifica WORK MODE (peso: weights.workMode)
+  // ─────────────────────────────────────────────────────────────
+  // 5. WORK MODE (peso: weights.workMode)
+  // Com tratamento especial para vagas 100% remotas
+  // ─────────────────────────────────────────────────────────────
   const workMode = filters.workMode || []
+  const jobIsFullyRemote = isFullyRemote(jobWorkType, jobText)
+
   if (workMode.length > 0) {
     maxScore += weights.workMode
     const workText = `${jobWorkType} ${jobText}`
-    const workResult = checkMatch(workMode, workText, synonyms.workMode)
+    const workResult = checkMatchWithScore(workMode, workText, synonyms.workMode, weights.workMode)
+    matchDetails.workMode = { ...workResult, isFullyRemote: jobIsFullyRemote }
+
     if (workResult.matched && !workResult.isEmpty) {
-      totalScore += weights.workMode
-    } else if (must.workMode && !workResult.matched) {
-      return returnScore ? { match: false, score: 0 } : false
+      totalScore += workResult.score
+    } else if (must.workMode) {
+      mustFieldsFailed = true
+      matchDetails.failReason = "workMode_required_not_found"
     }
   }
 
-  // Verifica CONTRACT (peso: weights.contract)
+  // ─────────────────────────────────────────────────────────────
+  // 6. CONTRACT (peso: weights.contract)
+  // ─────────────────────────────────────────────────────────────
   const contract = filters.contract || []
   if (contract.length > 0) {
     maxScore += weights.contract
     const contractText = `${jobRegime} ${jobText}`
-    const contractResult = checkMatch(contract, contractText, synonyms.contract)
+    const contractResult = checkMatchWithScore(contract, contractText, synonyms.contract, weights.contract)
+    matchDetails.contract = contractResult
+
     if (contractResult.matched && !contractResult.isEmpty) {
-      totalScore += weights.contract
-    } else if (must.contract && !contractResult.matched) {
-      return returnScore ? { match: false, score: 0 } : false
+      totalScore += contractResult.score
+    } else if (must.contract) {
+      mustFieldsFailed = true
+      matchDetails.failReason = "contract_required_not_found"
     }
   }
 
-  // Verifica LOCATIONS (peso: weights.locations)
+  // ─────────────────────────────────────────────────────────────
+  // 7. LANGUAGES (peso: weights.languages) - AGORA FUNCIONA!
+  // ─────────────────────────────────────────────────────────────
+  const languages = filters.languages || []
+  if (languages.length > 0) {
+    maxScore += weights.languages
+    const langResult = checkMatchWithScore(languages, jobText, synonyms.languages, weights.languages)
+    matchDetails.languages = langResult
+
+    if (langResult.matched && !langResult.isEmpty) {
+      totalScore += langResult.score
+    } else if (must.languages) {
+      mustFieldsFailed = true
+      matchDetails.failReason = "languages_required_not_found"
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // 8. LOCATIONS (peso: weights.locations)
+  // Com lógica inteligente de país + tratamento de remoto global
+  // ─────────────────────────────────────────────────────────────
   const locations = filters.locations || []
   if (locations.length > 0) {
     maxScore += weights.locations
-    const locationMatch = locations.some(loc => {
-      const normalized = normalizeStack(loc)
-      return jobLocation.includes(normalized) || jobText.includes(normalized)
-    })
-    if (locationMatch) {
+
+    const userCountry = getUserCountry(locations)
+    const jobCountry = getJobCountry(job.location || "")
+
+    matchDetails.locations = {
+      userCountry,
+      jobCountry,
+      jobLocation: job.location,
+      isFullyRemote: jobIsFullyRemote
+    }
+
+    // LÓGICA INTELIGENTE:
+    // Se a vaga é 100% remota E o usuário aceita remoto → ignora país
+    const userAcceptsRemote = workMode.some(wm =>
+      normalizeStack(wm) === "remoto" || normalizeStack(wm) === "remote"
+    )
+
+    if (jobIsFullyRemote && userAcceptsRemote) {
+      // Vaga 100% remota + usuário aceita remoto = ACEITA independente do país
       totalScore += weights.locations
-    } else if (must.locations && !locationMatch) {
-      return returnScore ? { match: false, score: 0 } : false
+      matchDetails.locations.bypassedDueToRemote = true
+    } else if (userCountry && jobCountry && userCountry !== jobCountry) {
+      // País diferente e não é remoto global = REJEITA
+      matchDetails.failReason = "different_country"
+      return returnScore ? { match: false, score: 0, maxScore, percentage: "0", details: matchDetails } : false
+    } else {
+      // Verifica match normal de localização
+      const locationMatch = locations.some(loc => {
+        const normalized = normalizeStack(loc)
+        return jobLocation.includes(normalized) || jobText.includes(normalized)
+      })
+
+      if (locationMatch) {
+        totalScore += weights.locations
+        matchDetails.locations.matched = true
+      } else if (must.locations) {
+        mustFieldsFailed = true
+        matchDetails.failReason = "locations_required_not_found"
+      }
     }
   }
 
-  // Precisa ter pelo menos uma stack ou role (se ambos estiverem definidos)
-  if (stacks.length === 0 && roles.length === 0) {
-    return returnScore ? { match: false, score: 0 } : false
+  // ─────────────────────────────────────────────────────────────
+  // 9. VALIDAÇÃO FINAL
+  // ─────────────────────────────────────────────────────────────
+
+  // Se algum campo obrigatório falhou, rejeita
+  if (mustFieldsFailed) {
+    return returnScore ? { match: false, score: totalScore, maxScore, percentage: maxScore > 0 ? (totalScore / maxScore * 100).toFixed(1) : "0", details: matchDetails } : false
   }
 
-  // Calcula score mínimo para match (70% do máximo possível)
-  const minScore = maxScore * 0.7
-  const matched = totalScore >= minScore
+  // Precisa ter pelo menos uma stack ou role definida
+  if (stacks.length === 0 && roles.length === 0) {
+    matchDetails.failReason = "no_stacks_or_roles_defined"
+    return returnScore ? { match: false, score: 0, maxScore, percentage: "0", details: matchDetails } : false
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // 10. THRESHOLD DINÂMICO
+  // Base: 50% para ser mais flexível
+  // Mas campos "must" já foram verificados acima (100% obrigatório)
+  // ─────────────────────────────────────────────────────────────
+  const dynamicThreshold = 0.5 // 50% base (mais flexível que 70%)
+  const minScore = maxScore * dynamicThreshold
+  const matched = maxScore === 0 || totalScore >= minScore
+
+  matchDetails.threshold = {
+    dynamic: dynamicThreshold,
+    minRequired: minScore,
+    achieved: totalScore
+  }
 
   if (returnScore) {
-    return { match: matched, score: totalScore, maxScore, percentage: maxScore > 0 ? (totalScore / maxScore * 100).toFixed(1) : 0 }
+    return {
+      match: matched,
+      score: totalScore,
+      maxScore,
+      percentage: maxScore > 0 ? (totalScore / maxScore * 100).toFixed(1) : "0",
+      details: matchDetails
+    }
   }
 
   return matched
