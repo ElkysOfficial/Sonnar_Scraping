@@ -106,8 +106,10 @@ async function buildCardPayload(payload, to) {
     throw new Error("Não foi possível extrair os dados da vaga")
   }
 
-  const imageBuffer = await createJobCard(jobData)
-  const shortUrl = await shortenUrl(jobData.url)
+  const [imageBuffer, shortUrl] = await Promise.all([
+    createJobCard(jobData),
+    shortenUrl(jobData.url)
+  ])
   const caption = formatCaption(jobData, shortUrl)
 
   return {

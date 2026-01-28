@@ -13,7 +13,14 @@
 import axios from "axios"
 import { delay } from "baileys"
 import { infoLog, infoLogAlways, successLog, warningLog, errorLog } from "../utils/logger.js"
-import { BOT_EMOJI, TIMEOUT_IN_MILLISECONDS_BY_EVENT, CARD_API_URL } from "../config.js"
+import {
+  BOT_EMOJI,
+  TIMEOUT_IN_MILLISECONDS_BY_EVENT,
+  CARD_API_URL,
+  VIP_JOB_LOOKBACK_DAYS,
+  VIP_MAX_JOBS_PER_CYCLE,
+  VIP_FALLBACK_MAX_JOBS
+} from "../config.js"
 import { extractStack } from "./jobDistributor.js"
 import { getVipSubscribers } from "../utils/database.js"
 import { getCurrentSocket, isCurrentSocketReady } from "../utils/socketManager.js"
@@ -57,13 +64,33 @@ async function processPendingVipSearches() {
   }
 }
 
+function normalizeLimit(value) {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) && parsed > 0 ? Math.trunc(parsed) : undefined
+}
+
+function normalizeLookbackDays(value) {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0
+}
+
+function getCreatedAfterISO(lookbackDays) {
+  if (!lookbackDays || lookbackDays <= 0) {
+    return null
+  }
+  return new Date(Date.now() - lookbackDays * 24 * 60 * 60 * 1000).toISOString()
+}
+
 /**
  * Carrega as vagas direto do Supabase
  * @returns {Promise<Array>} Array de vagas
  */
-async function loadJobs() {
+async function loadJobs(options = {}) {
   try {
-    const jobs = await getAllJobs()
+    const lookbackDays = normalizeLookbackDays(options.lookbackDays ?? VIP_JOB_LOOKBACK_DAYS)
+    const limit = normalizeLimit(options.limit ?? VIP_MAX_JOBS_PER_CYCLE)
+    const createdAfter = getCreatedAfterISO(lookbackDays)
+    const jobs = await getAllJobs({ limit, createdAfter })
     return jobs || []
   } catch (err) {
     errorLog(`[VIP] Erro ao carregar vagas do Supabase: ${err.message}`)
@@ -83,6 +110,167 @@ function normalizeStack(stack) {
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "") // Remove acentos
     .trim()
+}
+
+const normalizedJobCache = new WeakMap()
+let SYNONYMS_CACHE
+let SEMANTIC_INFERENCES_CACHE
+let TECHNOLOGY_GROUPS_CACHE
+let COMMON_TYPOS_CACHE
+let COUNTRY_KEYWORDS_CACHE
+
+function getNormalizedJobFields(job) {
+  if (!job || typeof job !== "object") {
+    return {
+      title: "",
+      description: "",
+      url: "",
+      source: "",
+      company: "",
+      text: "",
+      location: "",
+      workType: "",
+      regime: ""
+    }
+  }
+
+  const cached = normalizedJobCache.get(job)
+  if (cached) {
+    return cached
+  }
+
+  const title = normalizeStack(job.title || job.job_title || "")
+  const description = normalizeStack(job.description || "")
+  const url = normalizeStack(job.url || job.job_url || "")
+  const source = normalizeStack(job.source || "")
+  const company = normalizeStack(job.company || "")
+  const location = normalizeStack(job.location || "")
+  const workType = normalizeStack(job.work_type || "")
+  const regime = normalizeStack(job.hiring_regime || "")
+  const text = `${title} ${description} ${url} ${source} ${company}`.trim()
+
+  const normalized = {
+    title,
+    description,
+    url,
+    source,
+    company,
+    text,
+    location,
+    workType,
+    regime
+  }
+
+  normalizedJobCache.set(job, normalized)
+  return normalized
+}
+
+function getJobIdentifier(job) {
+  if (!job) {
+    return ""
+  }
+  const raw = job.id || job.url || job.job_url || ""
+  return raw ? String(raw) : ""
+}
+
+function buildVipSearchSteps(baseLimit, baseLookbackDays, fallbackLimit) {
+  const steps = []
+  const normalizedBaseLimit = normalizeLimit(baseLimit)
+  const normalizedFallbackLimit = normalizeLimit(fallbackLimit)
+  const normalizedLookback = normalizeLookbackDays(baseLookbackDays)
+
+  if (!normalizedBaseLimit) {
+    steps.push({ limit: undefined, lookbackDays: normalizedLookback, label: "base_all" })
+    if (normalizedLookback > 0 && normalizedFallbackLimit) {
+      steps.push({ limit: normalizedFallbackLimit, lookbackDays: 0, label: "full_range" })
+    }
+    return steps
+  }
+
+  steps.push({ limit: normalizedBaseLimit, lookbackDays: normalizedLookback, label: "base" })
+
+  if (normalizedFallbackLimit && normalizedFallbackLimit > normalizedBaseLimit) {
+    let nextLimit = normalizedBaseLimit * 2
+    while (nextLimit < normalizedFallbackLimit) {
+      steps.push({ limit: nextLimit, lookbackDays: normalizedLookback, label: `limit_${nextLimit}` })
+      nextLimit *= 2
+    }
+    steps.push({ limit: normalizedFallbackLimit, lookbackDays: normalizedLookback, label: `limit_${normalizedFallbackLimit}` })
+  }
+
+  if (normalizedLookback > 0 && normalizedFallbackLimit) {
+    const fullRangeLabel = "full_range"
+    steps.push({ limit: normalizedFallbackLimit, lookbackDays: 0, label: fullRangeLabel })
+  }
+
+  const seen = new Set()
+  return steps.filter((step) => {
+    const key = `${step.lookbackDays || 0}|${step.limit ?? "all"}`
+    if (seen.has(key)) {
+      return false
+    }
+    seen.add(key)
+    return true
+  })
+}
+
+async function getJobsForStep(step, cache) {
+  const key = `${step.lookbackDays || 0}|${step.limit ?? "all"}`
+  if (cache.has(key)) {
+    return cache.get(key)
+  }
+  const jobs = await loadJobs({ limit: step.limit, lookbackDays: step.lookbackDays })
+  cache.set(key, jobs || [])
+  return jobs || []
+}
+
+function findFirstMatchingJob(jobs, filters, sentJobIds, checkedIds) {
+  for (const job of jobs || []) {
+    const jobId = getJobIdentifier(job)
+    if (!jobId) {
+      continue
+    }
+    if (checkedIds.has(jobId)) {
+      continue
+    }
+    checkedIds.add(jobId)
+    if (sentJobIds.has(jobId)) {
+      continue
+    }
+    if (!jobMatchesFilters(job, filters)) {
+      continue
+    }
+    return job
+  }
+  return null
+}
+
+function findMatchingJobsWithCount(jobs, filters, sentJobIds, checkedIds) {
+  let firstMatch = null
+  let count = 0
+
+  for (const job of jobs || []) {
+    const jobId = getJobIdentifier(job)
+    if (!jobId) {
+      continue
+    }
+    if (checkedIds.has(jobId)) {
+      continue
+    }
+    checkedIds.add(jobId)
+    if (sentJobIds.has(jobId)) {
+      continue
+    }
+    if (!jobMatchesFilters(job, filters)) {
+      continue
+    }
+    count += 1
+    if (!firstMatch) {
+      firstMatch = job
+    }
+  }
+
+  return { firstMatch, count }
 }
 
 /**
@@ -105,15 +293,16 @@ function jobMatchesFilters(job, filters, returnScore = false) {
     return returnScore ? { match: true, score: 100, maxScore: 100, percentage: "100.0", details: { reason: "no_filters" } } : true
   }
 
-  const jobTitle = normalizeStack(job.title || job.job_title || "")
-  const jobDescription = normalizeStack(job.description || "")
-  const jobUrl = normalizeStack(job.url || job.job_url || "")
-  const jobSource = normalizeStack(job.source || "")
-  const jobCompany = normalizeStack(job.company || "")
-  const jobText = `${jobTitle} ${jobDescription} ${jobUrl} ${jobSource} ${jobCompany}`
-  const jobLocation = normalizeStack(job.location || "")
-  const jobWorkType = normalizeStack(job.work_type || "")
-  const jobRegime = normalizeStack(job.hiring_regime || "")
+  const normalizedJob = getNormalizedJobFields(job)
+  const jobTitle = normalizedJob.title
+  const jobDescription = normalizedJob.description
+  const jobUrl = normalizedJob.url
+  const jobSource = normalizedJob.source
+  const jobCompany = normalizedJob.company
+  const jobText = normalizedJob.text
+  const jobLocation = normalizedJob.location
+  const jobWorkType = normalizedJob.workType
+  const jobRegime = normalizedJob.regime
 
   // Pesos padrão para cada categoria
   const weights = filters.weights || {
@@ -141,7 +330,7 @@ function jobMatchesFilters(job, filters, returnScore = false) {
   // SINÔNIMOS EXPANDIDOS + MÁXIMA COBERTURA
   // Sistema inteligente para nunca perder uma vaga relevante
   // ═══════════════════════════════════════════════════════════════
-  const synonyms = {
+  const synonyms = SYNONYMS_CACHE || (SYNONYMS_CACHE = {
     // ─────────────────────────────────────────────────────────────
     // SENIORITY - Todos os níveis e variações
     // ─────────────────────────────────────────────────────────────
@@ -307,13 +496,13 @@ function jobMatchesFilters(job, filters, returnScore = false) {
       "ja": ["japones", "japanese", "日本語", "nihongo", "japonês"],
       "ko": ["coreano", "korean", "한국어", "hangul"]
     }
-  }
+  })
 
   // ═══════════════════════════════════════════════════════════════
   // INFERÊNCIAS SEMÂNTICAS - MASSIVAMENTE EXPANDIDO
   // Mapeia frameworks/ferramentas para tecnologias base
   // ═══════════════════════════════════════════════════════════════
-  const semanticInferences = {
+  const semanticInferences = SEMANTIC_INFERENCES_CACHE || (SEMANTIC_INFERENCES_CACHE = {
     // Full Stack
     "fullstack": ["backend", "frontend"],
     "full-stack": ["backend", "frontend"],
@@ -466,12 +655,12 @@ function jobMatchesFilters(job, filters, returnScore = false) {
     // Message queues
     "kafka": ["event-driven", "messaging"],
     "rabbitmq": ["messaging", "queue"]
-  }
+  })
 
   // ═══════════════════════════════════════════════════════════════
   // GRUPOS DE TECNOLOGIAS - Para matching por categoria
   // ═══════════════════════════════════════════════════════════════
-  const technologyGroups = {
+  const technologyGroups = TECHNOLOGY_GROUPS_CACHE || (TECHNOLOGY_GROUPS_CACHE = {
     "relational_db": ["sql", "mysql", "postgresql", "postgres", "oracle", "sql server", "mariadb", "sqlite"],
     "nosql_db": ["mongodb", "cassandra", "dynamodb", "couchdb", "redis", "firestore", "fauna"],
     "cloud": ["aws", "azure", "gcp", "digitalocean", "heroku", "vercel", "netlify"],
@@ -480,12 +669,12 @@ function jobMatchesFilters(job, filters, returnScore = false) {
     "monitoring": ["prometheus", "grafana", "datadog", "newrelic", "splunk", "elastic"],
     "frontend_framework": ["react", "angular", "vue", "svelte", "solid"],
     "backend_lang": ["java", "python", "node", "go", "rust", "php", "ruby", "csharp", "kotlin", "scala", "elixir"]
-  }
+  })
 
   // ═══════════════════════════════════════════════════════════════
   // CORREÇÃO DE TYPOS COMUNS
   // ═══════════════════════════════════════════════════════════════
-  const commonTypos = {
+  const commonTypos = COMMON_TYPOS_CACHE || (COMMON_TYPOS_CACHE = {
     "javascrip": "javascript", "javasript": "javascript", "javscript": "javascript",
     "typescrip": "typescript", "typscript": "typescript",
     "phyton": "python", "pyhton": "python", "pytohn": "python",
@@ -498,12 +687,12 @@ function jobMatchesFilters(job, filters, returnScore = false) {
     "kubernets": "kubernetes", "kubernates": "kubernetes",
     "angualr": "angular", "anglar": "angular",
     "recat": "react", "raect": "react"
-  }
+  })
 
   // ═══════════════════════════════════════════════════════════════
   // DETECÇÃO INTELIGENTE DE PAÍS
   // ═══════════════════════════════════════════════════════════════
-  const countryKeywords = {
+  const countryKeywords = COUNTRY_KEYWORDS_CACHE || (COUNTRY_KEYWORDS_CACHE = {
     brasil: ["brasil", "brazil", "br", "sao paulo", "rio de janeiro", "belo horizonte", "curitiba", "porto alegre", "salvador", "recife", "fortaleza", "brasilia"],
     eua: ["usa", "eua", "estados unidos", "united states", "us", "new york", "california", "texas", "florida", "seattle", "san francisco", "silicon valley"],
     canada: ["canada", "canadá", "toronto", "vancouver", "montreal"],
@@ -520,7 +709,7 @@ function jobMatchesFilters(job, filters, returnScore = false) {
     colombia: ["colombia", "colômbia", "bogota", "medellin"],
     india: ["india", "índia", "bangalore", "mumbai", "delhi"],
     australia: ["australia", "austrália", "sydney", "melbourne"]
-  }
+  })
 
   // ═══════════════════════════════════════════════════════════════
   // FUNÇÕES AUXILIARES
@@ -1094,14 +1283,27 @@ async function processVipJobs() {
   // Limpa entradas antigas periodicamente
   await cleanOldEntries()
 
-  const jobs = await loadJobs()
+  const cycleStart = Date.now()
+  const baseLimit = normalizeLimit(VIP_MAX_JOBS_PER_CYCLE)
+  const baseLookbackDays = normalizeLookbackDays(VIP_JOB_LOOKBACK_DAYS)
+  const fallbackLimit = normalizeLimit(VIP_FALLBACK_MAX_JOBS)
+  const searchSteps = buildVipSearchSteps(baseLimit, baseLookbackDays, fallbackLimit)
+  const jobsCache = new Map()
+  const baseJobs = await getJobsForStep(searchSteps[0], jobsCache)
   const subscribers = await getVipSubscribers()
 
-  if (jobs.length === 0 || subscribers.length === 0) {
+  if (baseJobs.length === 0 && searchSteps.length === 1) {
     return
   }
 
-  infoLog(`[VIP] Verificando ${jobs.length} vagas para ${subscribers.length} assinantes`)
+  if (subscribers.length === 0) {
+    return
+  }
+
+  let matches = 0
+  let sent = 0
+
+  infoLog(`[VIP] Verificando ${baseJobs.length} vagas base para ${subscribers.length} assinantes`)
 
   for (const subscriber of subscribers) {
     // Pula assinantes sem LID válido
@@ -1118,34 +1320,42 @@ async function processVipJobs() {
     // Obtém IDs de vagas já enviadas nas últimas 48h
     const sentJobIds = await getSentJobIds(subscriber.lid)
 
-    // Usa filtros completos se disponível, senão usa stacks (compatibilidade legada)
     const filters = subscriber.filters || { stacks: subscriber.stacks || [] }
+    const checkedIds = new Set()
+    let matchedJob = findFirstMatchingJob(baseJobs, filters, sentJobIds, checkedIds)
 
-    for (const job of jobs) {
-      const jobId = job.id || job.url || job.job_url
-
-      // Pula vagas já enviadas nas últimas 48h
-      if (sentJobIds.has(jobId)) {
-        continue
+    if (!matchedJob && searchSteps.length > 1) {
+      for (const step of searchSteps.slice(1)) {
+        const jobs = await getJobsForStep(step, jobsCache)
+        if (!jobs.length) {
+          continue
+        }
+        matchedJob = findFirstMatchingJob(jobs, filters, sentJobIds, checkedIds)
+        if (matchedJob) {
+          infoLog(`[VIP] Fallback usado para ${subscriber.lid}: ${step.label} (${jobs.length} vagas)`)
+          break
+        }
       }
+    }
 
-      // Verifica se a vaga corresponde aos filtros
-      if (!jobMatchesFilters(job, filters)) {
-        continue
-      }
+    if (!matchedJob) {
+      await delay(1000)
+      continue
+    }
 
-      const result = await sendJobToSubscriber(subscriber.lid, job)
+    matches += 1
+    const result = await sendJobToSubscriber(subscriber.lid, matchedJob)
 
-      if (result.success) {
-        successLog(`[VIP] Vaga enviada para ${subscriber.lid}: ${job.title || job.job_title}`)
-      }
-
-      // Independente do resultado, só tenta enviar uma vaga por ciclo
-      break
+    if (result.success) {
+      sent += 1
+      successLog(`[VIP] Vaga enviada para ${subscriber.lid}: ${matchedJob.title || matchedJob.job_title}`)
     }
 
     await delay(1000)
   }
+
+  const durationMs = Date.now() - cycleStart
+  infoLog(`[VIP] Ciclo concluído: matches=${matches}, enviados=${sent}, duração=${durationMs}ms`)
 }
 
 /**
@@ -1169,7 +1379,7 @@ export async function startVipJobSender(socket) {
   const subscribers = await getVipSubscribers()
 
   // Limpa entradas antigas do histórico ao iniciar
-  await cleanOldEntries()
+  await cleanOldEntries(true)
 
   infoLog("════════════════════════════════════════════════════")
   infoLog("       ⭐ SERVIÇO DE VAGAS VIP INICIADO")
@@ -1178,6 +1388,10 @@ export async function startVipJobSender(socket) {
   infoLog(`⏱️  Intervalo de verificação: ${CHECK_INTERVAL / 60000} minutos`)
   infoLog(`⏱️  Cooldown por assinante: 7 minutos`)
   infoLog(`⏱️  Cooldown para reenvio: 48 horas`)
+  const lookbackLabel = VIP_JOB_LOOKBACK_DAYS > 0 ? `${VIP_JOB_LOOKBACK_DAYS} dias` : "desativado"
+  const limitLabel = VIP_MAX_JOBS_PER_CYCLE > 0 ? `${VIP_MAX_JOBS_PER_CYCLE}` : "sem limite"
+  const fallbackLabel = VIP_FALLBACK_MAX_JOBS > 0 ? `${VIP_FALLBACK_MAX_JOBS}` : "desativado"
+  infoLog(`📚 Janela VIP: ${lookbackLabel} | limite: ${limitLabel} | fallback: ${fallbackLabel}`)
   infoLog("════════════════════════════════════════════════════")
 
   if (subscribers.length > 0) {
@@ -1334,10 +1548,50 @@ export async function triggerVipSearch(lid, stacksOrFilters, options = {}) {
       }
     }
 
-    // Carrega todas as vagas do Supabase
-    const jobs = await loadJobs()
+    const baseLimit = normalizeLimit(VIP_MAX_JOBS_PER_CYCLE)
+    const baseLookbackDays = normalizeLookbackDays(VIP_JOB_LOOKBACK_DAYS)
+    const fallbackLimit = normalizeLimit(VIP_FALLBACK_MAX_JOBS)
+    const searchSteps = buildVipSearchSteps(baseLimit, baseLookbackDays, fallbackLimit)
+    const jobsCache = new Map()
 
-    if (jobs.length === 0) {
+    // Obtém IDs de vagas já enviadas nas últimas 48h
+    const sentJobIds = await getSentJobIds(lid)
+
+    let jobsFound = 0
+    let matchedJob = null
+    let matchedStep = searchSteps[0]
+    let hadAnyJobs = false
+
+    for (const step of searchSteps) {
+      const jobs = await getJobsForStep(step, jobsCache)
+      if (!jobs.length) {
+        continue
+      }
+      hadAnyJobs = true
+
+      const { firstMatch, count } = findMatchingJobsWithCount(
+        jobs,
+        filters,
+        sentJobIds,
+        new Set()
+      )
+
+      if (count > 0) {
+        infoLog(`[VIP SEARCH] Step ${step.label}: ${count} matches em ${jobs.length} vagas`)
+      }
+
+      if (firstMatch) {
+        matchedJob = firstMatch
+        matchedStep = step
+        jobsFound = count
+        if (step !== searchSteps[0]) {
+          infoLog(`[VIP SEARCH] Fallback usado para ${lid}: ${step.label} (${jobs.length} vagas)`)
+        }
+        break
+      }
+    }
+
+    if (!hadAnyJobs) {
       warningLog("[VIP SEARCH] Nenhuma vaga disponível no Supabase")
       return {
         success: false,
@@ -1347,28 +1601,7 @@ export async function triggerVipSearch(lid, stacksOrFilters, options = {}) {
       }
     }
 
-    // Obtém IDs de vagas já enviadas nas últimas 48h
-    const sentJobIds = await getSentJobIds(lid)
-
-    // Filtra vagas que correspondem aos filtros e não foram enviadas recentemente
-    const matchingJobs = []
-    for (const job of jobs) {
-      const jobId = job.id || job.url || job.job_url
-
-      // Pula vagas já enviadas nas últimas 48h
-      if (sentJobIds.has(jobId)) {
-        continue
-      }
-
-      // Verifica se a vaga corresponde aos filtros
-      if (jobMatchesFilters(job, filters)) {
-        matchingJobs.push(job)
-      }
-    }
-
-    infoLog(`[VIP SEARCH] Encontradas ${matchingJobs.length} vagas novas para ${lid}`)
-
-    if (matchingJobs.length === 0) {
+    if (!matchedJob) {
       return {
         success: true,
         jobsFound: 0,
@@ -1379,21 +1612,19 @@ export async function triggerVipSearch(lid, stacksOrFilters, options = {}) {
 
     // Envia apenas uma vaga (regra: 1 vaga a cada 7 minutos)
     let jobsSent = 0
-    const job = matchingJobs[0]
-
-    const result = await sendJobToSubscriber(lid, job)
+    const result = await sendJobToSubscriber(lid, matchedJob)
     if (result.success) {
       jobsSent = 1
-      successLog(`[VIP SEARCH] Vaga enviada para ${lid}: ${job.title || job.job_title}`)
+      successLog(`[VIP SEARCH] Vaga enviada para ${lid}: ${matchedJob.title || matchedJob.job_title}`)
     } else {
       warningLog(`[VIP SEARCH] Não foi possível enviar: ${result.reason}`)
     }
 
-    successLog(`[VIP SEARCH] Busca concluída para ${lid}: ${jobsSent}/${matchingJobs.length} vagas enviadas`)
+    successLog(`[VIP SEARCH] Busca concluída para ${lid}: ${jobsSent}/${jobsFound} vagas enviadas`)
 
     return {
       success: true,
-      jobsFound: matchingJobs.length,
+      jobsFound,
       jobsSent,
     }
   } catch (err) {

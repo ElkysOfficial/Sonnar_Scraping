@@ -11,6 +11,17 @@ const MIN_SEND_INTERVAL = 7 * 60 * 1000
 // Cooldown to resend the same job (48 hours in ms)
 const JOB_REPOST_COOLDOWN = 48 * 60 * 60 * 1000
 
+const DEFAULT_CLEANUP_INTERVAL = 6 * 60 * 60 * 1000
+const CLEANUP_INTERVAL = (() => {
+  const parsed = Number(process.env.VIP_HISTORY_CLEANUP_INTERVAL_MS)
+  if (!Number.isFinite(parsed)) {
+    return DEFAULT_CLEANUP_INTERVAL
+  }
+  return parsed > 0 ? parsed : DEFAULT_CLEANUP_INTERVAL
+})()
+
+let lastCleanupAt = 0
+
 const subscriberIdCache = new Map()
 
 async function getSubscriberId(lid) {
@@ -139,8 +150,13 @@ export async function recordJobSent(lid, jobId) {
   }
 }
 
-export async function cleanOldEntries() {
+export async function cleanOldEntries(force = false) {
   try {
+    const now = Date.now()
+    if (!force && now - lastCleanupAt < CLEANUP_INTERVAL) {
+      return
+    }
+
     const cutoff = new Date(Date.now() - JOB_REPOST_COOLDOWN).toISOString()
     const { data, error } = await supabase
       .from("vip_delivery_history")
@@ -149,6 +165,8 @@ export async function cleanOldEntries() {
       .select("id")
 
     if (error) throw error
+
+    lastCleanupAt = now
 
     if (data?.length) {
       infoLog(`[VIP History] Removed ${data.length} old entries`)

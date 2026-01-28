@@ -4,6 +4,14 @@ import { fileURLToPath } from "node:url"
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
+const readNumber = (value, fallback) => {
+  if (value === undefined || value === null || value === "") {
+    return fallback
+  }
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : fallback
+}
+
 // Prefixo padrão dos comandos.
 export const PREFIX = "/"
 
@@ -83,6 +91,16 @@ export const JOB_GROUP_ID = "120363421632065613@g.us"
 
 // Intervalo de envio em ms (7 minutos)
 export const JOB_SEND_INTERVAL = 7 * 60 * 1000
+
+// ======= CONFIGURAÇÕES DE MATCHING VIP =======
+// Janela de busca (em dias) para reduzir scans completos (0 = desabilita filtro)
+export const VIP_JOB_LOOKBACK_DAYS = readNumber(process.env.VIP_JOB_LOOKBACK_DAYS, 14)
+
+// Limite de vagas carregadas por ciclo (0 = sem limite)
+export const VIP_MAX_JOBS_PER_CYCLE = readNumber(process.env.VIP_MAX_JOBS_PER_CYCLE, 800)
+
+// Fallback caso a janela fique vazia (0 = desabilita fallback)
+export const VIP_FALLBACK_MAX_JOBS = readNumber(process.env.VIP_FALLBACK_MAX_JOBS, 2000)
 
 // Caminho do arquivo de vagas (embeds.json)
 export const EMBEDS_FILE_PATH = path.resolve(__dirname, "..", "..", "..", "message_formatting", "discord", "src", "data", "embeds.json")

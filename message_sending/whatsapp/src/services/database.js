@@ -28,6 +28,24 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
   }
 })
 
+const JOB_SELECT_FIELDS = [
+  "id",
+  "job_title",
+  "job_url",
+  "company",
+  "location",
+  "work_type",
+  "hiring_regime",
+  "salary",
+  "publication_date",
+  "source",
+  "created_at",
+  "updated_at",
+  "status_discord",
+  "status_whatsapp",
+  "status_telegram"
+].join(",")
+
 // =====================================================
 // VIP SUBSCRIBERS
 // =====================================================
@@ -576,11 +594,25 @@ export async function getMutedUsers(groupId) {
 /**
  * Get all jobs (for VIP matching/search)
  */
-export async function getAllJobs(limit) {
+export async function getAllJobs(options = {}) {
+  let limit
+  let createdAfter
+
+  if (Number.isInteger(options)) {
+    limit = options
+  } else if (options && typeof options === "object") {
+    limit = options.limit
+    createdAfter = options.createdAfter
+  }
+
   let query = supabase
     .from("jobs")
-    .select("*")
+    .select(JOB_SELECT_FIELDS)
     .order("created_at", { ascending: false })
+
+  if (createdAfter) {
+    query = query.gte("created_at", createdAfter)
+  }
 
   if (Number.isInteger(limit)) {
     query = query.limit(limit)
@@ -598,7 +630,7 @@ export async function getAllJobs(limit) {
 export async function getPendingWhatsAppJobs(limit = 100) {
   const { data, error } = await supabase
     .from("jobs")
-    .select("*")
+    .select(JOB_SELECT_FIELDS)
     .eq("status_whatsapp", false)
     .order("created_at", { ascending: false })
     .limit(limit)
@@ -628,7 +660,7 @@ export async function markJobSentToWhatsApp(jobId) {
 export async function getJobById(jobId) {
   const { data, error } = await supabase
     .from("jobs")
-    .select("*")
+    .select(JOB_SELECT_FIELDS)
     .eq("id", jobId)
     .maybeSingle()
 

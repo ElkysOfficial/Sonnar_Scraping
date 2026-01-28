@@ -20,6 +20,24 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
   }
 })
 
+const JOB_SELECT_FIELDS = [
+  "id",
+  "job_title",
+  "job_url",
+  "company",
+  "location",
+  "work_type",
+  "hiring_regime",
+  "salary",
+  "publication_date",
+  "source",
+  "created_at",
+  "updated_at",
+  "status_discord",
+  "status_whatsapp",
+  "status_telegram"
+].join(",")
+
 /**
  * Transform DB row to API-compatible format
  */
@@ -54,7 +72,7 @@ export async function fetchJobData() {
   try {
     const { data, error } = await supabase
       .from("jobs")
-      .select("*")
+      .select(JOB_SELECT_FIELDS)
       .order("created_at", { ascending: false })
 
     if (error) {
@@ -76,7 +94,7 @@ export async function fetchPendingJobs(limit = 100) {
   try {
     const { data, error } = await supabase
       .from("jobs")
-      .select("*")
+      .select(JOB_SELECT_FIELDS)
       .eq("status_whatsapp", false)
       .order("created_at", { ascending: false })
       .limit(limit)
@@ -100,7 +118,7 @@ export async function getJobById(id) {
   try {
     const { data, error } = await supabase
       .from("jobs")
-      .select("*")
+      .select(JOB_SELECT_FIELDS)
       .eq("id", id)
       .single()
 
@@ -146,20 +164,30 @@ export async function markJobStatus(id, channel, status = true) {
  */
 export async function getJobStats() {
   try {
-    const { data, error } = await supabase
+    const { count: total, error: totalError } = await supabase
       .from("jobs")
-      .select("status_discord, status_whatsapp, status_telegram")
+      .select("id", { count: "exact", head: true })
 
-    if (error) {
-      console.error("[jobDataClient] Error fetching stats:", error.message)
+    if (totalError) {
+      console.error("[jobDataClient] Error fetching total stats:", totalError.message)
       return { total: 0, pending: 0, sent: 0 }
     }
 
-    const total = data.length
-    const pending = data.filter((j) => !j.status_whatsapp).length
-    const sent = total - pending
+    const { count: pending, error: pendingError } = await supabase
+      .from("jobs")
+      .select("id", { count: "exact", head: true })
+      .eq("status_whatsapp", false)
 
-    return { total, pending, sent }
+    if (pendingError) {
+      console.error("[jobDataClient] Error fetching pending stats:", pendingError.message)
+      return { total: total || 0, pending: 0, sent: 0 }
+    }
+
+    const safeTotal = total || 0
+    const safePending = pending || 0
+    const sent = Math.max(0, safeTotal - safePending)
+
+    return { total: safeTotal, pending: safePending, sent }
   } catch (error) {
     console.error("[jobDataClient] Error fetching stats:", error.message)
     return { total: 0, pending: 0, sent: 0 }
