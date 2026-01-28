@@ -84,6 +84,7 @@ import {
 
 const originalConsoleWarn = console.warn.bind(console);
 const originalConsoleLog = console.log.bind(console);
+const originalConsoleInfo = console.info.bind(console);
 
 const suppressPatterns = [
   "Closing stale open session for new outgoing prekey bundle",
@@ -141,6 +142,11 @@ console.warn = (...args) => {
 console.log = (...args) => {
   if (shouldSuppressLog(...args)) return;
   originalConsoleLog(...args);
+};
+
+console.info = (...args) => {
+  if (shouldSuppressLog(...args)) return;
+  originalConsoleInfo(...args);
 };
 
 process.on("uncaughtException", (error) => {

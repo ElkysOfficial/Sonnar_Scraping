@@ -97,7 +97,11 @@ function jobMatchesFilters(job, filters, returnScore = false) {
 
   const jobTitle = normalizeStack(job.title || job.job_title || "")
   const jobDescription = normalizeStack(job.description || "")
-  const jobText = `${jobTitle} ${jobDescription}`
+  const jobUrl = normalizeStack(job.url || job.job_url || "")
+  const jobSource = normalizeStack(job.source || "")
+  const jobCompany = normalizeStack(job.company || "")
+  // Combina todos os campos relevantes para matching de stacks/roles
+  const jobText = `${jobTitle} ${jobDescription} ${jobUrl} ${jobSource} ${jobCompany}`
   const jobLocation = normalizeStack(job.location || "")
   const jobWorkType = normalizeStack(job.work_type || "")
   const jobRegime = normalizeStack(job.hiring_regime || "")
@@ -115,7 +119,7 @@ function jobMatchesFilters(job, filters, returnScore = false) {
 
   // Campos obrigatórios (must match)
   const must = filters.must || {
-    roles: true,
+    roles: false,
     stacks: true,
     workMode: false,
     contract: false,
