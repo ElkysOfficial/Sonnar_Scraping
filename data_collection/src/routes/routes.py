@@ -3,9 +3,13 @@ Routes module for data_collection service.
 Sends job data directly to Supabase database.
 """
 
+import asyncio
 import os
 import sys
+import time
 from datetime import datetime
+
+import httpx
 
 # Add database lib to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "database", "lib"))
@@ -19,13 +23,102 @@ load_dotenv()
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 
+SUPABASE_MAX_RETRIES = int(os.getenv("SUPABASE_MAX_RETRIES", "3"))
+SUPABASE_RETRY_BACKOFF_MS = int(os.getenv("SUPABASE_RETRY_BACKOFF_MS", "500"))
+SUPABASE_HTTP_TIMEOUT = float(os.getenv("SUPABASE_HTTP_TIMEOUT", "30"))
+
+_httpx_client: httpx.Client | None = None
+
+
+def _build_httpx_client() -> httpx.Client:
+    timeout = httpx.Timeout(SUPABASE_HTTP_TIMEOUT)
+    limits = httpx.Limits(max_connections=20, max_keepalive_connections=10)
+    return httpx.Client(
+        timeout=timeout,
+        limits=limits,
+        follow_redirects=True,
+        http2=False,
+    )
+
+
+def _create_supabase_client():
+    global _httpx_client
+    if _httpx_client:
+        try:
+            _httpx_client.close()
+        except Exception:
+            pass
+    _httpx_client = _build_httpx_client()
+    from supabase.lib.client_options import SyncClientOptions
+
+    options = SyncClientOptions(httpx_client=_httpx_client)
+    from supabase import create_client
+
+    return create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, options)
+
+
+def _reset_supabase_client():
+    global supabase
+    supabase = _create_supabase_client()
+
+
+def _is_transient_supabase_error(exc: Exception) -> bool:
+    if isinstance(exc, (httpx.TransportError, httpx.TimeoutException)):
+        return True
+    text = repr(exc)
+    transient_markers = (
+        "ConnectionTerminated",
+        "RemoteProtocolError",
+        "ReadTimeout",
+        "WriteTimeout",
+        "ConnectError",
+        "ConnectTimeout",
+        "Server disconnected",
+        "Connection reset",
+        "Broken pipe",
+        "Temporary failure",
+    )
+    return any(marker in text for marker in transient_markers)
+
+
+async def _execute_with_retries_async(operation, context: str):
+    last_exc = None
+    for attempt in range(1, SUPABASE_MAX_RETRIES + 1):
+        try:
+            return operation()
+        except Exception as exc:
+            last_exc = exc
+            if not _is_transient_supabase_error(exc) or attempt >= SUPABASE_MAX_RETRIES:
+                raise
+            _reset_supabase_client()
+            await asyncio.sleep((SUPABASE_RETRY_BACKOFF_MS * attempt) / 1000)
+    if last_exc:
+        raise last_exc
+    return None
+
+
+def _execute_with_retries_sync(operation, context: str):
+    last_exc = None
+    for attempt in range(1, SUPABASE_MAX_RETRIES + 1):
+        try:
+            return operation()
+        except Exception as exc:
+            last_exc = exc
+            if not _is_transient_supabase_error(exc) or attempt >= SUPABASE_MAX_RETRIES:
+                raise
+            _reset_supabase_client()
+            time.sleep((SUPABASE_RETRY_BACKOFF_MS * attempt) / 1000)
+    if last_exc:
+        raise last_exc
+    return None
+
+
 if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
     print("[routes] WARNING: Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY")
     print("[routes] Job data will NOT be persisted!")
     supabase = None
 else:
-    from supabase import create_client
-    supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+    supabase = _create_supabase_client()
 
 
 async def send_to_embed_service_job(job_data: dict, source: str = "unknown") -> dict:
@@ -61,10 +154,9 @@ async def send_to_embed_service_job(job_data: dict, source: str = "unknown") -> 
         }
 
         # Upsert job (insert or update if job_url already exists)
-        result = (
-            supabase.table("jobs")
-            .upsert(db_job, on_conflict="job_url")
-            .execute()
+        result = await _execute_with_retries_async(
+            lambda: supabase.table("jobs").upsert(db_job, on_conflict="job_url").execute(),
+            "upsert job",
         )
 
         if result.data:
@@ -102,12 +194,13 @@ async def check_job_exists(job_url: str) -> bool:
         return False
 
     try:
-        result = (
-            supabase.table("jobs")
+        result = await _execute_with_retries_async(
+            lambda: supabase.table("jobs")
             .select("id")
             .eq("job_url", job_url)
             .maybe_single()
-            .execute()
+            .execute(),
+            "check job exists",
         )
         return result.data is not None
     except Exception as e:
@@ -133,11 +226,12 @@ def get_existing_job_urls() -> set:
         offset = 0
 
         while True:
-            result = (
-                supabase.table("jobs")
+            result = _execute_with_retries_sync(
+                lambda: supabase.table("jobs")
                 .select("job_url")
                 .range(offset, offset + page_size - 1)
-                .execute()
+                .execute(),
+                "load job urls",
             )
 
             if not result.data:
@@ -185,14 +279,17 @@ async def record_scraper_stats(
         return False
 
     try:
-        supabase.table("scraper_stats").insert({
-            "source": source,
-            "jobs_found": jobs_found,
-            "jobs_new": jobs_new,
-            "jobs_enriched": jobs_enriched,
-            "errors": errors,
-            "duration_ms": duration_ms,
-        }).execute()
+        await _execute_with_retries_async(
+            lambda: supabase.table("scraper_stats").insert({
+                "source": source,
+                "jobs_found": jobs_found,
+                "jobs_new": jobs_new,
+                "jobs_enriched": jobs_enriched,
+                "errors": errors,
+                "duration_ms": duration_ms,
+            }).execute(),
+            "record scraper stats",
+        )
         return True
     except Exception as e:
         print(f"[routes] Error recording scraper stats: {e}")

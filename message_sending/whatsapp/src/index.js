@@ -106,10 +106,31 @@ const suppressPatterns = [
 ];
 
 const shouldSuppressLog = (...args) => {
-  const message = args
-    .map((arg) => (typeof arg === "object" ? JSON.stringify(arg) : String(arg)))
-    .join(" ");
-  return suppressPatterns.some((pattern) => message.includes(pattern));
+  for (const arg of args) {
+    // Check if it's a SessionEntry object (has _chains and currentRatchet)
+    if (arg && typeof arg === "object") {
+      if (arg._chains || arg.currentRatchet || arg.indexInfo || arg.pendingPreKey) {
+        return true;
+      }
+      // Check constructor name
+      if (arg.constructor?.name === "SessionEntry") {
+        return true;
+      }
+    }
+
+    // Convert to string safely (avoid Buffer serialization issues)
+    let message;
+    try {
+      message = typeof arg === "object" ? JSON.stringify(arg) : String(arg);
+    } catch {
+      message = String(arg);
+    }
+
+    if (suppressPatterns.some((pattern) => message.includes(pattern))) {
+      return true;
+    }
+  }
+  return false;
 };
 
 console.warn = (...args) => {

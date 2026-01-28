@@ -8,6 +8,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from utils.google_enricher import GoogleEnricher, is_missing_field
 from variavel import stacks
 
+HTTPX_TIMEOUT = float(os.getenv("HTTPX_TIMEOUT", "30"))
+
 
 def _normalize_job_url(url: str) -> str:
   if not url:
@@ -45,9 +47,12 @@ async def get_gupy_jobs() -> list:
   }
   
   jobs = []
-  async with httpx.AsyncClient() as client:
+  async with httpx.AsyncClient(timeout=HTTPX_TIMEOUT, follow_redirects=True) as client:
     for stack in stacks:
-      response = await client.get(f"https://portal.api.gupy.io/api/v1/jobs?jobName={stack}&limit=1000")
+      try:
+        response = await client.get(f"https://portal.api.gupy.io/api/v1/jobs?jobName={stack}&limit=1000")
+      except httpx.HTTPError:
+        continue
 
       if response.status_code == 200:
         json_response = response.json()

@@ -4,6 +4,8 @@ import os
 import httpx
 from variavel import stacks
 
+HTTPX_TIMEOUT = float(os.getenv("HTTPX_TIMEOUT", "30"))
+
 
 def _extract_icon_text(soup: BeautifulSoup, icon_name: str) -> str:
     for li in soup.find_all("li"):
@@ -41,8 +43,8 @@ def extract_dom_details(soup: BeautifulSoup) -> dict:
         if "remoto" in lowered or "home office" in lowered:
             work_type = "Remoto"
             break
-        if "híbrido" in lowered or "hibrido" in lowered:
-            work_type = "Híbrido"
+        if "hÃ­brido" in lowered or "hibrido" in lowered:
+            work_type = "HÃ­brido"
             break
         if "presencial" in lowered:
             work_type = "Presencial"
@@ -58,6 +60,7 @@ def extract_dom_details(soup: BeautifulSoup) -> dict:
         "work_schedule": duration,
     }
 
+
 async def get_careerjet_links() -> list:
     '''
     Asynchronous function that returns a list of lists with the following structure:
@@ -71,13 +74,24 @@ async def get_careerjet_links() -> list:
     max_pages = int(os.getenv("CAREERJET_MAX_PAGES", "20"))
     max_empty_pages = int(os.getenv("CAREERJET_MAX_EMPTY_PAGES", "1"))
 
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(timeout=HTTPX_TIMEOUT, follow_redirects=True) as client:
         for stack in stacks:
             empty_pages = 0
             for page in range(1, max_pages + 1):
-                response = await client.get(f'https://www.careerjet.com.br/vagas?s={stack}&l=Brasil&p={page}')
+                try:
+                    response = await client.get(
+                        f'https://www.careerjet.com.br/vagas?s={stack}&l=Brasil&p={page}'
+                    )
+                except httpx.HTTPError:
+                    empty_pages += 1
+                    if empty_pages >= max_empty_pages:
+                        break
+                    continue
                 if response.status_code != 200:
-                    break
+                    empty_pages += 1
+                    if empty_pages >= max_empty_pages:
+                        break
+                    continue
                 soup = BeautifulSoup(response.text, 'html.parser')
                 cells = soup.find_all('article', class_='job clicky')
                 if not cells:
@@ -98,15 +112,19 @@ async def get_careerjet_links() -> list:
 
     return links
 
+
 async def get_careerjet_jobs() -> list:
 
     jobs = []
 
     job_links = await get_careerjet_links()
 
-    for link in job_links:
-        async with httpx.AsyncClient() as client:
-            response = await client.get(link)
+    async with httpx.AsyncClient(timeout=HTTPX_TIMEOUT, follow_redirects=True) as client:
+        for link in job_links:
+            try:
+                response = await client.get(link)
+            except httpx.HTTPError:
+                continue
             if response.status_code == 200:
                 soup = BeautifulSoup(response.text, 'html.parser')
                 data = soup.find('script', type='application/ld+json')
@@ -129,7 +147,7 @@ async def get_careerjet_jobs() -> list:
 
                 dom_details = extract_dom_details(soup)
 
-                # Localização
+                # LocalizaÃ§Ã£o
                 job_location = data.get('jobLocation', {})
                 address = job_location.get('address', {}) if job_location else {}
                 locality = address.get('addressLocality', '')
@@ -144,33 +162,33 @@ async def get_careerjet_jobs() -> list:
                 else:
                     location = ''
 
-                # Modalidade de trabalho (Remoto/Híbrido/Presencial)
+                # Modalidade de trabalho (Remoto/HÃ­brido/Presencial)
                 job_location_type = data.get('jobLocationType', '')
                 title_lower = job_title.lower()
 
                 if job_location_type == 'TELECOMMUTE' or 'remoto' in title_lower or 'remote' in title_lower:
                     work_type = 'Remoto'
-                elif 'híbrido' in title_lower or 'hybrid' in title_lower:
-                    work_type = 'Híbrido'
+                elif 'hÃ­brido' in title_lower or 'hybrid' in title_lower:
+                    work_type = 'HÃ­brido'
                 else:
                     work_type = ''
 
                 if dom_details.get("work_type"):
                     work_type = dom_details["work_type"]
 
-                # Regime de contratação
+                # Regime de contrataÃ§Ã£o
                 employment_type = data.get('employmentType', '')
                 hiring_regime_map = {
                     'FULL_TIME': 'CLT',
-                    'PART_TIME': 'Meio Período',
+                    'PART_TIME': 'Meio PerÃ­odo',
                     'CONTRACTOR': 'PJ',
-                    'INTERN': 'Estágio',
-                    'TEMPORARY': 'Temporário',
-                    'VOLUNTEER': 'Voluntário'
+                    'INTERN': 'EstÃ¡gio',
+                    'TEMPORARY': 'TemporÃ¡rio',
+                    'VOLUNTEER': 'VoluntÃ¡rio'
                 }
 
                 if isinstance(employment_type, list):
-                    # Pega o primeiro tipo válido
+                    # Pega o primeiro tipo vÃ¡lido
                     hiring_regime = ''
                     for emp_type in employment_type:
                         if emp_type in hiring_regime_map:
@@ -184,7 +202,7 @@ async def get_careerjet_jobs() -> list:
                 if dom_details.get("hiring_regime"):
                     hiring_regime = dom_details["hiring_regime"]
 
-                # Salário
+                # SalÃ¡rio
                 base_salary = data.get('baseSalary', {})
                 if base_salary:
                     currency = base_salary.get('currency', 'BRL')
@@ -212,7 +230,7 @@ async def get_careerjet_jobs() -> list:
                 if dom_details.get("location"):
                     location = dom_details["location"]
 
-                # Data de publicação no formato brasileiro DD/MM/YYYY
+                # Data de publicaÃ§Ã£o no formato brasileiro DD/MM/YYYY
                 date_posted = data.get('datePosted', '')
                 date_raw = date_posted[:10] if date_posted else ''
                 if date_raw and len(date_raw) == 10 and '-' in date_raw:

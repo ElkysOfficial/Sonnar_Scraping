@@ -257,6 +257,15 @@ class GoogleEnricher:
             self.headless = True
         else:
             self.headless = env_headless.strip().lower() in {"1", "true", "yes", "y"}
+        ignore_https_env = os.getenv("PLAYWRIGHT_IGNORE_HTTPS_ERRORS")
+        if ignore_https_env is None:
+            self._ignore_https_errors = True
+        else:
+            self._ignore_https_errors = ignore_https_env.strip().lower() in {"1", "true", "yes", "y"}
+        self._search_timeout_ms = int(os.getenv("GOOGLE_SEARCH_TIMEOUT_MS", "30000"))
+        self._max_search_retries = int(os.getenv("GOOGLE_SEARCH_MAX_RETRIES", "2"))
+        self._cooldown_seconds = int(os.getenv("GOOGLE_SEARCH_COOLDOWN_SECONDS", "120"))
+        self._cooldown_until = 0.0
         self._cache = self._load_cache()
         self._lock = asyncio.Lock()
         self._playwright = None
@@ -265,38 +274,7 @@ class GoogleEnricher:
         self._page = None
 
     async def __aenter__(self):
-        self._playwright = await async_playwright().start()
-        launch_args = [
-            "--disable-blink-features=AutomationControlled",
-            "--disable-dev-shm-usage",
-            "--no-sandbox",
-            "--disable-setuid-sandbox",
-        ]
-
-        try:
-            # Tenta usar o Chrome instalado primeiro
-            self._browser = await self._playwright.chromium.launch(
-                channel="chrome",
-                headless=self.headless,
-                args=launch_args,
-            )
-        except Exception:
-            # Fallback para Chromium bundled
-            self._browser = await self._playwright.chromium.launch(
-                headless=self.headless,
-                args=launch_args,
-            )
-
-        self._context = await self._browser.new_context(
-            locale="pt-BR",
-            timezone_id="America/Sao_Paulo",
-            user_agent=DEFAULT_USER_AGENT,
-        )
-
-        await self._context.add_init_script(
-            "Object.defineProperty(navigator, 'webdriver', {get: () => undefined});"
-        )
-        self._page = await self._context.new_page()
+        await self._launch_browser()
         return self
 
     async def __aexit__(self, exc_type, exc, tb):
@@ -320,6 +298,90 @@ class GoogleEnricher:
                 await self._playwright.stop()
         except Exception:
             pass
+
+    async def _launch_browser(self) -> None:
+        await self._safe_close_page_context()
+        if self._browser:
+            try:
+                await self._browser.close()
+            except Exception:
+                pass
+            self._browser = None
+        if not self._playwright:
+            self._playwright = await async_playwright().start()
+        launch_args = [
+            "--disable-blink-features=AutomationControlled",
+            "--disable-dev-shm-usage",
+            "--no-sandbox",
+            "--disable-setuid-sandbox",
+        ]
+        try:
+            self._browser = await self._playwright.chromium.launch(
+                channel="chrome",
+                headless=self.headless,
+                args=launch_args,
+            )
+        except Exception:
+            self._browser = await self._playwright.chromium.launch(
+                headless=self.headless,
+                args=launch_args,
+            )
+        await self._create_context_page()
+
+    async def _create_context_page(self) -> None:
+        if not self._browser:
+            return
+        self._context = await self._browser.new_context(
+            locale="pt-BR",
+            timezone_id="America/Sao_Paulo",
+            user_agent=DEFAULT_USER_AGENT,
+            ignore_https_errors=self._ignore_https_errors,
+        )
+        await self._context.add_init_script(
+            "Object.defineProperty(navigator, 'webdriver', {get: () => undefined});"
+        )
+        self._page = await self._context.new_page()
+        try:
+            self._page.set_default_navigation_timeout(self._search_timeout_ms)
+            self._page.set_default_timeout(self._search_timeout_ms)
+        except Exception:
+            pass
+
+    async def _safe_close_page_context(self) -> None:
+        try:
+            if self._page:
+                await self._page.close()
+        except Exception:
+            pass
+        finally:
+            self._page = None
+        try:
+            if self._context:
+                await self._context.close()
+        except Exception:
+            pass
+        finally:
+            self._context = None
+
+    async def _ensure_page(self) -> bool:
+        if self._page and not self._page.is_closed():
+            return True
+        await self._safe_close_page_context()
+        if not self._browser or not self._browser.is_connected():
+            await self._launch_browser()
+        else:
+            await self._create_context_page()
+        return self._page is not None and not self._page.is_closed()
+
+    def _is_transient_playwright_error(self, exc: Exception) -> bool:
+        text = str(exc)
+        if "Target page, context or browser has been closed" in text:
+            return True
+        if "net::ERR_" in text:
+            return True
+        if "Timeout" in text or "timeout" in text:
+            return True
+        return False
 
     def _load_cache(self) -> Dict[str, Dict[str, str]]:
         default_cache = {
@@ -414,24 +476,41 @@ class GoogleEnricher:
                 self._save_cache()
             return salary
 
-    async def _search(self, query: str) -> None:
-        if not self._page:
-            return
+    async def _search(self, query: str) -> bool:
+        if time.time() < self._cooldown_until:
+            return False
 
-        await self._page.goto("https://www.google.com/", wait_until="domcontentloaded")
-        await self._accept_google_consent()
-        try:
-            await self._page.wait_for_selector("textarea[name='q']", timeout=10000)
-        except Exception:
-            pass
-        await self._page.fill("textarea[name='q']", query)
-        await self._page.keyboard.press("Enter")
-        await self._page.wait_for_load_state("domcontentloaded")
-        await self._page.wait_for_timeout(1000)
-        try:
-            await self._page.wait_for_selector("#search", timeout=10000)
-        except Exception:
-            pass
+        for attempt in range(1, self._max_search_retries + 1):
+            if not await self._ensure_page():
+                return False
+            try:
+                await self._page.goto(
+                    "https://www.google.com/",
+                    wait_until="domcontentloaded",
+                    timeout=self._search_timeout_ms,
+                )
+                await self._accept_google_consent()
+                try:
+                    await self._page.wait_for_selector("textarea[name='q']", timeout=10000)
+                except Exception:
+                    pass
+                await self._page.fill("textarea[name='q']", query)
+                await self._page.keyboard.press("Enter")
+                await self._page.wait_for_load_state("domcontentloaded")
+                await self._page.wait_for_timeout(1000)
+                try:
+                    await self._page.wait_for_selector("#search", timeout=10000)
+                except Exception:
+                    pass
+                return True
+            except Exception as exc:
+                if not self._is_transient_playwright_error(exc):
+                    raise
+                await self._safe_close_page_context()
+                if attempt >= self._max_search_retries:
+                    self._cooldown_until = time.time() + self._cooldown_seconds
+                await asyncio.sleep(min(1.5 * attempt, 5))
+        return False
 
     async def _accept_google_consent(self) -> None:
         if not self._page:
@@ -461,7 +540,8 @@ class GoogleEnricher:
             f"sede da empresa {company}",
         ]
         for query in queries:
-            await self._search(query)
+            if not await self._search(query):
+                return None
             location = await self._extract_location(company)
             if location:
                 return location
@@ -478,13 +558,15 @@ class GoogleEnricher:
             "com base no glassdoor valor medio pago por mes para essa vaga por essa empresa "
             "e R$ X - R$ X"
         )
-        await self._search(query)
+        if not await self._search(query):
+            return None
         salary = await self._extract_salary()
         if salary:
             return salary
 
         fallback_query = f"glassdoor salario medio {job_title} {company}"
-        await self._search(fallback_query)
+        if not await self._search(fallback_query):
+            return None
         return await self._extract_salary()
 
     async def _extract_location(self, company: str) -> Optional[str]:

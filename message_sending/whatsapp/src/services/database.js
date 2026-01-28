@@ -4,13 +4,21 @@
  * Replaces JSON file storage with proper database persistence
  */
 
+import dotenv from "dotenv"
 import { createClient } from "@supabase/supabase-js"
+import { fileURLToPath } from "node:url"
+import { dirname, resolve } from "node:path"
+
+const envPath = resolve(dirname(fileURLToPath(import.meta.url)), "../../.env")
+dotenv.config({ path: envPath })
 
 const SUPABASE_URL = process.env.SUPABASE_URL
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
 
 if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-  console.error("[database] Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY")
+  throw new Error(
+    "[database] Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY. Check your .env file."
+  )
 }
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
