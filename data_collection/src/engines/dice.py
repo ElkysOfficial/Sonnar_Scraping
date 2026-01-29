@@ -62,7 +62,7 @@ def extract_hiring_regime(text: str) -> str:
     text_lower = text.lower()
 
     if 'full-time' in text_lower or 'full time' in text_lower:
-        return 'Full-time'
+        return 'Permanente'
     if 'part-time' in text_lower or 'part time' in text_lower:
         return 'Part-time'
     if 'contract' in text_lower or 'contractor' in text_lower or 'c2c' in text_lower or 'w2' in text_lower:
@@ -84,6 +84,9 @@ def extract_work_type(text: str, location: str) -> str:
     """Extrai tipo de trabalho (Remoto/Hibrido/Presencial)."""
     combined = (text + ' ' + location).lower()
 
+    # On-site significa presencial
+    if 'on-site' in combined or 'on site' in combined or 'onsite' in combined:
+        return 'Presencial'
     if 'remote' in combined:
         return 'Remoto'
     if 'hybrid' in combined:
@@ -211,20 +214,30 @@ async def get_dice_jobs() -> list:
                         # Hiring regime
                         hiring_regime = extract_hiring_regime(card_text_full)
 
-                        # Salario - procurar padroes
+                        # Salario - procurar padroes (incluindo USD e $)
                         salary = ''
                         for text in card_texts:
                             text_lower = text.lower()
-                            # "Depends on Experience" ou valores como "$100k - $150k"
-                            if '$' in text or 'depends' in text_lower or 'competitive' in text_lower or 'negotiable' in text_lower:
+                            # Detectar salarios com USD (ex: "USD 22.00 per hour")
+                            if 'usd' in text_lower or '$' in text or 'per hour' in text_lower or 'per year' in text_lower:
                                 # Se texto curto (<50 chars), usar inteiro
                                 if len(text) <= 50:
-                                    salary = text
+                                    salary = text.strip()
                                     break
                                 # Para textos maiores, extrair apenas o valor do salario via regex
+                                # Primeiro tentar formato USD
+                                usd_match = re.search(r'USD\s*[\d,.]+(?:\s*(?:per\s+(?:hour|year|month|week)|/\s*(?:hr|hour|yr|year|mo|month|week)))?(?:\s*[-–]\s*(?:USD\s*)?[\d,.]+(?:\s*(?:per\s+(?:hour|year|month|week)|/\s*(?:hr|hour|yr|year|mo|month|week)))?)?', text, re.IGNORECASE)
+                                if usd_match:
+                                    salary = usd_match.group(0)
+                                    break
+                                # Fallback para formato com $
                                 salary_match = re.search(r'\$[\d,]+(?:k)?(?:\.\d{2})?(?:\s*[-–]\s*\$?[\d,]+(?:k)?(?:\.\d{2})?)?(?:\s*/\s*(?:hr|hour|yr|year|mo|month|week))?', text, re.IGNORECASE)
                                 if salary_match:
                                     salary = salary_match.group(0)
+                                    break
+                            elif 'depends' in text_lower or 'competitive' in text_lower or 'negotiable' in text_lower:
+                                if len(text) <= 50:
+                                    salary = text.strip()
                                     break
 
                         # Data de publicacao - procurar "Today", "X days ago", etc

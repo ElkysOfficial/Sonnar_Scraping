@@ -5,8 +5,8 @@ from typing import Optional, Tuple
 
 # Faixas salariais por senioridade (valores mensais em BRL)
 SALARY_RANGES = {
-    "intern": (1400, 3000),
-    "junior": (2500, 7000),
+    "intern": (800, 3000),   # Estágio pode pagar menos
+    "junior": (2000, 7000),
     "mid": (5000, 12000),
     "senior": (9000, 20000),
     "lead": (12000, 30000),
@@ -14,8 +14,8 @@ SALARY_RANGES = {
 }
 
 # Limites absolutos
-SALARY_MIN = 1400  # Salário mínimo
-SALARY_MAX = 60000  # Máximo razoável para salário mensal
+SALARY_MIN = 800   # Mínimo para estágios
+SALARY_MAX = 80000  # Máximo para C-level/diretores
 
 
 def normalize_text(value: str) -> str:
@@ -82,8 +82,17 @@ def is_salary_valid(min_val: float, max_val: float, title: str) -> bool:
     if min_val <= 0 or max_val <= 0:
         return False
 
-    # Abaixo do salário mínimo
-    if max_val < SALARY_MIN:
+    # Verifica senioridade primeiro para determinar limites
+    seniority, is_c_level = classify_seniority(title)
+
+    # Define o mínimo baseado na senioridade
+    if seniority == "intern":
+        min_allowed = 800  # Estágios podem pagar menos
+    else:
+        min_allowed = SALARY_MIN
+
+    # Abaixo do mínimo permitido
+    if max_val < min_allowed:
         return False
 
     # Acima do máximo absoluto
@@ -95,7 +104,6 @@ def is_salary_valid(min_val: float, max_val: float, title: str) -> bool:
         return False
 
     # Verifica por senioridade
-    seniority, is_c_level = classify_seniority(title)
     if seniority:
         _, max_expected = SALARY_RANGES[seniority]
         # Permite até 50% acima do máximo esperado

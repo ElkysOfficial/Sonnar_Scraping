@@ -176,6 +176,10 @@ async def get_careerjet_jobs() -> list:
                 if dom_details.get("work_type"):
                     work_type = dom_details["work_type"]
 
+                # Se não identificou o tipo de trabalho, definir como "Não informado"
+                if not work_type:
+                    work_type = "Não informado"
+
                 # Regime de contrataÃ§Ã£o
                 employment_type = data.get('employmentType', '')
                 hiring_regime_map = {

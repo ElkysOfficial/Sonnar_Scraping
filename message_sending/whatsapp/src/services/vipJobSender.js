@@ -19,10 +19,14 @@ import {
   CARD_API_URL,
   VIP_JOB_LOOKBACK_DAYS,
   VIP_MAX_JOBS_PER_CYCLE,
-  VIP_FALLBACK_MAX_JOBS
+  VIP_FALLBACK_MAX_JOBS,
+  VIP_ENABLE_FULL_SCAN_FALLBACK,
+  VIP_FULL_SCAN_PAGE_SIZE,
+  VIP_ENABLE_DIAGNOSTICS,
+  VIP_DIAGNOSTIC_LOG_LIMIT
 } from "../config.js"
 import { extractStack } from "./jobDistributor.js"
-import { getVipSubscribers } from "../utils/database.js"
+import { getVipSubscribers, getVipSubscriber } from "../utils/database.js"
 import { getCurrentSocket, isCurrentSocketReady } from "../utils/socketManager.js"
 import { getAllJobs } from "./database.js"
 import {
@@ -33,9 +37,16 @@ import {
   getSentJobIds,
   cleanOldEntries
 } from "./vipHistory.js"
+import {
+  normalizeText,
+  normalizeTokensFromText,
+  matchStacksWithScore,
+  detectWorkMode,
+  matchLocationForMode
+} from "../utils/matchingEngine.js"
 
-// Intervalo entre verificações (7 minutos)
-const CHECK_INTERVAL = 7 * 60 * 1000
+// Intervalo entre verificações (10 minutos)
+const CHECK_INTERVAL = 10 * 60 * 1000
 let vipTimeoutId = null
 let vipIntervalId = null
 let vipRunToken = 0
@@ -43,6 +54,11 @@ let vipPendingTimeoutId = null
 
 // Buscas VIP pendentes quando a conexao esta fechada
 const pendingVipSearches = new Map()
+
+function createCorrelationId(prefix) {
+  const random = Math.random().toString(36).slice(2, 8)
+  return `${prefix}-${Date.now().toString(36)}-${random}`
+}
 
 function queueVipSearch(lid, filters) {
   pendingVipSearches.set(lid, { filters, queuedAt: Date.now() })
@@ -105,11 +121,7 @@ async function loadJobs(options = {}) {
  * @returns {string}
  */
 function normalizeStack(stack) {
-  return stack
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "") // Remove acentos
-    .trim()
+  return normalizeText(stack)
 }
 
 const normalizedJobCache = new WeakMap()
@@ -118,6 +130,7 @@ let SEMANTIC_INFERENCES_CACHE
 let TECHNOLOGY_GROUPS_CACHE
 let COMMON_TYPOS_CACHE
 let COUNTRY_KEYWORDS_CACHE
+let SENIORITY_META_CACHE
 
 function getNormalizedJobFields(job) {
   if (!job || typeof job !== "object") {
@@ -147,7 +160,7 @@ function getNormalizedJobFields(job) {
   const location = normalizeStack(job.location || "")
   const workType = normalizeStack(job.work_type || "")
   const regime = normalizeStack(job.hiring_regime || "")
-  const text = `${title} ${description} ${url} ${source} ${company}`.trim()
+  const text = `${title} ${description} ${company}`.trim()
 
   const normalized = {
     title,
@@ -273,6 +286,114 @@ function findMatchingJobsWithCount(jobs, filters, sentJobIds, checkedIds) {
   return { firstMatch, count }
 }
 
+function createDiagnosticsTracker(label) {
+  return {
+    label,
+    scanned: 0,
+    matched: 0,
+    skippedNoId: 0,
+    skippedAlreadySent: 0,
+    reasons: new Map()
+  }
+}
+
+function recordDiagnosticReason(tracker, reason) {
+  if (!tracker) return
+  const key = reason || "unknown"
+  tracker.reasons.set(key, (tracker.reasons.get(key) || 0) + 1)
+}
+
+function formatDiagnosticsSummary(tracker, lid, filters, extra = {}) {
+  const totalFails = [...tracker.reasons.values()].reduce((sum, value) => sum + value, 0)
+  const sorted = [...tracker.reasons.entries()].sort((a, b) => b[1] - a[1])
+  const topReasons = sorted.slice(0, Math.max(1, VIP_DIAGNOSTIC_LOG_LIMIT))
+  const reasonsText = topReasons
+    .map(([reason, count]) => {
+      const pct = totalFails > 0 ? ((count / totalFails) * 100).toFixed(1) : "0.0"
+      return `${reason}=${count} (${pct}%)`
+    })
+    .join(" | ")
+
+  const filterSummary = []
+  if (filters?.roles?.length) filterSummary.push(`roles=${filters.roles.join(",")}`)
+  if (filters?.stacks?.length) filterSummary.push(`stacks=${filters.stacks.join(",")}`)
+  if (filters?.seniority?.length) filterSummary.push(`seniority=${filters.seniority.join(",")}`)
+  if (filters?.locations?.length) filterSummary.push(`locations=${filters.locations.join(",")}`)
+  if (filters?.workMode?.length) filterSummary.push(`workMode=${filters.workMode.join(",")}`)
+
+  return [
+    `[VIP DIAG]${extra.runId ? ` runId=${extra.runId}` : ""} ${lid} ${tracker.label}`,
+    `scanned=${tracker.scanned}`,
+    `matched=${tracker.matched}`,
+    `skippedNoId=${tracker.skippedNoId}`,
+    `skippedSent=${tracker.skippedAlreadySent}`,
+    `filters=${filterSummary.join(";") || "none"}`,
+    `top=${reasonsText || "no_fail_reasons"}`,
+    extra.note ? `note=${extra.note}` : ""
+  ].filter(Boolean).join(" | ")
+}
+
+async function scanJobsForMatch({
+  filters,
+  sentJobIds,
+  checkedIds,
+  pageSize,
+  diagnostics,
+  stopOnFirstMatch = true
+}) {
+  const safePageSize = Number.isFinite(pageSize) && pageSize > 0 ? pageSize : 1000
+  let offset = 0
+  let firstMatch = null
+  let matchCount = 0
+
+  while (true) {
+    const jobs = await getAllJobs({ limit: safePageSize, offset })
+    if (!jobs.length) {
+      break
+    }
+
+    for (const job of jobs) {
+      if (diagnostics) diagnostics.scanned += 1
+      const jobId = getJobIdentifier(job)
+      if (!jobId) {
+        if (diagnostics) diagnostics.skippedNoId += 1
+        continue
+      }
+      if (checkedIds.has(jobId)) {
+        continue
+      }
+      checkedIds.add(jobId)
+      if (sentJobIds.has(jobId)) {
+        if (diagnostics) diagnostics.skippedAlreadySent += 1
+        continue
+      }
+
+      const result = jobMatchesFilters(job, filters, true)
+      if (result.match) {
+        matchCount += 1
+        if (diagnostics) diagnostics.matched += 1
+        if (!firstMatch) {
+          firstMatch = job
+          if (stopOnFirstMatch) {
+            return { firstMatch, matchCount, diagnostics }
+          }
+        }
+      } else if (diagnostics) {
+        const reason = result.details?.failReason || "score_below_threshold"
+        recordDiagnosticReason(diagnostics, reason)
+      }
+    }
+
+    if (jobs.length < safePageSize) {
+      break
+    }
+
+    offset += jobs.length
+  }
+
+  return { firstMatch, matchCount, diagnostics }
+}
+
 /**
  * Verifica se a vaga corresponde aos filtros do assinante
  * Sistema INTELIGENTE de matching com:
@@ -296,10 +417,8 @@ function jobMatchesFilters(job, filters, returnScore = false) {
   const normalizedJob = getNormalizedJobFields(job)
   const jobTitle = normalizedJob.title
   const jobDescription = normalizedJob.description
-  const jobUrl = normalizedJob.url
-  const jobSource = normalizedJob.source
-  const jobCompany = normalizedJob.company
   const jobText = normalizedJob.text
+  const jobCoreText = `${jobTitle} ${jobDescription}`.trim()
   const jobLocation = normalizedJob.location
   const jobWorkType = normalizedJob.workType
   const jobRegime = normalizedJob.regime
@@ -337,7 +456,8 @@ function jobMatchesFilters(job, filters, returnScore = false) {
     seniority: {
       "junior": ["junior", "jr", "jr.", "júnior", "nivel i", "nivel 1", "n1", "entry level", "entry-level", "iniciante", "associate", "i", "level 1", "l1", "p1", "grade 1", "g1", "beginning", "beginner", "novato", "junior i", "junior ii"],
       "pleno": ["pleno", "pl", "pl.", "mid", "mid-level", "middle", "nivel ii", "nivel 2", "n2", "intermediario", "ii", "level 2", "l2", "p2", "grade 2", "g2", "regular", "mid-senior", "semi-senior", "semi senior", "pleno i", "pleno ii", "pleno iii"],
-      "senior": ["senior", "sr", "sr.", "sênior", "especialista", "nivel iii", "nivel 3", "n3", "expert", "iii", "level 3", "l3", "p3", "grade 3", "g3", "iv", "l4", "p4", "lead", "senior i", "senior ii", "senior iii", "avancado", "advanced", "experienced"],
+      "senior": ["senior", "sr", "sr.", "sênior", "especialista", "nivel iii", "nivel 3", "n3", "expert", "iii", "level 3", "l3", "p3", "grade 3", "g3", "iv", "l4", "p4", "senior i", "senior ii", "senior iii", "avancado", "advanced", "experienced"],
+      "lead": ["lead", "tech lead", "technical lead", "team lead", "lead developer", "lead engineer", "engineering lead", "squad lead", "lider tecnico", "líder técnico", "liderança", "lideranca"],
       "staff": ["staff", "staff engineer", "staff developer", "l5", "p5", "level 5", "distinguished", "principal engineer", "principal", "fellow", "distinguished engineer", "staff software engineer"],
       "estagio": ["estagio", "estágio", "intern", "internship", "estagiario", "estagiária", "estagiario(a)", "summer intern", "intern developer"],
       "trainee": ["trainee", "aprendiz", "jovem aprendiz", "menor aprendiz", "apprentice", "graduate", "graduate program", "programa trainee"]
@@ -718,7 +838,7 @@ function jobMatchesFilters(job, filters, returnScore = false) {
   // Detecta país do usuário
   const getUserCountry = (locs) => {
     for (const loc of locs) {
-      const normalized = normalizeStack(loc)
+      const normalized = normalizeTokensFromText(loc)
       for (const [country, keywords] of Object.entries(countryKeywords)) {
         if (keywords.some(kw => normalized.includes(kw) || kw.includes(normalized))) {
           return country
@@ -730,13 +850,32 @@ function jobMatchesFilters(job, filters, returnScore = false) {
 
   // Detecta país da vaga
   const getJobCountry = (jobLoc) => {
-    const normalized = normalizeStack(jobLoc)
+    const normalized = normalizeTokensFromText(jobLoc)
     for (const [country, keywords] of Object.entries(countryKeywords)) {
       if (keywords.some(kw => normalized.includes(kw))) {
         return country
       }
     }
     return null
+  }
+
+  const userAcceptsWorkMode = (workModes, modeKey) => {
+    if (!workModes || workModes.length === 0) {
+      return true
+    }
+    const normalizedTargets = new Set([normalizeTokensFromText(modeKey)])
+    const syns = synonyms.workMode?.[modeKey] || []
+    syns.forEach((term) => {
+      const normalizedTerm = normalizeTokensFromText(term)
+      if (normalizedTerm) {
+        normalizedTargets.add(normalizedTerm)
+      }
+    })
+
+    return workModes.some((mode) => {
+      const normalizedMode = normalizeTokensFromText(mode)
+      return normalizedTargets.has(normalizedMode)
+    })
   }
 
   // Verifica se a vaga é 100% remota
@@ -844,6 +983,155 @@ function jobMatchesFilters(job, filters, returnScore = false) {
     return { matched: result.matched, isEmpty: result.isEmpty }
   }
 
+  const normalizeTokensFromTerm = (value) => {
+    if (!value) {
+      return []
+    }
+    return normalizeTokensFromText(value).split(" ").filter(Boolean)
+  }
+
+  const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+
+  const hasToken = (text, token) => {
+    if (!token) {
+      return false
+    }
+    const pattern = new RegExp(`\\b${escapeRegex(token)}\\b`, "i")
+    return pattern.test(text)
+  }
+
+  const checkCompoundRoleMatch = (term, text, roleSynonyms, weight) => {
+    const stopWords = new Set(["de", "da", "do", "das", "dos", "of", "the", "and", "e", "para", "por", "em", "no", "na"])
+    const tokenAliases = {
+      dados: ["dados", "data"],
+      data: ["data", "dados"]
+    }
+    const tokens = normalizeTokensFromTerm(term).filter(token => !stopWords.has(token))
+
+    if (tokens.length < 2) {
+      return { matched: false, isEmpty: false, matchType: "compound", score: 0 }
+    }
+
+    const textTokens = normalizeTokensFromText(text)
+
+    const tokenMatches = (token) => {
+      const aliases = tokenAliases[token]
+      if (aliases && aliases.some((alias) => hasToken(textTokens, alias))) {
+        return true
+      }
+      if (hasToken(textTokens, token)) {
+        return true
+      }
+      for (const [key, syns] of Object.entries(roleSynonyms || {})) {
+        if (token === key || syns.includes(token)) {
+          if (hasToken(textTokens, key)) {
+            return true
+          }
+          if (syns.some((syn) => hasToken(textTokens, normalizeTokensFromText(syn)))) {
+            return true
+          }
+        }
+      }
+      return false
+    }
+
+    const matchedAll = tokens.every(token => tokenMatches(token))
+    return matchedAll
+      ? { matched: true, isEmpty: false, matchType: "compound", score: weight * 0.8 }
+      : { matched: false, isEmpty: false, matchType: "compound", score: 0 }
+  }
+
+  // Normaliza texto para detecção de senioridade (remove pontuação)
+  const normalizeSeniorityText = (value) => {
+    if (!value) {
+      return ""
+    }
+    return normalizeStack(value).replace(/[^a-z0-9]+/g, " ").trim()
+  }
+
+  const buildSeniorityMeta = (syns) => {
+    const ambiguousTokens = new Set(["i", "ii", "iii", "iv", "v", "vi", "vii", "viii", "ix", "x"])
+    const keepShort = new Set(["jr", "sr"])
+
+    const isAmbiguous = (term) => {
+      if (!term) return true
+      if (ambiguousTokens.has(term)) return true
+      if (/^[lnpg]\d$/i.test(term)) return true
+      if (term.length <= 1) return true
+      if (term.length <= 2 && !keepShort.has(term)) return true
+      return false
+    }
+
+    const normalizeTerms = (terms) => {
+      const normalized = []
+      for (const term of terms || []) {
+        const normalizedTerm = normalizeSeniorityText(term)
+        if (!normalizedTerm || isAmbiguous(normalizedTerm)) {
+          continue
+        }
+        normalized.push(normalizedTerm)
+      }
+      return [...new Set(normalized)]
+    }
+
+    const senioritySyns = syns?.seniority || {}
+    const levels = {
+      estagio: { rank: 0, terms: normalizeTerms(senioritySyns.estagio) },
+      trainee: { rank: 0, terms: normalizeTerms(senioritySyns.trainee) },
+      junior: { rank: 1, terms: normalizeTerms(senioritySyns.junior) },
+      pleno: { rank: 2, terms: normalizeTerms(senioritySyns.pleno) },
+      senior: { rank: 3, terms: normalizeTerms(senioritySyns.senior) },
+      lead: { rank: 4, terms: normalizeTerms(senioritySyns.lead) },
+      staff: { rank: 4, terms: normalizeTerms(senioritySyns.staff) },
+      manager: {
+        rank: 5,
+        terms: normalizeTerms([
+          "manager", "gerente", "coordenador", "supervisor", "head", "director", "diretor",
+          "vp", "vice president", "executive", "chief", "c-level", "cto", "cio", "cpo", "cfo", "ceo"
+        ])
+      }
+    }
+
+    const termToLevel = new Map()
+    for (const [levelKey, levelData] of Object.entries(levels)) {
+      const normalizedKey = normalizeSeniorityText(levelKey)
+      if (normalizedKey) {
+        termToLevel.set(normalizedKey, levelKey)
+      }
+      for (const term of levelData.terms) {
+        termToLevel.set(term, levelKey)
+      }
+    }
+
+    return { levels, termToLevel }
+  }
+
+  const extractSeniorityLevels = (text, seniorityMeta) => {
+    const normalized = normalizeSeniorityText(text)
+    if (!normalized) {
+      return new Set()
+    }
+    const padded = ` ${normalized} `
+    const found = new Set()
+    for (const [term, level] of seniorityMeta.termToLevel.entries()) {
+      if (padded.includes(` ${term} `)) {
+        found.add(level)
+      }
+    }
+    return found
+  }
+
+  const normalizeSeniorityFilters = (values, seniorityMeta) => {
+    const normalizedLevels = new Set()
+    for (const value of values || []) {
+      const levels = extractSeniorityLevels(value, seniorityMeta)
+      for (const level of levels) {
+        normalizedLevels.add(level)
+      }
+    }
+    return [...normalizedLevels]
+  }
+
   // ═══════════════════════════════════════════════════════════════
   // LÓGICA DE MATCHING
   // ═══════════════════════════════════════════════════════════════
@@ -857,16 +1145,17 @@ function jobMatchesFilters(job, filters, returnScore = false) {
   // 1. STACKS (peso: weights.stacks)
   // ─────────────────────────────────────────────────────────────
   const stacks = filters.stacks || []
+  const stackText = jobCoreText || jobText
   if (stacks.length > 0) {
     maxScore += weights.stacks
-    const stackResult = checkMatchWithScore(stacks, jobText, synonyms.stacks, weights.stacks)
+    const stackResult = matchStacksWithScore(stacks, stackText, weights.stacks)
     matchDetails.stacks = stackResult
 
     if (stackResult.matched && !stackResult.isEmpty) {
       totalScore += stackResult.score
     } else if (must.stacks) {
       mustFieldsFailed = true
-      matchDetails.failReason = "stacks_required_not_found"
+      matchDetails.failReason = stackResult.failReason || "stacks_required_not_found"
     }
   }
 
@@ -874,9 +1163,19 @@ function jobMatchesFilters(job, filters, returnScore = false) {
   // 2. ROLES (peso: weights.roles)
   // ─────────────────────────────────────────────────────────────
   const roles = filters.roles || []
+  const roleText = jobCoreText || jobText
   if (roles.length > 0) {
     maxScore += weights.roles
-    const roleResult = checkMatchWithScore(roles, jobText, synonyms.roles, weights.roles)
+    let roleResult = checkMatchWithScore(roles, roleText, synonyms.roles, weights.roles)
+    if (!roleResult.matched) {
+      for (const roleTerm of roles) {
+        const compoundResult = checkCompoundRoleMatch(roleTerm, roleText, synonyms.roles, weights.roles)
+        if (compoundResult.matched) {
+          roleResult = compoundResult
+          break
+        }
+      }
+    }
     matchDetails.roles = roleResult
 
     if (roleResult.matched && !roleResult.isEmpty) {
@@ -891,10 +1190,50 @@ function jobMatchesFilters(job, filters, returnScore = false) {
   // 3. SENIORITY (peso: weights.seniority)
   // ─────────────────────────────────────────────────────────────
   const seniority = filters.seniority || []
+  const ignoreUnknown = filters.ignoreUnknown !== false
+  const seniorityMeta = SENIORITY_META_CACHE || (SENIORITY_META_CACHE = buildSeniorityMeta(synonyms))
+  const requestedSeniorityLevels = normalizeSeniorityFilters(seniority, seniorityMeta)
+  const detectedSeniorityLevels = extractSeniorityLevels(jobTitle, seniorityMeta)
+
+  matchDetails.seniorityGate = {
+    requested: requestedSeniorityLevels,
+    detected: [...detectedSeniorityLevels],
+    ignoreUnknown
+  }
+
   if (seniority.length > 0) {
     maxScore += weights.seniority
-    const seniorityResult = checkMatchWithScore(seniority, jobText, synonyms.seniority, weights.seniority)
+    const seniorityResult = checkMatchWithScore(seniority, jobCoreText || jobText, synonyms.seniority, weights.seniority)
     matchDetails.seniority = seniorityResult
+
+    if (requestedSeniorityLevels.length > 0) {
+      if (detectedSeniorityLevels.size > 0) {
+        const requestedRanks = requestedSeniorityLevels
+          .map(level => seniorityMeta.levels[level]?.rank)
+          .filter((rank) => Number.isFinite(rank))
+        const maxRequestedRank = requestedRanks.length > 0 ? Math.max(...requestedRanks) : -1
+        const minRequestedRank = requestedRanks.length > 0 ? Math.min(...requestedRanks) : -1
+        const jobRanks = [...detectedSeniorityLevels]
+          .map(level => seniorityMeta.levels[level]?.rank)
+          .filter((rank) => Number.isFinite(rank))
+
+        const hasAbove = jobRanks.some(rank => rank > maxRequestedRank)
+        const hasWithin = jobRanks.some(rank => rank >= minRequestedRank && rank <= maxRequestedRank)
+
+        if (hasAbove) {
+          matchDetails.failReason = "seniority_above_requested"
+          return returnScore ? { match: false, score: totalScore, maxScore, percentage: "0", details: matchDetails } : false
+        }
+
+        if (!hasWithin) {
+          matchDetails.failReason = "seniority_not_in_requested"
+          return returnScore ? { match: false, score: totalScore, maxScore, percentage: "0", details: matchDetails } : false
+        }
+      } else if (!ignoreUnknown || must.seniority) {
+        matchDetails.failReason = "seniority_not_detected"
+        return returnScore ? { match: false, score: totalScore, maxScore, percentage: "0", details: matchDetails } : false
+      }
+    }
 
     if (seniorityResult.matched && !seniorityResult.isEmpty) {
       totalScore += seniorityResult.score
@@ -909,7 +1248,7 @@ function jobMatchesFilters(job, filters, returnScore = false) {
   // ─────────────────────────────────────────────────────────────
   const excludeSeniority = filters.excludeSeniority || []
   if (excludeSeniority.length > 0) {
-    const excludeResult = checkMatch(excludeSeniority, jobText, synonyms.seniority)
+    const excludeResult = checkMatch(excludeSeniority, jobCoreText || jobText, synonyms.seniority)
     if (excludeResult.matched && !excludeResult.isEmpty) {
       matchDetails.failReason = "excluded_seniority_found"
       return returnScore ? { match: false, score: 0, maxScore, percentage: "0", details: matchDetails } : false
@@ -922,12 +1261,14 @@ function jobMatchesFilters(job, filters, returnScore = false) {
   // ─────────────────────────────────────────────────────────────
   const workMode = filters.workMode || []
   const jobIsFullyRemote = isFullyRemote(jobWorkType, jobText)
+  const detectedWorkMode = detectWorkMode(jobWorkType, jobText)
+  const jobIsRemote = detectedWorkMode === "remote" || jobIsFullyRemote
 
   if (workMode.length > 0) {
     maxScore += weights.workMode
     const workText = `${jobWorkType} ${jobText}`
     const workResult = checkMatchWithScore(workMode, workText, synonyms.workMode, weights.workMode)
-    matchDetails.workMode = { ...workResult, isFullyRemote: jobIsFullyRemote }
+    matchDetails.workMode = { ...workResult, isFullyRemote: jobIsFullyRemote, detectedMode: detectedWorkMode }
 
     if (workResult.matched && !workResult.isEmpty) {
       totalScore += workResult.score
@@ -961,7 +1302,7 @@ function jobMatchesFilters(job, filters, returnScore = false) {
   const languages = filters.languages || []
   if (languages.length > 0) {
     maxScore += weights.languages
-    const langResult = checkMatchWithScore(languages, jobText, synonyms.languages, weights.languages)
+    const langResult = checkMatchWithScore(languages, jobCoreText || jobText, synonyms.languages, weights.languages)
     matchDetails.languages = langResult
 
     if (langResult.matched && !langResult.isEmpty) {
@@ -982,41 +1323,37 @@ function jobMatchesFilters(job, filters, returnScore = false) {
 
     const userCountry = getUserCountry(locations)
     const jobCountry = getJobCountry(job.location || "")
+    const userAcceptsRemote = userAcceptsWorkMode(workMode, "remoto")
+
+    const locationResult = matchLocationForMode({
+      requestedLocations: locations,
+      jobLocation: job.location || jobLocation,
+      jobWorkMode: detectedWorkMode,
+      userAcceptsRemote,
+      allowCountryOnlyForRemote: true,
+      requireLocationForOnsite: true
+    })
 
     matchDetails.locations = {
       userCountry,
       jobCountry,
       jobLocation: job.location,
-      isFullyRemote: jobIsFullyRemote
+      isFullyRemote: jobIsFullyRemote,
+      detectedWorkMode,
+      ...locationResult
     }
 
-    // LÓGICA INTELIGENTE:
-    // Se a vaga é 100% remota E o usuário aceita remoto → ignora país
-    const userAcceptsRemote = workMode.some(wm =>
-      normalizeStack(wm) === "remoto" || normalizeStack(wm) === "remote"
-    )
-
-    if (jobIsFullyRemote && userAcceptsRemote) {
-      // Vaga 100% remota + usuário aceita remoto = ACEITA independente do país
+    if (locationResult.matched) {
       totalScore += weights.locations
-      matchDetails.locations.bypassedDueToRemote = true
-    } else if (userCountry && jobCountry && userCountry !== jobCountry) {
-      // País diferente e não é remoto global = REJEITA
-      matchDetails.failReason = "different_country"
-      return returnScore ? { match: false, score: 0, maxScore, percentage: "0", details: matchDetails } : false
-    } else {
-      // Verifica match normal de localização
-      const locationMatch = locations.some(loc => {
-        const normalized = normalizeStack(loc)
-        return jobLocation.includes(normalized) || jobText.includes(normalized)
-      })
-
-      if (locationMatch) {
-        totalScore += weights.locations
-        matchDetails.locations.matched = true
-      } else if (must.locations) {
-        mustFieldsFailed = true
-        matchDetails.failReason = "locations_required_not_found"
+      if (locationResult.reason === "remote_bypass") {
+        matchDetails.locations.bypassedDueToRemote = true
+      }
+    } else if (must.locations) {
+      mustFieldsFailed = true
+      if (userCountry && jobCountry && userCountry !== jobCountry && !jobIsRemote) {
+        matchDetails.failReason = "different_country"
+      } else {
+        matchDetails.failReason = locationResult.reason || "locations_required_not_found"
       }
     }
   }
@@ -1049,6 +1386,10 @@ function jobMatchesFilters(job, filters, returnScore = false) {
     dynamic: dynamicThreshold,
     minRequired: minScore,
     achieved: totalScore
+  }
+
+  if (!matched && !matchDetails.failReason) {
+    matchDetails.failReason = "score_below_threshold"
   }
 
   if (returnScore) {
@@ -1283,6 +1624,7 @@ async function processVipJobs() {
   // Limpa entradas antigas periodicamente
   await cleanOldEntries()
 
+  const runId = createCorrelationId("vip-cycle")
   const cycleStart = Date.now()
   const baseLimit = normalizeLimit(VIP_MAX_JOBS_PER_CYCLE)
   const baseLookbackDays = normalizeLookbackDays(VIP_JOB_LOOKBACK_DAYS)
@@ -1292,7 +1634,7 @@ async function processVipJobs() {
   const baseJobs = await getJobsForStep(searchSteps[0], jobsCache)
   const subscribers = await getVipSubscribers()
 
-  if (baseJobs.length === 0 && searchSteps.length === 1) {
+  if (baseJobs.length === 0 && searchSteps.length === 1 && !VIP_ENABLE_FULL_SCAN_FALLBACK) {
     return
   }
 
@@ -1303,7 +1645,7 @@ async function processVipJobs() {
   let matches = 0
   let sent = 0
 
-  infoLog(`[VIP] Verificando ${baseJobs.length} vagas base para ${subscribers.length} assinantes`)
+  infoLog(`[VIP] runId=${runId} Verificando ${baseJobs.length} vagas base para ${subscribers.length} assinantes`)
 
   for (const subscriber of subscribers) {
     // Pula assinantes sem LID válido
@@ -1332,9 +1674,28 @@ async function processVipJobs() {
         }
         matchedJob = findFirstMatchingJob(jobs, filters, sentJobIds, checkedIds)
         if (matchedJob) {
-          infoLog(`[VIP] Fallback usado para ${subscriber.lid}: ${step.label} (${jobs.length} vagas)`)
+          infoLog(`[VIP] runId=${runId} Fallback usado para ${subscriber.lid}: ${step.label} (${jobs.length} vagas)`)
           break
         }
+      }
+    }
+
+    if (!matchedJob && VIP_ENABLE_FULL_SCAN_FALLBACK) {
+      const diagnostics = VIP_ENABLE_DIAGNOSTICS ? createDiagnosticsTracker("full_scan") : null
+      const fullScanResult = await scanJobsForMatch({
+        filters,
+        sentJobIds,
+        checkedIds,
+        pageSize: VIP_FULL_SCAN_PAGE_SIZE,
+        diagnostics,
+        stopOnFirstMatch: true
+      })
+
+      matchedJob = fullScanResult.firstMatch
+      if (matchedJob) {
+        infoLog(`[VIP] runId=${runId} Full scan encontrou vaga para ${subscriber.lid} (pageSize=${VIP_FULL_SCAN_PAGE_SIZE})`)
+      } else if (diagnostics) {
+        warningLog(formatDiagnosticsSummary(diagnostics, subscriber.lid, filters, { runId }))
       }
     }
 
@@ -1348,14 +1709,14 @@ async function processVipJobs() {
 
     if (result.success) {
       sent += 1
-      successLog(`[VIP] Vaga enviada para ${subscriber.lid}: ${matchedJob.title || matchedJob.job_title}`)
+      successLog(`[VIP] runId=${runId} Vaga enviada para ${subscriber.lid}: ${matchedJob.title || matchedJob.job_title}`)
     }
 
     await delay(1000)
   }
 
   const durationMs = Date.now() - cycleStart
-  infoLog(`[VIP] Ciclo concluído: matches=${matches}, enviados=${sent}, duração=${durationMs}ms`)
+  infoLog(`[VIP] runId=${runId} Ciclo concluído: matches=${matches}, enviados=${sent}, duração=${durationMs}ms`)
 }
 
 /**
@@ -1529,11 +1890,12 @@ export async function triggerVipSearch(lid, stacksOrFilters, options = {}) {
       }
     }
 
+    const runId = createCorrelationId("vip-search")
     const filterSummary = []
     if (filters.stacks?.length) filterSummary.push(`stacks: ${filters.stacks.join(",")}`)
     if (filters.roles?.length) filterSummary.push(`roles: ${filters.roles.join(",")}`)
     if (filters.seniority?.length) filterSummary.push(`seniority: ${filters.seniority.join(",")}`)
-    infoLog(`[VIP SEARCH] Disparando busca para ${lid} com ${filterSummary.join(" | ") || "filtros vazios"}`)
+    infoLog(`[VIP SEARCH] runId=${runId} Disparando busca para ${lid} com ${filterSummary.join(" | ") || "filtros vazios"}`)
 
     // Verifica cooldown de 7 minutos
     if (!(await canSendToSubscriber(lid))) {
@@ -1577,7 +1939,7 @@ export async function triggerVipSearch(lid, stacksOrFilters, options = {}) {
       )
 
       if (count > 0) {
-        infoLog(`[VIP SEARCH] Step ${step.label}: ${count} matches em ${jobs.length} vagas`)
+        infoLog(`[VIP SEARCH] runId=${runId} Step ${step.label}: ${count} matches em ${jobs.length} vagas`)
       }
 
       if (firstMatch) {
@@ -1585,19 +1947,40 @@ export async function triggerVipSearch(lid, stacksOrFilters, options = {}) {
         matchedStep = step
         jobsFound = count
         if (step !== searchSteps[0]) {
-          infoLog(`[VIP SEARCH] Fallback usado para ${lid}: ${step.label} (${jobs.length} vagas)`)
+          infoLog(`[VIP SEARCH] runId=${runId} Fallback usado para ${lid}: ${step.label} (${jobs.length} vagas)`)
         }
         break
       }
     }
 
-    if (!hadAnyJobs) {
+    if (!hadAnyJobs && !VIP_ENABLE_FULL_SCAN_FALLBACK) {
       warningLog("[VIP SEARCH] Nenhuma vaga disponível no Supabase")
       return {
         success: false,
         jobsFound: 0,
         jobsSent: 0,
         error: "Nenhuma vaga disponível no momento",
+      }
+    }
+
+    if (!matchedJob && VIP_ENABLE_FULL_SCAN_FALLBACK) {
+      const diagnostics = VIP_ENABLE_DIAGNOSTICS ? createDiagnosticsTracker("full_scan") : null
+      const fullScanResult = await scanJobsForMatch({
+        filters,
+        sentJobIds,
+        checkedIds: new Set(),
+        pageSize: VIP_FULL_SCAN_PAGE_SIZE,
+        diagnostics,
+        stopOnFirstMatch: true
+      })
+      matchedJob = fullScanResult.firstMatch
+      jobsFound = matchedJob ? 1 : 0
+
+      if (matchedJob) {
+        matchedStep = { label: "full_scan" }
+        infoLog(`[VIP SEARCH] runId=${runId} Full scan encontrou vaga para ${lid} (pageSize=${VIP_FULL_SCAN_PAGE_SIZE})`)
+      } else if (diagnostics) {
+        warningLog(formatDiagnosticsSummary(diagnostics, lid, filters, { runId }))
       }
     }
 
@@ -1615,12 +1998,12 @@ export async function triggerVipSearch(lid, stacksOrFilters, options = {}) {
     const result = await sendJobToSubscriber(lid, matchedJob)
     if (result.success) {
       jobsSent = 1
-      successLog(`[VIP SEARCH] Vaga enviada para ${lid}: ${matchedJob.title || matchedJob.job_title}`)
+      successLog(`[VIP SEARCH] runId=${runId} Vaga enviada para ${lid}: ${matchedJob.title || matchedJob.job_title}`)
     } else {
-      warningLog(`[VIP SEARCH] Não foi possível enviar: ${result.reason}`)
+      warningLog(`[VIP SEARCH] runId=${runId} Não foi possível enviar: ${result.reason}`)
     }
 
-    successLog(`[VIP SEARCH] Busca concluída para ${lid}: ${jobsSent}/${jobsFound} vagas enviadas`)
+    successLog(`[VIP SEARCH] runId=${runId} Busca concluída para ${lid}: ${jobsSent}/${jobsFound} vagas enviadas`)
 
     return {
       success: true,
@@ -1636,5 +2019,63 @@ export async function triggerVipSearch(lid, stacksOrFilters, options = {}) {
       jobsSent: 0,
       error: err.message,
     }
+  }
+}
+
+export async function runVipDiagnostics(lid, options = {}) {
+  const normalizedLid = lid?.includes("@lid") ? lid : `${lid}@lid`
+  if (!normalizedLid || normalizedLid === "undefined@lid") {
+    return { ok: false, error: "LID invalido" }
+  }
+
+  try {
+    const subscriber = await getVipSubscriber(normalizedLid)
+    if (!subscriber) {
+      return { ok: false, error: "VIP nao encontrado ou inativo" }
+    }
+
+    const filters = subscriber.filters || { stacks: subscriber.stacks || [] }
+    const includeSent = options.includeSent === true
+    const sentJobIds = includeSent ? new Set() : await getSentJobIds(normalizedLid)
+    const diagnostics = createDiagnosticsTracker("diagnostic_full_scan")
+
+    const scanResult = await scanJobsForMatch({
+      filters,
+      sentJobIds,
+      checkedIds: new Set(),
+      pageSize: Number.isFinite(options.pageSize) ? options.pageSize : VIP_FULL_SCAN_PAGE_SIZE,
+      diagnostics,
+      stopOnFirstMatch: false
+    })
+
+    const sortedReasons = [...diagnostics.reasons.entries()].sort((a, b) => b[1] - a[1])
+    const topReasons = sortedReasons
+      .slice(0, Math.max(1, VIP_DIAGNOSTIC_LOG_LIMIT))
+      .map(([reason, count]) => ({ reason, count }))
+
+    const sampleJob = scanResult.firstMatch
+      ? {
+          id: getJobIdentifier(scanResult.firstMatch),
+          title: scanResult.firstMatch.title || scanResult.firstMatch.job_title || "",
+          url: scanResult.firstMatch.url || scanResult.firstMatch.job_url || ""
+        }
+      : null
+
+    return {
+      ok: true,
+      lid: normalizedLid,
+      subscriber: {
+        name: subscriber.name || subscriber.user_name || "",
+        lid: subscriber.lid
+      },
+      scanned: diagnostics.scanned,
+      matched: scanResult.matchCount,
+      skippedNoId: diagnostics.skippedNoId,
+      skippedAlreadySent: diagnostics.skippedAlreadySent,
+      topReasons,
+      sampleJob
+    }
+  } catch (error) {
+    return { ok: false, error: error?.message || "Erro ao diagnosticar" }
   }
 }

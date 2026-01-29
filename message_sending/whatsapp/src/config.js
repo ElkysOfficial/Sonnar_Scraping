@@ -12,6 +12,19 @@ const readNumber = (value, fallback) => {
   return Number.isFinite(parsed) ? parsed : fallback
 }
 
+const readBoolean = (value, fallback) => {
+  if (value === undefined || value === null || value === "") {
+    return fallback
+  }
+  if (typeof value === "boolean") {
+    return value
+  }
+  const normalized = value.toString().trim().toLowerCase()
+  if (["true", "1", "yes", "y", "on"].includes(normalized)) return true
+  if (["false", "0", "no", "n", "off"].includes(normalized)) return false
+  return fallback
+}
+
 // Prefixo padrão dos comandos.
 export const PREFIX = "/"
 
@@ -89,8 +102,8 @@ export const OPENAI_API_KEY = ""
 // ID do grupo para envio de vagas (use /get-group-id para obter)
 export const JOB_GROUP_ID = "120363421632065613@g.us"
 
-// Intervalo de envio em ms (7 minutos)
-export const JOB_SEND_INTERVAL = 7 * 60 * 1000
+// Intervalo de envio em ms (10 minutos)
+export const JOB_SEND_INTERVAL = 10 * 60 * 1000
 
 // ======= CONFIGURAÇÕES DE MATCHING VIP =======
 // Janela de busca (em dias) para reduzir scans completos (0 = desabilita filtro)
@@ -101,6 +114,14 @@ export const VIP_MAX_JOBS_PER_CYCLE = readNumber(process.env.VIP_MAX_JOBS_PER_CY
 
 // Fallback caso a janela fique vazia (0 = desabilita fallback)
 export const VIP_FALLBACK_MAX_JOBS = readNumber(process.env.VIP_FALLBACK_MAX_JOBS, 2000)
+
+// Fallback adicional: varredura completa quando não houver match
+export const VIP_ENABLE_FULL_SCAN_FALLBACK = readBoolean(process.env.VIP_ENABLE_FULL_SCAN_FALLBACK, true)
+export const VIP_FULL_SCAN_PAGE_SIZE = readNumber(process.env.VIP_FULL_SCAN_PAGE_SIZE, 1000)
+
+// Diagnóstico por assinatura (logs de motivos de reprovação)
+export const VIP_ENABLE_DIAGNOSTICS = readBoolean(process.env.VIP_ENABLE_DIAGNOSTICS, true)
+export const VIP_DIAGNOSTIC_LOG_LIMIT = readNumber(process.env.VIP_DIAGNOSTIC_LOG_LIMIT, 8)
 
 // Caminho do arquivo de vagas (embeds.json)
 export const EMBEDS_FILE_PATH = path.resolve(__dirname, "..", "..", "..", "message_formatting", "discord", "src", "data", "embeds.json")

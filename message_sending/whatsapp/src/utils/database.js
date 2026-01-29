@@ -15,6 +15,12 @@ import {
   unmuteUser,
   getMutedUsers
 } from "../services/database.js"
+import {
+  normalizeText,
+  normalizeStackInput,
+  normalizeWorkModeInput,
+  normalizeSeniorityInput
+} from "./matchingEngine.js"
 
 const GLOBAL_CONFIG_GROUP_ID = "__global__"
 
@@ -341,14 +347,27 @@ function normalizeVipFilters(filtersInput) {
     }
   }
 
+  const normalizeList = (values, normalizer) => {
+    const list = Array.isArray(values) ? values : []
+    const normalized = []
+    for (const value of list) {
+      const base = normalizeText(value)
+      const normalizedValue = normalizer ? normalizer(base) : base
+      if (normalizedValue) {
+        normalized.push(normalizedValue)
+      }
+    }
+    return [...new Set(normalized)]
+  }
+
   return {
-    roles: filtersInput.roles || [],
-    stacks: filtersInput.stacks || [],
-    seniority: filtersInput.seniority || [],
-    locations: filtersInput.locations || [],
-    workMode: filtersInput.workMode || [],
-    contract: filtersInput.contract || [],
-    languages: filtersInput.languages || [],
+    roles: normalizeList(filtersInput.roles),
+    stacks: normalizeList(filtersInput.stacks, normalizeStackInput),
+    seniority: normalizeList(filtersInput.seniority, normalizeSeniorityInput),
+    locations: normalizeList(filtersInput.locations),
+    workMode: normalizeList(filtersInput.workMode, normalizeWorkModeInput),
+    contract: normalizeList(filtersInput.contract),
+    languages: normalizeList(filtersInput.languages),
     weights: filtersInput.weights || {
       roles: 20,
       stacks: 30,

@@ -597,12 +597,14 @@ export async function getMutedUsers(groupId) {
 export async function getAllJobs(options = {}) {
   let limit
   let createdAfter
+  let offset
 
   if (Number.isInteger(options)) {
     limit = options
   } else if (options && typeof options === "object") {
     limit = options.limit
     createdAfter = options.createdAfter
+    offset = options.offset
   }
 
   let query = supabase
@@ -615,7 +617,11 @@ export async function getAllJobs(options = {}) {
   }
 
   if (Number.isInteger(limit)) {
-    query = query.limit(limit)
+    if (Number.isInteger(offset) && offset >= 0) {
+      query = query.range(offset, offset + limit - 1)
+    } else {
+      query = query.limit(limit)
+    }
   }
 
   const { data, error } = await query

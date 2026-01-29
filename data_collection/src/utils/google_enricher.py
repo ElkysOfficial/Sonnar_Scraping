@@ -146,7 +146,18 @@ def _is_valid_salary_range(min_salary: str, max_salary: str) -> bool:
     max_value = to_int(max_salary)
     if min_value <= 0 or max_value <= 0:
         return False
-    return min_value >= 500 and max_value >= 500
+    # Salário realista para vagas de tech no Brasil:
+    # - Mínimo: 2000 BRL (estágio/junior)
+    # - Máximo: 80000 BRL (C-level/diretor em big tech)
+    # Valores fora desse range são provavelmente erros
+    if min_value < 2000 or max_value < 2000:
+        return False
+    if min_value > 80000 or max_value > 80000:
+        return False
+    # O máximo não pode ser muito maior que o mínimo (evitar ranges absurdos)
+    if max_value > min_value * 3:
+        return False
+    return True
 
 
 def _parse_location_text(text: str) -> Optional[str]:
@@ -228,8 +239,11 @@ def _parse_salary_text(text: str) -> Optional[Tuple[str, str]]:
     filtered = []
     for value in values:
         numeric = re.sub(r"[.,]", "", value)
-        if numeric.isdigit() and int(numeric) >= 500:
-            filtered.append(value)
+        # Salário realista para vagas de tech no Brasil (2000 a 80000 BRL)
+        if numeric.isdigit():
+            num_value = int(numeric)
+            if 2000 <= num_value <= 80000:
+                filtered.append(value)
 
     if not filtered:
         return None
