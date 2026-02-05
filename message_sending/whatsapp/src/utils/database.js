@@ -317,6 +317,36 @@ export async function checkIfMemberIsMuted(groupId, memberId) {
 
 // ===== VIP SUBSCRIBERS =====
 
+// Cache para VIP Subscribers (evita múltiplas queries ao banco)
+const vipSubscribersCache = {
+  data: null,
+  timestamp: 0,
+  ttl: 5 * 60 * 1000 // 5 minutos de TTL
+}
+
+// Campos específicos para VIP Subscribers (evita SELECT *)
+const VIP_SUBSCRIBER_FIELDS = "id, user_name, lid, phone, stacks, filters, active, added_at, updated_at"
+
+// Campos específicos para VIP Pending Subscribers
+const VIP_PENDING_FIELDS = "id, user_name, lid, phone, stacks, filters, payment_proof, status, requested_at, decided_at, decided_by, payment_received_at, reject_reason"
+
+/**
+ * Invalida o cache de VIP Subscribers
+ * Chamar após adicionar/remover/atualizar subscribers
+ */
+export function invalidateVipSubscribersCache() {
+  vipSubscribersCache.data = null
+  vipSubscribersCache.timestamp = 0
+}
+
+/**
+ * Verifica se o cache está válido
+ */
+function isVipCacheValid() {
+  if (!vipSubscribersCache.data) return false
+  return Date.now() - vipSubscribersCache.timestamp < vipSubscribersCache.ttl
+}
+
 function normalizeVipFilters(filtersInput) {
   if (!filtersInput || typeof filtersInput !== "object") {
     return {
@@ -408,7 +438,12 @@ export async function getVipSubscribersObject() {
 }
 
 export async function getVipSubscribers(onlyActive = true) {
-  let query = supabase.from("vip_subscribers").select("*").order("added_at", { ascending: true })
+  // Usa cache se disponível e válido (apenas para onlyActive=true)
+  if (onlyActive && isVipCacheValid()) {
+    return vipSubscribersCache.data
+  }
+
+  let query = supabase.from("vip_subscribers").select(VIP_SUBSCRIBER_FIELDS).order("added_at", { ascending: true })
   if (onlyActive) {
     query = query.eq("active", true)
   }
@@ -416,7 +451,15 @@ export async function getVipSubscribers(onlyActive = true) {
   const { data, error } = await query
   if (error) throw error
 
-  return (data || []).map(mapVipSubscriber)
+  const subscribers = (data || []).map(mapVipSubscriber)
+
+  // Atualiza cache apenas para consultas de ativos
+  if (onlyActive) {
+    vipSubscribersCache.data = subscribers
+    vipSubscribersCache.timestamp = Date.now()
+  }
+
+  return subscribers
 }
 
 export async function addVipSubscriber(name, lid, filtersInput) {
@@ -458,6 +501,10 @@ export async function addVipSubscriber(name, lid, filtersInput) {
     .upsert(payload, { onConflict: "lid" })
 
   if (error) throw error
+
+  // Invalida cache após modificação
+  invalidateVipSubscribersCache()
+
   return !existing
 }
 
@@ -470,6 +517,10 @@ export async function setVipActive(lid, active) {
     .maybeSingle()
 
   if (error) throw error
+
+  // Invalida cache após modificação
+  invalidateVipSubscribersCache()
+
   return !!data
 }
 
@@ -482,6 +533,10 @@ export async function setVipActiveByName(name, active) {
     .maybeSingle()
 
   if (error) throw error
+
+  // Invalida cache após modificação
+  invalidateVipSubscribersCache()
+
   return !!data
 }
 
@@ -492,6 +547,10 @@ export async function removeVipSubscriber(lid) {
     .eq("lid", lid)
 
   if (error) throw error
+
+  // Invalida cache após modificação
+  invalidateVipSubscribersCache()
+
   return true
 }
 
@@ -502,13 +561,17 @@ export async function removeVipSubscriberByName(name) {
     .eq("user_name", name)
 
   if (error) throw error
+
+  // Invalida cache após modificação
+  invalidateVipSubscribersCache()
+
   return true
 }
 
 export async function getVipSubscriber(lid) {
   const { data, error } = await supabase
     .from("vip_subscribers")
-    .select("*")
+    .select(VIP_SUBSCRIBER_FIELDS)
     .eq("lid", lid)
     .eq("active", true)
     .maybeSingle()
@@ -520,7 +583,7 @@ export async function getVipSubscriber(lid) {
 export async function getVipSubscriberByName(name) {
   const { data, error } = await supabase
     .from("vip_subscribers")
-    .select("*")
+    .select(VIP_SUBSCRIBER_FIELDS)
     .eq("user_name", name)
     .maybeSingle()
 
@@ -566,7 +629,7 @@ function mapVipPending(row) {
 export async function getVipPendingSubscribers() {
   const { data, error } = await supabase
     .from("vip_pending_subscribers")
-    .select("*")
+    .select(VIP_PENDING_FIELDS)
     .order("requested_at", { ascending: true })
 
   if (error) throw error
@@ -639,7 +702,7 @@ export async function updateVipPendingPaymentProof(lid, paymentProof) {
 export async function approveVipSubscriber(lid, decidedBy) {
   const { data: pending, error } = await supabase
     .from("vip_pending_subscribers")
-    .select("*")
+    .select(VIP_PENDING_FIELDS)
     .eq("lid", lid)
     .eq("status", "pending")
     .maybeSingle()
@@ -673,7 +736,7 @@ export async function approveVipSubscriber(lid, decidedBy) {
 export async function rejectVipSubscriber(lid, decidedBy, reason = null) {
   const { data: pending, error } = await supabase
     .from("vip_pending_subscribers")
-    .select("*")
+    .select(VIP_PENDING_FIELDS)
     .eq("lid", lid)
     .eq("status", "pending")
     .maybeSingle()

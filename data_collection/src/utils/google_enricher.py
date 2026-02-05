@@ -19,6 +19,9 @@ DEFAULT_USER_AGENT = (
     "Chrome/120.0.0.0 Safari/537.36"
 )
 
+# TTL do cache em segundos (12 horas)
+CACHE_TTL_SECONDS = 12 * 60 * 60  # 43200 segundos
+
 
 def is_missing_field(value: Optional[str]) -> bool:
     if value is None:
@@ -397,11 +400,28 @@ class GoogleEnricher:
             return True
         return False
 
+    def _clean_expired_entries(self, data: Dict) -> None:
+        """Remove entradas do cache que excederam o TTL de 12 horas."""
+        now = time.time()
+        timestamps = data.get("timestamps", {})
+        expired_keys = [k for k, ts in timestamps.items() if now - ts > CACHE_TTL_SECONDS]
+
+        for key in expired_keys:
+            if key.startswith("loc:"):
+                data.get("company_location", {}).pop(key[4:], None)
+            elif key.startswith("sal:"):
+                data.get("salary_by_company_role", {}).pop(key[4:], None)
+            timestamps.pop(key, None)
+
+        if expired_keys:
+            data["timestamps"] = timestamps
+
     def _load_cache(self) -> Dict[str, Dict[str, str]]:
         default_cache = {
             "cache": {},
             "company_location": {},
             "salary_by_company_role": {},
+            "timestamps": {},
             "updated_at": time.time()
         }
         if not os.path.exists(self.cache_path):
@@ -416,7 +436,12 @@ class GoogleEnricher:
         data.setdefault("cache", {})
         data.setdefault("company_location", {})
         data.setdefault("salary_by_company_role", {})
+        data.setdefault("timestamps", {})
         data.setdefault("updated_at", time.time())
+
+        # Limpa entradas expiradas ao carregar
+        self._clean_expired_entries(data)
+
         return data
 
     def _save_cache(self) -> None:
@@ -447,26 +472,43 @@ class GoogleEnricher:
 
     async def _get_company_location(self, company: str) -> Optional[str]:
         key = _normalize_key(company)
+        ts_key = f"loc:{key}"
+
+        # Verifica se a entrada existe e não está expirada
         cached = self._cache.get("company_location", {}).get(key)
-        if cached and _is_valid_location(cached):
+        cached_ts = self._cache.get("timestamps", {}).get(ts_key, 0)
+        cache_valid = cached and _is_valid_location(cached) and (time.time() - cached_ts <= CACHE_TTL_SECONDS)
+
+        if cache_valid:
             return _format_location(cached)
 
         async with self._lock:
+            # Verifica novamente dentro do lock
             cached = self._cache.get("company_location", {}).get(key)
-            if cached and _is_valid_location(cached):
+            cached_ts = self._cache.get("timestamps", {}).get(ts_key, 0)
+            cache_valid = cached and _is_valid_location(cached) and (time.time() - cached_ts <= CACHE_TTL_SECONDS)
+
+            if cache_valid:
                 return _format_location(cached)
 
             location = await self._search_location(company)
             if location:
                 formatted = _format_location(location)
                 self._cache.setdefault("company_location", {})[key] = formatted
+                self._cache.setdefault("timestamps", {})[ts_key] = time.time()
                 self._save_cache()
             return formatted if location else None
 
     async def _get_salary_from_glassdoor(self, company: str, job_title: str) -> Optional[Tuple[str, str]]:
         key = f"{_normalize_key(company)}|{_normalize_key(job_title)}"
+        ts_key = f"sal:{key}"
+
+        # Verifica se a entrada existe e não está expirada
         cached = self._cache.get("salary_by_company_role", {}).get(key)
-        if cached and isinstance(cached, str):
+        cached_ts = self._cache.get("timestamps", {}).get(ts_key, 0)
+        cache_expired = time.time() - cached_ts > CACHE_TTL_SECONDS
+
+        if cached and isinstance(cached, str) and not cache_expired:
             if "|" in cached:
                 cached_tuple = tuple(cached.split("|", 1))  # type: ignore[return-value]
             else:
@@ -475,8 +517,12 @@ class GoogleEnricher:
                 return cached_tuple
 
         async with self._lock:
+            # Verifica novamente dentro do lock
             cached = self._cache.get("salary_by_company_role", {}).get(key)
-            if cached and isinstance(cached, str):
+            cached_ts = self._cache.get("timestamps", {}).get(ts_key, 0)
+            cache_expired = time.time() - cached_ts > CACHE_TTL_SECONDS
+
+            if cached and isinstance(cached, str) and not cache_expired:
                 if "|" in cached:
                     cached_tuple = tuple(cached.split("|", 1))  # type: ignore[return-value]
                 else:
@@ -487,6 +533,7 @@ class GoogleEnricher:
             salary = await self._search_salary(company, job_title)
             if salary:
                 self._cache.setdefault("salary_by_company_role", {})[key] = f"{salary[0]}|{salary[1]}"
+                self._cache.setdefault("timestamps", {})[ts_key] = time.time()
                 self._save_cache()
             return salary
 

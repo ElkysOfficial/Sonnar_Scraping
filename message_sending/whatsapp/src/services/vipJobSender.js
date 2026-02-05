@@ -1641,10 +1641,10 @@ function jobMatchesFilters(job, filters, returnScore = false) {
 
   // ─────────────────────────────────────────────────────────────
   // 10. THRESHOLD DINÂMICO
-  // Base: 40% para compensar matching sem description no banco
+  // Base: 60% para garantir relevância das vagas
   // Campos "must" já foram verificados acima (100% obrigatório)
   // ─────────────────────────────────────────────────────────────
-  const dynamicThreshold = 0.4 // 40% base (flexível para compensar falta de description)
+  const dynamicThreshold = 0.6 // 60% base (garante relevância)
   const minScore = maxScore * dynamicThreshold
   const matched = maxScore === 0 || totalScore >= minScore
 

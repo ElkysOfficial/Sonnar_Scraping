@@ -180,6 +180,58 @@ async def send_to_embed_service_job(job_data: dict, source: str = "unknown") -> 
         return {"success": False, "message": str(e)}
 
 
+async def send_jobs_batch(jobs: list) -> dict:
+    """
+    Send multiple jobs in a single batch request to Supabase.
+    OTIMIZADO: Reduz requests de 112k para ~224 (500 jobs/batch).
+
+    Args:
+        jobs: List of job dictionaries to insert
+
+    Returns:
+        Dictionary with success status and count
+    """
+    if not supabase:
+        print("[routes] Supabase not configured, skipping batch persistence")
+        return {"success": False, "message": "Supabase not configured", "count": 0}
+
+    if not jobs:
+        return {"success": True, "count": 0}
+
+    try:
+        # Prepare jobs for database
+        db_jobs = []
+        for job_data in jobs:
+            db_job = {
+                "job_title": job_data.get("job_title", ""),
+                "job_url": job_data.get("job_url", ""),
+                "company": job_data.get("company", ""),
+                "location": job_data.get("location", ""),
+                "work_type": job_data.get("work_type", ""),
+                "hiring_regime": job_data.get("hiring_regime", ""),
+                "salary": job_data.get("salary", ""),
+                "publication_date": job_data.get("publication_date", ""),
+                "source": job_data.get("source", "unknown"),
+                "status_discord": False,
+                "status_whatsapp": False,
+                "status_telegram": False,
+            }
+            db_jobs.append(db_job)
+
+        # Batch upsert (all jobs in one request)
+        result = await _execute_with_retries_async(
+            lambda: supabase.table("jobs").upsert(db_jobs, on_conflict="job_url").execute(),
+            "batch upsert jobs",
+        )
+
+        count = len(result.data) if result.data else 0
+        return {"success": True, "count": count}
+
+    except Exception as e:
+        print(f"[routes] Error in batch upsert: {e}")
+        return {"success": False, "message": str(e), "count": 0}
+
+
 async def check_job_exists(job_url: str) -> bool:
     """
     Check if a job URL already exists in the database.
