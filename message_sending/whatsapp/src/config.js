@@ -102,18 +102,20 @@ export const OPENAI_API_KEY = ""
 // ID do grupo para envio de vagas (use /get-group-id para obter)
 export const JOB_GROUP_ID = "120363421632065613@g.us"
 
-// Intervalo de envio em ms (10 minutos)
-export const JOB_SEND_INTERVAL = 10 * 60 * 1000
+// Intervalo de envio em ms (30 minutos - reduz egress do Supabase)
+export const JOB_SEND_INTERVAL = 30 * 60 * 1000
 
 // ======= CONFIGURAÇÕES DE MATCHING VIP =======
 // Janela de busca (em dias) para reduzir scans completos (0 = desabilita filtro)
-export const VIP_JOB_LOOKBACK_DAYS = readNumber(process.env.VIP_JOB_LOOKBACK_DAYS, 14)
+// Aumentado para 45 dias para compensar matching sem description
+export const VIP_JOB_LOOKBACK_DAYS = readNumber(process.env.VIP_JOB_LOOKBACK_DAYS, 45)
 
 // Limite de vagas carregadas por ciclo (0 = sem limite)
-export const VIP_MAX_JOBS_PER_CYCLE = readNumber(process.env.VIP_MAX_JOBS_PER_CYCLE, 800)
+// Aumentado para 2000 para melhorar chances de match
+export const VIP_MAX_JOBS_PER_CYCLE = readNumber(process.env.VIP_MAX_JOBS_PER_CYCLE, 2000)
 
 // Fallback caso a janela fique vazia (0 = desabilita fallback)
-export const VIP_FALLBACK_MAX_JOBS = readNumber(process.env.VIP_FALLBACK_MAX_JOBS, 2000)
+export const VIP_FALLBACK_MAX_JOBS = readNumber(process.env.VIP_FALLBACK_MAX_JOBS, 3000)
 
 // Fallback adicional: varredura completa quando não houver match
 export const VIP_ENABLE_FULL_SCAN_FALLBACK = readBoolean(process.env.VIP_ENABLE_FULL_SCAN_FALLBACK, true)
@@ -171,3 +173,13 @@ export const ENABLE_API_RECEIVER = process.env.ENABLE_API_RECEIVER === "true" ||
 
 // Porta do servidor de API
 export const WHATSAPP_API_PORT = process.env.WHATSAPP_API_PORT || 3002
+
+// ======= CONFIGURAÇÕES DO CACHE JSON DE VAGAS =======
+// Diretório para armazenar cache JSON de vagas VIP
+export const VIP_CACHE_DIR = path.resolve(__dirname, "..", "database", "vip-jobs")
+
+// TTL do cache VIP em ms (24 horas)
+export const VIP_CACHE_TTL = 24 * 60 * 60 * 1000
+
+// Quantidade de vagas para envio diário em grupos (30 em 30 min = 48 envios)
+export const GROUP_JOBS_PER_DAY = 48

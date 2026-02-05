@@ -28,14 +28,16 @@ import {
 import { extractStack } from "./jobDistributor.js"
 import { getVipSubscribers, getVipSubscriber } from "../utils/database.js"
 import { getCurrentSocket, isCurrentSocketReady } from "../utils/socketManager.js"
-import { getAllJobs } from "./database.js"
+import { getAllJobs, runFullCleanup } from "./database.js"
 import {
   canSendToSubscriber,
   wasJobSentRecently,
   recordJobSent,
   getTimeUntilCanSend,
   getSentJobIds,
-  cleanOldEntries
+  cleanOldEntries,
+  loadHistoryBatch,
+  loadSubscriberIdsBatch
 } from "./vipHistory.js"
 import {
   normalizeText,
@@ -44,16 +46,272 @@ import {
   detectWorkMode,
   matchLocationForMode
 } from "../utils/matchingEngine.js"
+import {
+  loadVipJobsCache,
+  saveVipJobsCache,
+  generateVipJobsCache,
+  getNextJobFromCache,
+  markJobSentInCache,
+  isVipCacheValid,
+  getAvailableJobsFromCache,
+  cleanExpiredVipCaches
+} from "./vipJobsCache.js"
 
-// Intervalo entre verificações (10 minutos)
-const CHECK_INTERVAL = 10 * 60 * 1000
+// Intervalo entre verificações (30 minutos - reduz egress do Supabase)
+const CHECK_INTERVAL = 30 * 60 * 1000
+// Intervalo de cleanup (24 horas)
+const CLEANUP_INTERVAL = 24 * 60 * 60 * 1000
 let vipTimeoutId = null
 let vipIntervalId = null
 let vipRunToken = 0
 let vipPendingTimeoutId = null
+let lastCleanupTimestamp = 0
 
 // Buscas VIP pendentes quando a conexao esta fechada
 const pendingVipSearches = new Map()
+
+// ═══════════════════════════════════════════════════════════════
+// CACHE INTELIGENTE DE VAGAS - OTIMIZADO PARA REDUZIR EGRESS
+// Busca TODAS as vagas 1x por dia e filtra por VIP
+// ═══════════════════════════════════════════════════════════════
+
+// Cache global de todas as vagas (TTL: 24 horas)
+const allJobsCache = {
+  jobs: null,
+  timestamp: 0,
+  ttl: 24 * 60 * 60 * 1000 // 24 horas
+}
+
+// Cache de vagas compatíveis PRÉ-FILTRADAS por VIP
+// Map<lid, { jobs: Array, sentIds: Set, timestamp: number }>
+const vipCompatibleJobsCache = new Map()
+
+// TTL do cache por VIP (24 horas)
+const VIP_CACHE_TTL = 24 * 60 * 60 * 1000
+
+// Cache legado (mantido para compatibilidade)
+const jobsCache = {
+  jobs: null,
+  cycleId: null,
+  timestamp: 0,
+  ttl: CHECK_INTERVAL - 60000
+}
+
+/**
+ * Carrega vagas para o ciclo atual (usa cache se disponível)
+ * @param {string} cycleId - ID do ciclo atual
+ * @param {Object} options - Opções de carregamento
+ * @returns {Promise<Array>} Array de vagas
+ */
+async function getCachedJobsForCycle(cycleId, options = {}) {
+  const now = Date.now()
+
+  // Se é o mesmo ciclo e cache está válido, retorna do cache
+  if (
+    jobsCache.cycleId === cycleId &&
+    jobsCache.jobs !== null &&
+    now - jobsCache.timestamp < jobsCache.ttl
+  ) {
+    infoLog(`[VIP CACHE] Usando cache de vagas (${jobsCache.jobs.length} vagas)`)
+    return jobsCache.jobs
+  }
+
+  // Carrega novas vagas do banco
+  infoLog(`[VIP CACHE] Carregando vagas do Supabase...`)
+  const jobs = await loadJobs(options)
+
+  // Atualiza cache
+  jobsCache.jobs = jobs
+  jobsCache.cycleId = cycleId
+  jobsCache.timestamp = now
+
+  infoLog(`[VIP CACHE] Cache atualizado com ${jobs.length} vagas`)
+  return jobs
+}
+
+/**
+ * Invalida o cache de vagas (forçar recarga no próximo ciclo)
+ */
+export function invalidateJobsCache() {
+  jobsCache.jobs = null
+  jobsCache.cycleId = null
+  jobsCache.timestamp = 0
+  // Também invalida o cache global
+  allJobsCache.jobs = null
+  allJobsCache.timestamp = 0
+}
+
+/**
+ * Invalida o cache de um VIP específico ou de todos
+ * @param {string} lid - LID do VIP (opcional, se não informado invalida todos)
+ */
+export function invalidateVipCache(lid = null) {
+  if (lid) {
+    vipCompatibleJobsCache.delete(lid)
+    infoLog(`[VIP CACHE] Cache invalidado para ${lid}`)
+  } else {
+    vipCompatibleJobsCache.clear()
+    infoLog(`[VIP CACHE] Cache de todos os VIPs invalidado`)
+  }
+}
+
+/**
+ * Carrega TODAS as vagas do banco (1x por dia)
+ * @returns {Promise<Array>} Array de todas as vagas
+ */
+async function getAllJobsFromCache() {
+  const now = Date.now()
+
+  // Se cache ainda é válido, retorna do cache
+  if (allJobsCache.jobs !== null && now - allJobsCache.timestamp < allJobsCache.ttl) {
+    infoLog(`[VIP CACHE] Usando cache global (${allJobsCache.jobs.length} vagas, age=${Math.round((now - allJobsCache.timestamp) / 3600000)}h)`)
+    return allJobsCache.jobs
+  }
+
+  // Carrega TODAS as vagas do banco (sem limite)
+  infoLog(`[VIP CACHE] Carregando TODAS as vagas do Supabase (1x por dia)...`)
+  const jobs = await loadJobs({ limit: 0, lookbackDays: 0 }) // Sem limite
+
+  // Atualiza cache global
+  allJobsCache.jobs = jobs || []
+  allJobsCache.timestamp = now
+
+  // Invalida cache de todos os VIPs (forçar recálculo)
+  vipCompatibleJobsCache.clear()
+
+  successLog(`[VIP CACHE] Cache global atualizado com ${allJobsCache.jobs.length} vagas (próxima atualização em 24h)`)
+  return allJobsCache.jobs
+}
+
+/**
+ * Obtém vagas compatíveis para um VIP específico (do cache ou calcula)
+ * VERSÃO v3: Salva em arquivo JSON para persistência entre reinicializações
+ * @param {string} lid - LID do assinante
+ * @param {Object} filters - Filtros do assinante
+ * @param {Set} sentJobIds - IDs de vagas já enviadas (últimas 48h)
+ * @param {string} subscriberName - Nome do assinante (opcional)
+ * @returns {Promise<Array>} Array de vagas compatíveis
+ */
+async function getCompatibleJobsForVip(lid, filters, sentJobIds, subscriberName = null) {
+  const now = Date.now()
+
+  // PRIMEIRA VERIFICAÇÃO: Tenta carregar do arquivo JSON (persistido)
+  const jsonCache = await loadVipJobsCache(lid)
+  if (jsonCache && isVipCacheValid(jsonCache)) {
+    // Filtra vagas já enviadas (atualiza em tempo real)
+    const sentSet = new Set([...sentJobIds, ...(jsonCache.sentJobIds || [])])
+    const available = jsonCache.jobs.filter(job => {
+      const jobId = getJobIdentifier(job)
+      return jobId && !sentSet.has(jobId)
+    })
+    infoLog(`[VIP JSON CACHE] ${lid}: ${available.length} vagas disponíveis (de ${jsonCache.totalCompatible} compatíveis)`)
+    return available
+  }
+
+  // SEGUNDA VERIFICAÇÃO: Tenta usar cache em memória
+  const cached = vipCompatibleJobsCache.get(lid)
+  if (cached && now - cached.timestamp < VIP_CACHE_TTL) {
+    // Filtra vagas já enviadas (atualiza em tempo real)
+    const available = cached.jobs.filter(job => {
+      const jobId = getJobIdentifier(job)
+      return jobId && !sentJobIds.has(jobId)
+    })
+    infoLog(`[VIP CACHE] ${lid}: ${available.length} vagas disponíveis (de ${cached.jobs.length} compatíveis)`)
+    return available
+  }
+
+  // TERCEIRA OPÇÃO: Calcula vagas compatíveis e salva em ambos os caches
+  const allJobs = await getAllJobsFromCache()
+
+  infoLog(`[VIP CACHE] ${lid}: Calculando vagas compatíveis (primeira consulta)...`)
+  const compatibleJobs = []
+
+  for (const job of allJobs) {
+    const jobId = getJobIdentifier(job)
+    if (!jobId) continue
+
+    const result = jobMatchesFilters(job, filters, true)
+    if (result.match) {
+      // Adiciona score ao job para ordenação
+      compatibleJobs.push({
+        ...job,
+        matchScore: result.score || 0
+      })
+    }
+  }
+
+  // Ordena por score (mais relevantes primeiro)
+  compatibleJobs.sort((a, b) => (b.matchScore || 0) - (a.matchScore || 0))
+
+  // Salva no cache em memória
+  vipCompatibleJobsCache.set(lid, {
+    jobs: compatibleJobs,
+    timestamp: now
+  })
+
+  // NOVO: Salva no arquivo JSON (persistido)
+  const sentJobIdsArray = Array.from(sentJobIds)
+  await generateVipJobsCache(lid, subscriberName, filters, compatibleJobs, sentJobIdsArray)
+
+  // Filtra vagas já enviadas
+  const available = compatibleJobs.filter(job => {
+    const jobId = getJobIdentifier(job)
+    return jobId && !sentJobIds.has(jobId)
+  })
+
+  successLog(`[VIP CACHE] ${lid}: ${compatibleJobs.length} vagas compatíveis encontradas e salvas em JSON, ${available.length} disponíveis para envio`)
+  return available
+}
+
+/**
+ * Obtém a próxima vaga para enviar a um VIP
+ * @param {string} lid - LID do assinante
+ * @param {Object} filters - Filtros do assinante
+ * @param {Set} sentJobIds - IDs de vagas já enviadas
+ * @param {string} subscriberName - Nome do assinante (opcional)
+ * @returns {Promise<Object|null>} Próxima vaga ou null se não houver
+ */
+async function getNextJobForVip(lid, filters, sentJobIds, subscriberName = null) {
+  const availableJobs = await getCompatibleJobsForVip(lid, filters, sentJobIds, subscriberName)
+
+  if (availableJobs.length === 0) {
+    return null
+  }
+
+  // Retorna a primeira vaga disponível (mais relevante pelo score)
+  return availableJobs[0]
+}
+
+/**
+ * Executa cleanup de registros antigos (uma vez por dia)
+ * Remove histórico de entregas antigas e caches JSON expirados
+ */
+async function maybeRunCleanup() {
+  const now = Date.now()
+
+  // Só executa se passou 24h desde o último cleanup
+  if (now - lastCleanupTimestamp < CLEANUP_INTERVAL) {
+    return
+  }
+
+  try {
+    infoLog("[CLEANUP] Iniciando limpeza de registros antigos...")
+    const result = await runFullCleanup()
+
+    // Limpa caches JSON expirados
+    const expiredCaches = await cleanExpiredVipCaches()
+
+    lastCleanupTimestamp = now
+
+    if (result.vip > 0 || result.group > 0 || expiredCaches > 0) {
+      successLog(`[CLEANUP] Limpeza concluída: ${result.vip} registros VIP, ${result.group} registros de grupo, ${expiredCaches} caches JSON removidos`)
+    } else {
+      infoLog("[CLEANUP] Nenhum registro antigo para remover")
+    }
+  } catch (err) {
+    errorLog(`[CLEANUP] Erro na limpeza: ${err.message}`)
+  }
+}
 
 function createCorrelationId(prefix) {
   const random = Math.random().toString(36).slice(2, 8)
@@ -160,7 +418,9 @@ function getNormalizedJobFields(job) {
   const location = normalizeStack(job.location || "")
   const workType = normalizeStack(job.work_type || "")
   const regime = normalizeStack(job.hiring_regime || "")
-  const text = `${title} ${description} ${company}`.trim()
+  const salary = normalizeStack(job.salary || "")
+  // Concatena todos os campos disponíveis para melhorar matching (sem description no banco)
+  const text = `${title} ${company} ${location} ${workType} ${regime} ${salary} ${source}`.trim()
 
   const normalized = {
     title,
@@ -342,12 +602,13 @@ async function scanJobsForMatch({
   stopOnFirstMatch = true
 }) {
   const safePageSize = Number.isFinite(pageSize) && pageSize > 0 ? pageSize : 1000
-  let offset = 0
+  let cursorCreatedAt = null
+  let cursorId = null
   let firstMatch = null
   let matchCount = 0
 
   while (true) {
-    const jobs = await getAllJobs({ limit: safePageSize, offset })
+    const jobs = await getAllJobs({ limit: safePageSize, cursorCreatedAt, cursorId })
     if (!jobs.length) {
       break
     }
@@ -388,7 +649,10 @@ async function scanJobsForMatch({
       break
     }
 
-    offset += jobs.length
+    // Keyset pagination: usa o último job como cursor para a próxima página
+    const lastJob = jobs[jobs.length - 1]
+    cursorCreatedAt = lastJob.created_at
+    cursorId = lastJob.id
   }
 
   return { firstMatch, matchCount, diagnostics }
@@ -418,7 +682,8 @@ function jobMatchesFilters(job, filters, returnScore = false) {
   const jobTitle = normalizedJob.title
   const jobDescription = normalizedJob.description
   const jobText = normalizedJob.text
-  const jobCoreText = `${jobTitle} ${jobDescription}`.trim()
+  // jobCoreText usa jobText que já inclui todos os campos (sem description no banco)
+  const jobCoreText = jobText || jobTitle
   const jobLocation = normalizedJob.location
   const jobWorkType = normalizedJob.workType
   const jobRegime = normalizedJob.regime
@@ -435,9 +700,10 @@ function jobMatchesFilters(job, filters, returnScore = false) {
   }
 
   // Campos obrigatórios (must match)
+  // stacks: false por padrão para ser mais flexível (sem description no banco)
   const must = filters.must || {
     roles: false,
-    stacks: true,
+    stacks: false,
     workMode: false,
     contract: false,
     languages: false,
@@ -1375,10 +1641,10 @@ function jobMatchesFilters(job, filters, returnScore = false) {
 
   // ─────────────────────────────────────────────────────────────
   // 10. THRESHOLD DINÂMICO
-  // Base: 50% para ser mais flexível
-  // Mas campos "must" já foram verificados acima (100% obrigatório)
+  // Base: 40% para compensar matching sem description no banco
+  // Campos "must" já foram verificados acima (100% obrigatório)
   // ─────────────────────────────────────────────────────────────
-  const dynamicThreshold = 0.5 // 50% base (mais flexível que 70%)
+  const dynamicThreshold = 0.4 // 40% base (flexível para compensar falta de description)
   const minScore = maxScore * dynamicThreshold
   const matched = maxScore === 0 || totalScore >= minScore
 
@@ -1600,8 +1866,11 @@ async function sendJobToSubscriber(lid, job) {
       return { success: false, reason }
     }
 
-    // Registra o envio (persiste em arquivo)
+    // Registra o envio (persiste em arquivo de histórico)
     await recordJobSent(lid, jobId)
+
+    // NOVO: Marca também no cache JSON
+    await markJobSentInCache(lid, jobId)
 
     return { success: true }
   } catch (err) {
@@ -1612,6 +1881,12 @@ async function sendJobToSubscriber(lid, job) {
 
 /**
  * Processa novas vagas e envia para assinantes VIP
+ * OTIMIZADO v2: Cache por VIP de 24h - reduz egress drasticamente
+ *
+ * Fluxo:
+ * 1. Carrega TODAS as vagas 1x por dia (cache global de 24h)
+ * 2. Para cada VIP, filtra vagas compatíveis e salva em cache por 24h
+ * 3. A cada ciclo (30 min), pega próxima vaga do cache do VIP
  */
 async function processVipJobs() {
   if (!isCurrentSocketReady()) {
@@ -1621,31 +1896,36 @@ async function processVipJobs() {
 
   await processPendingVipSearches()
 
-  // Limpa entradas antigas periodicamente
+  // Limpa entradas antigas periodicamente (arquivo local)
   await cleanOldEntries()
+
+  // Cleanup de registros antigos no Supabase (uma vez por dia)
+  await maybeRunCleanup()
 
   const runId = createCorrelationId("vip-cycle")
   const cycleStart = Date.now()
-  const baseLimit = normalizeLimit(VIP_MAX_JOBS_PER_CYCLE)
-  const baseLookbackDays = normalizeLookbackDays(VIP_JOB_LOOKBACK_DAYS)
-  const fallbackLimit = normalizeLimit(VIP_FALLBACK_MAX_JOBS)
-  const searchSteps = buildVipSearchSteps(baseLimit, baseLookbackDays, fallbackLimit)
-  const jobsCache = new Map()
-  const baseJobs = await getJobsForStep(searchSteps[0], jobsCache)
-  const subscribers = await getVipSubscribers()
 
-  if (baseJobs.length === 0 && searchSteps.length === 1 && !VIP_ENABLE_FULL_SCAN_FALLBACK) {
-    return
-  }
+  // Cache de subscribers (já usa cache interno de 5 min)
+  const subscribers = await getVipSubscribers()
 
   if (subscribers.length === 0) {
     return
   }
 
+  // OTIMIZAÇÃO: Carrega histórico de entrega em batch (1 query em vez de N)
+  await loadSubscriberIdsBatch(subscribers)
+  await loadHistoryBatch()
+
+  // Verifica se o cache global precisa ser carregado
+  const cacheAge = allJobsCache.timestamp > 0
+    ? Math.round((Date.now() - allJobsCache.timestamp) / 3600000)
+    : -1
+  const cacheStatus = cacheAge >= 0 ? `(cache: ${cacheAge}h)` : "(carregando...)"
+
+  infoLog(`[VIP] runId=${runId} Iniciando ciclo para ${subscribers.length} assinantes ${cacheStatus}`)
+
   let matches = 0
   let sent = 0
-
-  infoLog(`[VIP] runId=${runId} Verificando ${baseJobs.length} vagas base para ${subscribers.length} assinantes`)
 
   for (const subscriber of subscribers) {
     // Pula assinantes sem LID válido
@@ -1663,44 +1943,21 @@ async function processVipJobs() {
     const sentJobIds = await getSentJobIds(subscriber.lid)
 
     const filters = subscriber.filters || { stacks: subscriber.stacks || [] }
-    const checkedIds = new Set()
-    let matchedJob = findFirstMatchingJob(baseJobs, filters, sentJobIds, checkedIds)
 
-    if (!matchedJob && searchSteps.length > 1) {
-      for (const step of searchSteps.slice(1)) {
-        const jobs = await getJobsForStep(step, jobsCache)
-        if (!jobs.length) {
-          continue
-        }
-        matchedJob = findFirstMatchingJob(jobs, filters, sentJobIds, checkedIds)
-        if (matchedJob) {
-          infoLog(`[VIP] runId=${runId} Fallback usado para ${subscriber.lid}: ${step.label} (${jobs.length} vagas)`)
-          break
-        }
-      }
-    }
-
-    if (!matchedJob && VIP_ENABLE_FULL_SCAN_FALLBACK) {
-      const diagnostics = VIP_ENABLE_DIAGNOSTICS ? createDiagnosticsTracker("full_scan") : null
-      const fullScanResult = await scanJobsForMatch({
-        filters,
-        sentJobIds,
-        checkedIds,
-        pageSize: VIP_FULL_SCAN_PAGE_SIZE,
-        diagnostics,
-        stopOnFirstMatch: true
-      })
-
-      matchedJob = fullScanResult.firstMatch
-      if (matchedJob) {
-        infoLog(`[VIP] runId=${runId} Full scan encontrou vaga para ${subscriber.lid} (pageSize=${VIP_FULL_SCAN_PAGE_SIZE})`)
-      } else if (diagnostics) {
-        warningLog(formatDiagnosticsSummary(diagnostics, subscriber.lid, filters, { runId }))
-      }
-    }
+    // OTIMIZAÇÃO v3: Usa cache por VIP em JSON (persistido + memória)
+    // Primeira vez: carrega todas as vagas, filtra e salva em JSON
+    // Próximas vezes: usa cache do arquivo JSON
+    const matchedJob = await getNextJobForVip(subscriber.lid, filters, sentJobIds, subscriber.name)
 
     if (!matchedJob) {
-      await delay(1000)
+      // Log de diagnóstico
+      if (VIP_ENABLE_DIAGNOSTICS) {
+        const cached = vipCompatibleJobsCache.get(subscriber.lid)
+        const totalCompatible = cached?.jobs?.length || 0
+        const alreadySent = sentJobIds.size
+        infoLog(`[VIP DIAG] ${subscriber.lid}: ${totalCompatible} compatíveis no cache, ${alreadySent} já enviadas, 0 disponíveis`)
+      }
+      await delay(500)
       continue
     }
 
@@ -1716,7 +1973,8 @@ async function processVipJobs() {
   }
 
   const durationMs = Date.now() - cycleStart
-  infoLog(`[VIP] runId=${runId} Ciclo concluído: matches=${matches}, enviados=${sent}, duração=${durationMs}ms`)
+  const globalCacheSize = allJobsCache.jobs?.length || 0
+  infoLog(`[VIP] runId=${runId} Ciclo concluído: matches=${matches}, enviados=${sent}, cache_global=${globalCacheSize}, duração=${durationMs}ms`)
 }
 
 /**
@@ -1743,16 +2001,14 @@ export async function startVipJobSender(socket) {
   await cleanOldEntries(true)
 
   infoLog("════════════════════════════════════════════════════")
-  infoLog("       ⭐ SERVIÇO DE VAGAS VIP INICIADO")
+  infoLog("       ⭐ SERVIÇO DE VAGAS VIP INICIADO (v2)")
   infoLog("════════════════════════════════════════════════════")
   infoLogAlways(`👥 Assinantes ativos: ${subscribers.length}`)
   infoLog(`⏱️  Intervalo de verificação: ${CHECK_INTERVAL / 60000} minutos`)
   infoLog(`⏱️  Cooldown por assinante: 7 minutos`)
   infoLog(`⏱️  Cooldown para reenvio: 48 horas`)
-  const lookbackLabel = VIP_JOB_LOOKBACK_DAYS > 0 ? `${VIP_JOB_LOOKBACK_DAYS} dias` : "desativado"
-  const limitLabel = VIP_MAX_JOBS_PER_CYCLE > 0 ? `${VIP_MAX_JOBS_PER_CYCLE}` : "sem limite"
-  const fallbackLabel = VIP_FALLBACK_MAX_JOBS > 0 ? `${VIP_FALLBACK_MAX_JOBS}` : "desativado"
-  infoLog(`📚 Janela VIP: ${lookbackLabel} | limite: ${limitLabel} | fallback: ${fallbackLabel}`)
+  infoLog(`💾 Cache global de vagas: 24 horas (1 consulta/dia)`)
+  infoLog(`💾 Cache por VIP: 24 horas (vagas pré-filtradas)`)
   infoLog("════════════════════════════════════════════════════")
 
   if (subscribers.length > 0) {
@@ -1802,10 +2058,10 @@ export async function startVipJobSender(socket) {
 
 /**
  * Força o envio imediato para um assinante (útil para testes)
+ * Usa o novo sistema de cache por VIP
  * @param {string} lid - LID do assinante
  */
 export async function forceVipJobCheck(lid) {
-  const jobs = await loadJobs()
   const subscriber = (await getVipSubscribers()).find((s) => s.lid === lid)
 
   if (!subscriber) {
@@ -1825,38 +2081,32 @@ export async function forceVipJobCheck(lid) {
   // Usa filtros completos se disponível
   const filters = subscriber.filters || { stacks: subscriber.stacks || [] }
 
-  for (const job of jobs.slice(-50)) {
-    const jobId = job.id || job.url || job.job_url
+  // Usa o novo sistema de cache por VIP (JSON persistido)
+  const matchedJob = await getNextJobForVip(lid, filters, sentJobIds, subscriber.name)
 
-    // Pula vagas já enviadas nas últimas 48h
-    if (sentJobIds.has(jobId)) {
-      continue
-    }
-
-    if (!jobMatchesFilters(job, filters)) {
-      continue
-    }
-
-    const result = await sendJobToSubscriber(lid, job)
-    if (result.success) {
-      return { success: true, message: "1 vaga enviada" }
-    }
-
-    if (result.reason === "cooldown") {
-      const remaining = await getTimeUntilCanSend(lid)
-      const remainingMin = Math.ceil(remaining / 60000)
-      return { success: false, message: `Aguarde ${remainingMin} minutos para o próximo envio` }
-    }
-
-    return { success: false, message: `Erro: ${result.reason}` }
+  if (!matchedJob) {
+    const cached = vipCompatibleJobsCache.get(lid)
+    const totalCompatible = cached?.jobs?.length || 0
+    return { success: true, message: `Nenhuma vaga disponível (${totalCompatible} compatíveis, ${sentJobIds.size} já enviadas)` }
   }
 
-  return { success: true, message: "Nenhuma vaga nova encontrada" }
+  const result = await sendJobToSubscriber(lid, matchedJob)
+  if (result.success) {
+    return { success: true, message: "1 vaga enviada" }
+  }
+
+  if (result.reason === "cooldown") {
+    const remaining = await getTimeUntilCanSend(lid)
+    const remainingMin = Math.ceil(remaining / 60000)
+    return { success: false, message: `Aguarde ${remainingMin} minutos para o próximo envio` }
+  }
+
+  return { success: false, message: `Erro: ${result.reason}` }
 }
 
 /**
  * Dispara busca VIP dedicada para um cliente
- * Busca vagas no embeds.json que correspondem aos filtros do assinante
+ * OTIMIZADO v2: Usa cache por VIP de 24h
  * @param {string} lid - LID do assinante
  * @param {string[]|Object} stacksOrFilters - Stacks/keywords para buscar ou objeto de filtros
  * @param {Object} options - Opções adicionais
@@ -1910,84 +2160,19 @@ export async function triggerVipSearch(lid, stacksOrFilters, options = {}) {
       }
     }
 
-    const baseLimit = normalizeLimit(VIP_MAX_JOBS_PER_CYCLE)
-    const baseLookbackDays = normalizeLookbackDays(VIP_JOB_LOOKBACK_DAYS)
-    const fallbackLimit = normalizeLimit(VIP_FALLBACK_MAX_JOBS)
-    const searchSteps = buildVipSearchSteps(baseLimit, baseLookbackDays, fallbackLimit)
-    const jobsCache = new Map()
-
     // Obtém IDs de vagas já enviadas nas últimas 48h
     const sentJobIds = await getSentJobIds(lid)
 
-    let jobsFound = 0
-    let matchedJob = null
-    let matchedStep = searchSteps[0]
-    let hadAnyJobs = false
-
-    for (const step of searchSteps) {
-      const jobs = await getJobsForStep(step, jobsCache)
-      if (!jobs.length) {
-        continue
-      }
-      hadAnyJobs = true
-
-      const { firstMatch, count } = findMatchingJobsWithCount(
-        jobs,
-        filters,
-        sentJobIds,
-        new Set()
-      )
-
-      if (count > 0) {
-        infoLog(`[VIP SEARCH] runId=${runId} Step ${step.label}: ${count} matches em ${jobs.length} vagas`)
-      }
-
-      if (firstMatch) {
-        matchedJob = firstMatch
-        matchedStep = step
-        jobsFound = count
-        if (step !== searchSteps[0]) {
-          infoLog(`[VIP SEARCH] runId=${runId} Fallback usado para ${lid}: ${step.label} (${jobs.length} vagas)`)
-        }
-        break
-      }
-    }
-
-    if (!hadAnyJobs && !VIP_ENABLE_FULL_SCAN_FALLBACK) {
-      warningLog("[VIP SEARCH] Nenhuma vaga disponível no Supabase")
-      return {
-        success: false,
-        jobsFound: 0,
-        jobsSent: 0,
-        error: "Nenhuma vaga disponível no momento",
-      }
-    }
-
-    if (!matchedJob && VIP_ENABLE_FULL_SCAN_FALLBACK) {
-      const diagnostics = VIP_ENABLE_DIAGNOSTICS ? createDiagnosticsTracker("full_scan") : null
-      const fullScanResult = await scanJobsForMatch({
-        filters,
-        sentJobIds,
-        checkedIds: new Set(),
-        pageSize: VIP_FULL_SCAN_PAGE_SIZE,
-        diagnostics,
-        stopOnFirstMatch: true
-      })
-      matchedJob = fullScanResult.firstMatch
-      jobsFound = matchedJob ? 1 : 0
-
-      if (matchedJob) {
-        matchedStep = { label: "full_scan" }
-        infoLog(`[VIP SEARCH] runId=${runId} Full scan encontrou vaga para ${lid} (pageSize=${VIP_FULL_SCAN_PAGE_SIZE})`)
-      } else if (diagnostics) {
-        warningLog(formatDiagnosticsSummary(diagnostics, lid, filters, { runId }))
-      }
-    }
+    // OTIMIZADO v2: Usa cache por VIP (24h)
+    const matchedJob = await getNextJobForVip(lid, filters, sentJobIds)
+    const cached = vipCompatibleJobsCache.get(lid)
+    const jobsFound = cached?.jobs?.length || 0
 
     if (!matchedJob) {
+      infoLog(`[VIP SEARCH] runId=${runId} Nenhuma vaga disponível para ${lid} (${jobsFound} compatíveis, ${sentJobIds.size} já enviadas)`)
       return {
         success: true,
-        jobsFound: 0,
+        jobsFound,
         jobsSent: 0,
         error: "Nenhuma vaga nova encontrada para os filtros informados",
       }
@@ -2003,7 +2188,7 @@ export async function triggerVipSearch(lid, stacksOrFilters, options = {}) {
       warningLog(`[VIP SEARCH] runId=${runId} Não foi possível enviar: ${result.reason}`)
     }
 
-    successLog(`[VIP SEARCH] runId=${runId} Busca concluída para ${lid}: ${jobsSent}/${jobsFound} vagas enviadas`)
+    successLog(`[VIP SEARCH] runId=${runId} Busca concluída para ${lid}: ${jobsSent}/${jobsFound} vagas compatíveis`)
 
     return {
       success: true,

@@ -8,7 +8,7 @@
 
 import "dotenv/config"
 import { infoLog, successLog, warningLog, errorLog } from "../utils/logger.js"
-import { JOB_GROUP_ID, BOT_EMOJI, JOB_SEND_INTERVAL } from "../config.js"
+import { JOB_GROUP_ID, BOT_EMOJI, JOB_SEND_INTERVAL, GROUP_JOBS_PER_DAY } from "../config.js"
 import { selectNextJob, extractStack } from "./jobDistributor.js"
 import { getCurrentSocket, isCurrentSocketReady } from "../utils/socketManager.js"
 import {
@@ -19,6 +19,14 @@ import {
   recordGroupDelivery,
   getGroupSentJobsToday
 } from "./database.js"
+import {
+  loadGroupJobsCache,
+  generateGroupJobsCache,
+  getNextJobForGroup,
+  markGroupJobSent,
+  isGroupCacheValid,
+  getGroupCacheStats
+} from "./groupJobsCache.js"
 
 // Intervalo fixo entre envios (em milissegundos)
 const FIXED_INTERVAL = JOB_SEND_INTERVAL || 5 * 60 * 1000
@@ -205,6 +213,7 @@ async function sendJob(job) {
 
 /**
  * Processa e envia a próxima vaga com seleção aleatória justa.
+ * VERSÃO v2: Usa cache JSON local para o dia
  */
 async function processNextJob() {
   infoLog("[GRUPO] Iniciando processamento de vaga para o grupo...")
@@ -214,35 +223,45 @@ async function processNextJob() {
     return
   }
 
-  infoLog("[GRUPO] Socket pronto. Buscando vagas pendentes do Supabase...")
-
   try {
-    // Busca vagas pendentes do Supabase
-    const pendingJobs = await getPendingWhatsAppJobs(100)
+    // PRIMEIRA OPÇÃO: Tenta usar o cache JSON do grupo
+    let job = await getNextJobForGroup(JOB_GROUP_ID)
 
-    if (!pendingJobs || pendingJobs.length === 0) {
-      infoLog("📭 [GRUPO] Nenhuma vaga pendente no banco de dados")
-      return
+    if (job) {
+      infoLog("[GRUPO] Usando vaga do cache JSON local")
+    } else {
+      // FALLBACK: Cache vazio ou expirado, busca do Supabase
+      infoLog("[GRUPO] Cache vazio. Buscando vagas do Supabase...")
+
+      // Gera novo cache se necessário
+      await ensureGroupCacheExists()
+      job = await getNextJobForGroup(JOB_GROUP_ID)
+
+      if (!job) {
+        // Último recurso: busca direta do Supabase
+        const pendingJobs = await getPendingWhatsAppJobs(100)
+
+        if (!pendingJobs || pendingJobs.length === 0) {
+          infoLog("📭 [GRUPO] Nenhuma vaga pendente no banco de dados")
+          return
+        }
+
+        // Obtém vagas já enviadas hoje para esse grupo (cooldown)
+        const sentToday = await getGroupSentJobsToday(JOB_GROUP_ID)
+
+        // Seleciona próxima vaga com algoritmo justo
+        job = selectNextJob({
+          jobs: pendingJobs,
+          groupId: JOB_GROUP_ID,
+          sentIds: sentToday,
+          recentStacks: recentStacksCache,
+          maxConsecutive: MAX_CONSECUTIVE_SAME_STACK
+        })
+      }
     }
 
-    infoLog(`[GRUPO] Total de vagas pendentes: ${pendingJobs.length}`)
-
-    // Obtém vagas já enviadas hoje para esse grupo (cooldown)
-    const sentToday = await getGroupSentJobsToday(JOB_GROUP_ID)
-
-    infoLog(`[GRUPO] Vagas já enviadas hoje para este grupo: ${sentToday.size}`)
-
-    // Seleciona próxima vaga com algoritmo justo
-    const job = selectNextJob({
-      jobs: pendingJobs,
-      groupId: JOB_GROUP_ID,
-      sentIds: sentToday,
-      recentStacks: recentStacksCache,
-      maxConsecutive: MAX_CONSECUTIVE_SAME_STACK
-    })
-
     if (!job) {
-      infoLog("📭 [GRUPO] Nenhuma vaga disponível (todas em cooldown ou diversidade)")
+      infoLog("📭 [GRUPO] Nenhuma vaga disponível (cache e Supabase vazios)")
       return
     }
 
@@ -258,6 +277,9 @@ async function processNextJob() {
       // Registra no histórico de entrega do grupo
       await recordGroupDelivery(job.id, JOB_GROUP_ID)
 
+      // Marca no cache JSON do grupo
+      await markGroupJobSent(JOB_GROUP_ID, job.id)
+
       // Atualiza cache de stacks recentes
       recentStacksCache.push(stack)
       if (recentStacksCache.length > MAX_RECENT_STACKS) {
@@ -267,7 +289,10 @@ async function processNextJob() {
       // Persiste o timestamp do envio
       await writeJobSenderState(Date.now())
 
-      successLog(`✅ Vaga enviada com sucesso: ${job.job_title}`)
+      // Log com estatísticas do cache
+      const stats = await getGroupCacheStats(JOB_GROUP_ID)
+      const remaining = stats ? stats.remaining : "?"
+      successLog(`✅ Vaga enviada com sucesso: ${job.job_title} (${remaining} restantes no cache)`)
     }
   } catch (err) {
     errorLog(`[GRUPO] Erro ao processar vaga: ${err.message}`)
@@ -296,6 +321,42 @@ function scheduleNextJob() {
 }
 
 /**
+ * Gera o cache diário de vagas para o grupo se necessário
+ */
+async function ensureGroupCacheExists() {
+  try {
+    // Verifica se já existe cache válido
+    const existingCache = await loadGroupJobsCache(JOB_GROUP_ID)
+    if (existingCache && isGroupCacheValid(existingCache)) {
+      const stats = await getGroupCacheStats(JOB_GROUP_ID)
+      infoLog(`[GRUPO CACHE] Cache válido encontrado: ${stats.remaining} vagas restantes de ${stats.totalJobs}`)
+      return existingCache
+    }
+
+    // Gera novo cache
+    infoLog("[GRUPO CACHE] Gerando cache diário de vagas para o grupo...")
+
+    // Busca vagas pendentes (60 = 48 + 12 de buffer)
+    const jobsNeeded = GROUP_JOBS_PER_DAY + 12
+    const pendingJobs = await getPendingWhatsAppJobs(jobsNeeded)
+
+    if (!pendingJobs || pendingJobs.length === 0) {
+      warningLog("[GRUPO CACHE] Nenhuma vaga pendente para gerar cache")
+      return null
+    }
+
+    // Gera cache com as vagas
+    const cache = await generateGroupJobsCache(JOB_GROUP_ID, pendingJobs, "Grupo de Vagas")
+    successLog(`[GRUPO CACHE] Cache gerado com ${cache.totalJobs} vagas para o dia`)
+
+    return cache
+  } catch (err) {
+    errorLog(`[GRUPO CACHE] Erro ao gerar cache: ${err.message}`)
+    return null
+  }
+}
+
+/**
  * Inicia o serviço de envio automático de vagas
  */
 export async function startJobSender(socket) {
@@ -312,17 +373,27 @@ export async function startJobSender(socket) {
     return
   }
 
+  // Gera cache diário se necessário
+  await ensureGroupCacheExists()
+
   // Calcula tempo restante baseado no último envio (persistido no Supabase)
   const timeUntilNext = await getTimeUntilNextSend()
   const state = await readJobSenderState()
   const lastSentAgo = state.lastSentAt > 0 ? Math.floor((Date.now() - state.lastSentAt) / 1000) : 0
+
+  // Obtém estatísticas do cache
+  const cacheStats = await getGroupCacheStats(JOB_GROUP_ID)
+  const cacheInfo = cacheStats
+    ? `${cacheStats.remaining}/${cacheStats.totalJobs} vagas no cache`
+    : "cache não disponível"
 
   infoLog("════════════════════════════════════════════════════")
   infoLog("       📋 SERVIÇO DE VAGAS DO GRUPO INICIADO")
   infoLog("════════════════════════════════════════════════════")
   infoLog(`⏱️  Intervalo: ${FIXED_INTERVAL / 60000} minutos`)
   infoLog(`🔀 Seleção: aleatória com diversidade de stacks`)
-  infoLog(`💾 Storage: Supabase (database)`)
+  infoLog(`💾 Storage: JSON local + Supabase`)
+  infoLog(`📦 Cache: ${cacheInfo}`)
   infoLog(`📍 Grupo: ${JOB_GROUP_ID}`)
   if (state.lastSentAt > 0) {
     infoLog(`📅 Último envio: há ${lastSentAgo} segundos`)
