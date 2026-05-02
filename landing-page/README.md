@@ -1,85 +1,86 @@
-# Sonnar Landing Page
+# SonnarJobs
 
-Site institucional de uma página para o Sonnar - plataforma de vagas de emprego personalizadas via Discord e WhatsApp.
+Plataforma de vagas de emprego para profissionais de tecnologia.
 
-## Stack
+## Tecnologias
 
-- Vue.js 3 (Composition API)
-- Vite
-- CSS puro com design tokens (CSS Variables)
+- **Vue 3** - Framework JavaScript progressivo
+- **Vite** - Build tool e dev server
+- **TypeScript** - Tipagem estática
+- **Tailwind CSS** - Framework CSS utilitário
+- **Ant Design Vue** - Biblioteca de componentes UI
+- **Supabase** - Backend as a Service (autenticação e banco de dados)
+- **Vue Router** - Roteamento SPA
+
+## Requisitos
+
+- Node.js 18+
+- npm ou bun
 
 ## Instalação
 
 ```bash
-cd landing-page
+# Clonar o repositório
+git clone <URL_DO_REPOSITORIO>
+
+# Entrar no diretório
+cd sonnarjobs
+
+# Instalar dependências
 npm install
+
+# Copiar arquivo de ambiente
+cp .env.example .env
+
+# Configurar variáveis de ambiente no arquivo .env
 ```
 
 ## Desenvolvimento
 
 ```bash
+# Iniciar servidor de desenvolvimento
 npm run dev
+
+# Executar linting
+npm run lint
+
+# Executar testes
+npm run test
 ```
 
-Acesse http://localhost:3000
-
-## Build para produção
+## Build
 
 ```bash
+# Build de produção
 npm run build
-```
 
-Os arquivos estáticos serão gerados na pasta `dist/`.
-
-## Preview do build
-
-```bash
+# Preview do build
 npm run preview
 ```
 
-## Estrutura
+## Estrutura do Projeto
 
 ```
-landing-page/
-├── public/
-│   └── favicon.svg
-├── src/
-│   ├── assets/
-│   │   └── styles.css      # Design tokens e estilos globais
-│   ├── components/
-│   │   ├── AppHeader.vue
-│   │   ├── HeroSection.vue
-│   │   ├── HowItWorksSection.vue
-│   │   ├── BenefitsSection.vue
-│   │   ├── PricingSection.vue
-│   │   ├── TestimonialsSection.vue
-│   │   ├── FaqSection.vue
-│   │   ├── ContactSection.vue
-│   │   └── AppFooter.vue
-│   ├── App.vue
-│   └── main.js
-├── index.html
-├── package.json
-└── vite.config.js
+src/
+├── components/     # Componentes Vue reutilizáveis
+├── pages/          # Páginas/views da aplicação
+├── router/         # Configuração de rotas
+├── guards/         # Guards de navegação (auth, admin)
+├── composables/    # Composables Vue (hooks)
+├── integrations/   # Integrações externas (Supabase)
+├── utils/          # Funções utilitárias
+├── assets/         # Arquivos estáticos (CSS, imagens)
+└── test/           # Configuração de testes
 ```
 
-## Paleta de cores
+## Deploy
 
-| Token | Hex | Uso |
-|-------|-----|-----|
-| Primary | #1E5BFF | Cor principal da marca |
-| Primary Dark | #1747CC | Hover em elementos primários |
-| Primary Soft | #EAF1FF | Backgrounds suaves |
-| Background | #F8FAFF | Fundo da página |
-| Surface | #FFFFFF | Cards e superfícies |
-| CTA Accent | #00B7FF | Botões de conversão |
+O projeto está configurado para deploy em plataformas como Netlify ou Vercel.
 
-## Features
+Certifique-se de configurar as variáveis de ambiente:
+- `VITE_SUPABASE_URL`
+- `VITE_SUPABASE_PUBLISHABLE_KEY`
 
-- Responsivo mobile-first
-- Scroll suave entre seções
-- Animações de entrada (fade/slide)
-- Acessibilidade (ARIA labels, navegação por teclado)
-- SEO otimizado (meta tags, JSON-LD)
-- Formulário de solicitação de acesso
-- FAQ com accordion
+## Licença
+
+Propriedade de SonnarJobs. Todos os direitos reservados.

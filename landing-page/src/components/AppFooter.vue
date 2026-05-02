@@ -3,7 +3,11 @@
     <div class="container">
       <div class="footer-main">
         <div class="footer-brand">
-          <a href="#" class="footer-logo" aria-label="Sonnar - Início">
+          <a
+            href="#"
+            class="footer-logo"
+            aria-label="Sonnar - Início"
+          >
             <span class="logo-mark">S</span>
             <span class="logo-text">Sonnar</span>
           </a>
@@ -12,22 +16,31 @@
           </p>
         </div>
 
-        <nav class="footer-nav" aria-label="Links do rodapé">
+        <nav
+          class="footer-nav"
+          aria-label="Links do rodapé"
+        >
           <a href="#como-funciona">Como funciona</a>
           <a href="#planos">Planos</a>
           <a href="#faq">FAQ</a>
-          <a href="#contato">Contato</a>
         </nav>
 
         <div class="footer-legal">
-          <a href="#">Termos</a>
-          <a href="#">Privacidade</a>
+          <router-link to="/termos">Termos de Uso</router-link>
+          <router-link to="/privacidade">Privacidade</router-link>
+          <router-link to="/cookies">Cookies</router-link>
         </div>
       </div>
 
       <div class="footer-bottom">
         <p class="footer-copyright">
-          {{ currentYear }} Sonnar
+          © {{ currentYear }} Sonnar — Todos os direitos reservados a
+          <a
+            href="https://elkys.com.br"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="footer-elkys"
+          >Elkys</a>.
         </p>
       </div>
     </div>
@@ -54,6 +67,9 @@ export default {
   background: var(--color-surface);
   border-top: 1px solid var(--color-border);
   padding: clamp(2.5rem, 6vw, 3rem) 0 var(--space-6);
+  /* Prevenir CLS reservando altura mínima */
+  min-height: 180px;
+  contain: layout style;
 }
 
 /* ==========================================================================
@@ -109,7 +125,7 @@ export default {
 
 .footer-tagline {
   font-size: var(--text-sm);
-  color: var(--color-text-muted);
+  color: var(--color-text-secondary);
 }
 
 /* ==========================================================================
@@ -145,14 +161,15 @@ export default {
 
 .footer-legal a {
   font-size: var(--text-sm);
-  color: var(--color-text-muted);
+  color: var(--color-text-secondary);
+  text-decoration: underline;
   transition: color var(--transition-fast);
   /* Minimum touch target */
   padding: var(--space-1) 0;
 }
 
 .footer-legal a:hover {
-  color: var(--color-text-secondary);
+  color: var(--color-text-primary);
 }
 
 /* ==========================================================================
@@ -166,7 +183,19 @@ export default {
 
 .footer-copyright {
   font-size: var(--text-sm);
-  color: var(--color-text-muted);
+  color: var(--color-text-secondary);
+}
+
+.footer-elkys {
+  color: var(--color-accent);
+  font-weight: var(--font-semibold);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition: border-color var(--transition-fast), color var(--transition-fast);
+}
+.footer-elkys:hover {
+  border-bottom-color: var(--color-accent);
+  color: var(--color-accent-hover);
 }
 
 /* Mobile: center everything */

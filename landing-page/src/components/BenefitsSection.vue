@@ -1,18 +1,34 @@
 <template>
-  <section id="beneficios" class="section benefits">
+  <section
+    id="beneficios"
+    class="section benefits"
+  >
     <div class="container">
       <div class="section-header">
-        <h2 class="section-title">Por que usar o Sonnar</h2>
+        <h2 class="section-title">
+          Por que usar o Sonnar
+        </h2>
         <p class="section-subtitle">
           Tecnologia a serviço da sua carreira. Economize tempo e encontre a vaga certa.
         </p>
       </div>
 
       <div class="benefits-grid">
-        <article class="benefit-card" v-for="(benefit, index) in benefits" :key="index">
-          <div class="benefit-icon" v-html="benefit.icon"></div>
-          <h3 class="benefit-title">{{ benefit.title }}</h3>
-          <p class="benefit-description">{{ benefit.description }}</p>
+        <article
+          v-for="(benefit, index) in benefits"
+          :key="index"
+          class="benefit-card"
+        >
+          <div
+            class="benefit-icon"
+            v-html="benefit.icon"
+          />
+          <h3 class="benefit-title">
+            {{ benefit.title }}
+          </h3>
+          <p class="benefit-description">
+            {{ benefit.description }}
+          </p>
         </article>
       </div>
     </div>
@@ -102,14 +118,14 @@ export default {
   display: grid;
   /* Mobile: single column */
   grid-template-columns: 1fr;
-  gap: var(--space-4);
+  gap: var(--grid-gap-sm);
 }
 
-/* Small screens: 2 columns */
-@media (min-width: 480px) {
+/* Tablet: 2 columns */
+@media (min-width: 768px) {
   .benefits-grid {
     grid-template-columns: repeat(2, 1fr);
-    gap: var(--space-5);
+    gap: var(--grid-gap);
   }
 }
 
@@ -117,7 +133,7 @@ export default {
 @media (min-width: 1024px) {
   .benefits-grid {
     grid-template-columns: repeat(3, 1fr);
-    gap: var(--space-6);
+    gap: var(--grid-gap);
   }
 }
 
@@ -127,8 +143,8 @@ export default {
 
 .benefit-card {
   background: var(--color-surface);
-  border-radius: var(--radius-xl);
-  padding: clamp(1.25rem, 4vw, 2rem);
+  border-radius: var(--radius-card);
+  padding: var(--card-padding);
   border: 1px solid var(--color-border);
   transition: all var(--transition-base);
 }
@@ -136,7 +152,7 @@ export default {
 .benefit-card:hover {
   transform: translateY(-4px);
   box-shadow: var(--shadow-md);
-  border-color: var(--color-primary-soft);
+  border-color: var(--card-border-hover);
 }
 
 /* ==========================================================================
@@ -168,12 +184,13 @@ export default {
   font-weight: var(--font-bold);
   color: var(--color-text-primary);
   margin-bottom: var(--space-2);
+  line-height: var(--lh-title);
 }
 
 .benefit-description {
   font-size: var(--text-base);
   color: var(--color-text-secondary);
-  line-height: 1.7;
+  line-height: var(--lh-body);
 }
 
 /* ==========================================================================

@@ -1,23 +1,47 @@
 <template>
-  <section id="depoimentos" class="section testimonials">
+  <section
+    id="depoimentos"
+    class="section testimonials"
+  >
     <div class="container">
       <div class="section-header">
-        <h2 class="section-title">O que dizem nossos usuários</h2>
+        <h2 class="section-title">
+          O que dizem nossos usuários
+        </h2>
         <p class="section-subtitle">
           Desenvolvedores reais compartilhando suas experiências com o Sonnar.
         </p>
       </div>
 
       <div class="testimonials-grid">
-        <article class="testimonial-card" v-for="(testimonial, index) in testimonials" :key="index">
+        <article
+          v-for="(testimonial, index) in testimonials"
+          :key="index"
+          class="testimonial-card"
+        >
           <div class="testimonial-content">
-            <svg class="quote-icon" width="32" height="32" viewBox="0 0 32 32" fill="none" aria-hidden="true">
-              <path d="M8 20C8 16.686 10.686 14 14 14V10C8.477 10 4 14.477 4 20V26H14V20H8ZM22 20C22 16.686 24.686 14 28 14V10C22.477 10 18 14.477 18 20V26H28V20H22Z" fill="var(--color-primary-soft)"/>
+            <svg
+              class="quote-icon"
+              width="32"
+              height="32"
+              viewBox="0 0 32 32"
+              fill="none"
+              aria-hidden="true"
+            >
+              <path
+                d="M8 20C8 16.686 10.686 14 14 14V10C8.477 10 4 14.477 4 20V26H14V20H8ZM22 20C22 16.686 24.686 14 28 14V10C22.477 10 18 14.477 18 20V26H28V20H22Z"
+                fill="var(--color-primary-soft)"
+              />
             </svg>
-            <p class="testimonial-text">{{ testimonial.text }}</p>
+            <p class="testimonial-text">
+              {{ testimonial.text }}
+            </p>
           </div>
           <div class="testimonial-author">
-            <div class="author-avatar" :style="{ background: testimonial.avatarBg }">
+            <div
+              class="author-avatar"
+              :style="{ background: testimonial.avatarBg }"
+            >
               {{ testimonial.initials }}
             </div>
             <div class="author-info">
@@ -81,14 +105,14 @@ export default {
   display: grid;
   /* Mobile: single column */
   grid-template-columns: 1fr;
-  gap: var(--space-4);
+  gap: var(--grid-gap-sm);
 }
 
 /* Tablet: 2 columns */
-@media (min-width: 640px) {
+@media (min-width: 768px) {
   .testimonials-grid {
     grid-template-columns: repeat(2, 1fr);
-    gap: var(--space-5);
+    gap: var(--grid-gap);
   }
 
   /* Center the last item when odd number */
@@ -103,7 +127,7 @@ export default {
 @media (min-width: 1024px) {
   .testimonials-grid {
     grid-template-columns: repeat(3, 1fr);
-    gap: var(--space-6);
+    gap: var(--grid-gap);
   }
 
   .testimonial-card:last-child:nth-child(odd) {
@@ -119,8 +143,8 @@ export default {
 
 .testimonial-card {
   background: var(--color-surface);
-  border-radius: var(--radius-xl);
-  padding: clamp(1.25rem, 4vw, 2rem);
+  border-radius: var(--radius-card);
+  padding: var(--card-padding);
   border: 1px solid var(--color-border);
   display: flex;
   flex-direction: column;
@@ -131,7 +155,7 @@ export default {
 .testimonial-card:hover {
   transform: translateY(-4px);
   box-shadow: var(--shadow-md);
-  border-color: var(--color-primary-soft);
+  border-color: var(--card-border-hover);
 }
 
 /* ==========================================================================
@@ -151,7 +175,7 @@ export default {
 .testimonial-text {
   font-size: var(--text-base);
   color: var(--color-text-secondary);
-  line-height: 1.8;
+  line-height: var(--lh-relaxed);
   font-style: italic;
 }
 
@@ -190,6 +214,7 @@ export default {
   font-size: var(--text-base);
   font-weight: var(--font-semibold);
   color: var(--color-text-primary);
+  line-height: var(--lh-title);
 }
 
 .author-role {

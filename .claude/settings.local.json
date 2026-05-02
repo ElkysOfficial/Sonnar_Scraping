@@ -1,0 +1,31 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(Get-ChildItem -Path \"D:\\\\Pessoal\\\\Sonar\" -Directory)",
+      "Bash(Select-Object Name)",
+      "Bash(xargs grep *)",
+      "Bash(python -c ' *)",
+      "Bash(npx vue-tsc *)",
+      "Bash(npx supabase *)",
+      "Bash(curl -s -X POST \"https://cqiaiwpjrxqxvhvmcgfs.supabase.co/rest/v1/rpc/get_jobs_stats\" -H \"apikey: sb_publishable_6zZZ57Kt6HyK_r1hjmHtMQ_9nkOyT_r\" -H \"Authorization: Bearer sb_publishable_6zZZ57Kt6HyK_r1hjmHtMQ_9nkOyT_r\" -H \"Content-Type: application/json\" -d \"{}\")",
+      "Bash(curl -s -X POST \"https://cqiaiwpjrxqxvhvmcgfs.supabase.co/rest/v1/rpc/get_jobs_by_uf\" -H \"apikey: sb_publishable_6zZZ57Kt6HyK_r1hjmHtMQ_9nkOyT_r\" -H \"Authorization: Bearer sb_publishable_6zZZ57Kt6HyK_r1hjmHtMQ_9nkOyT_r\" -H \"Content-Type: application/json\" -d \"{}\")",
+      "Bash(curl -s -X POST \"https://cqiaiwpjrxqxvhvmcgfs.supabase.co/rest/v1/rpc/get_jobs_by_country\" -H \"apikey: sb_publishable_6zZZ57Kt6HyK_r1hjmHtMQ_9nkOyT_r\" -H \"Authorization: Bearer sb_publishable_6zZZ57Kt6HyK_r1hjmHtMQ_9nkOyT_r\" -H \"Content-Type: application/json\" -d \"{}\")",
+      "Bash(curl -s -o /dev/null -w \"anon SELECT direto na jobs: HTTP %{http_code}\\\\n\" \"https://cqiaiwpjrxqxvhvmcgfs.supabase.co/rest/v1/jobs?select=*&limit=1\" -H \"apikey: sb_publishable_6zZZ57Kt6HyK_r1hjmHtMQ_9nkOyT_r\" -H \"Authorization: Bearer sb_publishable_6zZZ57Kt6HyK_r1hjmHtMQ_9nkOyT_r\")",
+      "Bash(grep -E \"^\\\\.env|env$\")",
+      "Bash(python *)",
+      "Bash(curl -s -X DELETE \"https://cqiaiwpjrxqxvhvmcgfs.supabase.co/rest/v1/jobs?job_url=eq.https://test.local/smoke/integration-1\" -H \"apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxaWFpd3BqcnhxeHZodm1jZ2ZzIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NzQ2NjM1NSwiZXhwIjoyMDkzMDQyMzU1fQ.hCgswUfxKOLHLUm8Fi1CxeZxO3KoZij7VCJ9X3fXhBw\" -H \"Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxaWFpd3BqcnhxeHZodm1jZ2ZzIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NzQ2NjM1NSwiZXhwIjoyMDkzMDQyMzU1fQ.hCgswUfxKOLHLUm8Fi1CxeZxO3KoZij7VCJ9X3fXhBw\" -w \"\\\\nstatus:%{http_code}\\\\n\")",
+      "Bash(tasklist)",
+      "Bash(taskkill *)",
+      "PowerShell(Stop-Process *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git rev-list *)",
+      "Bash(git branch *)",
+      "Bash(git checkout *)",
+      "Bash(awk '{print $NF}')",
+      "Read(//tmp/**)",
+      "Bash(git ls-tree *)",
+      "Bash(git check-ignore *)"
+    ]
+  }
+}

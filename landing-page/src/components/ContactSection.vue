@@ -1,9 +1,14 @@
 <template>
-  <section id="contato" class="section">
+  <section
+    id="contato"
+    class="section"
+  >
     <div class="container">
       <div class="contact-wrapper">
         <div class="contact-info">
-          <h2 class="contact-title">Comece a receber vagas</h2>
+          <h2 class="contact-title">
+            Comece a receber vagas
+          </h2>
           <p class="contact-description">
             Preencha seus dados e configure seu perfil.
             Você começa a receber vagas em minutos.
@@ -11,60 +16,117 @@
 
           <div class="contact-features">
             <div class="contact-feature">
-              <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-                <path d="M4 10L8 14L16 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 20 20"
+                fill="none"
+                aria-hidden="true"
+              >
+                <path
+                  d="M4 10L8 14L16 6"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
               </svg>
               <span>Configuração em 2 minutos</span>
             </div>
             <div class="contact-feature">
-              <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-                <path d="M4 10L8 14L16 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 20 20"
+                fill="none"
+                aria-hidden="true"
+              >
+                <path
+                  d="M4 10L8 14L16 6"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
               </svg>
               <span>Teste grátis por 7 dias</span>
             </div>
             <div class="contact-feature">
-              <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-                <path d="M4 10L8 14L16 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 20 20"
+                fill="none"
+                aria-hidden="true"
+              >
+                <path
+                  d="M4 10L8 14L16 6"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
               </svg>
               <span>Cancele quando quiser</span>
             </div>
           </div>
 
-          <div class="contact-alternative">
+          <div
+            v-if="whatsappUrl"
+            class="contact-alternative"
+          >
             <p>Prefere falar diretamente?</p>
             <a
-              href="https://wa.me/5511999999999?text=Olá! Gostaria de saber mais sobre o Sonnar."
+              :href="whatsappUrl"
               class="btn btn-whatsapp"
               target="_blank"
               rel="noopener noreferrer"
             >
-              <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
-                <path d="M9 1C4.58 1 1 4.58 1 9C1 10.85 1.63 12.55 2.69 13.91L1.5 17L4.72 15.85C6.01 16.64 7.46 17 9 17C13.42 17 17 13.42 17 9C17 4.58 13.42 1 9 1Z" fill="currentColor"/>
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 18 18"
+                fill="none"
+                aria-hidden="true"
+              >
+                <path
+                  d="M9 1C4.58 1 1 4.58 1 9C1 10.85 1.63 12.55 2.69 13.91L1.5 17L4.72 15.85C6.01 16.64 7.46 17 9 17C13.42 17 17 13.42 17 9C17 4.58 13.42 1 9 1Z"
+                  fill="currentColor"
+                />
               </svg>
               Falar no WhatsApp
             </a>
           </div>
         </div>
 
-        <form class="contact-form" @submit.prevent="handleSubmit">
+        <form
+          class="contact-form"
+          @submit.prevent="handleSubmit"
+        >
           <div class="form-row form-row-2">
             <div class="form-group">
-              <label for="name" class="form-label">Nome</label>
+              <label
+                for="name"
+                class="form-label"
+              >Nome</label>
               <input
-                type="text"
                 id="name"
                 v-model="form.name"
+                type="text"
                 class="form-input"
                 placeholder="Seu nome"
                 required
               >
             </div>
             <div class="form-group">
-              <label for="whatsapp" class="form-label">WhatsApp</label>
+              <label
+                for="whatsapp"
+                class="form-label"
+              >WhatsApp</label>
               <input
-                type="tel"
                 id="whatsapp"
                 v-model="form.whatsapp"
+                type="tel"
                 class="form-input"
                 placeholder="(11) 99999-9999"
                 required
@@ -74,11 +136,14 @@
 
           <div class="form-row">
             <div class="form-group">
-              <label for="email" class="form-label">E-mail</label>
+              <label
+                for="email"
+                class="form-label"
+              >E-mail</label>
               <input
-                type="email"
                 id="email"
                 v-model="form.email"
+                type="email"
                 class="form-input"
                 placeholder="seu@email.com"
                 required
@@ -88,34 +153,101 @@
 
           <div class="form-row form-row-2">
             <div class="form-group">
-              <label for="stack" class="form-label">Stack principal</label>
-              <select id="stack" v-model="form.stack" class="form-select" required>
-                <option value="" disabled>Selecione</option>
-                <option value="frontend">Frontend</option>
-                <option value="backend">Backend</option>
-                <option value="fullstack">Full Stack</option>
-                <option value="mobile">Mobile</option>
-                <option value="devops">DevOps / SRE</option>
-                <option value="data">Data / Analytics</option>
-                <option value="other">Outro</option>
+              <label
+                for="stack"
+                class="form-label"
+              >Stack principal</label>
+              <select
+                id="stack"
+                v-model="form.stack"
+                class="form-select"
+                required
+              >
+                <option
+                  value=""
+                  disabled
+                >
+                  Selecione
+                </option>
+                <option value="frontend">
+                  Frontend
+                </option>
+                <option value="backend">
+                  Backend
+                </option>
+                <option value="fullstack">
+                  Full Stack
+                </option>
+                <option value="mobile">
+                  Mobile
+                </option>
+                <option value="devops">
+                  DevOps / SRE
+                </option>
+                <option value="data">
+                  Data / Analytics
+                </option>
+                <option value="other">
+                  Outro
+                </option>
               </select>
             </div>
             <div class="form-group">
-              <label for="seniority" class="form-label">Senioridade</label>
-              <select id="seniority" v-model="form.seniority" class="form-select" required>
-                <option value="" disabled>Selecione</option>
-                <option value="junior">Júnior</option>
-                <option value="pleno">Pleno</option>
-                <option value="senior">Sênior</option>
-                <option value="lead">Lead / Staff</option>
+              <label
+                for="seniority"
+                class="form-label"
+              >Senioridade</label>
+              <select
+                id="seniority"
+                v-model="form.seniority"
+                class="form-select"
+                required
+              >
+                <option
+                  value=""
+                  disabled
+                >
+                  Selecione
+                </option>
+                <option value="junior">
+                  Júnior
+                </option>
+                <option value="pleno">
+                  Pleno
+                </option>
+                <option value="senior">
+                  Sênior
+                </option>
+                <option value="lead">
+                  Lead / Staff
+                </option>
               </select>
             </div>
           </div>
 
-          <button type="submit" class="btn btn-primary btn-lg form-submit" :disabled="isSubmitting">
+          <button
+            type="submit"
+            class="btn btn-primary btn-lg form-submit"
+            :disabled="isSubmitting"
+          >
             <span v-if="!isSubmitting">Começar a receber vagas</span>
             <span v-else>Enviando...</span>
           </button>
+
+          <p
+            v-if="successMessage"
+            class="form-feedback form-feedback-success"
+            role="status"
+          >
+            {{ successMessage }}
+          </p>
+          <p
+            v-if="errorMessage"
+            class="form-feedback form-feedback-error"
+            role="alert"
+          >
+            {{ errorMessage }}
+          </p>
 
           <p class="form-privacy">
             Ao enviar, você concorda com nossa
@@ -128,37 +260,57 @@
 </template>
 
 <script>
+import { supabase } from '@/integrations/supabase/client'
+
+const emptyForm = () => ({
+  name: '',
+  email: '',
+  whatsapp: '',
+  stack: '',
+  seniority: ''
+})
+
 export default {
   name: 'ContactSection',
   data() {
     return {
       isSubmitting: false,
-      form: {
-        name: '',
-        email: '',
-        whatsapp: '',
-        stack: '',
-        seniority: ''
-      }
+      successMessage: '',
+      errorMessage: '',
+      form: emptyForm()
+    }
+  },
+  computed: {
+    whatsappUrl() {
+      const phone = import.meta.env.VITE_WHATSAPP_PHONE
+      if (!phone) return ''
+      const text = encodeURIComponent('Olá! Gostaria de saber mais sobre o Sonnar.')
+      return `https://wa.me/${phone}?text=${text}`
     }
   },
   methods: {
     async handleSubmit() {
       this.isSubmitting = true
+      this.successMessage = ''
+      this.errorMessage = ''
 
-      await new Promise(resolve => setTimeout(resolve, 1500))
+      const { error } = await supabase.from('contact_leads').insert({
+        name: this.form.name.trim(),
+        email: this.form.email.trim().toLowerCase(),
+        whatsapp: this.form.whatsapp.trim(),
+        stack: this.form.stack,
+        seniority: this.form.seniority
+      })
 
-      console.log('Form submitted:', this.form)
-      alert('Cadastro realizado! Você receberá uma mensagem no WhatsApp em breve.')
-
-      this.form = {
-        name: '',
-        email: '',
-        whatsapp: '',
-        stack: '',
-        seniority: ''
+      if (error) {
+        console.error('Erro ao salvar lead:', error)
+        this.errorMessage = 'Não foi possível enviar agora. Tente novamente em instantes.'
+        this.isSubmitting = false
+        return
       }
 
+      this.successMessage = 'Cadastro recebido! Em breve entraremos em contato pelo WhatsApp.'
+      this.form = emptyForm()
       this.isSubmitting = false
     }
   }
@@ -194,13 +346,14 @@ export default {
   font-weight: var(--font-bold);
   color: var(--color-text-primary);
   margin-bottom: var(--space-3);
-  letter-spacing: -0.02em;
+  letter-spacing: var(--ls-tight);
+  line-height: var(--lh-title);
 }
 
 .contact-description {
   font-size: var(--text-base);
   color: var(--color-text-secondary);
-  line-height: 1.6;
+  line-height: var(--lh-body);
   margin-bottom: var(--space-8);
 }
 
@@ -221,6 +374,7 @@ export default {
   gap: var(--space-3);
   font-size: var(--text-base);
   color: var(--color-text-secondary);
+  line-height: var(--lh-body);
 }
 
 .contact-feature svg {
@@ -239,7 +393,7 @@ export default {
 
 .contact-alternative p {
   font-size: var(--text-sm);
-  color: var(--color-text-muted);
+  color: var(--color-text-secondary);
   margin-bottom: var(--space-3);
 }
 
@@ -250,8 +404,8 @@ export default {
 .contact-form {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  padding: clamp(1.25rem, 4vw, 2rem);
+  border-radius: var(--radius-card);
+  padding: var(--card-padding);
 }
 
 .form-row {
@@ -265,29 +419,8 @@ export default {
 /* Two-column form row */
 .form-row-2 {
   display: grid;
-  grid-template-columns: 1fr;
-  gap: var(--space-4);
-}
-
-/* Two columns on tablets+ */
-@media (min-width: 480px) {
-  .form-row-2 {
-    grid-template-columns: repeat(2, 1fr);
-  }
-}
-
-/* Stack on small tablets when in 2-column layout */
-@media (min-width: 768px) and (max-width: 900px) {
-  .form-row-2 {
-    grid-template-columns: 1fr;
-  }
-}
-
-/* Back to 2 columns on larger screens */
-@media (min-width: 901px) {
-  .form-row-2 {
-    grid-template-columns: repeat(2, 1fr);
-  }
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--grid-gap-sm);
 }
 
 /* ==========================================================================
@@ -312,17 +445,43 @@ export default {
 .form-privacy {
   margin-top: var(--space-4);
   font-size: var(--text-sm);
-  color: var(--color-text-muted);
+  color: var(--color-text-secondary);
   text-align: center;
+  line-height: var(--lh-body);
 }
 
 .form-privacy a {
   color: var(--color-accent);
+  text-decoration: underline;
   transition: color var(--transition-fast);
 }
 
 .form-privacy a:hover {
   color: var(--color-accent-hover);
-  text-decoration: underline;
+}
+
+/* ==========================================================================
+   Form Feedback (success / error)
+   ========================================================================== */
+
+.form-feedback {
+  margin-top: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md, 8px);
+  font-size: var(--text-sm);
+  line-height: var(--lh-body);
+  text-align: center;
+}
+
+.form-feedback-success {
+  background: color-mix(in srgb, var(--color-success) 12%, transparent);
+  color: var(--color-success);
+  border: 1px solid color-mix(in srgb, var(--color-success) 35%, transparent);
+}
+
+.form-feedback-error {
+  background: color-mix(in srgb, var(--color-danger, #dc2626) 10%, transparent);
+  color: var(--color-danger, #dc2626);
+  border: 1px solid color-mix(in srgb, var(--color-danger, #dc2626) 35%, transparent);
 }
 </style>

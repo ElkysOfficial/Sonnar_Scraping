@@ -144,7 +144,10 @@
     "pulsus": "Brentwood, United States",
     "evolve tech llc": "Sao Paulo, SP, Brasil",
     "rula": "Mossoro, RN, Brasil",
-    "infstones": "Pequim, Estados Unidos"
+    "infstones": "Pequim, Estados Unidos",
+    "yduqs": "Rio de Janeiro, Brasil",
+    "dorotech solucoes em iot": "Sorocaba, SP, Brasil",
+    "neogrid": "Joinville, SC, Brasil"
   },
   "salary_by_company_role": {
     "grid monitor|product manager / product owner (b2b saas regulatory tech)": "12.000|12.000",
@@ -1382,5 +1385,5 @@
     "afl consultores associados|desenvolvedor junior": "3.215|3.215",
     "buscarvagas - empregos brasil|desenvolvedor web (fullstack) fortaleza ce": "4.583|4.583"
   },
-  "updated_at": 1769080555.5428228
+  "updated_at": 1777698609.6105561
 }

@@ -1,0 +1,692 @@
+/* ==========================================================================
+   Sonnar Motion Layer
+   Purpose: reusable interaction physics without changing the visual system.
+   ========================================================================== */
+
+:root {
+  /* Mass-tiered durations: lighter elements respond faster, heavier
+     elements take longer to start and settle. Calibrated to stay
+     under 300ms so nothing feels sluggish. */
+  --motion-duration-impulse: 70ms;     /* press-down: rapid compression */
+  --motion-duration-light: 120ms;      /* chips, icons, toggles */
+  --motion-duration-medium: 180ms;     /* buttons, inputs, dropdowns */
+  --motion-duration-heavy: 240ms;      /* cards, alerts, sections */
+  --motion-duration-massive: 280ms;    /* modals, drawers (entry) */
+  --motion-duration-exit-light: 100ms;
+  --motion-duration-exit-medium: 160ms;
+  --motion-duration-exit-heavy: 200ms;
+
+  /* Legacy aliases kept for callers already on these tokens. */
+  --motion-duration-press: var(--motion-duration-impulse);
+  --motion-duration-fast: var(--motion-duration-light);
+  --motion-duration-base: var(--motion-duration-medium);
+  --motion-duration-enter: var(--motion-duration-massive);
+  --motion-duration-exit: var(--motion-duration-exit-medium);
+  --motion-duration-slow: 320ms;
+
+  /* Easings.
+     decelerate -> object arriving at rest (entries, release, hover-in)
+     accelerate -> object leaving (exits, press-down, hover-out)
+     standard   -> in-place state changes
+     settle     -> heavy decelerate, no overshoot (modals/drawers) */
+  --motion-ease-decelerate: cubic-bezier(0, 0, 0.2, 1);
+  --motion-ease-accelerate: cubic-bezier(0.4, 0, 1, 1);
+  --motion-ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --motion-ease-settle: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --motion-ease-press: cubic-bezier(0.3, 0, 0.2, 1);
+  --motion-ease-release: cubic-bezier(0.18, 0.68, 0.32, 1);
+
+  /* Backwards-compatible aliases. ease-spring no longer overshoots. */
+  --motion-ease-out: var(--motion-ease-decelerate);
+  --motion-ease-in: var(--motion-ease-accelerate);
+  --motion-ease-spring: var(--motion-ease-settle);
+
+  --motion-press-scale: 0.97;
+  --motion-press-scale-soft: 0.985;
+  --motion-card-y: -3px;
+  --motion-card-shadow: var(--shadow-lg);
+  --motion-card-press-shadow: var(--shadow-sm);
+  --motion-btn-hover-shadow: var(--shadow-md);
+
+  --transition-fast: var(--motion-duration-light) var(--motion-ease-standard);
+  --transition-base: var(--motion-duration-medium) var(--motion-ease-standard);
+  --transition-slow: var(--motion-duration-slow) var(--motion-ease-standard);
+  --animation-fast: var(--motion-duration-light);
+  --animation-base: var(--motion-duration-massive);
+  --animation-slow: var(--motion-duration-slow);
+  --animation-slower: 640ms;
+}
+
+html {
+  scroll-padding-top: 4.5rem;
+}
+
+body.is-motion-modal-open {
+  overflow: hidden;
+}
+
+/* --------------------------------------------------------------------------
+   Pressable controls
+   -------------------------------------------------------------------------- */
+
+.btn,
+.signup__btn,
+.header-btn,
+.btn-action,
+.pagination-btn,
+.pagination-item,
+.theme-toggle,
+.menu-toggle,
+.modal-close,
+.close-menu,
+.btn-remove,
+.welcome-close,
+.auth-password-toggle,
+.password-toggle,
+.auth-resend-btn,
+.pricing-card__cta .ant-btn,
+.ant-btn,
+.motion-pressable {
+  touch-action: manipulation;
+  transform: translateZ(0);
+  transition-property: background-color, border-color, color, box-shadow, opacity, transform;
+  /* Default = release: compression returns to rest with deceleration.
+     :active overrides this with a faster accelerate easing for the
+     compression phase. This asymmetry is what makes the press feel
+     tactile rather than reversible. */
+  transition-duration: var(--motion-duration-light);
+  transition-timing-function: var(--motion-ease-release);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.btn:active:not(:disabled):not(.is-disabled),
+.signup__btn:active:not(:disabled),
+.header-btn:active:not(:disabled),
+.btn-action:active:not(:disabled),
+.pagination-btn:active:not(:disabled),
+.pagination-item:active:not(:disabled),
+.theme-toggle:active,
+.menu-toggle:active,
+.modal-close:active,
+.close-menu:active,
+.btn-remove:active:not(:disabled),
+.welcome-close:active,
+.auth-password-toggle:active,
+.password-toggle:active,
+.auth-resend-btn:active:not(:disabled),
+.pricing-card__cta .ant-btn:active:not(:disabled),
+.ant-btn:active:not(:disabled),
+.motion-pressable:active:not(:disabled) {
+  transform: translateY(0) scale(var(--motion-press-scale));
+  transition-duration: var(--motion-duration-impulse);
+  transition-timing-function: var(--motion-ease-accelerate);
+}
+
+/* Lighter compression for icon-only and secondary-rank controls so
+   their visual mass matches their role. */
+.theme-toggle:active,
+.menu-toggle:active,
+.modal-close:active,
+.close-menu:active,
+.welcome-close:active,
+.auth-password-toggle:active,
+.password-toggle:active,
+.pagination-item:active:not(:disabled) {
+  transform: scale(var(--motion-press-scale-soft));
+}
+
+.btn:disabled,
+.btn.is-disabled,
+.signup__btn:disabled,
+.header-btn:disabled,
+.btn-action:disabled,
+.pagination-btn:disabled,
+.pagination-item:disabled,
+.ant-btn:disabled {
+  transform: none;
+  box-shadow: none;
+}
+
+.btn.is-loading::after,
+.signup__btn.is-loading::after,
+.ant-btn-loading-icon {
+  animation-duration: 720ms;
+  animation-timing-function: linear;
+}
+
+.btn-primary.is-loading::after,
+.btn-whatsapp.is-loading::after,
+.btn-danger.is-loading::after {
+  border-color: rgba(255, 255, 255, 0.58);
+  border-right-color: transparent;
+}
+
+.btn-secondary.is-loading::after,
+.btn-ghost.is-loading::after,
+.btn-outline-primary.is-loading::after {
+  border-color: var(--color-accent);
+  border-right-color: transparent;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .btn:hover:not(:disabled):not(.is-disabled),
+  .signup__btn:hover:not(:disabled),
+  .header-btn:hover:not(:disabled),
+  .btn-action:hover:not(:disabled),
+  .pagination-btn:hover:not(:disabled),
+  .pagination-item:hover:not(:disabled):not(.is-active),
+  .pricing-card__cta .ant-btn:hover:not(:disabled),
+  .ant-btn:hover:not(:disabled),
+  .motion-pressable:hover:not(:disabled) {
+    /* Hover-in lifts the control off the surface: translate + a
+       cast shadow makes the elevation legible. The slower exit is
+       inherited from the base rule. */
+    transform: translateY(-1px);
+    box-shadow: var(--motion-btn-hover-shadow);
+    transition-duration: var(--motion-duration-medium);
+    transition-timing-function: var(--motion-ease-decelerate);
+  }
+
+  /* Icon-only and chrome buttons: subtle hover, no cast shadow,
+     keeps the toolbar feel without floating buttons everywhere. */
+  .theme-toggle:hover,
+  .menu-toggle:hover,
+  .auth-password-toggle:hover,
+  .password-toggle:hover {
+    transform: translateY(-1px);
+    transition-duration: var(--motion-duration-medium);
+    transition-timing-function: var(--motion-ease-decelerate);
+  }
+}
+
+/* Press: object compressed against the surface = lose the cast
+   shadow. Combined with the scale, this is the single biggest
+   "tactile" tell. */
+.btn:active:not(:disabled):not(.is-disabled),
+.signup__btn:active:not(:disabled),
+.header-btn:active:not(:disabled),
+.btn-action:active:not(:disabled),
+.pagination-btn:active:not(:disabled),
+.pricing-card__cta .ant-btn:active:not(:disabled),
+.ant-btn:active:not(:disabled),
+.motion-pressable:active:not(:disabled) {
+  box-shadow: none;
+}
+
+/* --------------------------------------------------------------------------
+   Cards and surfaces
+   -------------------------------------------------------------------------- */
+
+.card.card.card,
+.section-card.section-card.section-card,
+.stat-card.stat-card.stat-card,
+.info-card.info-card.info-card,
+.pricing-card.pricing-card.pricing-card,
+.benefit-card.benefit-card.benefit-card,
+.testimonial-card.testimonial-card.testimonial-card,
+.step.step.step,
+.admin-card.admin-card.admin-card,
+.subscriber-card.subscriber-card.subscriber-card,
+.plan-card.plan-card.plan-card,
+.preferences-section.preferences-section.preferences-section,
+.recent-section.recent-section.recent-section,
+.motion-card.motion-card.motion-card {
+  transition-property: transform, box-shadow, border-color, background-color;
+  /* Hover-out (default): heavier, slower settle back to rest. */
+  transition-duration: var(--motion-duration-heavy);
+  transition-timing-function: var(--motion-ease-decelerate);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .card.card.card:hover,
+  .section-card.section-card.section-card:hover,
+  .stat-card.stat-card.stat-card:hover,
+  .info-card.info-card.info-card:hover,
+  .pricing-card.pricing-card.pricing-card:hover,
+  .benefit-card.benefit-card.benefit-card:hover,
+  .testimonial-card.testimonial-card.testimonial-card:hover,
+  .step.step.step:hover,
+  .admin-card.admin-card.admin-card:hover,
+  .subscriber-card.subscriber-card.subscriber-card:hover,
+  .preferences-section.preferences-section.preferences-section:hover,
+  .recent-section.recent-section.recent-section:hover,
+  .motion-card.motion-card.motion-card:hover {
+    /* Hover-in is fast (medium duration); hover-out is inherited
+       from the heavier base rule, so cards "settle" when the
+       cursor leaves. The shadow jump is what carries the depth. */
+    transform: translateY(var(--motion-card-y));
+    box-shadow: var(--motion-card-shadow);
+    transition-duration: var(--motion-duration-medium);
+  }
+
+  .plan-card.plan-card.plan-card:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-md);
+    transition-duration: var(--motion-duration-medium);
+  }
+}
+
+/* Press state for cards that act as buttons (clickable cards,
+   plan selectors, dropdown items styled as cards). The card is
+   compressed back toward the surface: lose elevation, lose shadow,
+   tiny scale tells the click landed. */
+.plan-card.plan-card.plan-card:active,
+.subscriber-card.subscriber-card.subscriber-card:active,
+.benefit-card.benefit-card.benefit-card:active,
+.pricing-card.pricing-card.pricing-card:active,
+.motion-card.motion-card.motion-card:active {
+  transform: translateY(0) scale(0.995);
+  box-shadow: var(--motion-card-press-shadow);
+  transition-duration: var(--motion-duration-impulse);
+  transition-timing-function: var(--motion-ease-accelerate);
+}
+
+.plan-card.plan-card.plan-card.selected,
+.signup__chip.signup__chip.signup__chip--active {
+  transition-timing-function: var(--motion-ease-spring);
+}
+
+/* --------------------------------------------------------------------------
+   Inputs and form feedback
+   -------------------------------------------------------------------------- */
+
+.form-input,
+.form-select,
+.form-textarea,
+.filter-search.filter-search,
+.filter-select-styled.filter-select-styled,
+.signup__input-wrap.signup__input-wrap,
+.signup__select.signup__select,
+.auth-token-input.auth-token-input,
+.payment-link-input.payment-link-input,
+.ant-input,
+.ant-select-selector {
+  /* Inputs receive focus, they do not levitate. Animate only color
+     and shadow so the field reacts without breaking spatial logic. */
+  transition-property: border-color, box-shadow, background-color, color, opacity;
+  transition-duration: var(--motion-duration-light);
+  transition-timing-function: var(--motion-ease-decelerate);
+}
+
+.form-input.is-error,
+.form-select.is-error,
+.form-textarea.is-error,
+.signup__input-wrap--error,
+.signup__select--error,
+.motion-error {
+  animation: motion-error-nudge var(--motion-duration-slow) var(--motion-ease-standard);
+}
+
+.form-error-message,
+.signup__error,
+.form-helper,
+.form-hint {
+  transition: color var(--transition-fast), opacity var(--transition-fast), transform var(--transition-fast);
+}
+
+/* --------------------------------------------------------------------------
+   Feedback: alerts, toasts, dropdowns, skeletons
+   -------------------------------------------------------------------------- */
+
+.alert,
+.auth-alert,
+.error-alert.error-alert.error-alert,
+.success-alert.success-alert.success-alert,
+.success-alert-sm.success-alert-sm.success-alert-sm,
+.error-alert-sm.error-alert-sm.error-alert-sm,
+.motion-alert {
+  animation: motion-alert-in var(--motion-duration-heavy) var(--motion-ease-decelerate) both;
+}
+
+.alert.alert-error.motion-alert-error,
+.alert-error.motion-alert-error.motion-alert-error,
+.error-alert.error-alert.error-alert,
+.error-alert-sm.error-alert-sm.error-alert-sm {
+  /* Error nudge fires after the alert has settled in place, so the
+     attention pull doesn't fight the entry. */
+  animation:
+    motion-alert-in var(--motion-duration-heavy) var(--motion-ease-decelerate) both,
+    motion-error-nudge 320ms var(--motion-ease-standard) 120ms both;
+}
+
+.toast {
+  transform-origin: top right;
+  animation: motion-toast-in var(--motion-duration-heavy) var(--motion-ease-decelerate) both;
+}
+
+.dropdown-menu {
+  /* Origin matches the trigger so the panel appears to "drop" from
+     it. Closed state: slightly above and shrunk; open state: full
+     scale at rest. */
+  transform-origin: top left;
+  transition-property: opacity, visibility, transform;
+  transition-duration: var(--motion-duration-medium);
+  transition-timing-function: var(--motion-ease-decelerate);
+}
+
+.dropdown-menu[aria-hidden="true"],
+.dropdown-menu:not(.is-open):not(.show) {
+  /* No-op fallback: menus driven only by visibility/opacity classes
+     in the existing codebase still get the entry from below. */
+}
+
+.dropdown-menu.is-closed,
+.dropdown-menu[hidden] {
+  transform: translateY(-4px) scale(0.98);
+}
+
+.dropdown-menu-right {
+  transform-origin: top right;
+}
+
+.dropdown-item {
+  transition-property: background-color, color, transform;
+  transition-duration: var(--motion-duration-light);
+  transition-timing-function: var(--motion-ease-standard);
+}
+
+.dropdown-item:active {
+  transform: scale(0.99);
+  transition-duration: var(--motion-duration-impulse);
+  transition-timing-function: var(--motion-ease-accelerate);
+}
+
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  background: var(--color-surface);
+  animation: none;
+}
+
+.skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.48) 45%,
+    transparent 100%
+  );
+  animation: motion-shimmer 1.35s var(--motion-ease-standard) infinite;
+}
+
+[data-theme="dark"] .skeleton::after {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.08) 45%,
+    transparent 100%
+  );
+}
+
+/* --------------------------------------------------------------------------
+   Router, modal, drawer and menu transitions
+   -------------------------------------------------------------------------- */
+
+.page-enter-active {
+  transition:
+    opacity var(--motion-duration-heavy) var(--motion-ease-decelerate),
+    transform var(--motion-duration-heavy) var(--motion-ease-decelerate);
+}
+
+.page-leave-active {
+  transition:
+    opacity var(--motion-duration-exit-light) var(--motion-ease-accelerate),
+    transform var(--motion-duration-exit-light) var(--motion-ease-accelerate);
+}
+
+.page-enter-from {
+  opacity: 0;
+  transform: translateY(6px);
+}
+
+.page-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
+}
+
+.motion-modal-enter-active,
+.motion-modal-leave-active {
+  transition: opacity var(--motion-duration-enter) var(--motion-ease-out);
+}
+
+.motion-modal-leave-active {
+  transition-duration: var(--motion-duration-exit);
+  transition-timing-function: var(--motion-ease-in);
+}
+
+.motion-modal-enter-from,
+.motion-modal-leave-to {
+  opacity: 0;
+}
+
+.modal-overlay.motion-modal-overlay.motion-modal-overlay,
+.motion-modal-overlay.motion-modal-overlay.motion-modal-overlay {
+  animation: none;
+  transition:
+    opacity var(--motion-duration-enter) var(--motion-ease-out),
+    backdrop-filter var(--motion-duration-enter) var(--motion-ease-out);
+}
+
+.motion-modal-enter-from .motion-modal-overlay,
+.motion-modal-leave-to .motion-modal-overlay,
+.motion-modal-enter-from.modal-overlay,
+.motion-modal-leave-to.modal-overlay {
+  opacity: 0;
+  backdrop-filter: blur(0);
+}
+
+.modal.motion-modal.motion-modal,
+.motion-modal.motion-modal.motion-modal {
+  animation: none;
+  /* Origin is contextual: modals open where the user's attention
+     already is (center). Heavy mass + settle easing = no overshoot. */
+  transform-origin: center center;
+  transition:
+    opacity var(--motion-duration-massive) var(--motion-ease-decelerate),
+    transform var(--motion-duration-massive) var(--motion-ease-settle);
+}
+
+.motion-modal-enter-from .motion-modal,
+.motion-modal-leave-to .motion-modal {
+  opacity: 0;
+  transform: translateY(8px) scale(0.96);
+}
+
+.motion-modal-leave-active .motion-modal {
+  /* Exit faster than entry: dismissal should feel decisive. */
+  transition-duration: var(--motion-duration-exit-heavy);
+  transition-timing-function: var(--motion-ease-accelerate);
+}
+
+.motion-drawer-enter-active,
+.motion-drawer-leave-active {
+  transition: opacity var(--motion-duration-enter) var(--motion-ease-out);
+}
+
+.motion-drawer-leave-active {
+  transition-duration: var(--motion-duration-exit);
+  transition-timing-function: var(--motion-ease-in);
+}
+
+.motion-drawer-enter-from,
+.motion-drawer-leave-to {
+  opacity: 0;
+}
+
+.mobile-menu-overlay.motion-drawer-overlay.motion-drawer-overlay,
+.motion-drawer-overlay.motion-drawer-overlay.motion-drawer-overlay {
+  animation: none;
+}
+
+.mobile-menu.motion-drawer-panel.motion-drawer-panel,
+.motion-drawer-panel.motion-drawer-panel.motion-drawer-panel {
+  transform-origin: left center;
+  transition:
+    opacity var(--motion-duration-massive) var(--motion-ease-decelerate),
+    transform var(--motion-duration-massive) var(--motion-ease-settle);
+}
+
+.motion-drawer-enter-from .motion-drawer-panel,
+.motion-drawer-leave-to .motion-drawer-panel {
+  opacity: 0;
+  /* Drawer slides in with measurable distance so its mass is felt;
+     no overshoot. */
+  transform: translateX(-24px);
+}
+
+.motion-drawer-leave-active .motion-drawer-panel {
+  transition-duration: var(--motion-duration-exit-heavy);
+  transition-timing-function: var(--motion-ease-accelerate);
+}
+
+/* --------------------------------------------------------------------------
+   Keyframes
+   -------------------------------------------------------------------------- */
+
+@keyframes motion-toast-in {
+  from {
+    opacity: 0;
+    transform: translateX(16px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+@keyframes motion-error-nudge {
+  /* Damped lateral oscillation: amplitudes decay by ~50% each pass.
+     Small total displacement so it reads as "attention" not "tremor". */
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  20% {
+    transform: translateX(-2px);
+  }
+  45% {
+    transform: translateX(2px);
+  }
+  72% {
+    transform: translateX(-1px);
+  }
+}
+
+@keyframes motion-alert-in {
+  /* Override of the earlier definition: heavier alert tier means
+     a slightly larger initial offset so its mass reads. */
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes motion-shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Touch and reduced motion
+   -------------------------------------------------------------------------- */
+
+@media (hover: none) and (pointer: coarse) {
+  .btn:hover,
+  .signup__btn:hover,
+  .header-btn:hover,
+  .btn-action:hover,
+  .pagination-btn:hover,
+  .theme-toggle:hover,
+  .menu-toggle:hover,
+  .card:hover,
+  .section-card:hover,
+  .stat-card:hover,
+  .info-card:hover,
+  .pricing-card:hover,
+  .benefit-card:hover,
+  .testimonial-card:hover,
+  .step:hover,
+  .admin-card:hover,
+  .subscriber-card:hover {
+    transform: none;
+  }
+
+  .btn:active:not(:disabled):not(.is-disabled),
+  .signup__btn:active:not(:disabled),
+  .header-btn:active:not(:disabled),
+  .btn-action:active:not(:disabled),
+  .pagination-btn:active:not(:disabled),
+  .theme-toggle:active,
+  .menu-toggle:active {
+    transform: scale(0.985);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-duration-press: 1ms;
+    --motion-duration-fast: 1ms;
+    --motion-duration-base: 1ms;
+    --motion-duration-enter: 1ms;
+    --motion-duration-exit: 1ms;
+    --motion-duration-slow: 1ms;
+  }
+
+  html {
+    scroll-behavior: auto;
+  }
+
+  .btn,
+  .signup__btn,
+  .header-btn,
+  .btn-action,
+  .pagination-btn,
+  .pagination-item,
+  .theme-toggle,
+  .menu-toggle,
+  .modal-close,
+  .close-menu,
+  .btn-remove,
+  .welcome-close,
+  .auth-password-toggle,
+  .password-toggle,
+  .auth-resend-btn,
+  .pricing-card__cta .ant-btn,
+  .ant-btn,
+  .card,
+  .section-card,
+  .stat-card,
+  .info-card,
+  .pricing-card,
+  .benefit-card,
+  .testimonial-card,
+  .step,
+  .admin-card,
+  .subscriber-card,
+  .plan-card,
+  .form-input,
+  .form-select,
+  .form-textarea {
+    transform: none !important;
+  }
+
+  .alert,
+  .auth-alert,
+  .error-alert,
+  .success-alert,
+  .success-alert-sm,
+  .error-alert-sm,
+  .toast,
+  .skeleton::after,
+  .motion-error {
+    animation: none !important;
+  }
+}

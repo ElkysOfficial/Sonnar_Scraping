@@ -1,22 +1,27 @@
 <template>
-  <section id="faq" class="section section-alt">
+  <section
+    id="faq"
+    class="section section-alt"
+  >
     <div class="container">
       <div class="section-header">
-        <h2 class="section-title">Perguntas frequentes</h2>
+        <h2 class="section-title">
+          Perguntas frequentes
+        </h2>
       </div>
 
       <div class="faq-list">
         <div
-          class="faq-item"
           v-for="(item, index) in faqs"
           :key="index"
+          class="faq-item"
           :class="{ 'faq-item-open': openIndex === index }"
         >
           <button
             class="faq-question"
-            @click="toggle(index)"
             :aria-expanded="openIndex === index"
             :aria-controls="`faq-answer-${index}`"
+            @click="toggle(index)"
           >
             <span>{{ item.question }}</span>
             <svg
@@ -62,7 +67,7 @@ export default {
         },
         {
           question: 'Preciso pagar para usar?',
-          answer: 'Não. O plano Comunidade é gratuito e dá acesso ao canal de vagas no Discord. O plano Pro, com WhatsApp e filtros avançados, custa R$ 12/mês.'
+          answer: 'Não. O plano Comunidade é gratuito. O Pro custa R$ 5/mês e o Plus R$ 10/mês, com 7 dias de teste nos planos pagos.'
         },
         {
           question: 'Posso escolher quais vagas receber?',
@@ -139,6 +144,11 @@ export default {
   color: var(--color-accent);
 }
 
+.faq-question:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
 /* ==========================================================================
    FAQ Icon
    ========================================================================== */
@@ -170,7 +180,7 @@ export default {
   padding-bottom: var(--space-5);
   font-size: var(--text-base);
   color: var(--color-text-secondary);
-  line-height: 1.7;
+  line-height: var(--lh-body);
 }
 
 /* ==========================================================================
