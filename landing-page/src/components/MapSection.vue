@@ -1,12 +1,17 @@
 <template>
-  <section id="cobertura" class="coverage-section">
+  <section
+    id="cobertura"
+    class="coverage-section"
+  >
     <!-- Background with subtle depth -->
-    <div class="coverage-bg"></div>
+    <div class="coverage-bg" />
 
     <div class="coverage-container">
       <!-- Header -->
       <header class="coverage-header">
-        <h2 class="coverage-title">Cobertura Global</h2>
+        <h2 class="coverage-title">
+          Cobertura Global
+        </h2>
         <p class="coverage-subtitle">
           Vagas extraídas de múltiplas fontes ao redor do mundo
         </p>
@@ -28,7 +33,10 @@
           >
             Mundo
           </button>
-          <div class="segment-indicator" :class="activeMap"></div>
+          <div
+            class="segment-indicator"
+            :class="activeMap"
+          />
         </div>
       </div>
 
@@ -38,7 +46,7 @@
           <span class="metric-value">{{ totalJobs.toLocaleString('pt-BR') }}</span>
           <span class="metric-label">vagas extraídas</span>
         </div>
-        <div class="metric-divider"></div>
+        <div class="metric-divider" />
         <div class="metric">
           <span class="metric-value">{{ activeMap === 'brazil' ? '27' : countriesWithJobs }}</span>
           <span class="metric-label">{{ activeMap === 'brazil' ? 'estados' : 'países' }}</span>
@@ -46,39 +54,61 @@
       </div>
 
       <!-- Map Area - Floating without box -->
-      <div class="map-stage">
+      <div
+        class="map-stage"
+        ref="mapStage"
+        @mouseleave="hideTooltip"
+      >
         <!-- Radial glow behind map -->
-        <div class="map-glow"></div>
+        <div class="map-glow" />
+
+        <!-- Camada de ondulacoes — gota dagua: splash inicial (core) + 4
+             ondas concentricas escalonadas, com decaimento de amplitude
+             natural. Disparada apenas no click de estado/pais. -->
+        <div class="map-ripples" aria-hidden="true">
+          <span
+            v-for="r in ripples"
+            :key="r.id"
+            class="map-ripple"
+            :style="{ left: r.x + 'px', top: r.y + 'px' }"
+          >
+            <span class="map-ripple__core"></span>
+            <span class="map-ripple__wave map-ripple__wave--1"></span>
+            <span class="map-ripple__wave map-ripple__wave--2"></span>
+            <span class="map-ripple__wave map-ripple__wave--3"></span>
+            <span class="map-ripple__wave map-ripple__wave--4"></span>
+          </span>
+        </div>
 
         <!-- Brazil Map -->
         <div
-          :class="['map-canvas', { active: activeMap === 'brazil', leaving: isTransitioning && activeMap !== 'brazil' }]"
           v-show="activeMap === 'brazil' || isTransitioning"
+          :class="['map-canvas', { active: activeMap === 'brazil', leaving: isTransitioning && activeMap !== 'brazil' }]"
         >
           <div
             ref="brazilSvgContainer"
             class="svg-container brazil-svg"
             @mouseleave="hideTooltip"
-          ></div>
+          />
         </div>
 
         <!-- World Map -->
         <div
-          :class="['map-canvas', { active: activeMap === 'world', leaving: isTransitioning && activeMap !== 'world' }]"
           v-show="activeMap === 'world' || isTransitioning"
+          :class="['map-canvas', { active: activeMap === 'world', leaving: isTransitioning && activeMap !== 'world' }]"
         >
           <div
             ref="worldSvgContainer"
             class="svg-container world-svg"
             @mouseleave="hideTooltip"
-          ></div>
+          />
         </div>
       </div>
 
       <!-- Legend - Clean and minimal -->
       <div class="coverage-legend">
         <span class="legend-label">Menos vagas</span>
-        <div class="legend-gradient"></div>
+        <div class="legend-gradient" />
         <span class="legend-label">Mais vagas</span>
       </div>
 
@@ -98,6 +128,8 @@
 </template>
 
 <script>
+import { supabase } from '@/integrations/supabase/client'
+
 export default {
   name: 'MapSection',
   emits: ['selectUF', 'selectCountry'],
@@ -108,6 +140,10 @@ export default {
       isTransitioning: false,
       brazilSvgLoaded: false,
       worldSvgLoaded: false,
+      ripples: [],
+      rippleId: 0,
+      lastRippleAt: 0,
+      reduceMotion: false,
       tooltip: {
         visible: false,
         x: 0,
@@ -287,6 +323,9 @@ export default {
     this.loadBrazilSvg()
     this.loadWorldSvg()
     this.setupThemeObserver()
+    this.fetchCoverage()
+    this.reduceMotion = typeof window !== 'undefined'
+      && window.matchMedia('(prefers-reduced-motion: reduce)').matches
   },
   beforeUnmount() {
     if (this.themeObserver) {
@@ -294,6 +333,35 @@ export default {
     }
   },
   methods: {
+    async fetchCoverage() {
+      // Substitui os contadores estaticos pelos agregados reais do scraper.
+      // RPCs publicas (anon) — nao expoem linhas brutas, apenas contagens.
+      try {
+        const [ufRes, countryRes] = await Promise.all([
+          supabase.rpc('get_jobs_by_uf'),
+          supabase.rpc('get_jobs_by_country')
+        ])
+
+        if (!ufRes.error && Array.isArray(ufRes.data) && ufRes.data.length > 0) {
+          this.jobsByUF = ufRes.data.reduce((acc, row) => {
+            if (row.state_code) acc[row.state_code] = Number(row.count)
+            return acc
+          }, {})
+        }
+
+        if (!countryRes.error && Array.isArray(countryRes.data) && countryRes.data.length > 0) {
+          this.jobsByCountry = countryRes.data.reduce((acc, row) => {
+            if (row.country_code) acc[row.country_code] = Number(row.count)
+            return acc
+          }, {})
+        }
+
+        // Re-pinta os mapas com os novos valores se ja estiverem montados
+        this.$nextTick(() => this.reapplyMapStyles())
+      } catch {
+        // Mantem os valores fallback ja em data() — UI nao quebra se RPC falhar
+      }
+    },
     setupThemeObserver() {
       // Observe changes to the data-theme attribute
       this.themeObserver = new MutationObserver((mutations) => {
@@ -359,8 +427,8 @@ export default {
             this.brazilSvgLoaded = true
           }
         }
-      } catch (error) {
-        console.error('Erro ao carregar SVG do Brasil:', error)
+      } catch {
+        // Silently handle SVG load error
       }
     },
     async loadWorldSvg() {
@@ -389,8 +457,8 @@ export default {
             this.worldSvgLoaded = true
           }
         }
-      } catch (error) {
-        console.error('Erro ao carregar SVG do mundo:', error)
+      } catch {
+        // Silently handle SVG load error
       }
     },
     applyBrazilStyles(svg) {
@@ -441,7 +509,8 @@ export default {
               newPath.style.stroke = strokeColor
             })
 
-            newPath.addEventListener('click', () => {
+            newPath.addEventListener('click', (e) => {
+              this.spawnRippleAt(e.clientX, e.clientY)
               this.$emit('selectUF', stateInfo.uf)
             })
           })
@@ -496,7 +565,8 @@ export default {
           newPath.style.stroke = strokeColor
         })
 
-        newPath.addEventListener('click', () => {
+        newPath.addEventListener('click', (e) => {
+          this.spawnRippleAt(e.clientX, e.clientY)
           this.$emit('selectCountry', countryCode)
         })
       })
@@ -562,6 +632,34 @@ export default {
     },
     hideTooltip() {
       this.tooltip.visible = false
+    },
+
+    /* ===========================================================
+       Ondulacoes — agora SO em click (nao mais em hover/move).
+       Cada click dispara 3 ondas concentricas que se propagam por
+       toda a area do mapa, com decaimento natural de opacidade.
+       =========================================================== */
+    spawnRippleAt(clientX, clientY) {
+      if (this.reduceMotion) return
+      const stage = this.$refs.mapStage
+      if (!stage) return
+      const rect = stage.getBoundingClientRect()
+      const x = clientX - rect.left
+      const y = clientY - rect.top
+
+      const id = ++this.rippleId
+      this.ripples.push({ id, x, y })
+
+      // Limita a fila para nao acumular caso usuario clique muito rapido
+      if (this.ripples.length > 4) {
+        this.ripples.splice(0, this.ripples.length - 4)
+      }
+
+      // Cleanup ao fim da ultima onda (delay 1750 + duracao 5800 + folga)
+      setTimeout(() => {
+        const idx = this.ripples.findIndex(r => r.id === id)
+        if (idx !== -1) this.ripples.splice(idx, 1)
+      }, 7800)
     }
   }
 }
@@ -575,11 +673,11 @@ export default {
 .coverage-section {
   /* Use global CSS variables with fallbacks */
   --c-bg: var(--color-surface, #f8fafc);
-  --c-bg-glow: rgba(59, 130, 246, 0.08);
+  --c-bg-glow: color-mix(in srgb, var(--color-accent) 12%, transparent);
   --c-primary: var(--color-accent, #2563eb);
   --c-primary-dark: var(--color-accent-hover, #1e40af);
   --c-text: var(--color-text-primary, #0f172a);
-  --c-text-muted: var(--color-text-muted, #64748b);
+  --c-text-muted: var(--color-text-secondary, #4b5563);
   --c-border: var(--color-border, #e2e8f0);
   --c-white: var(--color-background, #ffffff);
   --c-surface: var(--color-surface, #f8fafc);
@@ -612,13 +710,13 @@ export default {
 /* Dark theme overrides for map section */
 [data-theme="dark"] .coverage-section {
   --legend-gradient: linear-gradient(to right, #1e3a8a, #3b82f6, #93c5fd);
-  --c-bg-glow: rgba(59, 130, 246, 0.15);
+  --c-bg-glow: color-mix(in srgb, var(--color-accent) 18%, transparent);
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) .coverage-section {
     --legend-gradient: linear-gradient(to right, #1e3a8a, #3b82f6, #93c5fd);
-    --c-bg-glow: rgba(59, 130, 246, 0.15);
+    --c-bg-glow: color-mix(in srgb, var(--color-accent) 18%, transparent);
   }
 }
 
@@ -646,23 +744,23 @@ export default {
 /* Dark theme - subtle glow effect */
 [data-theme="dark"] .coverage-bg {
   background:
-    radial-gradient(ellipse 80% 60% at 50% 40%, rgba(59, 130, 246, 0.08) 0%, transparent 70%),
+    radial-gradient(ellipse 80% 60% at 50% 40%, color-mix(in srgb, var(--color-accent) 12%, transparent) 0%, transparent 70%),
     linear-gradient(180deg, var(--color-background) 0%, var(--c-bg) 100%);
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) .coverage-bg {
     background:
-      radial-gradient(ellipse 80% 60% at 50% 40%, rgba(59, 130, 246, 0.08) 0%, transparent 70%),
+      radial-gradient(ellipse 80% 60% at 50% 40%, color-mix(in srgb, var(--color-accent) 12%, transparent) 0%, transparent 70%),
       linear-gradient(180deg, var(--color-background) 0%, var(--c-bg) 100%);
   }
 }
 
 .coverage-container {
   position: relative;
-  max-width: 1200px;
+  max-width: var(--container-wide);
   margin: 0 auto;
-  padding: 0 clamp(1rem, 4vw, 2rem);
+  padding: 0 var(--container-padding);
 }
 
 /* ==========================================================================
@@ -678,16 +776,17 @@ export default {
   font-size: var(--font-display);
   font-weight: 700;
   color: var(--c-text);
-  letter-spacing: -0.025em;
-  line-height: 1.1;
+  letter-spacing: var(--ls-tight);
+  line-height: var(--lh-tight);
   margin: 0 0 0.5rem;
 }
 
 .coverage-subtitle {
   font-size: var(--font-subtitle);
-  color: var(--c-text-muted);
+  color: var(--color-text-secondary, #4b5563);
   margin: 0;
   font-weight: 400;
+  line-height: var(--lh-body);
 }
 
 /* ==========================================================================
@@ -716,7 +815,7 @@ export default {
   padding: 0.5rem 1.5rem;
   font-size: var(--font-small);
   font-weight: 500;
-  color: var(--c-text-muted);
+  color: var(--color-text-secondary, #4b5563);
   background: transparent;
   border: none;
   border-radius: var(--radius-full);
@@ -776,7 +875,7 @@ export default {
 
 .metric-label {
   font-size: var(--font-label);
-  color: var(--c-text-muted);
+  color: var(--color-text-secondary, #4b5563);
   font-weight: 400;
 }
 
@@ -795,6 +894,145 @@ export default {
   width: 100%;
   max-width: 900px;
   margin: 0 auto var(--space-md);
+  isolation: isolate;
+}
+
+/* ============================================================
+   Ondulacoes de agua — fisica natural
+   Cada gota dispara 3 ondas concentricas escalonadas (200ms entre
+   elas), com amplitude/opacidade decrescente como uma gota real
+   na superficie da agua. Borders finissimas, sem fill, sem brilho.
+   ============================================================ */
+/* Sem overflow: as ondas fluem naturalmente para alem do retangulo
+   do mapa e se dissipam no proprio plano de fundo da pagina (sem
+   recorte rigido). pointer-events: none impede captura de cliques. */
+.map-ripples {
+  position: absolute;
+  inset: 0;
+  overflow: visible;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.map-ripple {
+  position: absolute;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+/* ============================================================
+   GOTA DAGUA — fisica natural
+   --------------------------------------------------------------
+   1. Core (splash): pequeno disco que pulsa no ponto de impacto.
+      Energia inicial concentrada — flash rapido.
+   2. 4 ondas concentricas escalonadas em 1100ms total. Cada uma
+      mais lenta e mais fraca que a anterior (energia dissipando).
+   3. Linear-ish na fase de propagacao (ondas reais viajam a
+      velocidade ~constante na superficie da agua), opacity em
+      ease-out (amplitude cai por 1/r).
+   4. Border-width afina conforme a onda se espalha — reforca a
+      sensacao de dissipacao.
+   ============================================================ */
+
+/* Splash inicial — onda de impacto da gota */
+.map-ripple__core {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 14px;
+  height: 14px;
+  margin-left: -7px;
+  margin-top: -7px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    var(--color-accent) 0%,
+    color-mix(in srgb, var(--color-accent) 40%, transparent) 60%,
+    transparent 100%
+  );
+  opacity: 0;
+  animation: mapCore 1000ms cubic-bezier(0.16, 0.84, 0.44, 1) forwards;
+  will-change: transform, opacity;
+}
+
+@keyframes mapCore {
+  0%   { transform: scale(0.2); opacity: 0; }
+  18%  { transform: scale(1.0); opacity: 0.85; }
+  60%  { transform: scale(1.6); opacity: 0.35; }
+  100% { transform: scale(2.4); opacity: 0; }
+}
+
+/* Ondas concentricas */
+.map-ripple__wave {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 14px;
+  height: 14px;
+  margin-left: -7px;
+  margin-top: -7px;
+  border-radius: 50%;
+  border: 2px solid var(--color-accent);
+  opacity: 0;
+  /* Easing natural: pequena aceleracao, longa "viagem" linear, acabamento suave.
+     Mimica fisicamente a propagacao de uma onda na agua — viaja em velocidade
+     quase constante e a amplitude (opacity + border-width) cai com 1/distancia. */
+  animation: mapWave 5800ms cubic-bezier(0.22, 0.78, 0.4, 1) forwards;
+  will-change: transform, opacity;
+}
+
+/* 4 ondas escalonadas — cada uma comeca um pouco depois da anterior
+   (a primeira ondulacao "puxa" as seguintes), com peaks decrescentes */
+.map-ripple__wave--1 {
+  animation-delay: 120ms;
+  --wave-peak: 0.55;
+}
+.map-ripple__wave--2 {
+  animation-delay: 580ms;
+  --wave-peak: 0.34;
+}
+.map-ripple__wave--3 {
+  animation-delay: 1100ms;
+  --wave-peak: 0.20;
+}
+.map-ripple__wave--4 {
+  animation-delay: 1750ms;
+  --wave-peak: 0.10;
+}
+
+@keyframes mapWave {
+  0% {
+    transform: scale(0);
+    opacity: 0;
+    border-width: 2.4px;
+    border-color: var(--color-accent);
+  }
+  4% {
+    opacity: var(--wave-peak, 0.5);
+  }
+  35% {
+    opacity: calc(var(--wave-peak, 0.5) * 0.65);
+    border-width: 1.6px;
+    border-color: color-mix(in srgb, var(--color-accent) 55%, transparent);
+  }
+  70% {
+    opacity: calc(var(--wave-peak, 0.5) * 0.25);
+    border-width: 1.1px;
+    border-color: color-mix(in srgb, var(--color-accent) 30%, transparent);
+  }
+  100% {
+    /* Cobre toda a stage em qualquer viewport: base 14px x scale 200 = 2800px */
+    transform: scale(200);
+    opacity: 0;
+    border-width: 0.6px;
+    border-color: color-mix(in srgb, var(--color-accent) 4%, transparent);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .map-ripple__wave,
+  .map-ripple__core { animation: none; opacity: 0; }
 }
 
 .map-glow {
@@ -813,13 +1051,13 @@ export default {
 
 /* Enhanced glow for dark theme */
 [data-theme="dark"] .map-glow {
-  background: radial-gradient(ellipse at center, rgba(59, 130, 246, 0.2) 0%, transparent 65%);
+  background: radial-gradient(ellipse at center, color-mix(in srgb, var(--color-accent) 25%, transparent) 0%, transparent 65%);
   filter: blur(60px);
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) .map-glow {
-    background: radial-gradient(ellipse at center, rgba(59, 130, 246, 0.2) 0%, transparent 65%);
+    background: radial-gradient(ellipse at center, color-mix(in srgb, var(--color-accent) 25%, transparent) 0%, transparent 65%);
     filter: blur(60px);
   }
 }
@@ -837,6 +1075,8 @@ export default {
 .map-canvas.active {
   opacity: 1;
   transform: scale(1);
+  position: relative;
+  z-index: 2;
 }
 
 .map-canvas.leaving {
@@ -882,7 +1122,7 @@ export default {
 
 .legend-label {
   font-size: var(--font-small);
-  color: var(--c-text-muted);
+  color: var(--color-text-secondary, #4b5563);
 }
 
 .legend-gradient {
@@ -921,7 +1161,8 @@ export default {
 .tooltip-value {
   display: block;
   font-size: 0.75rem;
-  color: rgba(255, 255, 255, 0.8);
+  color: inherit;
+  opacity: 0.8;
 }
 
 .tooltip-enter-active,
@@ -939,7 +1180,7 @@ export default {
    Responsive
    ========================================================================== */
 
-@media (max-width: 640px) {
+@media (max-width: 767px) {
   .coverage-metrics {
     gap: 1rem;
   }

@@ -7,24 +7,19 @@ from ..routes.routes import send_to_embed_service_job
 from ..models.models import Job
 from ..utils.google_enricher import GoogleEnricher, is_missing_field
 from ..utils.jobsUtils import process_salary
+from ..persistence.jobs_repository import JobsRepository
 
-# Definindo sent_jobs como uma variável global
+# URLs ja processados nesta execucao (memoria) — espelho do JSON local
 sent_jobs = set()
 
 logging.basicConfig(filename="errors.log", level=logging.ERROR)
 
-def load_existing_job_links():
-    existing_links = set()
-    csv_path = os.path.join("src", "data", "job_vacancies.csv")
-    if os.path.exists(csv_path):
-        with open(csv_path, "r", newline="", encoding="latin-1") as f:
-            csv_reader = csv.reader(f)
-            next(csv_reader, None)  # Pula o cabeçalho se existir
-            for row in csv_reader:
-                if row:  # Verifica se a linha não está vazia
-                    # O link está na primeira coluna
-                    existing_links.add(row[0])
-    return existing_links
+
+def _engine_name(getter) -> str:
+    """get_linkedin_jobs -> 'linkedin'."""
+    parts = getter.__name__.split('_')
+    return parts[1] if len(parts) > 1 else getter.__name__
+
 
 def normalize_job_result(result):
     location = result[3] if len(result) > 3 else ''
@@ -42,46 +37,35 @@ def normalize_job_result(result):
         'publication_date': str(result[7]) if len(result) > 7 else ''
     }
 
+
 async def scrape_jobs(max_tasks=3):
     """
-    Busca vagas de emprego de várias fontes, processa e salva os resultados de forma assíncrona.
+    Busca vagas em fontes multiplas, normaliza, enriquece e persiste em:
+      1. JSON local (src/data/jobs.json) — fonte para envio de mensagens
+      2. Supabase public.jobs           — alimenta agregados da landing-page
+      3. Servico de embed (Discord)     — best effort
+      4. CSV legado                     — backwards compat
 
-    Esta função executa continuamente, buscando vagas de emprego de múltiplas fontes (getters)
-    de forma concorrente. Ela limita o número de buscas simultâneas, processa os resultados
-    imediatamente após cada busca e salva os novos jobs encontrados.
-
-    Args:
-        max_tasks (int): Número máximo de tarefas concorrentes. Padrão é 2.
-
-    O processo inclui:
-    1. Busca de vagas usando diferentes getters.
-    2. Processamento e envio dos resultados para um serviço de embed.
-    3. Salvamento dos novos jobs em CSV.
-    4. Execução contínua com intervalos de 1 hora entre os ciclos.
-
-    A função usa um Semaphore para limitar o número de buscas simultâneas e um conjunto
-    global para rastrear os jobs já processados, evitando duplicações.
+    Limita concorrencia via Semaphore. Loop continuo com sleep entre ciclos.
     """
     global sent_jobs
     semaphore = asyncio.Semaphore(max_tasks)
 
-    # Inicializa sent_jobs com os links existentes
-    sent_jobs = load_existing_job_links()
+    async with JobsRepository() as repo, GoogleEnricher() as enricher:
+        # Inicializa o set de dedup com o que ja existe no JSON local
+        sent_jobs = repo.known_urls()
 
-    async with GoogleEnricher() as enricher:
         async def process_getter(getter):
-            """
-            Funcao interna para processar um getter especifico.
-            """
+            engine = _engine_name(getter)
             async with semaphore:
                 try:
-                    print(f'Buscando em {getter.__name__.split("_")[1]}...')
-                    results = await getter()  # Executa o getter para obter os resultados
+                    print(f'Buscando em {engine}...')
+                    results = await getter()
                     for result in results:
                         job_data = normalize_job_result(result)
                         job_url = job_data.get('job_url')
                         if not job_url or job_url in sent_jobs:
-                            continue  # Verifica se o job ja foi processado
+                            continue
 
                         try:
                             job_title = job_data.get('job_title', '')
@@ -91,7 +75,9 @@ async def scrape_jobs(max_tasks=3):
                             if needs_location or needs_salary:
                                 job_data = await enricher.enrich_job(job_data)
                                 if needs_salary and job_data.get('salary'):
-                                    job_data['salary'] = process_salary(job_data.get('salary', ''), job_title, is_estimated=True)
+                                    job_data['salary'] = process_salary(
+                                        job_data.get('salary', ''), job_title, is_estimated=True
+                                    )
                         except Exception as e:
                             logging.error(f"Erro ao enriquecer job: {e}")
                             logging.error(f"Detalhes do job: {job_data}")
@@ -106,41 +92,62 @@ async def scrape_jobs(max_tasks=3):
                             job_data.get('salary', ''),
                             job_data.get('publication_date', '')
                         )
+
+                        # 1+2) Persistencia (JSON local + Supabase)
                         try:
-                            # Envia o job para o servico de embed
+                            persisted = await repo.save(job_data, source=engine)
+                        except Exception as e:
+                            logging.error(f"Erro ao persistir job: {e}")
+                            logging.error(f"Detalhes do job: {job.to_dict()}")
+                            persisted = False
+
+                        if not persisted:
+                            continue
+
+                        sent_jobs.add(job_url)
+                        save_job_to_csv(job)  # 4) CSV legado
+
+                        # 3) Embed Discord — best effort, nao bloqueia o fluxo
+                        try:
                             response = await send_to_embed_service_job(job.to_dict())
-                            if response and response.get("success"):
-                                # Adiciona o job ao conjunto de jobs processados
-                                sent_jobs.add(job_url)
-                                save_job_to_csv(job)  # Salva o job no CSV
-                            else:
-                                print(f"Falha ao enviar job: {job.job_title}")
+                            if not (response and response.get("success")):
+                                logging.warning(f"Embed service nao confirmou: {job.job_title}")
                         except Exception as e:
                             logging.error(f"Erro ao enviar job para o servico de embed: {e}")
-                            logging.error(f"Detalhes do job: {job.to_dict()}")
+
                 except Exception as e:
-                    logging.error(f"Erro ao executar {getter.__name__.split('_')[1]}: {e}")
+                    logging.error(f"Erro ao executar {engine}: {e}")
 
         while True:
-            # Cria uma tarefa assincrona para cada getter
-            tasks = [asyncio.create_task(process_getter(getter))for getter in getters]
-
+            tasks = [asyncio.create_task(process_getter(getter)) for getter in getters]
             try:
-                # Aguarda a conclusao de todas as tarefas
                 await asyncio.gather(*tasks)
             except Exception as e:
                 logging.error(f"Erro geral durante a execucao das tarefas: {e}")
 
-            await asyncio.sleep(5 * 1)  # Pausa de 1 hora antes do proximo ciclo
+            await asyncio.sleep(5 * 1)
 
 
 def save_job_to_csv(job):
-    """Salva os dados da vaga em um arquivo CSV."""
+    """Backup CSV legado. Mantido para nao quebrar consumidores externos."""
     data_dir = os.path.join('src', 'data')
     if not os.path.exists(data_dir):
         os.makedirs(data_dir)
 
     with open(os.path.join(data_dir, 'job_vacancies.csv'), 'a+', newline='', encoding='latin-1') as f:
         csv_writer = csv.writer(f)
-        # Usa o método to_dict() para obter os dados da vaga
         csv_writer.writerow(job.to_dict().values())
+
+
+def load_existing_job_links():
+    """Mantido para compatibilidade externa. O scrape_jobs agora dedupa via JobsRepository."""
+    existing_links = set()
+    csv_path = os.path.join("src", "data", "job_vacancies.csv")
+    if os.path.exists(csv_path):
+        with open(csv_path, "r", newline="", encoding="latin-1") as f:
+            csv_reader = csv.reader(f)
+            next(csv_reader, None)
+            for row in csv_reader:
+                if row:
+                    existing_links.add(row[0])
+    return existing_links
