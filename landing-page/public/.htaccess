@@ -13,7 +13,7 @@
 
 # Security Headers
 <IfModule mod_headers.c>
-  # Anti-clickjacking — frame-ancestors em CSP só funciona via header HTTP,
+  # Anti-clickjacking - frame-ancestors em CSP só funciona via header HTTP,
   # então X-Frame-Options DENY cobre a defesa em todos os navegadores.
   Header always set X-Frame-Options "DENY"
 
@@ -27,7 +27,7 @@
   # a proteção real vem da CSP definida no <meta> de index.html.
   Header always set X-XSS-Protection "0"
 
-  # HSTS — força HTTPS por 1 ano. preload exige inscrição em hstspreload.org.
+  # HSTS - força HTTPS por 1 ano. preload exige inscrição em hstspreload.org.
   # Se ainda houver dúvida sobre HTTPS em todos os subdomínios, remover
   # includeSubDomains até validar.
   Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains"
@@ -37,7 +37,7 @@
   # roda em iframe, não precisa).
   Header always set Permissions-Policy "accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(self), usb=(), interest-cohort=()"
 
-  # Isolamento cross-origin — limita ataques tipo Spectre.
+  # Isolamento cross-origin - limita ataques tipo Spectre.
   # COOP same-origin: janelas abertas por outras origens não compartilham
   # browsing context. CORP same-site: este site só pode ser carregado como
   # recurso por origens do mesmo registrable domain.

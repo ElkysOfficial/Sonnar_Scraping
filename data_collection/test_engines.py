@@ -1,5 +1,5 @@
 """
-Harness de auditoria — testa cada engine isoladamente.
+Harness de auditoria - testa cada engine isoladamente.
 Captura: count, tempo, sample (1ª vaga), exceção.
 Uso:
   python test_engines.py            # todas
@@ -75,7 +75,7 @@ async def run_engine(name: str) -> dict:
 
 def fmt_sample(sample) -> str:
     if sample is None:
-        return "—"
+        return "-"
     if isinstance(sample, tuple):
         # tuple típica: (url, title, company, location, work_type, regime, salary, date)
         text = " | ".join(str(x)[:40] for x in sample[:4])

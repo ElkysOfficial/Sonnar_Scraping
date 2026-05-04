@@ -3,16 +3,16 @@ Lista mestre de stacks (palavras-chave) usadas pelas engines de scraping.
 
 A lista é organizada em **categorias** (linguagens, front-end, back-end, etc.).
 O scraper processa as stacks em **lotes de 10** (batches), respeitando as
-fronteiras de categoria — um lote nunca mistura stacks de categorias diferentes.
+fronteiras de categoria - um lote nunca mistura stacks de categorias diferentes.
 
 API pública
 -----------
-* ``STACK_CATEGORIES`` — dict ordenado ``categoria -> lista de stacks``.
-* ``stacks``           — set com TODAS as stacks (derivado, para retrocompat).
-* ``iter_batches(n)``  — gerador que yields ``(categoria, lote)`` de até ``n``
+* ``STACK_CATEGORIES`` - dict ordenado ``categoria -> lista de stacks``.
+* ``stacks``           - set com TODAS as stacks (derivado, para retrocompat).
+* ``iter_batches(n)``  - gerador que yields ``(categoria, lote)`` de até ``n``
                          stacks por vez, em ordem.
-* ``get_active_stacks()`` — devolve o lote atualmente ativo (ou todas, se None).
-* ``set_active_batch(b)`` — chamado pelo controller a cada ciclo.
+* ``get_active_stacks()`` - devolve o lote atualmente ativo (ou todas, se None).
+* ``set_active_batch(b)`` - chamado pelo controller a cada ciclo.
 
 Por que existe lote?
 --------------------
@@ -23,7 +23,7 @@ cobertura completa ao longo do tempo.
 
 Cada engine que itera stacks deve usar ``get_active_stacks()`` em vez de
 ``stacks``. Quando rodada isoladamente (sem controller), a função devolve o
-set inteiro — comportamento padrão / retrocompatível.
+set inteiro - comportamento padrão / retrocompatível.
 """
 from __future__ import annotations
 
@@ -31,7 +31,7 @@ from typing import Iterable, Iterator, List, Optional, Set, Tuple
 
 
 # ---------------------------------------------------------------------------
-# Categorias (ordem preservada — Python 3.7+ garante ordem de inserção)
+# Categorias (ordem preservada - Python 3.7+ garante ordem de inserção)
 # ---------------------------------------------------------------------------
 
 STACK_CATEGORIES: dict[str, List[str]] = {
@@ -117,7 +117,7 @@ STACK_CATEGORIES: dict[str, List[str]] = {
 }
 
 
-# Set achatado — fonte de verdade para engines em modo standalone e para
+# Set achatado - fonte de verdade para engines em modo standalone e para
 # o filtro do RemoteOK (que precisa de TODAS as stacks de uma vez).
 stacks: Set[str] = {s for items in STACK_CATEGORIES.values() for s in items}
 
@@ -132,7 +132,7 @@ def iter_batches(batch_size: int = 10) -> Iterator[Tuple[str, List[str]]]:
 
     Cada categoria é fragmentada em pedaços de até ``batch_size``. Quando o
     último pedaço de uma categoria tem menos de ``batch_size``, ele é emitido
-    como está — não puxamos stacks da próxima categoria pra completar.
+    como está - não puxamos stacks da próxima categoria pra completar.
 
     Args:
         batch_size: tamanho máximo de cada lote (default: 10).
@@ -153,7 +153,7 @@ def iter_batches(batch_size: int = 10) -> Iterator[Tuple[str, List[str]]]:
 
 
 # ---------------------------------------------------------------------------
-# Lote ativo — controlado pelo controller
+# Lote ativo - controlado pelo controller
 # ---------------------------------------------------------------------------
 
 _active_batch: Optional[Set[str]] = None

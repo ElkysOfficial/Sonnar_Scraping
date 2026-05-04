@@ -1,7 +1,7 @@
 """
 Persistência append-only em CSV (UTF-8) para vagas extraídas.
 
-Diferente do JSON (`LocalJobStore`), o CSV é um histórico **imutável** —
+Diferente do JSON (`LocalJobStore`), o CSV é um histórico **imutável** -
 cada vaga é gravada uma vez e não é atualizada. Útil para analytics
 offline (Excel, Pandas, BI) sem depender do banco.
 
@@ -25,7 +25,7 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 
-# Ordem das colunas do CSV — corresponde 1:1 ao schema da tabela jobs no Supabase
+# Ordem das colunas do CSV - corresponde 1:1 ao schema da tabela jobs no Supabase
 CSV_COLUMNS = [
     "job_url",
     "job_title",

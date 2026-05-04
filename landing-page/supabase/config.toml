@@ -28,6 +28,6 @@ verify_jwt = true
 [functions.list-admins]
 verify_jwt = true
 
-# create-owner-account: bootstrap — sem JWT (rodar uma vez via curl admin).
+# create-owner-account: bootstrap - sem JWT (rodar uma vez via curl admin).
 [functions.create-owner-account]
 verify_jwt = false

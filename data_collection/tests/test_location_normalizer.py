@@ -1,4 +1,4 @@
-"""Testes para normalize_location — heurística (state_code, country_code)."""
+"""Testes para normalize_location - heurística (state_code, country_code)."""
 import pytest
 
 from src.persistence.location_normalizer import normalize_location
