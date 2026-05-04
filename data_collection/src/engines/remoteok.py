@@ -1,148 +1,182 @@
+"""
+Engine RemoteOK - API JSON pública (uma chamada cobre tudo).
+
+A API devolve **todas** as vagas em uma única resposta. Filtramos client-side
+contra ``variavel.stacks`` + um conjunto tech amplo de fallback. Por isso esta
+engine **não usa batching** - uma chamada já cobre o catálogo inteiro.
+"""
+from __future__ import annotations
+
 import asyncio
-import sys
 import os
+import sys
+
 from curl_cffi import requests
 
-# Adiciona o diretório pai ao path para importar variavel
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
-from variavel import stacks
+from variavel import stacks  # noqa: E402
 
 
-# Sessão global
+# --- Sessão ---------------------------------------------------------------
+
 _session = None
 
 
 def get_session():
-    """Retorna a sessão global, criando se necessário."""
+    """Retorna a sessão global, criando-a sob demanda (impersonate Chrome)."""
     global _session
     if _session is None:
-        _session = requests.Session(impersonate='chrome')
+        _session = requests.Session(impersonate="chrome")
     return _session
 
 
-async def get_remoteok_jobs(on_job=None) -> list:
-    """
-    Extrai vagas do RemoteOK via API JSON pública.
+def reset_session() -> None:
+    """Descarta a sessão atual (use após bloqueios em sequência)."""
+    global _session
+    _session = None
 
-    Particularidade: a API devolve **todas** as vagas em uma única chamada, e
-    nós filtramos client-side. Por isso esta engine **não usa batching** — o
-    lote ativo seria irrelevante (uma chamada cobre tudo). Mantemos o set
-    completo ``stacks`` como filtro primário e um conjunto tech amplo como
-    fallback (sem ele, stacks restritas filtrariam vagas relevantes).
+
+# --- Configuração ---------------------------------------------------------
+
+# Tech keywords genéricos - fallback para quando o lote ativo é muito restrito
+# (ex.: stack ``{Python}`` sozinha filtraria várias vagas tech relevantes que
+# usam tags como ``backend``, ``engineer``, ``devops``).
+_TECH_FALLBACK = {
+    "dev", "developer", "engineer", "engineering", "software", "backend",
+    "frontend", "fullstack", "full-stack", "mobile", "web", "devops",
+    "sre", "data", "ml", "ai", "machine learning", "cloud", "security",
+    "qa", "testing", "design", "ux", "ui", "product", "sysadmin",
+}
+
+
+# --- Helpers privados -----------------------------------------------------
+
+def _is_relevant(haystack_terms: set, stacks_lower: set) -> bool:
+    """``True`` se a vaga bate com alguma stack ativa OU com o tech fallback.
 
     Args:
-        on_job: callback opcional invocado a cada vaga relevante.
+        haystack_terms: set de tokens normalizados (tags + título + descrição).
+        stacks_lower: set de stacks ativas em lowercase.
+    """
+    for stack in stacks_lower:
+        if any(word in haystack_terms for word in stack.split()):
+            return True
+    return bool(haystack_terms & _TECH_FALLBACK)
+
+
+def _format_salary(salary_min, salary_max) -> str:
+    """Formata salary_min/max do RemoteOK como ``USD X`` ou ``USD X - Y``."""
+    if salary_min and salary_max:
+        if salary_min == salary_max:
+            return f"USD {salary_min}"
+        return f"USD {salary_min} - {salary_max}"
+    if salary_min:
+        return f"USD {salary_min}"
+    return ""
+
+
+def _parse_iso_date(date_str: str) -> str:
+    """``'2026-04-29T00:00:00'`` -> ``'29/04/2026'``."""
+    if not date_str:
+        return ""
+    date_raw = date_str[:10]
+    if len(date_raw) == 10 and "-" in date_raw:
+        parts = date_raw.split("-")
+        return f"{parts[2]}/{parts[1]}/{parts[0]}"
+    return date_raw
+
+
+def _parse_job_item(item: dict, stacks_lower: set) -> list | None:
+    """Converte um item da API RemoteOK em lista canônica.
+
+    Returns:
+        Lista canônica de 8 campos, ou ``None`` se a vaga não for relevante
+        (filtro contra ``stacks_lower`` + ``_TECH_FALLBACK``).
+    """
+    tags_raw = item.get("tags", []) or []
+    tags = [str(t).lower() for t in tags_raw]
+    position = (item.get("position") or "").lower()
+    description = (item.get("description") or "").lower()[:500]
+    haystack_terms = set(tags) | set(position.split()) | set(description.split())
+
+    if not _is_relevant(haystack_terms, stacks_lower):
+        return None
+
+    link = item.get("url", "")
+    job_title = item.get("position", "")
+    company = item.get("company", "")
+    location: list = []           # RemoteOK é 100% remoto
+    work_type = "Remoto"
+    hiring_regime = "Full-time"
+
+    salary = _format_salary(item.get("salary_min"), item.get("salary_max"))
+    publication_date = _parse_iso_date(item.get("date", ""))
+
+    return [link, job_title, company, location, work_type,
+            hiring_regime, salary, publication_date]
+
+
+# --- Função pública -------------------------------------------------------
+
+async def get_remoteok_jobs(on_job=None) -> list:
+    """Extrai vagas do RemoteOK via API JSON pública.
+
+    Particularidade: a API devolve **todas** as vagas em uma única chamada,
+    e filtramos client-side. Por isso esta engine **não usa batching** - o
+    lote ativo seria irrelevante (uma chamada cobre tudo).
+
+    Args:
+        on_job: callback opcional ``async fn(parsed)`` invocado a cada vaga
+                relevante - usado pelo controller para persistir em streaming.
+
+    Returns:
+        Lista no formato canônico de 8 campos.
     """
     session = get_session()
 
     try:
-        response = await asyncio.to_thread(session.get, 'https://remoteok.com/api', timeout=30)
+        response = await asyncio.to_thread(session.get, "https://remoteok.com/api", timeout=30)
 
         if response.status_code != 200:
-            print(f'Erro ao acessar API RemoteOK: {response.status_code}')
+            print(f"Erro ao acessar API RemoteOK: {response.status_code}")
             return []
 
         data = response.json()
-
-        # Primeiro item é metadata, vagas começam do índice 1
         if not data or len(data) < 2:
-            print('Nenhuma vaga encontrada na API RemoteOK')
+            print("Nenhuma vaga encontrada na API RemoteOK")
             return []
 
-        # Stacks ativas em variavel.py + fallback tech amplo (RemoteOK é tech-only,
-        # mas usa tags variadas tipo "dev", "engineer", "backend" — sem fallback,
-        # uma stack restrita como {'Python'} filtra demais).
-        stacks_lower = {s.lower().replace('_', ' ').replace('-', ' ') for s in stacks}
-        tech_fallback = {
-            'dev', 'developer', 'engineer', 'engineering', 'software', 'backend',
-            'frontend', 'fullstack', 'full-stack', 'mobile', 'web', 'devops',
-            'sre', 'data', 'ml', 'ai', 'machine learning', 'cloud', 'security',
-            'qa', 'testing', 'design', 'ux', 'ui', 'product', 'sysadmin',
-        }
+        # Stacks ativas em variavel.py - fonte primária de relevância
+        stacks_lower = {s.lower().replace("_", " ").replace("-", " ") for s in stacks}
 
         jobs = []
         seen_ids = set()
-
-        for item in data[1:]:  # Pula metadata
-            job_id = item.get('id')
+        for item in data[1:]:        # data[0] é metadata
+            job_id = item.get("id")
             if not job_id or job_id in seen_ids:
                 continue
-
-            tags_raw = item.get('tags', []) or []
-            tags = [str(t).lower() for t in tags_raw]
-            position = (item.get('position') or '').lower()
-            description = (item.get('description') or '').lower()[:500]
-
-            haystack_terms = set(tags) | set(position.split()) | set(description.split())
-
-            # Match prioritário: stacks declaradas. Fallback: tags tech genéricas.
-            is_relevant = False
-            for stack in stacks_lower:
-                if any(word in haystack_terms for word in stack.split()):
-                    is_relevant = True
-                    break
-            if not is_relevant:
-                if haystack_terms & tech_fallback:
-                    is_relevant = True
-
-            if not is_relevant:
+            parsed = _parse_job_item(item, stacks_lower)
+            if parsed is None:
                 continue
-
             seen_ids.add(job_id)
-
-            # Extrair dados
-            link = item.get('url', '')
-            job_title = item.get('position', '')
-            company = item.get('company', '')
-            location = []  # RemoteOK é sempre remoto
-            work_type = 'Remoto'
-            hiring_regime = 'Full-time'  # Padrão para RemoteOK
-
-            # Salário
-            salary = ''
-            salary_min = item.get('salary_min')
-            salary_max = item.get('salary_max')
-            if salary_min and salary_max:
-                if salary_min == salary_max:
-                    salary = f'USD {salary_min}'
-                else:
-                    salary = f'USD {salary_min} - {salary_max}'
-            elif salary_min:
-                salary = f'USD {salary_min}'
-
-            # Data de publicação no formato brasileiro DD/MM/YYYY
-            date_posted = item.get('date', '')
-            date_raw = date_posted[:10] if date_posted else ''
-            if date_raw and len(date_raw) == 10 and '-' in date_raw:
-                parts = date_raw.split('-')
-                publication_date = f"{parts[2]}/{parts[1]}/{parts[0]}"
-            else:
-                publication_date = date_raw
-
-            job = [link, job_title, company, location, work_type, hiring_regime, salary, publication_date]
-            jobs.append(job)
+            jobs.append(parsed)
             if on_job is not None:
                 try:
-                    await on_job(job)
+                    await on_job(parsed)
                 except Exception:
                     pass
 
-        print(f'Foram obtidas {len(jobs)} vagas do site RemoteOK')
+        print(f"Foram obtidas {len(jobs)} vagas do site RemoteOK")
         return jobs
 
     except Exception:
         return []
 
 
-def reset_session():
-    """Reseta a sessão (útil em caso de bloqueio)."""
-    global _session
-    _session = None
+# --- Modo debug -----------------------------------------------------------
 
-
-# Teste
 if __name__ == "__main__":
     jobs = asyncio.run(get_remoteok_jobs())
-    print(f'Total: {len(jobs)}')
-    for job in jobs[:10]:
-        print(job)
+    print(f"Total: {len(jobs)}")
+    for j in jobs[:10]:
+        print(j)

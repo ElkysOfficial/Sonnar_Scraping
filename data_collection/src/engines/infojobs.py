@@ -1,11 +1,11 @@
 """
-Engine InfoJobs Brasil — listing → fetch detalhe (JSON-LD) por vaga.
+Engine InfoJobs Brasil - listing → fetch detalhe (JSON-LD) por vaga.
 
 Fluxo:
     1. ``get_infojobs_links()`` paginada por stack do lote ativo.
-    2. ``get_infojobs_jobs()`` resolve cada link em paralelo, parseando o
-       ``<script type="application/ld+json">`` que a InfoJobs publica em todas
-       as páginas de vaga (formato schema.org JobPosting).
+    2. ``get_infojobs_jobs()`` resolve cada link em paralelo (semáforo=8),
+       parseando o ``<script type="application/ld+json">`` que a InfoJobs
+       publica em todas as páginas de vaga (formato schema.org JobPosting).
 """
 from __future__ import annotations
 
@@ -22,44 +22,24 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 from variavel import get_active_stacks  # noqa: E402
 
 
+# --- Configuração --------------------------------------------------------
+
 _TIMEOUT = httpx.Timeout(30.0)
 _FETCH_CONCURRENCY = 8
 
 
-async def get_infojobs_links() -> list[str]:
-    """Coleta links únicos de vaga (1ª página por stack do lote ativo)."""
-    links: list[str] = []
-    seen: set[str] = set()
+# --- Helpers privados ----------------------------------------------------
 
-    async with httpx.AsyncClient(timeout=_TIMEOUT, follow_redirects=True) as client:
-        for stack in get_active_stacks():
-            encoded = urllib.parse.quote(stack)
-            url = (
-                f"https://www.infojobs.com.br/empregos.aspx"
-                f"?palabra={encoded}&page=1&limit=20"
-            )
-            try:
-                response = await client.get(url)
-            except Exception:
-                continue
-            if response.status_code != 200:
-                continue
+def _parse_job_detail(html: str, link: str) -> list | None:
+    """Parseia o JSON-LD da página de detalhe e devolve a lista canônica.
 
-            soup = BeautifulSoup(response.text, "html.parser")
-            for cell in soup.find_all("div", class_="js_vacancyLoad"):
-                href = cell.get("data-href")
-                if not href:
-                    continue
-                full = f"https://www.infojobs.com.br{href}"
-                if full not in seen:
-                    seen.add(full)
-                    links.append(full)
+    Args:
+        html: HTML completo da página de vaga InfoJobs.
+        link: URL canônica da vaga (já resolvida pelo cliente HTTP).
 
-    return links
-
-
-def _parse_detail(html: str, link: str) -> list | None:
-    """Parseia o JSON-LD da página de detalhe e devolve a lista canônica."""
+    Returns:
+        Lista canônica de 8 campos, ou ``None`` se não houver JSON-LD válido.
+    """
     soup = BeautifulSoup(html, "html.parser")
     script = soup.find("script", type="application/ld+json")
     if not script:
@@ -78,13 +58,13 @@ def _parse_detail(html: str, link: str) -> list | None:
     region = address.get("addressRegion", "") if isinstance(address, dict) else ""
     location = [p for p in (locality, region) if p]
 
-    # Modalidade (campo livre na pagina) — best-effort
+    # Modalidade (campo livre na pagina) - best-effort
     work_type = ""
     work_el = soup.find("div", class_="text-medium small font-weight-bold mb-4")
     if work_el:
         work_type = work_el.get_text(strip=True)
 
-    # Regime — extraido do bloco "Tipo de contrato e Jornada" se houver
+    # Regime - extraido do bloco "Tipo de contrato e Jornada" se houver
     hiring_regime = ""
     paragraphs = soup.find_all("p")
     if len(paragraphs) >= 3:
@@ -121,12 +101,51 @@ def _parse_detail(html: str, link: str) -> list | None:
     return [link, title, company, location, work_type, hiring_regime, salary, publication_date]
 
 
+# --- Fase 1: coleta de links ---------------------------------------------
+
+async def get_infojobs_links() -> list[str]:
+    """Coleta links únicos de vaga (1ª página por stack do lote ativo)."""
+    links: list[str] = []
+    seen: set[str] = set()
+
+    async with httpx.AsyncClient(timeout=_TIMEOUT, follow_redirects=True) as client:
+        for stack in get_active_stacks():
+            encoded = urllib.parse.quote(stack)
+            url = (
+                f"https://www.infojobs.com.br/empregos.aspx"
+                f"?palabra={encoded}&page=1&limit=20"
+            )
+            try:
+                response = await client.get(url)
+            except Exception:
+                continue
+            if response.status_code != 200:
+                continue
+
+            soup = BeautifulSoup(response.text, "html.parser")
+            for cell in soup.find_all("div", class_="js_vacancyLoad"):
+                href = cell.get("data-href")
+                if not href:
+                    continue
+                full = f"https://www.infojobs.com.br{href}"
+                if full not in seen:
+                    seen.add(full)
+                    links.append(full)
+
+    return links
+
+
+# --- Fase 2 / Função pública ---------------------------------------------
+
 async def get_infojobs_jobs(on_job=None) -> list:
-    """
-    Coleta links e resolve cada vaga em paralelo (semáforo=8).
+    """Coleta links e resolve cada vaga em paralelo (semáforo=8).
 
     Args:
-        on_job: callback opcional invocado a cada vaga resolvida.
+        on_job: callback opcional ``async fn(parsed)`` invocado a cada vaga
+                resolvida - usado pelo controller pra persistir em streaming.
+
+    Returns:
+        Lista de vagas no formato canônico de 8 campos.
     """
     links = await get_infojobs_links()
     if not links:
@@ -136,6 +155,7 @@ async def get_infojobs_jobs(on_job=None) -> list:
     semaphore = asyncio.Semaphore(_FETCH_CONCURRENCY)
 
     async def _fetch(link: str) -> list | None:
+        """Fetch + parse de uma URL, respeitando o semáforo."""
         async with semaphore:
             try:
                 async with httpx.AsyncClient(timeout=_TIMEOUT, follow_redirects=True) as client:
@@ -144,7 +164,7 @@ async def get_infojobs_jobs(on_job=None) -> list:
                 return None
             if response.status_code != 200:
                 return None
-            parsed = _parse_detail(response.text, link)
+            parsed = _parse_job_detail(response.text, link)
             if parsed is not None and on_job is not None:
                 try:
                     await on_job(parsed)
@@ -156,3 +176,10 @@ async def get_infojobs_jobs(on_job=None) -> list:
     jobs = [r for r in results if r is not None]
     print(f"Foram obtidas {len(jobs)} vagas do site InfoJobs")
     return jobs
+
+
+# --- Modo debug ----------------------------------------------------------
+
+if __name__ == "__main__":
+    for j in asyncio.run(get_infojobs_jobs())[:10]:
+        print(j)

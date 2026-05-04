@@ -1,61 +1,88 @@
+"""
+Engine GeekHunter - GraphQL pública (uma chamada cobre tudo).
+
+O GeekHunter expõe a query ``findShowcaseJobs`` que devolve até 1000 vagas
+em uma única resposta. Por isso esta engine **não usa batching** - uma
+chamada já cobre o catálogo inteiro do site.
+"""
+from __future__ import annotations
 import httpx
 
 
+# --- Configuração da requisição --------------------------------------------
+
+_GRAPHQL_URL = "https://www.geekhunter.com.br/graphql"
+
+_HEADERS = {
+    "Referer": "https://www.geekhunter.com.br/vagas",
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+    "Accept": "application/json",
+}
+
+_QUERY_BODY = {
+    "operationName": "findShowcaseJobs",
+    "variables": {
+        "showcaseParams": {
+            "companyLocation": [],
+            "order": "newer",
+            "remoteWork": False,
+            "pagination": {"page": 0, "perPage": 1000},
+        }
+    },
+    "query": """
+    query findShowcaseJobs($showcaseParams: SearchJobFilter!) {
+      findShowcaseJobs(showcaseParams: $showcaseParams) {
+        data {
+          id
+          company { name slug }
+          city { name }
+          cltMaxSalary
+          cltMinSalary
+          createdAt
+          maxSalary
+          minSalary
+          pjMaxSalary
+          pjMinSalary
+          usdAnnualSalaryMin
+          usdAnnualSalaryMax
+          remoteWork
+          slug
+          title
+        }
+      }
+    }
+    """,
+}
+
+
+# --- Função pública --------------------------------------------------------
+
 async def get_geekhunter_jobs(on_job=None) -> list:
-    """
-    Extrai vagas do GeekHunter via GraphQL pública (uma chamada só, sem stacks).
+    """Coleta vagas do GeekHunter via GraphQL pública (uma chamada).
+
+    Particularidade: a API devolve até 1000 vagas em uma resposta, então
+    não há paginação nem iteração por stacks.
 
     Args:
-        on_job: callback opcional invocado a cada vaga emitida.
+        on_job: callback opcional ``async fn(parsed)`` invocado a cada vaga
+                - usado pelo controller para persistir em streaming.
+
+    Returns:
+        Lista no formato canônico ``[link, title, company, location,
+        work_type, hiring_regime, salary, publication_date]``.
     """
     jobs = []
-    headers = {
-        "Referer": "https://www.geekhunter.com.br/vagas",
-        "Referrer-Policy": "strict-origin-when-cross-origin",
-        "Accept": "application/json",
-    }
-
-    data = {
-        "operationName": "findShowcaseJobs",
-        "variables": {
-            "showcaseParams": {
-                "companyLocation": [],
-                "order": "newer",
-                "remoteWork": False,
-                "pagination": {"page": 0, "perPage": 1000},
-            }
-        },
-        "query": """
-        query findShowcaseJobs($showcaseParams: SearchJobFilter!) {
-          findShowcaseJobs(showcaseParams: $showcaseParams) {
-            data {
-              id
-              company { name slug }
-              city { name }
-              cltMaxSalary
-              cltMinSalary
-              createdAt
-              maxSalary
-              minSalary
-              pjMaxSalary
-              pjMinSalary
-              usdAnnualSalaryMin
-              usdAnnualSalaryMax
-              remoteWork
-              slug
-              title
-            }
-          }
-        }
-        """,
-    }
 
     try:
         async with httpx.AsyncClient(timeout=30) as client:
-            response = await client.post("https://www.geekhunter.com.br/graphql", headers=headers, json=data)
+            response = await client.post(_GRAPHQL_URL, headers=_HEADERS, json=_QUERY_BODY)
             response.raise_for_status()
-            json_response = response.json()
-            results = json_response.get("data", {}).get("findShowcaseJobs", {}).get("data", [])
+            results = (
+                response.json()
+                .get("data", {})
+                .get("findShowcaseJobs", {})
+                .get("data", [])
+            )
 
             for result in results:
                 job_slug = result.get("slug", "")
@@ -80,7 +107,7 @@ async def get_geekhunter_jobs(on_job=None) -> list:
                 else:
                     work_type = "Remoto"
 
-                # Regime e salário - tentar todas as combinações disponíveis
+                # Regime e salário - tenta CLT, PJ, USD e genérico nessa ordem
                 hiring_regime = ""
                 salary = ""
 
@@ -125,16 +152,17 @@ async def get_geekhunter_jobs(on_job=None) -> list:
                     elif generic_max:
                         salary = f"R$ {generic_max}"
 
-                # Data de publicação no formato brasileiro DD/MM/YYYY
+                # Data ISO → DD/MM/YYYY
                 created_at = result.get("createdAt", "")
                 date_raw = created_at[:10] if len(created_at) >= 10 else ""
-                if date_raw and len(date_raw) == 10 and '-' in date_raw:
-                    parts = date_raw.split('-')
+                if date_raw and len(date_raw) == 10 and "-" in date_raw:
+                    parts = date_raw.split("-")
                     publication_date = f"{parts[2]}/{parts[1]}/{parts[0]}"
                 else:
                     publication_date = date_raw
 
-                job = [link, job_title, company_name, location, work_type, hiring_regime, salary, publication_date]
+                job = [link, job_title, company_name, location, work_type,
+                       hiring_regime, salary, publication_date]
                 jobs.append(job)
                 if on_job is not None:
                     try:
@@ -148,9 +176,11 @@ async def get_geekhunter_jobs(on_job=None) -> list:
     print(f"Foram obtidas {len(jobs)} vagas do site GeekHunter")
     return jobs
 
-# if __name__ == "__main__":
-#     import asyncio
 
-#     jobs = asyncio.run(get_geekhunter_jobs())
-#     for job in jobs:
-#         print(job)
+# --- Modo debug ------------------------------------------------------------
+
+if __name__ == "__main__":
+    import asyncio
+
+    for j in asyncio.run(get_geekhunter_jobs())[:10]:
+        print(j)
