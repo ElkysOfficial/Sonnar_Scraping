@@ -24,6 +24,7 @@ from curl_cffi import requests
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 from variavel import get_active_stacks  # noqa: E402
+from src.utils.text_utils import extract_skills, strip_html  # noqa: E402
 
 
 # --- Sessão ---------------------------------------------------------------
@@ -245,8 +246,13 @@ def _parse_job_item(item: dict, encoded_stack: str, seen_ids: set) -> list | Non
     # Link canônico (mais estável que /away/)
     link = f"https://br.jooble.org/desc/{uid}?ckey={encoded_stack}"
 
+    # ``fullContent`` é HTML completo da vaga; ``content`` é só preview - prefira o primeiro
+    description = strip_html(item.get("fullContent") or item.get("content") or "")
+    skills = extract_skills(description) if description else []
+
     return [link, job_title, company, location, work_type,
-            hiring_regime, salary, publication_date]
+            hiring_regime, salary, publication_date,
+            skills, description]
 
 
 # --- Função pública -------------------------------------------------------

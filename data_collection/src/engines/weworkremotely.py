@@ -12,10 +12,15 @@ Por que não usa batching?
 from __future__ import annotations
 
 import asyncio
+import os
+import sys
 import xml.etree.ElementTree as ET
 from datetime import datetime
 
 from curl_cffi import requests
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+from src.utils.text_utils import extract_skills, strip_html  # noqa: E402
 
 
 # --- Sessão ---------------------------------------------------------------
@@ -122,6 +127,10 @@ def _parse_job_item(item: ET.Element) -> list | None:
     pub_el = item.find("pubDate")
     publication_date = _parse_rfc822_date(pub_el.text) if pub_el is not None and pub_el.text else ""
 
+    desc_el = item.find("description")
+    description = strip_html(desc_el.text) if desc_el is not None and desc_el.text else ""
+    skills = extract_skills(description) if description else []
+
     return [
         link, job_title, company,
         [],                              # location vazia - site é 100% remoto
@@ -129,6 +138,7 @@ def _parse_job_item(item: ET.Element) -> list | None:
         _extract_hiring_regime(title_lower),
         "",                              # salary não disponível no RSS
         publication_date,
+        skills, description,
     ]
 
 

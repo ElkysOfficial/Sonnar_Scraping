@@ -15,6 +15,7 @@ from curl_cffi import requests
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 from variavel import stacks  # noqa: E402
+from src.utils.text_utils import extract_skills, strip_html  # noqa: E402
 
 
 # --- Sessão ---------------------------------------------------------------
@@ -112,8 +113,22 @@ def _parse_job_item(item: dict, stacks_lower: set) -> list | None:
     salary = _format_salary(item.get("salary_min"), item.get("salary_max"))
     publication_date = _parse_iso_date(item.get("date", ""))
 
+    description = strip_html(item.get("description", ""))
+    # Une skills extraídas da descrição com ``tags`` da API que coincidam
+    # com o catálogo (preserva ordem, sem duplicatas).
+    skills = extract_skills(description) if description else []
+    if tags_raw:
+        seen = {s.lower() for s in skills}
+        catalog = {s.lower(): s for s in stacks}
+        for t in tags_raw:
+            t_low = str(t).lower()
+            if t_low in catalog and t_low not in seen:
+                skills.append(catalog[t_low])
+                seen.add(t_low)
+
     return [link, job_title, company, location, work_type,
-            hiring_regime, salary, publication_date]
+            hiring_regime, salary, publication_date,
+            skills, description]
 
 
 # --- Função pública -------------------------------------------------------

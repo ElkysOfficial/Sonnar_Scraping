@@ -8,8 +8,14 @@ categorias - o lote ativo de stacks é irrelevante aqui.
 from __future__ import annotations
 
 import asyncio
+import os
+import sys
 
 from curl_cffi import requests
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+from variavel import stacks  # noqa: E402
+from src.utils.text_utils import extract_skills, strip_html  # noqa: E402
 
 
 # --- Sessão ---------------------------------------------------------------
@@ -101,8 +107,22 @@ def _parse_job_item(item: dict) -> list | None:
     salary = item.get("salary", "")
     publication_date = _parse_iso_date(item.get("publication_date", ""))
 
+    description = strip_html(item.get("description", ""))
+    skills = extract_skills(description) if description else []
+    # Mescla com ``tags`` da API que estão no catálogo (preserva ordem)
+    tags_raw = item.get("tags") or []
+    if tags_raw:
+        seen = {s.lower() for s in skills}
+        catalog = {s.lower(): s for s in stacks}
+        for t in tags_raw:
+            t_low = str(t).lower()
+            if t_low in catalog and t_low not in seen:
+                skills.append(catalog[t_low])
+                seen.add(t_low)
+
     return [link, job_title, company, location, work_type,
-            hiring_regime, salary, publication_date]
+            hiring_regime, salary, publication_date,
+            skills, description]
 
 
 # --- Função pública -------------------------------------------------------
