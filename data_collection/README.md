@@ -14,8 +14,7 @@ cp .env.example .env
 
 # 2. Dependências
 pip install -r requirements.txt
-playwright install chromium     # só se quiser ENABLE_GOOGLE_ENRICHMENT=1
-                                 # ou usar a engine simplyhired (Cloudflare bypass)
+playwright install chromium     # só se for usar a engine simplyhired (Cloudflare bypass)
 
 # 3. Roda em loop infinito
 python scrapy.py
@@ -42,7 +41,6 @@ data_collection/
     │   └── location_normalizer.py # texto livre → (state_code, country_code)
     ├── utils/
     │   ├── jobsUtils.py          # formatação de salário
-    │   ├── google_enricher.py    # preenche location/salary via Google (opt-in)
     │   └── browser_fetch.py      # helper Playwright (CF bypass — só simplyhired)
     ├── routes/                   # roteamento p/ embed Discord
     ├── models/models.py          # classe Job (dict-like com .to_dict)
@@ -114,7 +112,6 @@ outros. Retorna `True` se ao menos um confirmou.
 | `BATCH_SIZE` | `10` | Tamanho do lote de stacks |
 | `BATCH_INTERVAL_SECONDS` | `7200` | Pausa entre lotes (2h) |
 | `MAX_CONCURRENT_ENGINES` | `3` | Engines em paralelo |
-| `ENABLE_GOOGLE_ENRICHMENT` | `0` | Liga enrichment via Playwright (lento) |
 | `SUPABASE_URL` | — | Sem isso, sink Supabase fica desligado |
 | `SUPABASE_SERVICE_ROLE_KEY` | — | Service role para upsert (bypassa RLS) |
 

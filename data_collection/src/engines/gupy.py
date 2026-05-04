@@ -1,8 +1,8 @@
 """
-Engine Gupy — usa a API pública ``portal.api.gupy.io/api/v1/jobs``.
+Engine Gupy - usa a API pública ``portal.api.gupy.io/api/v1/jobs``.
 
 Fluxo simples: para cada stack do lote ativo, faz uma chamada à API
-filtrando por ``jobName``. A API devolve até 1000 vagas em uma resposta —
+filtrando por ``jobName``. A API devolve até 1000 vagas em uma resposta -
 não há paginação no nosso lado.
 
 A normalização (mapeamento de ``workplaceType`` e ``type``) usa dicts
@@ -21,7 +21,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from variavel import get_active_stacks  # noqa: E402
 
 
-# --- Mapeamentos do domínio Gupy → vocabulário interno ----------------------
+# --- Mapeamentos do domínio Gupy → vocabulário interno --------------------
 
 WORK_TYPES = {
     "remote": "Remoto",
@@ -41,11 +41,12 @@ REGIME_TYPES = {
 }
 
 
-def _normalize_job_url(url: str) -> str:
-    """
-    Conserta URLs com ``&`` no host (bug ocasional da Gupy: ``empresa&etc.gupy.io``).
+# --- Helpers privados -----------------------------------------------------
 
-    Retorna a URL com o host truncado em ``empresa.gupy.io``.
+def _normalize_job_url(url: str) -> str:
+    """Conserta URLs com ``&`` no host (bug ocasional da Gupy).
+
+    Exemplo: ``empresa&etc.gupy.io`` → ``empresa.gupy.io``.
     """
     if not url:
         return url
@@ -60,8 +61,15 @@ def _normalize_job_url(url: str) -> str:
     return url
 
 
-def _parse_job(item: dict) -> list:
-    """Converte um item da API Gupy no formato canônico das engines."""
+def _parse_job_item(item: dict) -> list:
+    """Converte um item da API Gupy no formato canônico das engines.
+
+    Args:
+        item: dict bruto vindo do array ``data`` da resposta da API.
+
+    Returns:
+        Lista canônica de 8 campos.
+    """
     link = _normalize_job_url(item.get("jobUrl", ""))
     title = item.get("name", "")
     company = item.get("careerPageName", "")
@@ -90,17 +98,19 @@ def _parse_job(item: dict) -> list:
     return [link, title, company, location, work_type, hiring_regime, "", publication_date]
 
 
+# --- Função pública -------------------------------------------------------
+
 async def get_gupy_jobs(on_job=None) -> list:
-    """
-    Busca vagas na API da Gupy para cada stack do lote ativo.
+    """Busca vagas na API da Gupy para cada stack do lote ativo.
 
     Args:
         on_job: callback opcional ``async fn(parsed)`` invocado a cada vaga.
                 Quando definido (modo controller), a engine emite as vagas em
-                streaming — útil pra persistir antes de a engine terminar.
+                streaming - útil pra persistir antes de a engine terminar.
 
     Returns:
-        Lista de vagas no formato canônico.
+        Lista no formato canônico ``[link, title, company, location,
+        work_type, hiring_regime, salary, publication_date]``.
     """
     jobs: list = []
     seen: set[str] = set()
@@ -117,7 +127,7 @@ async def get_gupy_jobs(on_job=None) -> list:
                 continue
 
             for item in response.json().get("data", []):
-                parsed = _parse_job(item)
+                parsed = _parse_job_item(item)
                 job_url = parsed[0]
                 if not job_url or job_url in seen:
                     continue
@@ -131,3 +141,12 @@ async def get_gupy_jobs(on_job=None) -> list:
 
     print(f"Foram obtidas {len(jobs)} vagas do site Gupy")
     return jobs
+
+
+# --- Modo debug -----------------------------------------------------------
+
+if __name__ == "__main__":
+    import asyncio
+
+    for j in asyncio.run(get_gupy_jobs())[:10]:
+        print(j)

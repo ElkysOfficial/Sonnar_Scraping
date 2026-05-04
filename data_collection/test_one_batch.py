@@ -30,7 +30,6 @@ from variavel import iter_batches, set_active_batch
 from src.controllers.controllers import _run_one_batch, _engine_name
 from src.controllers.job_getters import getters as ALL_GETTERS
 from src.persistence.jobs_repository import JobsRepository
-from src.utils.google_enricher import GoogleEnricher
 
 
 # Engines rápidas (não dependem de Playwright e iteração leve por stack)
@@ -78,10 +77,10 @@ async def run(batch_size: int, only_fast: bool):
             csv_before_lines = sum(1 for _ in f)
 
     started = time.monotonic()
-    async with JobsRepository() as repo, GoogleEnricher() as enricher:
+    async with JobsRepository() as repo:
         sent_jobs: set = repo.known_urls()
         print(f"Vagas conhecidas no JSON antes do lote: {len(sent_jobs)}")
-        await _run_one_batch(repo=repo, enricher=enricher, sent_jobs=sent_jobs)
+        await _run_one_batch(repo=repo, sent_jobs=sent_jobs)
     elapsed = time.monotonic() - started
 
     set_active_batch(None)

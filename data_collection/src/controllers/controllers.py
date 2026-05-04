@@ -11,7 +11,7 @@ Estratégia em duas camadas:
 
 2. **Streaming** (camada de persistência):
    As engines recebem um callback ``on_job`` e o invocam **a cada vaga**
-   parseada — não no fim. Isso garante que, se a engine morrer no meio do
+   parseada - não no fim. Isso garante que, se a engine morrer no meio do
    ciclo, todas as vagas já extraídas estão salvas (JSON + CSV + Supabase).
 
 Tunáveis (env vars):
@@ -30,7 +30,6 @@ from variavel import iter_batches, set_active_batch
 
 from .job_getters import getters
 from ..persistence.jobs_repository import JobsRepository
-from ..utils.google_enricher import GoogleEnricher, is_missing_field
 from ..utils.jobsUtils import process_salary
 
 
@@ -46,10 +45,6 @@ BATCH_SIZE = int(os.getenv("BATCH_SIZE", "10"))
 BATCH_INTERVAL_SECONDS = int(os.getenv("BATCH_INTERVAL_SECONDS", "7200"))  # 2h
 MAX_CONCURRENT_ENGINES = int(os.getenv("MAX_CONCURRENT_ENGINES", "3"))
 
-# Enrichment via Playwright/Google é caro (~5-15s por job). Desligado por
-# default — quando ligado, preenche salário/localização ausentes.
-ENRICH_ENABLED = os.getenv("ENABLE_GOOGLE_ENRICHMENT", "0") == "1"
-
 # Tipo do callback: ``async fn(job_data: dict, engine: str) -> None``.
 JobCallback = Callable[[list, str], Awaitable[None]]
 
@@ -64,13 +59,20 @@ def normalize_job_result(result: list) -> dict:
 
     Formato esperado das engines (lista posicional):
         [job_url, job_title, company, location, work_type,
-         hiring_regime, salary, publication_date]
+         hiring_regime, salary, publication_date,
+         skills?, description?]
 
-    `location` pode vir como str ou list — normalizamos para str ('SP - São Paulo').
+    `location` pode vir como str ou list - normalizamos para str ('SP - São Paulo').
+    Os campos `skills` (list) e `description` (str) são opcionais - engines
+    legadas que devolvem 8 elementos continuam funcionando.
     """
     location = result[3] if len(result) > 3 else ""
     if isinstance(location, list):
         location = " - ".join(str(item) for item in location if item)
+
+    skills = result[8] if len(result) > 8 else []
+    if not isinstance(skills, list):
+        skills = []
 
     return {
         "job_url": str(result[0]) if len(result) > 0 else "",
@@ -81,6 +83,8 @@ def normalize_job_result(result: list) -> dict:
         "hiring_regime": str(result[5]) if len(result) > 5 else "",
         "salary": str(result[6]) if len(result) > 6 else "",
         "publication_date": str(result[7]) if len(result) > 7 else "",
+        "skills": skills,
+        "description": str(result[9]) if len(result) > 9 else "",
     }
 
 
@@ -99,44 +103,30 @@ async def _process_one_job(
     engine: str,
     *,
     repo: JobsRepository,
-    enricher: GoogleEnricher,
     sent_jobs: set,
 ) -> None:
     """
     Pipeline aplicado a CADA vaga assim que a engine a entrega:
       1. Normaliza para dict canônico
       2. Dedup pelo conjunto em memória
-      3. Processa salário, enriquece (location/salary) se necessário
+      3. Normaliza salário
       4. Persiste em JSON + CSV + Supabase via ``repo.save``
       5. Envia para o serviço de embed (Discord) como best-effort
 
-    Erros isolados não interrompem o ciclo da engine — só são logados.
+    Erros isolados não interrompem o ciclo da engine - só são logados.
     """
     job_data = normalize_job_result(raw)
     job_url = job_data.get("job_url")
     if not job_url or job_url in sent_jobs:
         return
 
-    # Enriquecimento de salário (parsing é local e barato)
     try:
         title = job_data.get("job_title", "")
         job_data["salary"] = process_salary(job_data.get("salary", ""), title)
-
-        # Enrichment via Google só roda se explicitamente habilitado pela env.
-        # Caro: cada query custa ~5-15s via Playwright headless.
-        if ENRICH_ENABLED:
-            needs_location = is_missing_field(job_data.get("location"))
-            needs_salary = is_missing_field(job_data.get("salary"))
-            if needs_location or needs_salary:
-                job_data = await enricher.enrich_job(job_data)
-                if needs_salary and job_data.get("salary"):
-                    job_data["salary"] = process_salary(
-                        job_data.get("salary", ""), title, is_estimated=True
-                    )
     except Exception as exc:
-        logger.error("Erro ao enriquecer job %s: %s", job_url, exc)
+        logger.error("Erro ao processar salário do job %s: %s", job_url, exc)
 
-    # Persistência (JSON + CSV + Supabase) — atômica do ponto de vista do job
+    # Persistência (JSON + CSV + Supabase) - atômica do ponto de vista do job
     try:
         persisted = await repo.save(job_data, source=engine)
     except Exception as exc:
@@ -156,7 +146,6 @@ async def _process_one_job(
 async def _run_one_batch(
     *,
     repo: JobsRepository,
-    enricher: GoogleEnricher,
     sent_jobs: set,
 ) -> None:
     """
@@ -164,7 +153,7 @@ async def _run_one_batch(
     limitando a concorrência a ``MAX_CONCURRENT_ENGINES``.
 
     Cada engine recebe ``on_job`` que chama ``_process_one_job`` em streaming
-    — vagas vão para o disco/banco assim que são parseadas.
+    - vagas vão para o disco/banco assim que são parseadas.
     """
     semaphore = asyncio.Semaphore(MAX_CONCURRENT_ENGINES)
 
@@ -174,7 +163,7 @@ async def _run_one_batch(
         async def on_job(raw: list) -> None:
             await _process_one_job(
                 raw, engine,
-                repo=repo, enricher=enricher, sent_jobs=sent_jobs,
+                repo=repo, sent_jobs=sent_jobs,
             )
 
         async with semaphore:
@@ -196,7 +185,7 @@ async def _run_one_batch(
 
 
 # ---------------------------------------------------------------------------
-# Loop principal — itera lotes e dorme entre eles
+# Loop principal - itera lotes e dorme entre eles
 # ---------------------------------------------------------------------------
 
 async def scrape_jobs() -> None:
@@ -214,7 +203,7 @@ async def scrape_jobs() -> None:
     do JSON local), de modo que vagas já processadas em ciclos anteriores
     não são reprocessadas.
     """
-    async with JobsRepository() as repo, GoogleEnricher() as enricher:
+    async with JobsRepository() as repo:
         sent_jobs: set = repo.known_urls()
         logger.info("Inicializando: %d vagas já conhecidas no JSON local.", len(sent_jobs))
 
@@ -229,7 +218,7 @@ async def scrape_jobs() -> None:
                     f"{', '.join(batch)} ==="
                 )
                 try:
-                    await _run_one_batch(repo=repo, enricher=enricher, sent_jobs=sent_jobs)
+                    await _run_one_batch(repo=repo, sent_jobs=sent_jobs)
                 except Exception as exc:
                     logger.error("Erro geral no lote %s: %s", category, exc)
 

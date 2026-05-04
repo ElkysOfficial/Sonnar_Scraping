@@ -1,46 +1,62 @@
 """
-Engine Catho — extrai vagas direto do listing (sem fetch de página de detalhe).
+Engine Catho - listing + enriquecimento via página de detalhe (Next.js).
 
-Por que sem detail page?
-    A Catho redesenhou o site: o ``<li class="jobItem...">`` antigo virou
-    ``<article class="offer">``, e a página de detalhe deixou de expor um
-    ``<script type="application/json">`` parseável. O listing já entrega
-    título, empresa, localização, salário e data — então puxamos tudo
-    direto do card e evitamos N+1 fetches.
+Fontes de dados
+---------------
+* **Listing** (``<article class="offer">``): título, empresa, localização,
+  salário, data - suficiente como fallback.
+* **Página de detalhe** (Next.js): ``<script id="__NEXT_DATA__">`` expõe
+  ``props.pageProps.jobAdData`` com ``descricao``, ``regimeContrato``
+  ("CLT (Efetivo)"), ``data`` (ISO), ``contratante.nome`` e ``vagas[]``.
+  Fallback: JSON-LD ``JobPosting`` na variante SSR.
 
-Design pra escala (auditoria 2026-05-03):
-    * URL-encode da stack (evita 404 com ``Vue.js``, ``C#`` etc.).
-    * ``get_active_stacks()`` em vez de ``stacks`` — respeita batching.
-    * ``max_pages=5`` por stack (ao invés de 10) → menos pressão por sessão.
-    * Reset de sessão após 3 stacks vazias seguidas (sinal de ban da Catho).
-    * Streaming via ``on_job`` (controller persiste já a primeira vaga).
+Filtro de relevância
+--------------------
+A Catho retorna lixo quando a busca tem termo curto/ambíguo (``R``, ``Go``,
+``C#``, ``BI``…). Aplicamos um filtro de duas camadas no título + slug:
+
+* **Whitelist** (termos tech) → aceita direto.
+* **Blacklist** (varejo/serviços) sem whitelist → rejeita.
+* Default → aceita (não somos agressivos).
+
+Tunáveis (env vars)
+-------------------
+``CATHO_FETCH_DETAIL`` (default ``1``) - habilita o GET extra na página de
+detalhe para extrair descrição + skills.
 """
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import random
 import re
 import sys
 import urllib.parse
-from datetime import date
+from datetime import date, datetime, timezone
 
 from bs4 import BeautifulSoup
 from curl_cffi import requests
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
-from variavel import get_active_stacks  # noqa: E402
+from variavel import get_active_stacks, stacks as _ALL_STACKS  # noqa: E402
 
+
+# --- Sessão ---------------------------------------------------------------
 
 _session = None
 
 
 def get_session():
-    """Sessão ``curl_cffi`` (impersonate Chrome) — preserva cookies entre requests."""
+    """Retorna a sessão global, criando-a sob demanda (impersonate Chrome).
+
+    Não fazemos warm-up: a Catho serve uma variante CSR sem ``__NEXT_DATA__``
+    quando a sessão tem cookies prévios. Sem warm-up, a primeira chamada
+    retorna o HTML hidratado completo.
+    """
     global _session
     if _session is None:
         _session = requests.Session(impersonate="chrome")
-        _session.get("https://www.catho.com.br/")  # warm-up de cookies
     return _session
 
 
@@ -50,7 +66,68 @@ def reset_session() -> None:
     _session = None
 
 
-# Regex que aceita 'DD/MM' do tag 'Publicada em DD/MM'.
+# --- Filtro de relevância tech --------------------------------------------
+
+# Whitelist: títulos que claramente pertencem ao domínio. Match no título
+# (não no slug - slug é menos confiável e contém ruído de URL).
+_TECH_WHITELIST = re.compile(
+    r"\b("
+    r"desenvolved|programad|engenheir|"  # engenheiro também (mecânica/civil às vezes pega ferramentas tech)
+    r"analista\s+(?:de\s+)?(?:sistem|dados|ti|tecnolog|qa|teste|seguran|engenhar|"
+    r"banco|infraestru|requisito|suporte|desenvolv|software)|"
+    r"cientista\s+de\s+dados|arquitet[oa]\s+de\s+software|"
+    r"dev(?:ops)?|qa\b|sre\b|dba\b|tech\s*lead|"
+    r"back[- ]?end|front[- ]?end|full[- ]?stack|mobile|"
+    r"data\s+(?:scien|engin|analy)|machine\s+learning|"
+    r"cloud|infra(?:estrutura)?|"
+    r"software|tecnologia\s+da\s+informacao|tecnologia\s+da\s+informa[çc][ãa]o|"
+    r"scrum\s+master|product\s+(?:manager|owner)|"
+    r"administrador\s+de\s+banco|"
+    r"php|python|javascript|typescript|laravel|django|flask|spring|"
+    r"react|angular|vue|node|kotlin|swift|golang|ruby"
+    r")\b",
+    re.IGNORECASE,
+)
+
+# Blacklist: termos que indicam clara vaga não-tech. Aplicado no slug E no
+# título; só rejeita se a whitelist NÃO bateu.
+_TECH_BLACKLIST = re.compile(
+    r"\b("
+    r"comercio\s+e\s+varejo|varejo|"
+    r"auxiliar\s+de\s+loja|gerente\s+de\s+loja|"
+    r"vendedor|atendente|operador\s+de\s+caixa|caixa\s+(?:de\s+)?(?:loja|supermerc)|"
+    r"repositor|estoquista|a[çc]ougueiro|padeiro|confeiteir|"
+    r"motoboy|motorista|"
+    r"cozinheir|garcom|gar[çc]om|copeir|chapeir|"
+    r"recepcionist|aux(?:iliar)?\s+administrativ|"
+    r"pedreiro|servente|eletricist[ao](?!\s+de\s+(?:rede|telecom))|"  # eletricista de rede/telecom é OK
+    r"enfermeir|t[ée]cnico\s+de\s+enfermag|farmac[êe]utic|"
+    r"professor|"
+    r"servico\s+de\s+limpeza|servi[çc]o\s+de\s+limpeza|porteiro|"
+    r"seguranca\s+patrimon|seguran[çc]a\s+patrimon|"
+    r"bab[áa]|cuidador|domestic"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+def _is_tech_relevant(title: str, slug: str) -> bool:
+    """``True`` se a vaga deve ser mantida; ``False`` rejeita.
+
+    Estratégia: whitelist no título → aceita. Senão, blacklist no slug+título → rejeita.
+    Sem match em nenhum dos dois → aceita (default permissivo).
+    """
+    title = title or ""
+    slug = slug or ""
+    if _TECH_WHITELIST.search(title):
+        return True
+    if _TECH_BLACKLIST.search(slug) or _TECH_BLACKLIST.search(title):
+        return False
+    return True
+
+
+# --- Helpers de parsing ---------------------------------------------------
+
 _RE_DATE_BR = re.compile(r"(\d{2})/(\d{2})")
 
 
@@ -65,7 +142,6 @@ def _parse_date_card(text: str) -> str:
     dd, mm = m.group(1), m.group(2)
     year = today.year
     try:
-        # Se a data parece estar no futuro, é provável virada de ano: usa o anterior.
         if int(mm) > today.month or (int(mm) == today.month and int(dd) > today.day):
             year = today.year - 1
     except ValueError:
@@ -73,9 +149,20 @@ def _parse_date_card(text: str) -> str:
     return f"{dd}/{mm}/{year}"
 
 
-def _detect_work_type(title: str) -> str:
-    """Heurística simples baseada em palavras do título (Catho não expõe campo estruturado)."""
-    t = (title or "").lower()
+def _format_iso_date(iso: str) -> str:
+    """``'2026-04-29T23:59:59Z'`` → ``'29/04/2026'``."""
+    if not iso:
+        return ""
+    try:
+        dt = datetime.fromisoformat(iso.replace("Z", "+00:00"))
+        return dt.astimezone(timezone.utc).strftime("%d/%m/%Y")
+    except (ValueError, AttributeError):
+        return ""
+
+
+def _detect_work_type(title: str, description: str = "") -> str:
+    """Heurística por palavras no título e (se vier) descrição."""
+    t = ((title or "") + " " + (description or "")).lower()
     if "remoto" in t or "home office" in t or "home-office" in t or "100% home" in t:
         return "Remoto"
     if "híbrido" in t or "hibrido" in t or "hybrid" in t:
@@ -83,14 +170,211 @@ def _detect_work_type(title: str) -> str:
     return "Presencial"
 
 
-def _parse_card(article) -> list | None:
-    """
-    Extrai uma vaga de um ``<article class="offer">``.
+# ``R`` e ``C`` são muito barulhentos para match em texto livre - pulamos.
+_SKILL_PATTERNS: list[tuple[str, re.Pattern]] = [
+    (s, re.compile(r"\b" + re.escape(s) + r"\b", re.IGNORECASE))
+    for s in _ALL_STACKS
+    if len(s) >= 2
+]
 
-    Returns:
-        Lista no formato canônico esperado pelas engines:
-        ``[url, title, company, location, work_type, regime, salary, date]``,
-        ou ``None`` se o card não tiver dados mínimos.
+
+def _extract_skills(description: str) -> list[str]:
+    """Match das stacks conhecidas contra o texto da descrição.
+
+    Retorna lista preservando ordem da primeira ocorrência. Sem duplicatas.
+    """
+    if not description:
+        return []
+    found: list[str] = []
+    seen: set[str] = set()
+    for skill, pat in _SKILL_PATTERNS:
+        if skill in seen:
+            continue
+        if pat.search(description):
+            found.append(skill)
+            seen.add(skill)
+    return found
+
+
+# --- Página de detalhe (__NEXT_DATA__ + JSON-LD) --------------------------
+
+_RE_NEXT_DATA = re.compile(
+    r'<script[^>]*id="__NEXT_DATA__"[^>]*>(.*?)</script>', re.DOTALL
+)
+_RE_JSONLD = re.compile(
+    r'<script[^>]*type=["\']application/ld\+json["\'][^>]*>(.*?)</script>',
+    re.DOTALL | re.IGNORECASE,
+)
+# Endereço embutido na descrição: "Local: Rua X, 123 - Bairro - Cidade/UF"
+_RE_LOCAL_LINE = re.compile(
+    r"(?:Local|Endere[çc]o)\s*:\s*([^\n\r]{5,250})", re.IGNORECASE
+)
+# "Itupeva/SP" ou "Itupeva - SP" no fim de uma linha
+_RE_CITY_UF = re.compile(r"([A-Za-zÀ-ÿ' .]{2,40})\s*[/-]\s*([A-Z]{2})\b")
+
+
+def _extract_next_data(html: str) -> dict:
+    """Extrai o blob ``__NEXT_DATA__`` (Next.js) e devolve o dict bruto."""
+    m = _RE_NEXT_DATA.search(html)
+    if not m:
+        return {}
+    try:
+        return json.loads(m.group(1))
+    except json.JSONDecodeError:
+        return {}
+
+
+def _extract_jsonld_jobposting(html: str) -> dict:
+    """Procura bloco JSON-LD com ``@type=JobPosting`` (variante SSR da Catho)."""
+    for m in _RE_JSONLD.finditer(html):
+        try:
+            data = json.loads(m.group(1).strip())
+        except json.JSONDecodeError:
+            continue
+        candidates = data if isinstance(data, list) else [data]
+        for entry in candidates:
+            if isinstance(entry, dict) and entry.get("@type") == "JobPosting":
+                return entry
+    return {}
+
+
+def _extract_address_from_text(text: str) -> tuple[str, str, str]:
+    """Procura ``Local:|Endereço:`` na descrição e devolve ``(addr, city, uf)``.
+
+    Útil quando o JSON-LD da Catho devolve só a cidade-sede da empresa em vez
+    do endereço da vaga.
+    """
+    if not text:
+        return "", "", ""
+    m = _RE_LOCAL_LINE.search(text)
+    if not m:
+        return "", "", ""
+    line = m.group(1).strip()
+    city_uf = _RE_CITY_UF.search(line)
+    city = city_uf.group(1).strip() if city_uf else ""
+    uf = city_uf.group(2) if city_uf else ""
+    return line, city, uf
+
+
+def _strip_html_lite(text: str) -> str:
+    """Remove tags HTML básicas e normaliza whitespace."""
+    if not text:
+        return ""
+    text = re.sub(r"<\s*br\s*/?\s*>", "\n", text, flags=re.IGNORECASE)
+    text = re.sub(r"</\s*(?:p|li|ul|ol|div|h[1-6])\s*>", "\n", text, flags=re.IGNORECASE)
+    text = BeautifulSoup(text, "html.parser").get_text("\n")
+    return re.sub(r"\n{3,}", "\n\n", text).strip()
+
+
+def _parse_job_detail(html: str) -> dict:
+    """Extrai campos enriquecidos do HTML da página de detalhe.
+
+    A Catho serve duas variantes:
+      * **CSR Next.js** - ``__NEXT_DATA__`` com ``jobAdData`` (cidade da vaga
+        precisa, em ``vagas[0]``).
+      * **SSR clássico** - JSON-LD ``JobPosting`` (cidade pode ser a sede da
+        empresa, não a da vaga). Fallback.
+
+    Em ambos os casos, refinamos ``city/uf`` extraindo o ``Local:`` da
+    descrição quando presente - é a fonte mais confiável.
+    """
+    out: dict = {
+        "title": "",
+        "company": "",
+        "description": "",
+        "regime": "",
+        "publication_date": "",
+        "city": "",
+        "uf": "",
+        "street_address": "",
+    }
+
+    # --- Camada 1: __NEXT_DATA__ (preferida) ---
+    data = _extract_next_data(html)
+    if data:
+        job = data.get("props", {}).get("pageProps", {}).get("jobAdData") or {}
+        if isinstance(job, dict):
+            out["title"] = (job.get("titulo") or "").strip()
+            out["description"] = _strip_html_lite(job.get("descricao") or "")
+            out["regime"] = (job.get("regimeContrato") or "").strip()
+            out["publication_date"] = _format_iso_date(job.get("data") or "")
+            contr = job.get("contratante") or {}
+            if isinstance(contr, dict) and not contr.get("confidencial"):
+                out["company"] = (contr.get("nome") or "").strip()
+            vagas = job.get("vagas") or []
+            if isinstance(vagas, list) and vagas and isinstance(vagas[0], dict):
+                v0 = vagas[0]
+                out["city"] = (v0.get("cidade") or "").strip()
+                out["uf"] = (v0.get("uf") or "").strip()
+
+    # --- Camada 2: JSON-LD (fallback se __NEXT_DATA__ ausente/incompleto) ---
+    if not out["title"] or not out["description"]:
+        jp = _extract_jsonld_jobposting(html)
+        if jp:
+            if not out["title"]:
+                out["title"] = (jp.get("title") or "").strip()
+            if not out["description"]:
+                out["description"] = _strip_html_lite(jp.get("description") or "")
+            if not out["regime"]:
+                emp = jp.get("employmentType")
+                if isinstance(emp, list):
+                    emp = " ".join(emp)
+                out["regime"] = str(emp or "").strip()
+            if not out["publication_date"]:
+                out["publication_date"] = _format_iso_date(jp.get("datePosted") or "")
+            if not out["company"]:
+                org = jp.get("hiringOrganization") or {}
+                if isinstance(org, dict):
+                    out["company"] = (org.get("name") or "").strip()
+            if not out["city"] or not out["uf"]:
+                loc = jp.get("jobLocation")
+                if isinstance(loc, list):
+                    loc = loc[0] if loc else None
+                if isinstance(loc, dict):
+                    addr = loc.get("address") or {}
+                    if isinstance(addr, dict):
+                        out["city"] = out["city"] or (addr.get("addressLocality") or "").strip()
+                        out["uf"] = out["uf"] or (addr.get("addressRegion") or "").strip()
+
+    # --- Camada 3: refinamento via "Local:" na descrição ---
+    addr, city_d, uf_d = _extract_address_from_text(out["description"])
+    if addr:
+        out["street_address"] = addr
+        # Se a descrição traz cidade/UF e diferem dos dados estruturados,
+        # confiamos na descrição (cidade real da vaga, não sede da empresa).
+        if city_d and uf_d:
+            out["city"] = city_d
+            out["uf"] = uf_d
+
+    return out
+
+
+async def fetch_job_detail(url: str, session=None) -> dict:
+    """Busca a página de detalhe e devolve dict de enriquecimento (vazio em falha)."""
+    session = session or get_session()
+    try:
+        response = await asyncio.to_thread(session.get, url, timeout=30)
+        if response.status_code != 200:
+            return {}
+        return _parse_job_detail(response.text)
+    except Exception:
+        return {}
+
+
+# --- Listing (cards) + função pública -------------------------------------
+
+def _slug_from_url(url: str) -> str:
+    """``/vagas/<slug>/<id>/`` → ``<slug>``."""
+    m = re.search(r"/vagas/([^/]+)/", url)
+    return m.group(1) if m else ""
+
+
+def _parse_job_card(article) -> list | None:
+    """Extrai uma vaga de um ``<article class="offer">``.
+
+    Retorna lista canônica de 8 elementos (sem skills/description), ou ``None``
+    se não tiver dados mínimos. Os campos 9-10 são preenchidos depois pelo
+    enriquecimento da página de detalhe.
     """
     title_el = article.select_one("h2.title_offer a")
     if not title_el or not title_el.get("href"):
@@ -104,11 +388,9 @@ def _parse_card(article) -> list | None:
     if not job_title:
         return None
 
-    # Empresa — span com a microclass usada pela Catho
     company_el = article.select_one("span.text-12")
     company = company_el.get_text(strip=True) if company_el else ""
 
-    # Localização — texto do <p> que contém o ícone i_job_location
     location_str = ""
     for p in article.find_all("p"):
         if p.find("span", class_="i_job_location"):
@@ -118,7 +400,6 @@ def _parse_card(article) -> list | None:
             location_str = text.strip()
             break
 
-    # Salário — <strong> dentro do <p> que tem o ícone i_salary
     salary = ""
     for p in article.find_all("p"):
         if p.find("span", class_="i_salary"):
@@ -139,22 +420,22 @@ def _parse_card(article) -> list | None:
 
 
 async def get_catho_jobs(on_job=None) -> list:
-    """
-    Coleta vagas da Catho navegando o listing por stack/página.
+    """Coleta vagas da Catho navegando o listing por stack/página.
 
     Args:
-        on_job: callback opcional ``async fn(parsed_job: list) -> None`` invocado
-                a cada vaga parseada. Quando o controller passa esse callback,
-                a persistência é em streaming (uma vaga por vez).
+        on_job: callback opcional ``async fn(parsed_job)`` invocado a cada
+                vaga parseada (modo streaming).
 
     Returns:
-        Lista de vagas no formato canônico.
+        Lista de vagas no formato canônico de 10 campos quando o detail
+        fetch está ligado; 8 campos quando desligado.
     """
     jobs: list = []
     seen: set[str] = set()
     session = get_session()
+    fetch_detail = os.getenv("CATHO_FETCH_DETAIL", "1") == "1"
 
-    empty_stack_streak = 0  # stacks consecutivas sem nenhuma vaga nova
+    empty_stack_streak = 0
     max_pages = 5
 
     for stack in get_active_stacks():
@@ -186,21 +467,49 @@ async def get_catho_jobs(on_job=None) -> list:
 
                 added_this_page = 0
                 for art in articles:
-                    parsed = _parse_card(art)
+                    parsed = _parse_job_card(art)
                     if not parsed:
                         continue
                     url_key = parsed[0]
                     if url_key in seen:
                         continue
                     seen.add(url_key)
-                    jobs.append(parsed)
+
+                    # Filtro de relevância: rejeita varejo/serviços antes
+                    # mesmo de gastar request na página de detalhe.
+                    title = parsed[1]
+                    slug = _slug_from_url(url_key)
+                    if not _is_tech_relevant(title, slug):
+                        continue
+
+                    skills: list = []
+                    description = ""
+                    if fetch_detail:
+                        detail = await fetch_job_detail(url_key, session)
+                        if detail:
+                            if detail.get("description"):
+                                description = detail["description"]
+                                skills = _extract_skills(description)
+                            if detail.get("regime"):
+                                parsed[5] = detail["regime"]
+                            if detail.get("publication_date"):
+                                parsed[7] = detail["publication_date"]
+                            if detail.get("company") and not parsed[2]:
+                                parsed[2] = detail["company"]
+                            if detail.get("city") and detail.get("uf"):
+                                parsed[3] = [f"{detail['city']} - {detail['uf']}"]
+                            # work_type pode mudar agora que temos descrição
+                            parsed[4] = _detect_work_type(title, description)
+                        await asyncio.sleep(random.uniform(0.25, 0.5))
+
+                    parsed_full = parsed + [skills, description]
+                    jobs.append(parsed_full)
                     added_this_page += 1
                     added_for_stack += 1
                     if on_job is not None:
                         try:
-                            await on_job(parsed)
+                            await on_job(parsed_full)
                         except Exception:
-                            # Falha no callback não pode matar a engine.
                             pass
 
                 consecutive_empty_pages = 0 if added_this_page else consecutive_empty_pages + 1
@@ -210,24 +519,45 @@ async def get_catho_jobs(on_job=None) -> list:
                 consecutive_empty_pages += 1
                 page += 1
 
-        # Detecção de ban: 3 stacks consecutivas sem nenhuma vaga = sessão queimada.
         if added_for_stack == 0:
             empty_stack_streak += 1
             if empty_stack_streak >= 3:
                 reset_session()
                 session = get_session()
                 empty_stack_streak = 0
-                await asyncio.sleep(random.uniform(8, 15))  # cool-off
+                await asyncio.sleep(random.uniform(8, 15))
         else:
             empty_stack_streak = 0
 
-        await asyncio.sleep(random.uniform(0.8, 1.5))  # pacing entre stacks
+        await asyncio.sleep(random.uniform(0.8, 1.5))
 
     print(f"Foram obtidas {len(jobs)} vagas do site Catho")
     return jobs
 
 
+# --- Modo debug -----------------------------------------------------------
+
 if __name__ == "__main__":
-    result = asyncio.run(get_catho_jobs())
-    for j in result[:10]:
-        print(j)
+    # Modo debug: passa URLs para testar parsing de detalhe.
+    if len(sys.argv) > 1:
+        async def _debug():
+            session = get_session()
+            for u in sys.argv[1:]:
+                d = await fetch_job_detail(u, session)
+                print(f"\n=== {u} ===")
+                print(f"  title    : {d.get('title')}")
+                print(f"  company  : {d.get('company')}")
+                print(f"  city/uf  : {d.get('city')} / {d.get('uf')}")
+                print(f"  regime   : {d.get('regime')}")
+                print(f"  pub_date : {d.get('publication_date')}")
+                desc = d.get("description", "")
+                print(f"  desc     : {desc[:250]}{'...' if len(desc) > 250 else ''}")
+                skills = _extract_skills(desc)
+                print(f"  skills   : {skills}")
+                slug = _slug_from_url(u)
+                print(f"  relevant : {_is_tech_relevant(d.get('title',''), slug)} (slug={slug})")
+        asyncio.run(_debug())
+    else:
+        result = asyncio.run(get_catho_jobs())
+        for j in result[:10]:
+            print(j)
