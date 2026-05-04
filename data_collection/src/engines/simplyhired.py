@@ -1,10 +1,18 @@
 """
-Engine SimplyHired Brasil - Playwright + ``__NEXT_DATA__``.
+Engine SimplyHired Brasil - Playwright (listing) + curl_cffi (detail).
 
-O SimplyHired fica atrás do Cloudflare, que bloqueia ``httpx`` e ``curl_cffi``.
-Por isso usamos Playwright headless (via ``utils.browser_fetch.fetch_html``)
-para renderizar a página, depois extraímos o JSON ``__NEXT_DATA__`` embutido
-no HTML hidratado.
+O SimplyHired fica atrás do Cloudflare, que bloqueia clientes HTTP comuns.
+Para o **listing** ainda precisamos de Playwright headless (via
+``utils.browser_fetch.fetch_html``); já as páginas de **detalhe** passam
+com ``curl_cffi`` impersonando Chrome - bem mais barato.
+
+Fluxo:
+    1. Listing por stack via Playwright → extrai ``__NEXT_DATA__`` para
+       coletar URLs + dados básicos (título, empresa, local).
+    2. Para cada vaga, fetch da página de detalhe via curl_cffi → parseia o
+       JSON-LD ``JobPosting`` para enriquecer com ``description``,
+       ``datePosted`` (ISO) e endereço estruturado (locality/region/country).
+    3. Skills extraídas de ``description`` via ``extract_skills``.
 
 Iteramos por stack do lote ativo, paginando até ``SIMPLYHIRED_MAX_PAGES``
 (default 5).
@@ -19,19 +27,43 @@ import sys
 import urllib.parse
 from datetime import datetime, timedelta
 
+from curl_cffi import requests as cffi_requests
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-from utils.browser_fetch import fetch_html  # noqa: E402
 from variavel import get_active_stacks  # noqa: E402
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+from src.utils.text_utils import extract_skills, strip_html  # noqa: E402
+
+# Import preguiçoso de Playwright: só carrega no listing (que precisa dele
+# pra passar Cloudflare). O fetch_detail usa curl_cffi e roda sem Playwright.
 
 
 # --- Configuração --------------------------------------------------------
 
 SH_MAX_PAGES = int(os.getenv("SIMPLYHIRED_MAX_PAGES", "5"))
+SH_FETCH_DETAIL = os.getenv("SIMPLYHIRED_FETCH_DETAIL", "1") == "1"
+SH_DETAIL_CONCURRENCY = int(os.getenv("SIMPLYHIRED_DETAIL_CONCURRENCY", "5"))
 
 _RE_NEXT_DATA = re.compile(
     r'<script id="__NEXT_DATA__" type="application/json">(.+?)</script>',
     re.DOTALL,
 )
+_RE_JSONLD = re.compile(
+    r'<script[^>]*type=["\']application/ld\+json["\'][^>]*>(.*?)</script>',
+    re.DOTALL | re.IGNORECASE,
+)
+
+
+# Sessão curl_cffi reusada entre fetches de detalhe (Chrome impersonation)
+_detail_session = None
+
+
+def _get_detail_session():
+    global _detail_session
+    if _detail_session is None:
+        _detail_session = cffi_requests.Session(impersonate="chrome120")
+    return _detail_session
 
 
 # --- Helpers privados ----------------------------------------------------
@@ -122,6 +154,79 @@ def _parse_publication_date(item: dict) -> str:
     return _parse_relative_date(date_field)
 
 
+def _parse_jsonld_jobposting(html: str) -> dict | None:
+    """Procura bloco JSON-LD ``@type=JobPosting`` no HTML da página de detalhe."""
+    for blk in _RE_JSONLD.finditer(html):
+        try:
+            data = json.loads(blk.group(1))
+        except (json.JSONDecodeError, ValueError):
+            continue
+        cands = data if isinstance(data, list) else [data]
+        for c in cands:
+            if isinstance(c, dict) and c.get("@type") == "JobPosting":
+                return c
+    return None
+
+
+def _format_jsonld_location(jp: dict) -> str:
+    """Constrói ``"Cidade, ST, CC"`` a partir de ``jobLocation`` do JSON-LD.
+
+    O ``location_normalizer`` do repository extrai ``state_code``/``country_code``
+    a partir desse formato. Devolve string vazia se address ausente.
+    """
+    loc = jp.get("jobLocation") or {}
+    if isinstance(loc, list):
+        loc = loc[0] if loc else {}
+    addr = loc.get("address") if isinstance(loc, dict) else None
+    if not isinstance(addr, dict):
+        return ""
+    parts = [
+        addr.get("addressLocality") or "",
+        addr.get("addressRegion") or "",
+        addr.get("addressCountry") or "",
+    ]
+    parts = [p.strip() for p in parts if p and isinstance(p, str) and p.strip()]
+    return ", ".join(parts)
+
+
+def _format_jsonld_date(jp: dict) -> str:
+    """``'2026-04-01T05:00:00.000Z'`` → ``'01/04/2026'`` (vazio se ausente)."""
+    raw = (jp.get("datePosted") or "")[:10]
+    if len(raw) == 10 and "-" in raw:
+        y, m, d = raw.split("-")
+        return f"{d}/{m}/{y}"
+    return ""
+
+
+async def _fetch_job_detail(link: str, semaphore: asyncio.Semaphore) -> dict:
+    """Busca detalhe via curl_cffi e devolve enriquecimentos.
+
+    Returns:
+        Dict com chaves opcionais ``description``, ``skills``,
+        ``publication_date``, ``location_str`` (ex.: ``'Salvador, BA, BR'``).
+        Vazio se o fetch ou parse falhar - caller decide o fallback.
+    """
+    async with semaphore:
+        try:
+            session = _get_detail_session()
+            response = await asyncio.to_thread(session.get, link, timeout=20)
+            if response.status_code != 200:
+                return {}
+            jp = _parse_jsonld_jobposting(response.text)
+            if not jp:
+                return {}
+            description = strip_html(jp.get("description", ""))
+            skills = extract_skills(description) if description else []
+            return {
+                "description": description,
+                "skills": skills,
+                "publication_date": _format_jsonld_date(jp),
+                "location_str": _format_jsonld_location(jp),
+            }
+        except Exception:
+            return {}
+
+
 def _parse_job_item(item: dict, seen: set) -> list | None:
     """Converte um item da API SimplyHired em lista canônica.
 
@@ -170,8 +275,10 @@ def _parse_job_item(item: dict, seen: set) -> list | None:
     salary = item.get("salary", "") or item.get("salaryText", "") or item.get("formattedSalary", "")
     publication_date = _parse_publication_date(item)
 
+    # ``skills`` e ``description`` ficam vazios aqui - são preenchidos pelo
+    # fetch de detalhe (JSON-LD ``description``) em ``get_simplyhired_jobs``.
     return [link, job_title, company, location, work_type,
-            hiring_regime, salary, publication_date]
+            hiring_regime, salary, publication_date, [], ""]
 
 
 # --- Função pública ------------------------------------------------------
@@ -190,8 +297,35 @@ async def get_simplyhired_jobs(on_job=None) -> list:
     Returns:
         Lista no formato canônico de 8 campos.
     """
+    # Import preguiçoso: Playwright só é necessário para o listing
+    from utils.browser_fetch import fetch_html  # noqa: E402
+
     jobs = []
     seen: set[str] = set()
+    semaphore = asyncio.Semaphore(SH_DETAIL_CONCURRENCY)
+
+    async def _enrich_and_emit(parsed: list) -> None:
+        """Faz fetch de detalhe (best-effort) e mescla os campos antes de emitir."""
+        if SH_FETCH_DETAIL:
+            extra = await _fetch_job_detail(parsed[0], semaphore)
+            if extra:
+                # publication_date: detalhe (ISO) tem precedência sobre relativo do listing
+                if extra.get("publication_date"):
+                    parsed[7] = extra["publication_date"]
+                # location: usa o endereço estruturado do JSON-LD se vier
+                # (location é a posição [3]; controllers junta lista com " - ")
+                if extra.get("location_str"):
+                    parsed[3] = extra["location_str"]
+                if extra.get("skills"):
+                    parsed[8] = extra["skills"]
+                if extra.get("description"):
+                    parsed[9] = extra["description"]
+        jobs.append(parsed)
+        if on_job is not None:
+            try:
+                await on_job(parsed)
+            except Exception:
+                pass
 
     for stack in get_active_stacks():
         for page in range(1, SH_MAX_PAGES + 1):
@@ -215,24 +349,20 @@ async def get_simplyhired_jobs(on_job=None) -> list:
             if not job_list:
                 break
 
-            added = 0
+            page_parsed: list[list] = []
             for item in job_list:
                 try:
                     parsed = _parse_job_item(item, seen)
                 except Exception:
                     continue
-                if not parsed:
-                    continue
-                jobs.append(parsed)
-                added += 1
-                if on_job is not None:
-                    try:
-                        await on_job(parsed)
-                    except Exception:
-                        pass
+                if parsed:
+                    page_parsed.append(parsed)
 
-            if added == 0:
+            if not page_parsed:
                 break
+
+            # Enriquecimento (detalhe) em paralelo, bounded pelo semáforo
+            await asyncio.gather(*(_enrich_and_emit(p) for p in page_parsed))
             await asyncio.sleep(0.3)
 
     print(f"Foram obtidas {len(jobs)} vagas do site SimplyHired")

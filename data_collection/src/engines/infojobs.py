@@ -15,16 +15,29 @@ import os
 import sys
 import urllib.parse
 
-import httpx
 from bs4 import BeautifulSoup
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 from variavel import get_active_stacks  # noqa: E402
+from src.utils.http_session import HttpSession  # noqa: E402
+from src.utils.text_utils import extract_skills, strip_html  # noqa: E402
+
+
+# --- Sessão (padrão httpx compartilhado) ---------------------------------
+
+_SESSION = HttpSession()
+
+
+async def get_session():
+    return await _SESSION.get_client()
+
+
+def reset_session() -> None:
+    _SESSION.reset()
 
 
 # --- Configuração --------------------------------------------------------
 
-_TIMEOUT = httpx.Timeout(30.0)
 _FETCH_CONCURRENCY = 8
 
 
@@ -98,7 +111,11 @@ def _parse_job_detail(html: str, link: str) -> list | None:
     else:
         publication_date = date_raw
 
-    return [link, title, company, location, work_type, hiring_regime, salary, publication_date]
+    description = strip_html(data.get("description", ""))
+    skills = extract_skills(description) if description else []
+
+    return [link, title, company, location, work_type, hiring_regime, salary, publication_date,
+            skills, description]
 
 
 # --- Fase 1: coleta de links ---------------------------------------------
@@ -108,29 +125,29 @@ async def get_infojobs_links() -> list[str]:
     links: list[str] = []
     seen: set[str] = set()
 
-    async with httpx.AsyncClient(timeout=_TIMEOUT, follow_redirects=True) as client:
-        for stack in get_active_stacks():
-            encoded = urllib.parse.quote(stack)
-            url = (
-                f"https://www.infojobs.com.br/empregos.aspx"
-                f"?palabra={encoded}&page=1&limit=20"
-            )
-            try:
-                response = await client.get(url)
-            except Exception:
-                continue
-            if response.status_code != 200:
-                continue
+    client = await get_session()
+    for stack in get_active_stacks():
+        encoded = urllib.parse.quote(stack)
+        url = (
+            f"https://www.infojobs.com.br/empregos.aspx"
+            f"?palabra={encoded}&page=1&limit=20"
+        )
+        try:
+            response = await client.get(url)
+        except Exception:
+            continue
+        if response.status_code != 200:
+            continue
 
-            soup = BeautifulSoup(response.text, "html.parser")
-            for cell in soup.find_all("div", class_="js_vacancyLoad"):
-                href = cell.get("data-href")
-                if not href:
-                    continue
-                full = f"https://www.infojobs.com.br{href}"
-                if full not in seen:
-                    seen.add(full)
-                    links.append(full)
+        soup = BeautifulSoup(response.text, "html.parser")
+        for cell in soup.find_all("div", class_="js_vacancyLoad"):
+            href = cell.get("data-href")
+            if not href:
+                continue
+            full = f"https://www.infojobs.com.br{href}"
+            if full not in seen:
+                seen.add(full)
+                links.append(full)
 
     return links
 
@@ -157,9 +174,9 @@ async def get_infojobs_jobs(on_job=None) -> list:
     async def _fetch(link: str) -> list | None:
         """Fetch + parse de uma URL, respeitando o semáforo."""
         async with semaphore:
+            client = await get_session()
             try:
-                async with httpx.AsyncClient(timeout=_TIMEOUT, follow_redirects=True) as client:
-                    response = await client.get(link)
+                response = await client.get(link)
             except Exception:
                 return None
             if response.status_code != 200:

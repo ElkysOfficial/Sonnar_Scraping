@@ -16,12 +16,6 @@ from ..engines.simplyhired import get_simplyhired_jobs
 from ..engines.weworkremotely import get_weworkremotely_jobs
 from ..engines.ziprecruiter import get_ziprecruiter_jobs
 
-# Engines desabilitadas (auditoria 2026-05-03):
-#   • remoteco   → JS-rendering pesado, listing sem jobs reais sem stealth/CAPTCHA solver
-#   • wellfound  → Cloudflare hard-challenge (Turnstile) bloqueia até Playwright headless
-# Os arquivos de engine foram preservados em src/engines/ para reativação futura
-# (ex.: integração com proxy residencial ou stealth plugin).
-
 getters = [
     get_bne_jobs,
     get_careerjet_jobs,

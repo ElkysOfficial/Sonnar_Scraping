@@ -21,6 +21,7 @@ from curl_cffi import requests
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 from variavel import get_active_stacks  # noqa: E402
+from src.utils.text_utils import extract_skills, strip_html  # noqa: E402
 
 
 # --- Sessão ---------------------------------------------------------------
@@ -137,6 +138,9 @@ def _parse_jsonld_jobposting(soup) -> dict | None:
     else:
         publication_date = date_raw
 
+    description = strip_html(data.get("description", ""))
+    skills = extract_skills(description) if description else []
+
     return {
         "title": job_title,
         "company": company,
@@ -145,6 +149,8 @@ def _parse_jsonld_jobposting(soup) -> dict | None:
         "hiring_regime": hiring_regime,
         "salary": salary,
         "publication_date": publication_date,
+        "skills": skills,
+        "description": description,
     }
 
 
@@ -196,6 +202,13 @@ def _parse_html_fallback(soup) -> dict | None:
     else:
         work_type = "Presencial"
 
+    # Fallback: extrai descrição do bloco principal e roda extract_skills
+    description = ""
+    desc_block = soup.find("div", id="jobDescriptionText")
+    if desc_block:
+        description = strip_html(str(desc_block))
+    skills = extract_skills(description) if description else []
+
     return {
         "title": job_title,
         "company": company,
@@ -204,6 +217,8 @@ def _parse_html_fallback(soup) -> dict | None:
         "hiring_regime": "",
         "salary": "",
         "publication_date": "",
+        "skills": skills,
+        "description": description,
     }
 
 
@@ -235,6 +250,8 @@ async def _fetch_job_detail(link: str, semaphore: asyncio.Semaphore) -> list | N
                 data["hiring_regime"],
                 data["salary"],
                 data["publication_date"],
+                data.get("skills", []),
+                data.get("description", ""),
             ]
 
         except Exception:

@@ -15,8 +15,23 @@ import json
 import os
 import re
 
-import httpx
 from bs4 import BeautifulSoup
+
+from ..utils.text_utils import extract_skills, strip_html
+from ..utils.http_session import HttpSession
+
+
+# --- Sessão (padrão httpx compartilhado) ---------------------------------
+
+_SESSION = HttpSession()
+
+
+async def get_session():
+    return await _SESSION.get_client()
+
+
+def reset_session() -> None:
+    _SESSION.reset()
 
 
 # --- Configuração ---------------------------------------------------------
@@ -47,36 +62,36 @@ async def get_programathor_links() -> list:
     max_empty_pages = int(os.getenv("PROGRAMATHOR_MAX_EMPTY_PAGES", "1"))
     page = 1
     empty_pages = 0
+    client = await get_session()
     while page <= max_pages and empty_pages < max_empty_pages:
         try:
-            async with httpx.AsyncClient(timeout=30) as client:
-                response = await client.get(f"https://programathor.com.br/jobs/page/{page}")
+            response = await client.get(f"https://programathor.com.br/jobs/page/{page}")
 
-                if response.status_code != 200:
-                    empty_pages += 1
-                    page += 1
-                    continue
-
-                soup = BeautifulSoup(response.content, "html.parser")
-                cells = soup.find_all("div", class_="cell-list")
-
-                if not cells:
-                    empty_pages += 1
-                    page += 1
-                    continue
-
-                empty_pages = 0
-                for cell in cells:
-                    job_title_elem = cell.find("h3")
-                    if job_title_elem is None or job_title_elem.text.startswith("Vencida"):
-                        continue
-
-                    link_elem = cell.find("a")
-                    if link_elem and link_elem.get("href"):
-                        link = f"https://programathor.com.br{link_elem['href']}"
-                        if link not in links:
-                            links.append(link)
+            if response.status_code != 200:
+                empty_pages += 1
                 page += 1
+                continue
+
+            soup = BeautifulSoup(response.content, "html.parser")
+            cells = soup.find_all("div", class_="cell-list")
+
+            if not cells:
+                empty_pages += 1
+                page += 1
+                continue
+
+            empty_pages = 0
+            for cell in cells:
+                job_title_elem = cell.find("h3")
+                if job_title_elem is None or job_title_elem.text.startswith("Vencida"):
+                    continue
+
+                link_elem = cell.find("a")
+                if link_elem and link_elem.get("href"):
+                    link = f"https://programathor.com.br{link_elem['href']}"
+                    if link not in links:
+                        links.append(link)
+            page += 1
         except Exception:
             empty_pages += 1
             page += 1
@@ -98,11 +113,11 @@ async def get_programathor_jobs(on_job=None) -> list:
     """
     jobs = []
     job_links = await get_programathor_links()
+    client = await get_session()
 
     for link in job_links:
         try:
-            async with httpx.AsyncClient(timeout=30) as client:
-                response = await client.get(link)
+            response = await client.get(link)
 
             if response.status_code != 200:
                 continue
@@ -188,7 +203,11 @@ async def get_programathor_jobs(on_job=None) -> list:
             else:
                 publication_date = date_raw
 
-            job = [link, job_title, company, location, work_type, hiring_regime, salary, publication_date]
+            description = strip_html(data.get("description", ""))
+            skills = extract_skills(description) if description else []
+
+            job = [link, job_title, company, location, work_type, hiring_regime, salary, publication_date,
+                   skills, description]
             jobs.append(job)
             if on_job is not None:
                 try:

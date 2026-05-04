@@ -19,8 +19,6 @@ ENGINES = [
     "indeed", "infojobs", "jooble", "linkedin", "michaelpage",
     "programathor", "remoteok", "remotive",
     "simplyhired", "weworkremotely", "ziprecruiter",
-    # Bloqueadas (mantidas no harness para visibilidade):
-    "remoteco", "wellfound",
 ]
 
 PER_ENGINE_TIMEOUT = int(os.getenv("ENGINE_TIMEOUT", "1800"))  # 30 min por engine (tunável)
