@@ -120,6 +120,12 @@ async def _process_one_job(
     if not job_url or job_url in sent_jobs:
         return
 
+    # Marca ANTES do await pra fechar race com outras engines concorrentes:
+    # asyncio é cooperativo - se a marcação ficasse pós-save, dois callers
+    # poderiam passar o check antes de qualquer save começar e o CSV
+    # (que é append-only sem dedup interno) gravaria duplicata.
+    sent_jobs.add(job_url)
+
     try:
         title = job_data.get("job_title", "")
         job_data["salary"] = process_salary(job_data.get("salary", ""), title)
@@ -131,12 +137,11 @@ async def _process_one_job(
         persisted = await repo.save(job_data, source=engine)
     except Exception as exc:
         logger.error("Erro ao persistir %s: %s", job_url, exc)
+        sent_jobs.discard(job_url)  # libera pra retry numa próxima tentativa
         return
 
     if not persisted:
-        return
-
-    sent_jobs.add(job_url)
+        sent_jobs.discard(job_url)
 
 
 # ---------------------------------------------------------------------------
