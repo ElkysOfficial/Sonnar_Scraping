@@ -29,31 +29,64 @@ from .supabase_client import SupabaseJobsClient
 logger = logging.getLogger(__name__)
 
 
-def _parse_salary_range(salary_text: str) -> Tuple[Optional[int], Optional[int]]:
-    """
-    Extrai (min, max) em inteiros a partir de uma string de salario ja processada
-    pelo jobsUtils.process_salary (formatos como 'R$ 8.000 - R$ 12.000', 'R$ 5.000', etc.).
+def _detect_currency(salary_text: str) -> str:
+    """Detecta moeda a partir do texto. Default: BRL (compat com engines legadas)."""
+    if not salary_text:
+        return 'BRL'
+    t = salary_text.upper()
+    if 'USD' in t or ('$' in salary_text and 'R$' not in salary_text):
+        return 'USD'
+    if 'EUR' in t or '€' in salary_text:
+        return 'EUR'
+    if 'GBP' in t or '£' in salary_text:
+        return 'GBP'
+    return 'BRL'
 
-    Retorna (None, None) se nao conseguir extrair.
+
+# Tetos por moeda - evitam ruído (ex.: ano "2024" virando salário).
+# USD/EUR/GBP têm teto alto porque são valores anuais (até C-level ~$1M).
+# BRL é mensal e raramente passa de R$200k.
+_CURRENCY_RANGES = {
+    'BRL': (500, 200_000),
+    'USD': (5_000, 1_000_000),
+    'EUR': (5_000, 1_000_000),
+    'GBP': (5_000, 1_000_000),
+}
+
+
+def _parse_salary_range(salary_text: str, currency: str = 'BRL') -> Tuple[Optional[int], Optional[int]]:
+    """
+    Extrai (min, max) em inteiros a partir de uma string de salário.
+
+    O ``currency`` ajusta o filtro de ruído: salários USD/EUR/GBP costumam
+    ser anuais (até ~1M) enquanto BRL é mensal (até ~200k).
     """
     if not salary_text or not isinstance(salary_text, str):
         return None, None
 
-    numbers = re.findall(r'\d{1,3}(?:[.\s]\d{3})*(?:[.,]\d{2})?|\d+(?:[.,]\d{2})?', salary_text)
+    lo, hi = _CURRENCY_RANGES.get(currency, _CURRENCY_RANGES['BRL'])
+
+    numbers = re.findall(r'\d{1,3}(?:[.,\s]\d{3})*(?:[.,]\d{2})?|\d+(?:[.,]\d{2})?', salary_text)
     values = []
     for raw in numbers:
         cleaned = raw.replace(' ', '')
-        if '.' in cleaned and ',' in cleaned:
-            cleaned = cleaned.replace('.', '').replace(',', '.')
-        elif ',' in cleaned:
-            cleaned = cleaned.replace('.', '').replace(',', '.')
+        # Para USD: vírgula é separador de milhar, ponto é decimal.
+        # Para BRL: ponto é separador de milhar, vírgula é decimal.
+        if currency == 'BRL':
+            if '.' in cleaned and ',' in cleaned:
+                cleaned = cleaned.replace('.', '').replace(',', '.')
+            elif ',' in cleaned:
+                cleaned = cleaned.replace('.', '').replace(',', '.')
+            else:
+                parts = cleaned.split('.')
+                if len(parts) > 2 or (len(parts) == 2 and len(parts[1]) == 3):
+                    cleaned = cleaned.replace('.', '')
         else:
-            parts = cleaned.split('.')
-            if len(parts) > 2 or (len(parts) == 2 and len(parts[1]) == 3):
-                cleaned = cleaned.replace('.', '')
+            # USD/EUR/GBP: descarta vírgulas (milhar), preserva ponto decimal.
+            cleaned = cleaned.replace(',', '')
         try:
             value = float(cleaned)
-            if 500 <= value <= 200000:  # filtra ruido
+            if lo <= value <= hi:
                 values.append(int(value))
         except ValueError:
             continue
@@ -92,7 +125,14 @@ def build_job_payload(job_data: dict, source: Optional[str] = None) -> dict:
     state_code, country_code = normalize_location(location_raw or '')
 
     salary_raw = job_data.get('salary') or None
-    salary_min, salary_max = _parse_salary_range(salary_raw or '')
+    currency = _detect_currency(salary_raw or '')
+    salary_min, salary_max = _parse_salary_range(salary_raw or '', currency=currency)
+
+    skills = job_data.get('skills') or None
+    if isinstance(skills, list) and not skills:
+        skills = None
+
+    description = (job_data.get('description') or '').strip() or None
 
     payload = {
         'job_url': job_data.get('job_url'),
@@ -106,9 +146,11 @@ def build_job_payload(job_data: dict, source: Optional[str] = None) -> dict:
         'salary_raw': salary_raw,
         'salary_min': salary_min,
         'salary_max': salary_max,
-        'salary_currency': 'BRL',
+        'salary_currency': currency,
         'publication_date': _parse_date(job_data.get('publication_date', '')),
         'source': source,
+        'skills': skills,
+        'description': description,
         'scraped_at': datetime.now(timezone.utc).isoformat(),
     }
     # Remove chaves com None para nao sobrescrever defaults na tabela
@@ -154,7 +196,7 @@ class JobsRepository:
         """
         Normaliza ``job_data`` e persiste nos três sinks (JSON, CSV, Supabase).
 
-        Cada sink é independente — uma falha não bloqueia os outros. A função
+        Cada sink é independente - uma falha não bloqueia os outros. A função
         retorna True se **ao menos um** sink confirmou, garantindo que o job
         não some completamente em caso de falha parcial.
 
@@ -169,7 +211,7 @@ class JobsRepository:
         if not payload.get('job_url'):
             return False
 
-        # 1) JSON local — fonte de verdade pro bot de envio de mensagens
+        # 1) JSON local - fonte de verdade pro bot de envio de mensagens
         local_ok = True
         try:
             self.local.upsert(payload)
@@ -177,10 +219,10 @@ class JobsRepository:
             logger.error('Falha local_store.upsert: %s', exc)
             local_ok = False
 
-        # 2) CSV append-only — histórico imutável para analytics
+        # 2) CSV append-only - histórico imutável para analytics
         csv_ok = self.csv.append(payload)
 
-        # 3) Supabase — alimenta agregados da landing-page
+        # 3) Supabase - alimenta agregados da landing-page
         supa_ok = await self.supabase.upsert_job(payload)
 
         if not (local_ok or csv_ok or supa_ok):

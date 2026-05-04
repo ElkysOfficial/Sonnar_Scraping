@@ -24,6 +24,15 @@ BR_STATES = {
     'SP', 'SE', 'TO',
 }
 
+# Estados/territórios US (ISO 3166-2:US, sem prefixo)
+US_STATES = {
+    'AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA', 'HI', 'ID',
+    'IL', 'IN', 'IA', 'KS', 'KY', 'LA', 'ME', 'MD', 'MA', 'MI', 'MN', 'MS',
+    'MO', 'MT', 'NE', 'NV', 'NH', 'NJ', 'NM', 'NY', 'NC', 'ND', 'OH', 'OK',
+    'OR', 'PA', 'RI', 'SC', 'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV',
+    'WI', 'WY', 'DC', 'PR',
+}
+
 # Nome em portugues -> UF (para casos sem sigla explicita)
 BR_STATE_NAMES = {
     'acre': 'AC', 'alagoas': 'AL', 'amapa': 'AP', 'amazonas': 'AM',
@@ -80,7 +89,7 @@ COUNTRY_NAMES = {
     'turquia': 'TR', 'turkey': 'TR',
     'russia': 'RU',
     'ucrania': 'UA', 'ukraine': 'UA',
-    'romenia': 'RO', 'romania': 'RO',  # ROU pais — colide com sigla RO de Rondonia, tratado abaixo
+    'romenia': 'RO', 'romania': 'RO',  # ROU pais - colide com sigla RO de Rondonia, tratado abaixo
     'republica tcheca': 'CZ', 'czech republic': 'CZ', 'czechia': 'CZ',
     'hungria': 'HU', 'hungary': 'HU',
     'bulgaria': 'BG',
@@ -89,7 +98,7 @@ COUNTRY_NAMES = {
     'bolivia': 'BO',
     'equador': 'EC', 'ecuador': 'EC',
     'costa rica': 'CR',
-    'panama': 'PA',  # colide com UF Para PA — tratado pelo contexto BR
+    'panama': 'PA',  # colide com UF Para PA - tratado pelo contexto BR
     'guatemala': 'GT',
     'cuba': 'CU',
     'jamaica': 'JM',
@@ -188,16 +197,23 @@ def normalize_location(raw_location: str) -> Tuple[Optional[str], Optional[str]]
 
     normalized = _normalize(raw)
 
-    # Detecta UF primeiro (mais especifico)
-    uf = _detect_uf(raw)
-    if uf:
-        # Se tem UF brasileira, country eh BR mesmo que nao esteja escrito
-        return uf, 'BR'
-
-    # Sem UF: procura pais
+    # Detecta país primeiro (info mais confiável quando vier explícita)
     country = _detect_country(normalized)
+
+    # Tenta UF brasileira (ambígua com US - só vale se country for BR ou desconhecido)
+    if country in (None, 'BR'):
+        uf = _detect_uf(raw)
+        if uf:
+            return uf, 'BR'
+
+    # Estado US: padrão "City, ST" / "City, ST, US"
+    us_match = re.search(r',\s*([A-Z]{2})(?:\s*,|\s*$)', raw)
+    if us_match and us_match.group(1) in US_STATES:
+        # Se country foi explicitamente outro, respeita; senão assume US.
+        return us_match.group(1), country or 'US'
+
     if country:
         return None, country
 
-    # Vaga remota sem indicador de pais: nao da pra atribuir
+    # Vaga remota sem indicador de país: nao da pra atribuir
     return None, None
