@@ -42,8 +42,6 @@ data_collection/
     ├── utils/
     │   ├── jobsUtils.py          # formatação de salário
     │   └── browser_fetch.py      # helper Playwright (CF bypass — só simplyhired)
-    ├── routes/                   # roteamento p/ embed Discord
-    ├── models/models.py          # classe Job (dict-like com .to_dict)
     └── data/
         ├── jobs.json             # SAÍDA: estado atual de todas as vagas
         └── job.csv               # SAÍDA: histórico append-only
