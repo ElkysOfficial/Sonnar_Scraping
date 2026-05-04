@@ -12,33 +12,128 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.5"
   }
-  graphql_public: {
-    Tables: {
-      [_ in never]: never
-    }
-    Views: {
-      [_ in never]: never
-    }
-    Functions: {
-      graphql: {
-        Args: {
-          extensions?: Json
-          operationName?: string
-          query?: string
-          variables?: Json
-        }
-        Returns: Json
-      }
-    }
-    Enums: {
-      [_ in never]: never
-    }
-    CompositeTypes: {
-      [_ in never]: never
-    }
-  }
   public: {
     Tables: {
+      contact_leads: {
+        Row: {
+          created_at: string
+          email: string
+          id: string
+          name: string
+          seniority: string
+          source: string
+          stack: string
+          whatsapp: string
+        }
+        Insert: {
+          created_at?: string
+          email: string
+          id?: string
+          name: string
+          seniority: string
+          source?: string
+          stack: string
+          whatsapp: string
+        }
+        Update: {
+          created_at?: string
+          email?: string
+          id?: string
+          name?: string
+          seniority?: string
+          source?: string
+          stack?: string
+          whatsapp?: string
+        }
+        Relationships: []
+      }
+      jobs: {
+        Row: {
+          company: string | null
+          country_code: string | null
+          hiring_regime: string | null
+          id: string
+          job_title: string
+          job_url: string
+          location_raw: string | null
+          publication_date: string | null
+          salary_currency: string | null
+          salary_max: number | null
+          salary_min: number | null
+          salary_raw: string | null
+          scraped_at: string
+          source: string | null
+          state_code: string | null
+          updated_at: string
+          work_type: string | null
+        }
+        Insert: {
+          company?: string | null
+          country_code?: string | null
+          hiring_regime?: string | null
+          id?: string
+          job_title: string
+          job_url: string
+          location_raw?: string | null
+          publication_date?: string | null
+          salary_currency?: string | null
+          salary_max?: number | null
+          salary_min?: number | null
+          salary_raw?: string | null
+          scraped_at?: string
+          source?: string | null
+          state_code?: string | null
+          updated_at?: string
+          work_type?: string | null
+        }
+        Update: {
+          company?: string | null
+          country_code?: string | null
+          hiring_regime?: string | null
+          id?: string
+          job_title?: string
+          job_url?: string
+          location_raw?: string | null
+          publication_date?: string | null
+          salary_currency?: string | null
+          salary_max?: number | null
+          salary_min?: number | null
+          salary_raw?: string | null
+          scraped_at?: string
+          source?: string | null
+          state_code?: string | null
+          updated_at?: string
+          work_type?: string | null
+        }
+        Relationships: []
+      }
+      stripe_events: {
+        Row: {
+          error: string | null
+          event_id: string
+          event_type: string
+          id: string
+          payload: Json | null
+          processed_at: string
+        }
+        Insert: {
+          error?: string | null
+          event_id: string
+          event_type: string
+          id?: string
+          payload?: Json | null
+          processed_at?: string
+        }
+        Update: {
+          error?: string | null
+          event_id?: string
+          event_type?: string
+          id?: string
+          payload?: Json | null
+          processed_at?: string
+        }
+        Relationships: []
+      }
       subscriber_profiles: {
         Row: {
           created_at: string
@@ -88,41 +183,83 @@ export type Database = {
       }
       subscribers: {
         Row: {
+          birth_date: string | null
+          cep: string | null
+          city: string | null
+          cnpj: string | null
+          complement: string | null
+          cpf: string | null
           created_at: string
           current_period_end: string | null
           email: string
           id: string
+          legal_name: string | null
           name: string
+          neighborhood: string | null
+          person_type: Database["public"]["Enums"]["person_type"] | null
+          phone: string | null
           plan: Database["public"]["Enums"]["plan_tier"]
+          state_code: string | null
           status: Database["public"]["Enums"]["subscription_status"]
+          street: string | null
+          street_number: string | null
           stripe_customer_id: string | null
           stripe_subscription_id: string | null
+          surname: string | null
           updated_at: string
           user_id: string
         }
         Insert: {
+          birth_date?: string | null
+          cep?: string | null
+          city?: string | null
+          cnpj?: string | null
+          complement?: string | null
+          cpf?: string | null
           created_at?: string
           current_period_end?: string | null
           email: string
           id?: string
+          legal_name?: string | null
           name: string
+          neighborhood?: string | null
+          person_type?: Database["public"]["Enums"]["person_type"] | null
+          phone?: string | null
           plan?: Database["public"]["Enums"]["plan_tier"]
+          state_code?: string | null
           status?: Database["public"]["Enums"]["subscription_status"]
+          street?: string | null
+          street_number?: string | null
           stripe_customer_id?: string | null
           stripe_subscription_id?: string | null
+          surname?: string | null
           updated_at?: string
           user_id: string
         }
         Update: {
+          birth_date?: string | null
+          cep?: string | null
+          city?: string | null
+          cnpj?: string | null
+          complement?: string | null
+          cpf?: string | null
           created_at?: string
           current_period_end?: string | null
           email?: string
           id?: string
+          legal_name?: string | null
           name?: string
+          neighborhood?: string | null
+          person_type?: Database["public"]["Enums"]["person_type"] | null
+          phone?: string | null
           plan?: Database["public"]["Enums"]["plan_tier"]
+          state_code?: string | null
           status?: Database["public"]["Enums"]["subscription_status"]
+          street?: string | null
+          street_number?: string | null
           stripe_customer_id?: string | null
           stripe_subscription_id?: string | null
+          surname?: string | null
           updated_at?: string
           user_id?: string
         }
@@ -154,10 +291,33 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      get_jobs_by_country: {
+        Args: never
+        Returns: {
+          count: number
+          country_code: string
+        }[]
+      }
+      get_jobs_by_uf: {
+        Args: never
+        Returns: {
+          count: number
+          state_code: string
+        }[]
+      }
+      get_jobs_stats: {
+        Args: never
+        Returns: {
+          last_scraped_at: string
+          last_week_count: number
+          total_count: number
+        }[]
+      }
       is_admin: { Args: { _user_id: string }; Returns: boolean }
     }
     Enums: {
       app_role: "owner" | "admin"
+      person_type: "pf" | "pj"
       plan_tier: "free" | "pro" | "plus"
       seniority_level: "junior" | "pleno" | "senior" | "staff_lead"
       subscription_status: "pending" | "active" | "past_due" | "canceled"
@@ -286,15 +446,14 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
-  graphql_public: {
-    Enums: {},
-  },
   public: {
     Enums: {
       app_role: ["owner", "admin"],
+      person_type: ["pf", "pj"],
       plan_tier: ["free", "pro", "plus"],
       seniority_level: ["junior", "pleno", "senior", "staff_lead"],
       subscription_status: ["pending", "active", "past_due", "canceled"],
     },
   },
 } as const
+<claude-code-hint v="1" type="plugin" value="supabase@claude-plugins-official" />
