@@ -15,10 +15,23 @@ import sys
 import urllib.parse
 from urllib.parse import urlparse, urlunparse
 
-import httpx
-
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from variavel import get_active_stacks  # noqa: E402
+from src.utils.http_session import HttpSession  # noqa: E402
+from src.utils.text_utils import extract_skills, strip_html  # noqa: E402
+
+
+# --- Sessão (padrão httpx compartilhado) ---------------------------------
+
+_SESSION = HttpSession()
+
+
+async def get_session():
+    return await _SESSION.get_client()
+
+
+def reset_session() -> None:
+    _SESSION.reset()
 
 
 # --- Mapeamentos do domínio Gupy → vocabulário interno --------------------
@@ -95,7 +108,14 @@ def _parse_job_item(item: dict) -> list:
     else:
         publication_date = date_raw
 
-    return [link, title, company, location, work_type, hiring_regime, "", publication_date]
+    # A API listing já devolve a descrição completa em ``description`` -
+    # texto sem tags na maioria das vagas, mas com entidades HTML eventuais
+    # (``&nbsp;``); ``strip_html`` resolve via BeautifulSoup.
+    description = strip_html(item.get("description", ""))
+    skills = extract_skills(description) if description else []
+
+    return [link, title, company, location, work_type, hiring_regime, "", publication_date,
+            skills, description]
 
 
 # --- Função pública -------------------------------------------------------
@@ -115,29 +135,29 @@ async def get_gupy_jobs(on_job=None) -> list:
     jobs: list = []
     seen: set[str] = set()
 
-    async with httpx.AsyncClient(timeout=30) as client:
-        for stack in get_active_stacks():
-            encoded = urllib.parse.quote(stack)
-            url = f"https://portal.api.gupy.io/api/v1/jobs?jobName={encoded}&limit=1000"
-            try:
-                response = await client.get(url)
-            except Exception:
-                continue
-            if response.status_code != 200:
-                continue
+    client = await get_session()
+    for stack in get_active_stacks():
+        encoded = urllib.parse.quote(stack)
+        url = f"https://portal.api.gupy.io/api/v1/jobs?jobName={encoded}&limit=1000"
+        try:
+            response = await client.get(url)
+        except Exception:
+            continue
+        if response.status_code != 200:
+            continue
 
-            for item in response.json().get("data", []):
-                parsed = _parse_job_item(item)
-                job_url = parsed[0]
-                if not job_url or job_url in seen:
-                    continue
-                seen.add(job_url)
-                jobs.append(parsed)
-                if on_job is not None:
-                    try:
-                        await on_job(parsed)
-                    except Exception:
-                        pass
+        for item in response.json().get("data", []):
+            parsed = _parse_job_item(item)
+            job_url = parsed[0]
+            if not job_url or job_url in seen:
+                continue
+            seen.add(job_url)
+            jobs.append(parsed)
+            if on_job is not None:
+                try:
+                    await on_job(parsed)
+                except Exception:
+                    pass
 
     print(f"Foram obtidas {len(jobs)} vagas do site Gupy")
     return jobs
