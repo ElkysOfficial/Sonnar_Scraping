@@ -187,6 +187,13 @@ def normalize_location(raw_location: str) -> Tuple[Optional[str], Optional[str]]
       1. Tenta detectar UF brasileira; se acha, country = 'BR'.
       2. Caso contrario, tenta detectar pais por nome.
       3. Tokens de remote sem outra info → (None, None).
+
+    Casos especiais:
+      - "PA, US" / "CA, US" (sem cidade): primeira sigla eh tratada como
+        state US porque o country eh explicito.
+      - "Pittsburgh, PA, US": pega state US no token do meio.
+      - UFs brasileiras com sigla coincidente (PA, MA, MS, MT, MG, SC,
+        AL, AM, RO, RJ, ...) sao desambiguadas pelo country explicito.
     """
     if not raw_location:
         return None, None
@@ -200,6 +207,14 @@ def normalize_location(raw_location: str) -> Tuple[Optional[str], Optional[str]]
     # Detecta país primeiro (info mais confiável quando vier explícita)
     country = _detect_country(normalized)
 
+    # Quando country eh US (explicito), procura state US em qualquer
+    # posicao da string - inclusive antes da virgula final como em "PA, US".
+    if country == 'US':
+        for token in re.findall(r'\b([A-Z]{2})\b', raw):
+            if token in US_STATES and token != 'US':
+                return token, 'US'
+        return None, 'US'
+
     # Tenta UF brasileira (ambígua com US - só vale se country for BR ou desconhecido)
     if country in (None, 'BR'):
         uf = _detect_uf(raw)
@@ -209,7 +224,6 @@ def normalize_location(raw_location: str) -> Tuple[Optional[str], Optional[str]]
     # Estado US: padrão "City, ST" / "City, ST, US"
     us_match = re.search(r',\s*([A-Z]{2})(?:\s*,|\s*$)', raw)
     if us_match and us_match.group(1) in US_STATES:
-        # Se country foi explicitamente outro, respeita; senão assume US.
         return us_match.group(1), country or 'US'
 
     if country:
