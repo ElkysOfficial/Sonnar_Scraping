@@ -1,4 +1,8 @@
 import asyncio
+from dotenv import load_dotenv
+
+load_dotenv()  # carrega .env (SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+
 from src.controllers.controllers import scrape_jobs
 
 async def main():

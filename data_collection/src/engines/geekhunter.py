@@ -1,10 +1,12 @@
 import httpx
 
 
-async def get_geekhunter_jobs() -> list:
+async def get_geekhunter_jobs(on_job=None) -> list:
     """
-    Extrai vagas do GeekHunter via GraphQL API.
-    Returns: [[link, title, company, location, work_type, hiring_regime, salary, publication_date], ...]
+    Extrai vagas do GeekHunter via GraphQL pública (uma chamada só, sem stacks).
+
+    Args:
+        on_job: callback opcional invocado a cada vaga emitida.
     """
     jobs = []
     headers = {
@@ -134,6 +136,11 @@ async def get_geekhunter_jobs() -> list:
 
                 job = [link, job_title, company_name, location, work_type, hiring_regime, salary, publication_date]
                 jobs.append(job)
+                if on_job is not None:
+                    try:
+                        await on_job(job)
+                    except Exception:
+                        pass
 
     except Exception:
         pass

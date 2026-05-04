@@ -1,0 +1,83 @@
+name: Bundle Size Analysis
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bundle-analysis-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: Analyze bundle (Node 20)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install deps (locked)
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Bundle metrics
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "== Bundle assets (raw bytes) =="
+          find dist -type f -path '*/assets/*' -name '*.js' -print0 \
+            | xargs -0 stat -c '%s %n' \
+            | sort -nr \
+            | head -n 50
+
+          echo
+          TOTAL_BYTES=$(du -sb dist | awk '{print $1}')
+          echo "TOTAL_BYTES=$TOTAL_BYTES" | tee -a "$GITHUB_ENV"
+
+          echo
+          echo "== Total dist size =="
+          du -sh dist
+
+      - name: Gzip metrics (top 50)
+        shell: bash
+        run: |
+          set -euo pipefail
+          command -v gzip >/dev/null
+
+          echo "== Gzip sizes (bytes) =="
+          while IFS= read -r -d '' f; do
+            gz=$(gzip -c "$f" | wc -c | tr -d ' ')
+            printf "%s %s\n" "$gz" "$f"
+          done < <(find dist -type f -path '*/assets/*' -name '*.js' -print0) \
+            | sort -nr \
+            | head -n 50
+
+      - name: Upload bundle stats artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bundle-stats-${{ github.run_id }}
+          path: |
+            dist/stats.html
+            dist
+          if-no-files-found: warn
+          retention-days: 30

@@ -1,260 +1,261 @@
+"""
+Loop principal do scraper.
+
+Estratégia em duas camadas:
+
+1. **Batching** (camada de orquestração):
+   As stacks são divididas em **lotes de 10**, respeitando categorias (ver
+   ``variavel.iter_batches``). Cada lote roda todas as engines, persiste, e
+   o scraper dorme ``BATCH_INTERVAL_SECONDS`` (default 2h) antes do próximo.
+   Quando esgota a última categoria, recomeça da primeira.
+
+2. **Streaming** (camada de persistência):
+   As engines recebem um callback ``on_job`` e o invocam **a cada vaga**
+   parseada — não no fim. Isso garante que, se a engine morrer no meio do
+   ciclo, todas as vagas já extraídas estão salvas (JSON + CSV + Supabase).
+
+Tunáveis (env vars):
+    BATCH_SIZE              tamanho do lote      (default 10)
+    BATCH_INTERVAL_SECONDS  pausa entre lotes    (default 7200 = 2h)
+    MAX_CONCURRENT_ENGINES  engines em paralelo  (default 3)
+"""
+from __future__ import annotations
+
 import asyncio
 import logging
-import time
+import os
+from typing import Awaitable, Callable
+
+from variavel import iter_batches, set_active_batch
+
 from .job_getters import getters
-from ..routes.routes import send_jobs_batch, get_existing_job_urls, record_scraper_stats
 from ..models.models import Job
+from ..persistence.jobs_repository import JobsRepository
+from ..routes.routes import send_to_embed_service_job
 from ..utils.google_enricher import GoogleEnricher, is_missing_field
 from ..utils.jobsUtils import process_salary
 
-# Global set to track processed jobs (loaded from database at startup)
-sent_jobs = set()
 
-# Configuração de batch
-BATCH_SIZE = 500  # Jobs por batch
-BATCH_FLUSH_INTERVAL = 30  # Segundos para forçar flush
-
-logging.basicConfig(filename="errors.log", level=logging.ERROR, encoding="utf-8")
+logging.basicConfig(filename="errors.log", level=logging.ERROR)
+logger = logging.getLogger(__name__)
 
 
-def normalize_job_result(result):
-    """Normalize job result from scraper to standard format."""
-    location = result[3] if len(result) > 3 else ''
+# ---------------------------------------------------------------------------
+# Configuração (lê do ambiente, com defaults sensatos)
+# ---------------------------------------------------------------------------
+
+BATCH_SIZE = int(os.getenv("BATCH_SIZE", "10"))
+BATCH_INTERVAL_SECONDS = int(os.getenv("BATCH_INTERVAL_SECONDS", "7200"))  # 2h
+MAX_CONCURRENT_ENGINES = int(os.getenv("MAX_CONCURRENT_ENGINES", "3"))
+
+# Enrichment via Playwright/Google é caro (~5-15s por job). Desligado por
+# default — quando ligado, preenche salário/localização ausentes.
+ENRICH_ENABLED = os.getenv("ENABLE_GOOGLE_ENRICHMENT", "0") == "1"
+
+# Tipo do callback: ``async fn(job_data: dict, engine: str) -> None``.
+JobCallback = Callable[[list, str], Awaitable[None]]
+
+
+# ---------------------------------------------------------------------------
+# Normalização (formato cru das engines → dict canônico)
+# ---------------------------------------------------------------------------
+
+def normalize_job_result(result: list) -> dict:
+    """
+    Converte o formato lista que as engines devolvem em dict canônico.
+
+    Formato esperado das engines (lista posicional):
+        [job_url, job_title, company, location, work_type,
+         hiring_regime, salary, publication_date]
+
+    `location` pode vir como str ou list — normalizamos para str ('SP - São Paulo').
+    """
+    location = result[3] if len(result) > 3 else ""
     if isinstance(location, list):
-        location = ' - '.join(str(item) for item in location if item)
+        location = " - ".join(str(item) for item in location if item)
 
     return {
-        'job_url': str(result[0]) if len(result) > 0 else '',
-        'job_title': str(result[1]) if len(result) > 1 else '',
-        'company': str(result[2]) if len(result) > 2 else '',
-        'location': str(location),
-        'work_type': str(result[4]) if len(result) > 4 else '',
-        'hiring_regime': str(result[5]) if len(result) > 5 else '',
-        'salary': str(result[6]) if len(result) > 6 else '',
-        'publication_date': str(result[7]) if len(result) > 7 else ''
+        "job_url": str(result[0]) if len(result) > 0 else "",
+        "job_title": str(result[1]) if len(result) > 1 else "",
+        "company": str(result[2]) if len(result) > 2 else "",
+        "location": str(location),
+        "work_type": str(result[4]) if len(result) > 4 else "",
+        "hiring_regime": str(result[5]) if len(result) > 5 else "",
+        "salary": str(result[6]) if len(result) > 6 else "",
+        "publication_date": str(result[7]) if len(result) > 7 else "",
     }
 
 
-def get_source_name(getter) -> str:
-    """Extract source name from getter function name."""
+def _engine_name(getter) -> str:
+    """``get_linkedin_jobs`` → ``'linkedin'``. Usado em logs."""
+    parts = getter.__name__.split("_")
+    return parts[1] if len(parts) > 1 else getter.__name__
+
+
+# ---------------------------------------------------------------------------
+# Pipeline por vaga (chamado em streaming pelas engines)
+# ---------------------------------------------------------------------------
+
+async def _process_one_job(
+    raw: list,
+    engine: str,
+    *,
+    repo: JobsRepository,
+    enricher: GoogleEnricher,
+    sent_jobs: set,
+) -> None:
+    """
+    Pipeline aplicado a CADA vaga assim que a engine a entrega:
+      1. Normaliza para dict canônico
+      2. Dedup pelo conjunto em memória
+      3. Processa salário, enriquece (location/salary) se necessário
+      4. Persiste em JSON + CSV + Supabase via ``repo.save``
+      5. Envia para o serviço de embed (Discord) como best-effort
+
+    Erros isolados não interrompem o ciclo da engine — só são logados.
+    """
+    job_data = normalize_job_result(raw)
+    job_url = job_data.get("job_url")
+    if not job_url or job_url in sent_jobs:
+        return
+
+    # Enriquecimento de salário (parsing é local e barato)
     try:
-        name = getter.__name__
-        # getter functions are named like "getter_indeed", "getter_linkedin"
-        if name.startswith("getter_"):
-            return name.replace("getter_", "")
-        return name
-    except Exception:
-        return "unknown"
+        title = job_data.get("job_title", "")
+        job_data["salary"] = process_salary(job_data.get("salary", ""), title)
 
-
-class JobBatchBuffer:
-    """
-    Buffer para acumular jobs antes de enviar em batch.
-    Reduz número de requests de 112k para ~224 (500 jobs/request).
-    """
-
-    def __init__(self, batch_size=BATCH_SIZE, flush_interval=BATCH_FLUSH_INTERVAL):
-        self.buffer = []
-        self.batch_size = batch_size
-        self.flush_interval = flush_interval
-        self.last_flush = time.time()
-        self.lock = asyncio.Lock()
-        self.stats = {
-            "total_jobs": 0,
-            "batches_sent": 0,
-            "jobs_saved": 0,
-            "errors": 0
-        }
-
-    async def add(self, job_data: dict, source: str):
-        """Adiciona job ao buffer. Faz flush se atingir o tamanho do batch."""
-        async with self.lock:
-            job_data["source"] = source
-            self.buffer.append(job_data)
-            self.stats["total_jobs"] += 1
-
-            # Flush se atingir tamanho do batch
-            if len(self.buffer) >= self.batch_size:
-                await self._flush_locked()
-
-    async def flush(self):
-        """Força flush do buffer."""
-        async with self.lock:
-            await self._flush_locked()
-
-    async def _flush_locked(self):
-        """Flush interno (deve ser chamado com lock)."""
-        if not self.buffer:
-            return
-
-        jobs_to_send = self.buffer.copy()
-        self.buffer = []
-        self.last_flush = time.time()
-
-        try:
-            result = await send_jobs_batch(jobs_to_send)
-            if result and result.get("success"):
-                self.stats["batches_sent"] += 1
-                self.stats["jobs_saved"] += result.get("count", 0)
-                print(f"[batch] Enviados {len(jobs_to_send)} jobs em batch (total: {self.stats['jobs_saved']})")
-            else:
-                self.stats["errors"] += 1
-                logging.error(f"Erro no batch: {result}")
-        except Exception as e:
-            self.stats["errors"] += 1
-            logging.error(f"Erro ao enviar batch: {e}")
-
-    async def should_flush(self):
-        """Verifica se deve fazer flush por tempo."""
-        return (time.time() - self.last_flush) > self.flush_interval and len(self.buffer) > 0
-
-    def get_stats(self):
-        return self.stats.copy()
-
-
-# Buffer global de jobs
-job_buffer = JobBatchBuffer()
-
-
-async def scrape_jobs(max_tasks=3):
-    """
-    Fetch job vacancies from multiple sources, process and save results asynchronously.
-    OTIMIZADO: Usa batch insert para reduzir requests de 112k para ~224.
-
-    This function runs continuously, fetching job vacancies from multiple sources (getters)
-    concurrently. It limits the number of simultaneous fetches, processes results
-    immediately after each fetch, and saves new jobs to the database IN BATCHES.
-
-    Args:
-        max_tasks (int): Maximum number of concurrent tasks. Default is 3.
-
-    The process includes:
-    1. Fetching vacancies using different getters
-    2. Processing and accumulating results in a buffer
-    3. Sending jobs in batches of 500 to reduce egress
-    4. Continuous execution with 5-second intervals between cycles
-    5. Recording scraper statistics for monitoring
-
-    Uses a Semaphore to limit concurrent fetches and a global set
-    to track already processed jobs, avoiding duplications.
-    """
-    global sent_jobs, job_buffer
-    semaphore = asyncio.Semaphore(max_tasks)
-
-    # Load existing job URLs from database
-    print("[scraper] Loading existing job URLs from database...")
-    sent_jobs = get_existing_job_urls()
-    print(f"[scraper] Loaded {len(sent_jobs)} existing jobs")
-    print(f"[scraper] Batch mode: {BATCH_SIZE} jobs/batch, flush every {BATCH_FLUSH_INTERVAL}s")
-
-    async with GoogleEnricher() as enricher:
-        async def process_getter(getter):
-            """Internal function to process a specific getter."""
-            source_name = get_source_name(getter)
-            start_time = time.time()
-            stats = {
-                "jobs_found": 0,
-                "jobs_new": 0,
-                "jobs_enriched": 0,
-                "errors": 0,
-            }
-
-            async with semaphore:
-                try:
-                    print(f'[{source_name}] Searching...')
-                    results = await getter()
-                    stats["jobs_found"] = len(results) if results else 0
-
-                    jobs_to_add = []
-
-                    for result in results:
-                        job_data = normalize_job_result(result)
-                        job_url = job_data.get('job_url')
-
-                        # Deduplicação local (evita enviar duplicados)
-                        if not job_url or job_url in sent_jobs:
-                            continue
-
-                        try:
-                            job_title = job_data.get('job_title', '')
-                            raw_salary = job_data.get('salary', '')
-                            needs_salary = is_missing_field(raw_salary)
-                            job_data['salary'] = process_salary(raw_salary, job_title)
-                            needs_location = is_missing_field(job_data.get('location'))
-
-                            if needs_location or needs_salary:
-                                job_data = await enricher.enrich_job(job_data)
-                                stats["jobs_enriched"] += 1
-                                if needs_salary and job_data.get('salary'):
-                                    job_data['salary'] = process_salary(
-                                        job_data.get('salary', ''),
-                                        job_title,
-                                        is_estimated=True
-                                    )
-                        except Exception as e:
-                            logging.error(f"Error enriching job: {e}")
-                            logging.error(f"Job details: {job_data}")
-                            stats["errors"] += 1
-
-                        job = Job(
-                            job_data.get('job_url', ''),
-                            job_data.get('job_title', ''),
-                            job_data.get('company', ''),
-                            job_data.get('location', ''),
-                            job_data.get('work_type', ''),
-                            job_data.get('hiring_regime', ''),
-                            job_data.get('salary', ''),
-                            job_data.get('publication_date', '')
-                        )
-
-                        # Adiciona ao buffer (sem esperar pelo envio)
-                        jobs_to_add.append((job.to_dict(), source_name, job_url))
-
-                    # Adiciona todos os jobs ao buffer de uma vez
-                    for job_dict, source, job_url in jobs_to_add:
-                        await job_buffer.add(job_dict, source)
-                        sent_jobs.add(job_url)
-                        stats["jobs_new"] += 1
-
-                except Exception as e:
-                    logging.error(f"Error executing {source_name}: {e}")
-                    stats["errors"] += 1
-
-                # Record scraper statistics
-                duration_ms = int((time.time() - start_time) * 1000)
-                try:
-                    await record_scraper_stats(
-                        source=source_name,
-                        jobs_found=stats["jobs_found"],
-                        jobs_new=stats["jobs_new"],
-                        jobs_enriched=stats["jobs_enriched"],
-                        errors=stats["errors"],
-                        duration_ms=duration_ms,
+        # Enrichment via Google só roda se explicitamente habilitado pela env.
+        # Caro: cada query custa ~5-15s via Playwright headless.
+        if ENRICH_ENABLED:
+            needs_location = is_missing_field(job_data.get("location"))
+            needs_salary = is_missing_field(job_data.get("salary"))
+            if needs_location or needs_salary:
+                job_data = await enricher.enrich_job(job_data)
+                if needs_salary and job_data.get("salary"):
+                    job_data["salary"] = process_salary(
+                        job_data.get("salary", ""), title, is_estimated=True
                     )
-                except Exception as e:
-                    logging.error(f"Error recording stats for {source_name}: {e}")
+    except Exception as exc:
+        logger.error("Erro ao enriquecer job %s: %s", job_url, exc)
 
-                if stats["jobs_new"] > 0:
-                    print(f"[{source_name}] Found {stats['jobs_found']} jobs, {stats['jobs_new']} new (buffered)")
+    # Persistência (JSON + CSV + Supabase) — atômica do ponto de vista do job
+    try:
+        persisted = await repo.save(job_data, source=engine)
+    except Exception as exc:
+        logger.error("Erro ao persistir %s: %s", job_url, exc)
+        return
+
+    if not persisted:
+        return
+
+    sent_jobs.add(job_url)
+
+    # Discord embed — best-effort, não bloqueia o pipeline
+    try:
+        job = Job(
+            job_data.get("job_url", ""),
+            job_data.get("job_title", ""),
+            job_data.get("company", ""),
+            job_data.get("location", ""),
+            job_data.get("work_type", ""),
+            job_data.get("hiring_regime", ""),
+            job_data.get("salary", ""),
+            job_data.get("publication_date", ""),
+        )
+        response = await send_to_embed_service_job(job.to_dict())
+        if not (response and response.get("success")):
+            logger.warning("Embed service não confirmou job: %s", title)
+    except Exception as exc:
+        logger.error("Erro ao enviar embed: %s", exc)
+
+
+# ---------------------------------------------------------------------------
+# Execução de um lote (todas as engines em paralelo)
+# ---------------------------------------------------------------------------
+
+async def _run_one_batch(
+    *,
+    repo: JobsRepository,
+    enricher: GoogleEnricher,
+    sent_jobs: set,
+) -> None:
+    """
+    Dispara todas as engines registradas em ``getters`` em paralelo,
+    limitando a concorrência a ``MAX_CONCURRENT_ENGINES``.
+
+    Cada engine recebe ``on_job`` que chama ``_process_one_job`` em streaming
+    — vagas vão para o disco/banco assim que são parseadas.
+    """
+    semaphore = asyncio.Semaphore(MAX_CONCURRENT_ENGINES)
+
+    async def _run_engine(getter):
+        engine = _engine_name(getter)
+
+        async def on_job(raw: list) -> None:
+            await _process_one_job(
+                raw, engine,
+                repo=repo, enricher=enricher, sent_jobs=sent_jobs,
+            )
+
+        async with semaphore:
+            try:
+                print(f"Buscando em {engine}...")
+                # Engines que aceitam o callback fazem streaming. As que não
+                # aceitam continuam funcionando: o try/except apanha o
+                # TypeError e cai no fallback (retorno em batch).
+                try:
+                    results = await getter(on_job=on_job)
+                except TypeError:
+                    results = await getter()
+                    for raw in results or []:
+                        await on_job(raw)
+            except Exception as exc:
+                logger.error("Erro ao executar %s: %s", engine, exc)
+
+    await asyncio.gather(*(_run_engine(g) for g in getters))
+
+
+# ---------------------------------------------------------------------------
+# Loop principal — itera lotes e dorme entre eles
+# ---------------------------------------------------------------------------
+
+async def scrape_jobs() -> None:
+    """
+    Loop infinito do scraper.
+
+    Ciclo:
+        1. Para cada ``(categoria, lote)`` produzido por ``iter_batches``:
+           a. Configura o lote ativo via ``set_active_batch``.
+           b. Roda todas as engines (em paralelo, com streaming de vagas).
+           c. Dorme ``BATCH_INTERVAL_SECONDS``.
+        2. Quando esgotar todas as categorias, reinicia.
+
+    O dedup é compartilhado entre lotes (set ``sent_jobs`` carregado
+    do JSON local), de modo que vagas já processadas em ciclos anteriores
+    não são reprocessadas.
+    """
+    async with JobsRepository() as repo, GoogleEnricher() as enricher:
+        sent_jobs: set = repo.known_urls()
+        logger.info("Inicializando: %d vagas já conhecidas no JSON local.", len(sent_jobs))
 
         while True:
-            # Create an async task for each getter
-            tasks = [asyncio.create_task(process_getter(getter)) for getter in getters]
+            batches = list(iter_batches(BATCH_SIZE))
+            total = len(batches)
 
-            try:
-                # Wait for all tasks to complete
-                await asyncio.gather(*tasks)
-            except Exception as e:
-                logging.error(f"General error during task execution: {e}")
+            for idx, (category, batch) in enumerate(batches, start=1):
+                set_active_batch(batch)
+                print(
+                    f"\n=== Lote {idx}/{total} | {category} | {len(batch)} stacks: "
+                    f"{', '.join(batch)} ==="
+                )
+                try:
+                    await _run_one_batch(repo=repo, enricher=enricher, sent_jobs=sent_jobs)
+                except Exception as exc:
+                    logger.error("Erro geral no lote %s: %s", category, exc)
 
-            # Flush buffer se necessário (por tempo)
-            if await job_buffer.should_flush():
-                await job_buffer.flush()
+                if idx < total:
+                    print(f"Lote {idx} concluído. Dormindo {BATCH_INTERVAL_SECONDS // 60} min.")
+                    await asyncio.sleep(BATCH_INTERVAL_SECONDS)
 
-            # Print batch stats periodically
-            buffer_stats = job_buffer.get_stats()
-            if buffer_stats["batches_sent"] > 0:
-                print(f"[batch] Stats: {buffer_stats['jobs_saved']} jobs salvos em {buffer_stats['batches_sent']} batches")
-
-            # Pause before next cycle
-            await asyncio.sleep(5)
+            print("Ciclo completo das categorias concluído. Reiniciando.")
+            set_active_batch(None)  # libera o lote ativo no fim

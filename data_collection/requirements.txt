@@ -17,6 +17,9 @@ beautifulsoup4>=4.12.0
 # Browser Automation (for Google Enricher)
 playwright>=1.40.0
 
+# Env loading (.env)
+python-dotenv>=1.0.0
+
 # Standard library dependencies already included in Python:
 # - asyncio
 # - json

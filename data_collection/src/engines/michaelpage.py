@@ -18,14 +18,16 @@ MICHAELPAGE_CATEGORIES = [
 ]
 
 
-async def get_michaelpage_jobs() -> list:
+async def get_michaelpage_jobs(on_job=None) -> list:
     """
     Extrai vagas do Michael Page Brasil.
 
-    IMPORTANTE: MichaelPage usa categorias pré-definidas (slugs), não busca por texto.
-    As vagas são extraídas dos links /job-detail/ encontrados nas páginas de categoria.
+    O MichaelPage **não suporta busca por texto livre** — usa categorias
+    pré-definidas (slugs em ``MICHAELPAGE_CATEGORIES``). Por isso esta engine
+    não participa do batching: sempre cobre as mesmas 8 categorias.
 
-    Returns: [[link, title, company, location, work_type, hiring_regime, salary, publication_date], ...]
+    Args:
+        on_job: callback opcional invocado a cada vaga emitida.
     """
     jobs = []
     seen_links = set()
@@ -128,6 +130,11 @@ async def get_michaelpage_jobs() -> list:
 
                             job = [link, job_title, company, location, work_type, hiring_regime, salary, publication_date]
                             jobs.append(job)
+                            if on_job is not None:
+                                try:
+                                    await on_job(job)
+                                except Exception:
+                                    pass
 
                         except Exception:
                             continue

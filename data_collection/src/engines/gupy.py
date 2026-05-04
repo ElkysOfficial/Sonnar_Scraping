@@ -1,111 +1,133 @@
-from urllib.parse import urlparse, urlunparse
-import sys
+"""
+Engine Gupy — usa a API pública ``portal.api.gupy.io/api/v1/jobs``.
+
+Fluxo simples: para cada stack do lote ativo, faz uma chamada à API
+filtrando por ``jobName``. A API devolve até 1000 vagas em uma resposta —
+não há paginação no nosso lado.
+
+A normalização (mapeamento de ``workplaceType`` e ``type``) usa dicts
+explícitos para o leitor entender o domínio sem ler a docs da Gupy.
+"""
+from __future__ import annotations
+
 import os
+import sys
+import urllib.parse
+from urllib.parse import urlparse, urlunparse
 
 import httpx
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-from utils.google_enricher import GoogleEnricher, is_missing_field
-from variavel import stacks
+from variavel import get_active_stacks  # noqa: E402
 
-HTTPX_TIMEOUT = float(os.getenv("HTTPX_TIMEOUT", "30"))
+
+# --- Mapeamentos do domínio Gupy → vocabulário interno ----------------------
+
+WORK_TYPES = {
+    "remote": "Remoto",
+    "hybrid": "Híbrido",
+    "on-site": "Presencial",
+}
+
+REGIME_TYPES = {
+    "vacancy_type_effective": "Efetivo",
+    "vacancy_legal_entity": "Pessoa Jurídica",
+    "vacancy_type_associate": "Associado",
+    "vacancy_type_talent_pool": "Banco de Talentos",
+    "vacancy_type_lecturer": "Docente",
+    "vacancy_type_autonomous": "Autônomo",
+    "vacancy_type_temporary": "Temporário",
+    "vacancy_type_internship": "Estágio",
+}
 
 
 def _normalize_job_url(url: str) -> str:
-  if not url:
+    """
+    Conserta URLs com ``&`` no host (bug ocasional da Gupy: ``empresa&etc.gupy.io``).
+
+    Retorna a URL com o host truncado em ``empresa.gupy.io``.
+    """
+    if not url:
+        return url
+    if not url.startswith("http"):
+        url = f"https://{url}"
+    parsed = urlparse(url)
+    host = parsed.netloc
+    if host.endswith(".gupy.io") and "&" in host:
+        host = host.split("&", 1)[0] + ".gupy.io"
+        parsed = parsed._replace(netloc=host)
+        return urlunparse(parsed)
     return url
-  if not url.startswith("http"):
-    url = f"https://{url}"
-  parsed = urlparse(url)
-  host = parsed.netloc
-  if host.endswith(".gupy.io") and "&" in host:
-    host = host.split("&", 1)[0] + ".gupy.io"
-    parsed = parsed._replace(netloc=host)
-    return urlunparse(parsed)
-  return url
 
 
-async def get_gupy_jobs() -> list:
-  '''
-  
-  '''
-  regime_types = {
-      "vacancy_type_effective": "Efetivo",
-      "vacancy_legal_entity": "Pessoa juridica",
-      "vacancy_type_associate": "Associado",
-      "vacancy_type_talent_pool": "Banco de talentos",
-      "vacancy_type_lecturer": "Docente",
-      "vacancy_type_autonomous": "Autonomo",
-      "vacancy_type_temporary": "Temporario",
-      "vacancy_type_internship": "Estagio"
-  }
+def _parse_job(item: dict) -> list:
+    """Converte um item da API Gupy no formato canônico das engines."""
+    link = _normalize_job_url(item.get("jobUrl", ""))
+    title = item.get("name", "")
+    company = item.get("careerPageName", "")
 
-  work_types = {
-      "remote": "Remoto",
-      "hybrid": "Hibrido",
-      "on-site": "Presencial"
-  }
-  
-  jobs = []
-  async with httpx.AsyncClient(timeout=HTTPX_TIMEOUT, follow_redirects=True) as client:
-    for stack in stacks:
-      try:
-        response = await client.get(f"https://portal.api.gupy.io/api/v1/jobs?jobName={stack}&limit=1000")
-      except httpx.HTTPError:
-        continue
+    work_type_raw = item.get("workplaceType", "")
+    work_type = WORK_TYPES.get(work_type_raw, work_type_raw) if work_type_raw else ""
 
-      if response.status_code == 200:
-        json_response = response.json()
+    regime_raw = item.get("type", "")
+    hiring_regime = REGIME_TYPES.get(regime_raw, regime_raw) if regime_raw else ""
 
-        for job in json_response["data"]:
-          link = _normalize_job_url(job.get("jobUrl", ""))
-          title = job.get("name", "")
-          company = job.get("careerPageName", "")
+    city = item.get("city") or ""
+    state = item.get("state") or ""
+    if city and state:
+        location = f"{city} - {state}"
+    else:
+        location = city or state
 
-          work_type_raw = job.get("workplaceType", "")
-          work_type = work_types.get(work_type_raw, work_type_raw) if work_type_raw else ""
+    # Data ISO → DD/MM/YYYY
+    date_raw = (item.get("publishedDate") or "")[:10]
+    if len(date_raw) == 10 and "-" in date_raw:
+        y, m, d = date_raw.split("-")
+        publication_date = f"{d}/{m}/{y}"
+    else:
+        publication_date = date_raw
 
-          hiring_regime_raw = job.get("type", "")
-          hiring_regime = regime_types.get(hiring_regime_raw, hiring_regime_raw) if hiring_regime_raw else ""
+    return [link, title, company, location, work_type, hiring_regime, "", publication_date]
 
-          city = job.get("city", "")
-          state = job.get("state", "")
-          if city and state:
-            location = f"{city} - {state}"
-          else:
-            location = city or state
 
-          salary = ""
+async def get_gupy_jobs(on_job=None) -> list:
+    """
+    Busca vagas na API da Gupy para cada stack do lote ativo.
 
-          # Data de publicacao no formato brasileiro DD/MM/YYYY
-          date_raw = job.get("publishedDate", "")[:10] if job.get("publishedDate") else ""
-          if date_raw and len(date_raw) == 10 and "-" in date_raw:
-            parts = date_raw.split("-")
-            publication_date = f"{parts[2]}/{parts[1]}/{parts[0]}"
-          else:
-            publication_date = date_raw
+    Args:
+        on_job: callback opcional ``async fn(parsed)`` invocado a cada vaga.
+                Quando definido (modo controller), a engine emite as vagas em
+                streaming — útil pra persistir antes de a engine terminar.
 
-          job_data = [link, title, company, location, work_type, hiring_regime, salary, publication_date]
-          jobs.append(job_data)
+    Returns:
+        Lista de vagas no formato canônico.
+    """
+    jobs: list = []
+    seen: set[str] = set()
 
-  # Enriquecer vagas com location/salary vazios usando Google
-  if jobs:
-    async with GoogleEnricher() as enricher:
-      for job_data in jobs:
-        location_str = job_data[3] if isinstance(job_data[3], str) else ", ".join(job_data[3]) if job_data[3] else ""
-        needs_location = is_missing_field(location_str)
-        needs_salary = is_missing_field(job_data[6])  # salary está no índice 6
-        if needs_location or needs_salary:
-          enriched = await enricher.enrich_job({
-            "company": job_data[2],
-            "job_title": job_data[1],
-            "location": location_str,
-            "salary": job_data[6]
-          })
-          if needs_location and enriched.get("location"):
-            job_data[3] = enriched["location"]
-          if needs_salary and enriched.get("salary"):
-            job_data[6] = enriched["salary"]
+    async with httpx.AsyncClient(timeout=30) as client:
+        for stack in get_active_stacks():
+            encoded = urllib.parse.quote(stack)
+            url = f"https://portal.api.gupy.io/api/v1/jobs?jobName={encoded}&limit=1000"
+            try:
+                response = await client.get(url)
+            except Exception:
+                continue
+            if response.status_code != 200:
+                continue
 
-  print(f"Foram obtidas {len(jobs)} vagas do site Gupy")
-  return jobs
+            for item in response.json().get("data", []):
+                parsed = _parse_job(item)
+                job_url = parsed[0]
+                if not job_url or job_url in seen:
+                    continue
+                seen.add(job_url)
+                jobs.append(parsed)
+                if on_job is not None:
+                    try:
+                        await on_job(parsed)
+                    except Exception:
+                        pass
+
+    print(f"Foram obtidas {len(jobs)} vagas do site Gupy")
+    return jobs

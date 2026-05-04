@@ -1,10 +1,10 @@
 import asyncio
-import os
 import re
+import urllib.parse
 from datetime import datetime, timedelta
 from curl_cffi import requests
 from bs4 import BeautifulSoup
-from variavel import stacks
+from variavel import get_active_stacks
 
 
 def parse_relative_date(date_text: str) -> str:
@@ -58,43 +58,36 @@ def get_session():
     return _session
 
 
-async def get_ziprecruiter_jobs() -> list:
+async def get_ziprecruiter_jobs(on_job=None) -> list:
     """
-    Extrai vagas do ZipRecruiter UK (internacional).
-    Returns: [[link, title, company, location, work_type, hiring_regime, salary, publication_date], ...]
+    Coleta vagas do ZipRecruiter UK paginando 10 páginas por stack do lote ativo.
+
+    Args:
+        on_job: callback opcional ``async fn(parsed)`` invocado a cada vaga.
     """
     jobs = []
     seen_links = set()
     session = get_session()
 
-    max_pages = int(os.getenv("ZIPRECRUITER_MAX_PAGES", "20"))
-    max_empty_pages = int(os.getenv("ZIPRECRUITER_MAX_EMPTY_PAGES", "1"))
-
-    for stack in stacks:
-        page = 1
-        empty_pages = 0
-        while page <= max_pages and empty_pages < max_empty_pages:
+    for stack in get_active_stacks():
+        encoded = urllib.parse.quote(stack)
+        # Percorrer 10 páginas por stack
+        for page in range(1, 11):
             try:
-                url = f'https://www.ziprecruiter.co.uk/jobs/search?q={stack}&l=&page={page}'
+                url = f'https://www.ziprecruiter.co.uk/jobs/search?q={encoded}&l=&page={page}'
                 response = await asyncio.to_thread(session.get, url, timeout=30)
 
                 if response.status_code != 200:
-                    empty_pages += 1
-                    page += 1
-                    continue
+                    break
 
                 soup = BeautifulSoup(response.text, 'html.parser')
 
                 # ZipRecruiter usa <a class="jobList-title job-link">
                 job_titles = soup.find_all('a', class_='jobList-title')
 
-                # Se não tem vagas, conta página vazia
+                # Se não tem vagas, para de paginar
                 if not job_titles:
-                    empty_pages += 1
-                    page += 1
-                    continue
-
-                empty_pages = 0
+                    break
 
                 for title_elem in job_titles:
                     try:
@@ -184,16 +177,19 @@ async def get_ziprecruiter_jobs() -> list:
 
                         job = [link, job_title, company, location, work_type, hiring_regime, salary, publication_date]
                         jobs.append(job)
+                        if on_job is not None:
+                            try:
+                                await on_job(job)
+                            except Exception:
+                                pass
 
                     except Exception:
                         continue
 
-                page += 1
                 await asyncio.sleep(0.3)
 
             except Exception:
-                empty_pages += 1
-                page += 1
+                break
 
     print(f'Foram obtidas {len(jobs)} vagas do site ZipRecruiter')
     return jobs

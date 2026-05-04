@@ -14,12 +14,14 @@ def get_session():
     return _session
 
 
-async def get_remotive_jobs() -> list:
+async def get_remotive_jobs(on_job=None) -> list:
     """
-    Extrai vagas do Remotive via API JSON pública.
-    Site 100% focado em vagas remotas.
-    Percorre múltiplas categorias para maximizar cobertura.
-    Returns: [[link, title, company, location, work_type, hiring_regime, salary, publication_date], ...]
+    Extrai vagas do Remotive via API pública (uma chamada por categoria).
+
+    O Remotive é 100% remoto e não pagina por stack — não usa batching.
+
+    Args:
+        on_job: callback opcional invocado a cada vaga emitida.
     """
     jobs = []
     seen_ids = set()
@@ -110,6 +112,11 @@ async def get_remotive_jobs() -> list:
 
                     job = [link, job_title, company, location, work_type, hiring_regime, salary, publication_date]
                     jobs.append(job)
+                    if on_job is not None:
+                        try:
+                            await on_job(job)
+                        except Exception:
+                            pass
 
                 except Exception:
                     continue

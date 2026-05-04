@@ -1,0 +1,130 @@
+/* ==========================================================================
+   Sonnar — Ant Design Vue Theme Customization
+   Professional SaaS Design System
+   ========================================================================== */
+
+/* ==========================================================================
+   CSS Variables Override for Ant Design
+   ========================================================================== */
+
+:root {
+  /* Mapeia todos os tokens do Ant Design para o design system Sonnar.
+     Assim Ant components (botões, cards, inputs) seguem a mesma paleta
+     em light/dark sem precisar override por componente. */
+
+  --ant-primary-color: var(--color-accent);
+  --ant-primary-color-hover: var(--color-accent-hover);
+  --ant-primary-color-active: var(--color-accent-active);
+  --ant-primary-color-outline: var(--color-accent-soft);
+
+  --ant-success-color: var(--color-success);
+  --ant-success-color-hover: var(--color-success);
+
+  --ant-warning-color: var(--color-warning);
+  --ant-error-color: var(--color-error);
+
+  --ant-border-radius: var(--radius-md);
+  --ant-border-radius-sm: var(--radius-sm);
+  --ant-border-radius-lg: var(--radius-lg);
+
+  --ant-box-shadow: var(--shadow-sm);
+  --ant-box-shadow-secondary: var(--shadow-md);
+}
+
+/* ==========================================================================
+   Ant Design Component Overrides
+   ========================================================================== */
+
+/* Button Customization */
+.ant-btn {
+  font-weight: 600;
+  border-radius: var(--radius-button);
+  min-height: var(--control-height-md);
+  transition: all 0.2s ease;
+  box-shadow: none;
+}
+
+.ant-btn-lg {
+  min-height: var(--control-height-lg);
+}
+
+.ant-btn-primary {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+}
+
+.ant-btn-primary:hover,
+.ant-btn-primary:focus {
+  background: var(--color-accent-hover);
+  border-color: var(--color-accent-hover);
+}
+
+.ant-btn-default {
+  border-color: var(--color-border);
+  color: var(--color-text-primary);
+}
+
+.ant-btn-default:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+/* Card Customization */
+.ant-card {
+  border-radius: var(--radius-card);
+  border-color: var(--color-border);
+  box-shadow: none;
+}
+
+.ant-card:hover {
+  box-shadow: var(--shadow-md);
+}
+
+/* Tag Customization */
+.ant-tag {
+  border-radius: var(--radius-full);
+  font-weight: 500;
+  padding: 2px 12px;
+}
+
+/* Badge Customization */
+.ant-badge-status-dot {
+  width: 8px;
+  height: 8px;
+}
+
+/* Typography Customization */
+.ant-typography {
+  color: var(--color-text-primary);
+}
+
+.ant-typography.ant-typography-secondary {
+  color: var(--color-text-secondary);
+}
+
+/* Divider Customization */
+.ant-divider {
+  border-color: var(--color-border);
+}
+
+/* Dark Theme Overrides */
+[data-theme="dark"] .ant-btn-primary {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+}
+
+[data-theme="dark"] .ant-btn-primary:hover {
+  background: var(--color-accent-hover);
+  border-color: var(--color-accent-hover);
+}
+
+[data-theme="dark"] .ant-card {
+  background: var(--color-surface);
+  border-color: var(--color-border);
+}
+
+[data-theme="dark"] .ant-tag {
+  background: var(--color-surface-elevated);
+  border-color: var(--color-border);
+  color: var(--color-text-primary);
+}
