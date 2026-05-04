@@ -182,6 +182,28 @@
           </div>
 
           <form class="auth-form" novalidate @submit.prevent="onSubmitPersonal">
+            <!-- Tipo de cadastro: PF/PJ -->
+            <div class="form-group">
+              <span class="form-label">Tipo de cadastro</span>
+              <div class="radio-group">
+                <label
+                  v-for="opt in personTypeOptions"
+                  :key="opt.value"
+                  class="chip-option"
+                  :class="{ 'chip-option--active': form.personType === opt.value }"
+                >
+                  <input
+                    v-model="form.personType"
+                    type="radio"
+                    name="personType"
+                    :value="opt.value"
+                    :disabled="loading"
+                  />
+                  <span>{{ opt.label }}</span>
+                </label>
+              </div>
+            </div>
+
             <div class="form-grid form-grid--2">
               <div class="form-group">
                 <label for="su-name" class="form-label">Nome</label>
@@ -233,6 +255,61 @@
               <p v-if="errors.birthDate" class="form-error">{{ errors.birthDate }}</p>
             </div>
 
+            <!-- CPF (PF) -->
+            <div v-if="form.personType === 'pf'" class="form-group">
+              <label for="su-cpf" class="form-label">CPF</label>
+              <input
+                id="su-cpf"
+                v-model="form.cpf"
+                type="text"
+                class="form-input"
+                autocomplete="off"
+                inputmode="numeric"
+                placeholder="000.000.000-00"
+                maxlength="14"
+                required
+                :disabled="loading"
+                @input="onCpfInput"
+              />
+              <p v-if="errors.cpf" class="form-error">{{ errors.cpf }}</p>
+            </div>
+
+            <!-- CNPJ + Razao Social (PJ) -->
+            <template v-else>
+              <div class="form-group">
+                <label for="su-cnpj" class="form-label">CNPJ</label>
+                <input
+                  id="su-cnpj"
+                  v-model="form.cnpj"
+                  type="text"
+                  class="form-input"
+                  autocomplete="off"
+                  inputmode="numeric"
+                  placeholder="00.000.000/0000-00"
+                  maxlength="18"
+                  required
+                  :disabled="loading"
+                  @input="onCnpjInput"
+                />
+                <p v-if="errors.cnpj" class="form-error">{{ errors.cnpj }}</p>
+              </div>
+              <div class="form-group">
+                <label for="su-legal" class="form-label">Razão social</label>
+                <input
+                  id="su-legal"
+                  v-model.trim="form.legalName"
+                  type="text"
+                  class="form-input"
+                  autocomplete="organization"
+                  placeholder="Empresa Exemplo LTDA"
+                  required
+                  :disabled="loading"
+                  @input="errors.legalName = ''"
+                />
+                <p v-if="errors.legalName" class="form-error">{{ errors.legalName }}</p>
+              </div>
+            </template>
+
             <div class="form-group">
               <label class="form-label">Telefone</label>
               <CountryPhoneInput
@@ -246,6 +323,126 @@
               />
               <p v-if="errors.phone" class="form-error">{{ errors.phone }}</p>
               <p class="form-hint">{{ phoneHint }}</p>
+            </div>
+
+            <!-- Endereço com autofill ViaCEP -->
+            <div class="form-group">
+              <label for="su-cep" class="form-label">CEP</label>
+              <div class="auth-input-wrapper">
+                <input
+                  id="su-cep"
+                  v-model="form.cep"
+                  type="text"
+                  class="form-input"
+                  autocomplete="postal-code"
+                  inputmode="numeric"
+                  placeholder="00000-000"
+                  maxlength="9"
+                  required
+                  :disabled="loading || cepLoading"
+                  @input="onCepInput"
+                  @blur="onCepBlur"
+                />
+                <span v-if="cepLoading" class="auth-input-spinner" aria-hidden="true"></span>
+              </div>
+              <p v-if="errors.cep" class="form-error">{{ errors.cep }}</p>
+              <p v-else class="form-hint">Preenchemos o resto do endereço pra você.</p>
+            </div>
+
+            <div class="form-grid form-grid--2-1">
+              <div class="form-group">
+                <label for="su-street" class="form-label">Logradouro</label>
+                <input
+                  id="su-street"
+                  v-model.trim="form.street"
+                  type="text"
+                  class="form-input"
+                  autocomplete="address-line1"
+                  placeholder="Rua / Avenida"
+                  required
+                  :disabled="loading"
+                  @input="errors.street = ''"
+                />
+                <p v-if="errors.street" class="form-error">{{ errors.street }}</p>
+              </div>
+              <div class="form-group">
+                <label for="su-number" class="form-label">Número</label>
+                <input
+                  id="su-number"
+                  v-model.trim="form.streetNumber"
+                  type="text"
+                  class="form-input"
+                  autocomplete="off"
+                  placeholder="123"
+                  maxlength="10"
+                  required
+                  :disabled="loading"
+                  @input="errors.streetNumber = ''"
+                />
+                <p v-if="errors.streetNumber" class="form-error">{{ errors.streetNumber }}</p>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="su-complement" class="form-label">Complemento <span class="form-label-meta">(opcional)</span></label>
+              <input
+                id="su-complement"
+                v-model.trim="form.complement"
+                type="text"
+                class="form-input"
+                autocomplete="address-line2"
+                placeholder="Apto, bloco, sala…"
+                maxlength="60"
+                :disabled="loading"
+              />
+            </div>
+
+            <div class="form-grid form-grid--2-1">
+              <div class="form-group">
+                <label for="su-neighborhood" class="form-label">Bairro</label>
+                <input
+                  id="su-neighborhood"
+                  v-model.trim="form.neighborhood"
+                  type="text"
+                  class="form-input"
+                  autocomplete="address-level3"
+                  required
+                  :disabled="loading"
+                  @input="errors.neighborhood = ''"
+                />
+                <p v-if="errors.neighborhood" class="form-error">{{ errors.neighborhood }}</p>
+              </div>
+              <div class="form-group">
+                <label for="su-state" class="form-label">UF</label>
+                <input
+                  id="su-state"
+                  v-model="form.stateCode"
+                  type="text"
+                  class="form-input form-input--centered"
+                  autocomplete="address-level1"
+                  placeholder="SP"
+                  maxlength="2"
+                  required
+                  :disabled="loading"
+                  @input="onStateInput"
+                />
+                <p v-if="errors.stateCode" class="form-error">{{ errors.stateCode }}</p>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="su-city" class="form-label">Cidade</label>
+              <input
+                id="su-city"
+                v-model.trim="form.city"
+                type="text"
+                class="form-input"
+                autocomplete="address-level2"
+                required
+                :disabled="loading"
+                @input="errors.city = ''"
+              />
+              <p v-if="errors.city" class="form-error">{{ errors.city }}</p>
             </div>
 
             <div class="signup-actions signup-actions--split">
@@ -320,10 +517,47 @@
                 <p v-else-if="form.stack.length > 0" class="stack-counter">
                   {{ form.stack.length }} {{ form.stack.length === 1 ? 'tecnologia selecionada' : 'tecnologias selecionadas' }}
                 </p>
-                <p v-else class="form-hint signup-note-inline">
-                  Por enquanto só vagas remotas — em breve híbridas e presenciais.
-                </p>
               </div>
+            </div>
+
+            <!-- Modelos de trabalho — Remoto sempre incluso, cliente escolhe se quer presencial/hibrido tambem -->
+            <div class="form-group">
+              <span class="form-label">Onde você quer trabalhar</span>
+              <p class="form-hint">
+                Vagas <strong>remotas você sempre recebe</strong>. Marque também se aceita presencial e/ou híbrido.
+              </p>
+              <div class="radio-group">
+                <button
+                  v-for="opt in workModelOptions"
+                  :key="opt.value"
+                  type="button"
+                  class="chip-option"
+                  :class="{ 'chip-option--active': form.workModels.includes(opt.value) }"
+                  :disabled="loading"
+                  @click="toggleWorkModel(opt.value)"
+                >
+                  {{ opt.label }}
+                </button>
+              </div>
+            </div>
+
+            <!-- Localização — só pra hybrid/onsite. Prefill com cidade/UF do endereço pessoal -->
+            <div v-if="needsLocation" class="form-group">
+              <label for="su-job-location" class="form-label">Cidade pra trabalhar</label>
+              <input
+                id="su-job-location"
+                v-model.trim="form.jobLocation"
+                type="text"
+                class="form-input"
+                placeholder="São Paulo, SP"
+                required
+                :disabled="loading"
+                @input="errors.jobLocation = ''"
+              />
+              <p v-if="errors.jobLocation" class="form-error">{{ errors.jobLocation }}</p>
+              <p v-else class="form-hint">
+                Usaremos isso pra filtrar vagas presenciais/híbridas perto de você.
+              </p>
             </div>
 
             <div class="signup-actions signup-actions--split">
@@ -393,9 +627,16 @@ import CountryPhoneInput from '@/components/CountryPhoneInput.vue'
 import WhatsAppPhoneMockup from '@/components/WhatsAppPhoneMockup.vue'
 import PasswordStrength from '@/components/PasswordStrength.vue'
 import { STACK_GROUPS } from '@/data/stacks'
+import {
+  validateCPF, validateCNPJ, validateCEP,
+  formatCPF, formatCNPJ, formatCEP,
+} from '@/utils/validators'
+import { fetchCEP } from '@/services/viaCep'
 
 type Plan = 'free' | 'pro' | 'plus'
 type Seniority = 'junior' | 'pleno' | 'senior' | 'staff_lead'
+type PersonType = 'pf' | 'pj'
+type WorkModel = 'remote' | 'hybrid' | 'onsite'
 type Step = 'plan-select' | 'account' | 'personal' | 'profile' | 'done'
 
 const route = useRoute()
@@ -532,21 +773,47 @@ function clearConfirmPoll() {
 }
 
 const form = reactive({
+  // account
   email: '',
   password: '',
+  // personal: identidade
+  personType: 'pf' as PersonType,
   name: '',
   surname: '',
   birthDate: '',
+  cpf: '',
+  cnpj: '',
+  legalName: '',
   phone: '',
+  // personal: endereco
+  cep: '',
+  street: '',
+  streetNumber: '',
+  complement: '',
+  neighborhood: '',
+  city: '',
+  stateCode: '',
+  // profile (Pro/Plus)
   stack: [] as string[],
-  seniority: '' as Seniority | ''
+  seniority: '' as Seniority | '',
+  workModels: [] as Exclude<WorkModel, 'remote'>[],   // 'remote' eh implicito
+  jobLocation: ''
 })
 
 const errors = reactive({
   email: '', password: '',
   name: '', surname: '', birthDate: '', phone: '',
-  stack: '', seniority: ''
+  cpf: '', cnpj: '', legalName: '',
+  cep: '', street: '', streetNumber: '', neighborhood: '', city: '', stateCode: '',
+  stack: '', seniority: '', jobLocation: ''
 })
+
+const cepLoading = ref(false)
+
+const personTypeOptions: { value: PersonType; label: string }[] = [
+  { value: 'pf', label: 'Pessoa Física' },
+  { value: 'pj', label: 'Pessoa Jurídica' }
+]
 
 const seniorityOptions: { value: Seniority; label: string }[] = [
   { value: 'junior',     label: 'Júnior' },
@@ -555,11 +822,72 @@ const seniorityOptions: { value: Seniority; label: string }[] = [
   { value: 'staff_lead', label: 'Staff / Lead' }
 ]
 
+const workModelOptions: { value: Exclude<WorkModel, 'remote'>; label: string }[] = [
+  { value: 'hybrid', label: 'Híbrido' },
+  { value: 'onsite', label: 'Presencial' }
+]
+
+const needsLocation = computed(() => form.workModels.length > 0)
+
 function toggleStack(item: string) {
   const i = form.stack.indexOf(item)
   if (i >= 0) form.stack.splice(i, 1)
   else form.stack.push(item)
   if (form.stack.length > 0) errors.stack = ''
+}
+
+function toggleWorkModel(value: Exclude<WorkModel, 'remote'>) {
+  const i = form.workModels.indexOf(value)
+  if (i >= 0) form.workModels.splice(i, 1)
+  else form.workModels.push(value)
+
+  // Prefill jobLocation a partir do endereco pessoal quando o cliente
+  // habilita presencial/hibrido pela primeira vez.
+  if (form.workModels.length > 0 && !form.jobLocation && form.city && form.stateCode) {
+    form.jobLocation = `${form.city}, ${form.stateCode}`
+  }
+}
+
+// --- Mascaras (input handlers) ------------------------------------------
+function onCpfInput(event: Event) {
+  const target = event.target as HTMLInputElement
+  form.cpf = formatCPF(target.value)
+  errors.cpf = ''
+}
+
+function onCnpjInput(event: Event) {
+  const target = event.target as HTMLInputElement
+  form.cnpj = formatCNPJ(target.value)
+  errors.cnpj = ''
+}
+
+function onCepInput(event: Event) {
+  const target = event.target as HTMLInputElement
+  form.cep = formatCEP(target.value)
+  errors.cep = ''
+}
+
+function onStateInput(event: Event) {
+  const target = event.target as HTMLInputElement
+  form.stateCode = target.value.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 2)
+  errors.stateCode = ''
+}
+
+// --- Autofill ViaCEP ----------------------------------------------------
+async function onCepBlur() {
+  const clean = form.cep.replace(/\D/g, '')
+  if (clean.length !== 8) return
+  cepLoading.value = true
+  try {
+    const result = await fetchCEP(clean)
+    if (!result) return  // CEP inexistente: cliente preenche manualmente
+    if (result.street && !form.street)             form.street       = result.street
+    if (result.neighborhood && !form.neighborhood) form.neighborhood = result.neighborhood
+    if (result.city && !form.city)                 form.city         = result.city
+    if (result.state && !form.stateCode)           form.stateCode    = result.state
+  } finally {
+    cepLoading.value = false
+  }
 }
 
 function goBack() {
@@ -720,7 +1048,25 @@ function validatePersonal() {
       else if (ageYrs > 100) { errors.birthDate = 'Data inválida.'; ok = false }
     }
   }
+
+  // Identificador: CPF (PF) ou CNPJ + Razão social (PJ)
+  if (form.personType === 'pf') {
+    if (!validateCPF(form.cpf)) { errors.cpf = 'CPF inválido.'; ok = false }
+  } else {
+    if (!validateCNPJ(form.cnpj)) { errors.cnpj = 'CNPJ inválido.'; ok = false }
+    if (form.legalName.length < 2) { errors.legalName = 'Razão social obrigatória.'; ok = false }
+  }
+
   if (form.phone.length < 10) { errors.phone = 'Telefone inválido. Inclua o DDD.'; ok = false }
+
+  // Endereço — todos exceto complemento são obrigatórios
+  if (!validateCEP(form.cep))           { errors.cep = 'CEP inválido.'; ok = false }
+  if (!form.street.trim())              { errors.street = 'Logradouro obrigatório.'; ok = false }
+  if (!form.streetNumber.trim())        { errors.streetNumber = 'Número obrigatório.'; ok = false }
+  if (!form.neighborhood.trim())        { errors.neighborhood = 'Bairro obrigatório.'; ok = false }
+  if (!form.city.trim())                { errors.city = 'Cidade obrigatória.'; ok = false }
+  if (!/^[A-Z]{2}$/.test(form.stateCode)) { errors.stateCode = 'UF inválida.'; ok = false }
+
   return ok
 }
 
@@ -728,6 +1074,11 @@ function validateProfile() {
   let ok = true
   if (!form.seniority) { errors.seniority = 'Escolha sua senioridade.'; ok = false }
   if (form.stack.length === 0) { errors.stack = 'Selecione pelo menos uma tecnologia.'; ok = false }
+  // Se cliente marcou presencial ou híbrido, precisa informar cidade
+  if (needsLocation.value && !form.jobLocation.trim()) {
+    errors.jobLocation = 'Informe a cidade pra filtrar vagas presenciais/híbridas.'
+    ok = false
+  }
   return ok
 }
 
@@ -754,22 +1105,42 @@ function onSubmitProfile() {
 async function submitSignup() {
   loading.value = true
   try {
+    // CPF/CNPJ/CEP enviados como dígitos puros (constraints do banco exigem regex ^[0-9]{n}$)
+    const cpfDigits  = form.cpf.replace(/\D/g, '')
+    const cnpjDigits = form.cnpj.replace(/\D/g, '')
+    const cepDigits  = form.cep.replace(/\D/g, '')
+
     const metadata: Record<string, unknown> = {
       name: form.name,
       surname: form.surname,
       birth_date: form.birthDate,
       phone: form.phone,
-      plan: plan.value
+      plan: plan.value,
+      person_type: form.personType,
+      cpf:        form.personType === 'pf' ? cpfDigits  : '',
+      cnpj:       form.personType === 'pj' ? cnpjDigits : '',
+      legal_name: form.personType === 'pj' ? form.legalName : '',
+      cep: cepDigits,
+      street: form.street,
+      street_number: form.streetNumber,
+      complement: form.complement,
+      neighborhood: form.neighborhood,
+      city: form.city,
+      state_code: form.stateCode
     }
 
     if (plan.value !== 'free') {
+      // Remoto eh sempre incluso. Cliente pode adicionar hybrid/onsite.
+      const workModels: WorkModel[] = ['remote', ...form.workModels]
       metadata.profile = {
         whatsapp: form.phone,
         stack: form.stack,
         seniority: form.seniority,
-        work_models: ['remote'],
+        work_models: workModels,
         min_salary: null,
-        location: null
+        location: needsLocation.value && form.jobLocation.trim()
+          ? form.jobLocation.trim()
+          : null
       }
     }
 
@@ -1034,6 +1405,42 @@ async function submitSignup() {
 .form-grid--2 { grid-template-columns: 1fr; }
 @media (min-width: 480px) {
   .form-grid--2 { grid-template-columns: 1fr 1fr; }
+}
+
+/* Logradouro + Número, Bairro + UF: proporção 2:1 em telas largas */
+.form-grid--2-1 { grid-template-columns: 1fr; }
+@media (min-width: 480px) {
+  .form-grid--2-1 { grid-template-columns: 2fr 1fr; }
+}
+
+.form-input--centered {
+  text-align: center;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.form-label-meta {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  font-weight: var(--font-regular);
+  margin-left: 4px;
+}
+
+/* Spinner do CEP enquanto ViaCEP esta sendo consultado */
+.auth-input-spinner {
+  position: absolute;
+  right: var(--space-3);
+  top: 50%;
+  transform: translateY(-50%);
+  width: 1rem;
+  height: 1rem;
+  border: 2px solid var(--color-border);
+  border-top-color: var(--color-accent);
+  border-radius: 999px;
+  animation: cep-spin 0.8s linear infinite;
+}
+@keyframes cep-spin {
+  to { transform: translateY(-50%) rotate(360deg); }
 }
 
 /* Toggle senha */

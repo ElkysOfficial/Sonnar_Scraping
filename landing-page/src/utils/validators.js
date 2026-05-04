@@ -230,6 +230,30 @@ export function formatCNPJ(cnpj) {
 }
 
 /**
+ * Valida formato de CEP brasileiro.
+ * Aceita formatado ou só dígitos. Não valida existência (use ViaCEP pra isso).
+ *
+ * @param {string} cep - CEP a ser validado
+ * @returns {boolean} - true se tem 8 dígitos, false caso contrário
+ */
+export function validateCEP(cep) {
+  const clean = String(cep ?? '').replace(/\D/g, '')
+  return clean.length === 8
+}
+
+/**
+ * Formata CEP para exibição (XXXXX-XXX).
+ *
+ * @param {string} cep - CEP sem formatação
+ * @returns {string} - CEP formatado, ou o input original se não tiver 8 dígitos
+ */
+export function formatCEP(cep) {
+  const clean = String(cep ?? '').replace(/\D/g, '')
+  if (clean.length !== 8) return cep
+  return clean.replace(/(\d{5})(\d{3})/, '$1-$2')
+}
+
+/**
  * Valida uma senha verificando se atende a todos os requisitos de segurança
  * 
  * Requisitos:
