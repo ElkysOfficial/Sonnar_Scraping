@@ -2,10 +2,12 @@ import { describe, it, expect } from 'vitest';
 import {
   validateCPF,
   validateCNPJ,
+  validateCEP,
   validateEmail,
   checkEmailDomain,
   formatCPF,
   formatCNPJ,
+  formatCEP,
   validatePassword,
 } from './validators';
 
@@ -130,6 +132,40 @@ describe('formatCNPJ', () => {
   it('returns original for invalid length', () => {
     expect(formatCNPJ('123456')).toBe('123456');
     expect(formatCNPJ('')).toBe('');
+  });
+});
+
+describe('validateCEP', () => {
+  it('accepts CEP with 8 digits', () => {
+    expect(validateCEP('01310100')).toBe(true);
+    expect(validateCEP('01310-100')).toBe(true);
+    expect(validateCEP('01.310-100')).toBe(true);
+  });
+
+  it('rejects CEP with wrong length', () => {
+    expect(validateCEP('1234567')).toBe(false);
+    expect(validateCEP('123456789')).toBe(false);
+    expect(validateCEP('')).toBe(false);
+  });
+
+  it('handles null/undefined gracefully', () => {
+    expect(validateCEP(null as unknown as string)).toBe(false);
+    expect(validateCEP(undefined as unknown as string)).toBe(false);
+  });
+});
+
+describe('formatCEP', () => {
+  it('formats 8-digit CEP correctly', () => {
+    expect(formatCEP('01310100')).toBe('01310-100');
+  });
+
+  it('returns original for invalid length', () => {
+    expect(formatCEP('123')).toBe('123');
+    expect(formatCEP('')).toBe('');
+  });
+
+  it('handles already-formatted CEP', () => {
+    expect(formatCEP('01310-100')).toBe('01310-100');
   });
 });
 
