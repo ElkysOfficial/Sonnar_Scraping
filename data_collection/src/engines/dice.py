@@ -280,17 +280,43 @@ def _parse_job_detail(html: str) -> dict:
         loc = jp.get('jobLocation')
         if isinstance(loc, list):
             loc = loc[0] if loc else None
+        applicant_loc_only = jp.get('jobLocationType') == 'TELECOMMUTE' or jp.get('applicantLocationRequirements')
         if isinstance(loc, dict):
             addr = loc.get('address') or {}
             city = addr.get('addressLocality') or ''
             region = addr.get('addressRegion') or ''
             country = addr.get('addressCountry') or ''
             country_code = country if len(country) == 2 else {'USA': 'US', 'United States': 'US'}.get(country, country[:2].upper() if country else '')
+            # Junta apenas as partes presentes - location_normalizer agora
+            # entende tanto "City, ST, CC" quanto "ST, CC" (sem cidade)
+            # quando o country code for explicito.
             parts = [p for p in [city, region, country_code] if p]
             base = ', '.join(parts)
-            applicant_loc_only = jp.get('jobLocationType') == 'TELECOMMUTE' or jp.get('applicantLocationRequirements')
             if base:
                 out['location_raw'] = f'Remote in {base}' if applicant_loc_only else base
+
+        # Fallback: vagas 100% remote frequentemente nao tem jobLocation,
+        # apenas applicantLocationRequirements (ex.: Country USA). Usa esse
+        # campo para preencher pelo menos o country (location_normalizer
+        # reconhece nomes por extenso como 'United States' / 'Canada' /
+        # 'Brasil', mas nao siglas isoladas como 'BR' ou 'CA').
+        if not out.get('location_raw'):
+            apr = jp.get('applicantLocationRequirements')
+            apr_list = apr if isinstance(apr, list) else ([apr] if apr else [])
+            for entry in apr_list:
+                if not isinstance(entry, dict):
+                    continue
+                cname = entry.get('name') or ''
+                if not cname:
+                    continue
+                # Normaliza siglas para nomes que o country detector entende
+                full_name = {
+                    'US': 'United States', 'USA': 'United States',
+                    'BR': 'Brasil', 'BRA': 'Brasil',
+                    'CA': 'Canada', 'CAN': 'Canada',
+                }.get(cname.upper(), cname)
+                out['location_raw'] = f'Remote in {full_name}'
+                break
         # baseSalary
         sal = jp.get('baseSalary')
         if isinstance(sal, dict):

@@ -31,6 +31,30 @@ class TestBrazilianStates:
         assert country == "BR"
 
 
+class TestUSStates:
+    @pytest.mark.parametrize("raw,expected", [
+        ("Pittsburgh, PA, US", ("PA", "US")),
+        ("San Diego, CA, US", ("CA", "US")),
+        ("New York, NY, US", ("NY", "US")),
+        ("Dallas, TX, US", ("TX", "US")),
+        ("Atlanta, GA, US", ("GA", "US")),
+    ])
+    def test_us_state_with_city(self, raw, expected):
+        assert normalize_location(raw) == expected
+
+    @pytest.mark.parametrize("raw,expected", [
+        # Sem cidade: ainda deve detectar state pelo country code explicito.
+        # Caso comum no Dice quando a vaga eh 100% remota.
+        ("PA, US", ("PA", "US")),
+        ("CA, US", ("CA", "US")),
+        ("NY, US", ("NY", "US")),
+        ("Remote in PA, US", ("PA", "US")),
+        ("Remote in CA, US", ("CA", "US")),
+    ])
+    def test_us_state_without_city(self, raw, expected):
+        assert normalize_location(raw) == expected
+
+
 class TestForeignCountries:
     @pytest.mark.parametrize("raw,expected_country", [
         ("Lisboa, Portugal", "PT"),
