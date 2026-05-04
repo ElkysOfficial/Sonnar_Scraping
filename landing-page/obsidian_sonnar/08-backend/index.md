@@ -5,7 +5,11 @@ tags: [backend, moc]
 
 # Backend
 
-⚠️ **Stub** — referência cruzada com [[../06-api/index]].
+Referência cruzada com [[../06-api/index]].
+
+## Notas
+
+- [[scraper-persistence]] ✅ Persistência do scraper em 3 sinks (JSON / CSV / Supabase).
 
 ## Notas a criar
 

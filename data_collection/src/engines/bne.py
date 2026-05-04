@@ -29,70 +29,65 @@ def get_scraper():
     return _scraper_session
 
 
-async def get_bne_job_ids() -> list:
-    """Extrai IDs das vagas de emprego da BNE com paginação automática."""
-    job_ids = set()  # Usar set para evitar duplicatas
-    scraper = get_scraper()
+async def _scan_area(area: str, scraper, max_pages: int = 15) -> set:
+    """Pagina uma área até encontrar 2 páginas vazias consecutivas ou max_pages."""
+    found = set()
+    page = 1
+    consecutive_empty = 0
 
-    # Áreas de TI para buscar
+    while page <= max_pages and consecutive_empty < 2:
+        try:
+            if page > 1:
+                await asyncio.sleep(random.uniform(0.3, 0.8))
+
+            url = f'https://www.bne.com.br/vagas-de-emprego-na-area-de-{area}?Area={area}&Sort=0&Page={page}'
+            response = await asyncio.to_thread(scraper.get, url, timeout=20)
+
+            if response.status_code != 200:
+                consecutive_empty += 1
+                page += 1
+                continue
+
+            soup = BeautifulSoup(response.text, 'html.parser')
+            jobs = soup.find_all('section', class_='job__card__container')
+
+            if not jobs:
+                consecutive_empty += 1
+                page += 1
+                continue
+
+            new_count = 0
+            for job in jobs:
+                job_id = job.get('id', '').replace('job-', '')
+                if job_id and job_id not in found:
+                    found.add(job_id)
+                    new_count += 1
+
+            consecutive_empty = 0 if new_count else (consecutive_empty + 1)
+            page += 1
+
+        except Exception:
+            consecutive_empty += 1
+            page += 1
+
+    return found
+
+
+async def get_bne_job_ids() -> list:
+    """Extrai IDs paralelizando as áreas (cada uma roda em sua própria thread via to_thread)."""
+    scraper = get_scraper()
     areas = [
-        'Inform%C3%A1tica',  # Informática
+        'Inform%C3%A1tica',
         'Tecnologia',
         'Desenvolvimento',
         'Programador',
         'Software',
     ]
-
-    for area in areas:
-        page = 1
-        consecutive_empty = 0
-        max_pages = 50  # Limite de segurança
-
-        while page <= max_pages and consecutive_empty < 2:
-            try:
-                if page > 1 or area != areas[0]:
-                    await asyncio.sleep(random.uniform(1, 2))
-
-                url = f'https://www.bne.com.br/vagas-de-emprego-na-area-de-{area}?Area={area}&Sort=0&Page={page}'
-                response = await asyncio.to_thread(
-                    scraper.get,
-                    url,
-                    timeout=30
-                )
-
-                if response.status_code == 200:
-                    soup = BeautifulSoup(response.text, 'html.parser')
-                    # Nova estrutura: section com class job__card__container
-                    jobs = soup.find_all('section', class_='job__card__container')
-
-                    if not jobs:
-                        consecutive_empty += 1
-                        page += 1
-                        continue
-
-                    consecutive_empty = 0
-                    jobs_found_this_page = 0
-
-                    for job in jobs:
-                        # Extrair job_id do atributo id="job-XXXXXX"
-                        job_id = job.get('id', '').replace('job-', '')
-                        if job_id and job_id not in job_ids:
-                            job_ids.add(job_id)
-                            jobs_found_this_page += 1
-
-                    # Se não encontrou vagas novas, pode estar no fim
-                    if jobs_found_this_page == 0:
-                        consecutive_empty += 1
-
-                    page += 1
-                else:
-                    consecutive_empty += 1
-                    page += 1
-
-            except Exception:
-                consecutive_empty += 1
-                page += 1
-
+    results = await asyncio.gather(*(_scan_area(a, scraper) for a in areas), return_exceptions=True)
+    job_ids = set()
+    for r in results:
+        if isinstance(r, set):
+            job_ids.update(r)
     return list(job_ids)
 
 
@@ -190,19 +185,32 @@ async def fetch_job_details(job_id, semaphore):
         return None
 
 
-async def get_bne_jobs() -> list:
-    """Extrai detalhes das vagas de emprego a partir dos IDs."""
+async def get_bne_jobs(on_job=None) -> list:
+    """
+    Coleta vagas da BNE em duas fases (lista IDs por área + fetch detalhes).
+
+    A BNE não filtra por stack — usa 5 áreas hardcoded de TI. Logo, esta engine
+    não participa do batching: ela sempre cobre as mesmas 5 áreas.
+
+    Args:
+        on_job: callback opcional ``async fn(parsed)`` invocado a cada vaga
+                resolvida em paralelo.
+    """
     jobs = []
     job_ids = await get_bne_job_ids()
+    semaphore = asyncio.Semaphore(10)
 
-    # Semáforo para limitar requisições simultâneas
-    semaphore = asyncio.Semaphore(5)
+    async def _fetch_and_emit(job_id):
+        parsed = await fetch_job_details(job_id, semaphore)
+        if parsed is not None and on_job is not None:
+            try:
+                await on_job(parsed)
+            except Exception:
+                pass
+        return parsed
 
-    job_details = await asyncio.gather(*[fetch_job_details(job_id, semaphore) for job_id in job_ids])
-
-    for job in job_details:
-        if job is not None:
-            jobs.append(job)
+    job_details = await asyncio.gather(*[_fetch_and_emit(jid) for jid in job_ids])
+    jobs = [j for j in job_details if j is not None]
 
     print(f'Foram obtidas {len(jobs)} vagas do site BNE')
     return jobs

@@ -4,7 +4,7 @@ import re
 from datetime import datetime, timedelta
 from curl_cffi import requests
 from bs4 import BeautifulSoup
-from variavel import stacks
+from variavel import get_active_stacks
 
 
 # Sessão global
@@ -100,24 +100,29 @@ def extract_hiring_regime(title: str, job_type: str = '') -> str:
     return ''
 
 
-async def get_jooble_jobs() -> list:
+async def get_jooble_jobs(on_job=None) -> list:
     """
-    Extrai vagas do Jooble Brasil via __INITIAL_STATE__ embutido no HTML.
+    Extrai vagas do Jooble Brasil via ``__INITIAL_STATE__`` embutido no HTML.
 
-    IMPORTANTE: O Jooble é um agregador que usa links de redirect.
-    Esta engine filtra vagas sem dados essenciais (empresa, localização).
+    O Jooble é um agregador que usa links de redirect — usamos o ``uid`` da
+    vaga como chave de deduplicação para evitar gravar a mesma vaga sob URLs
+    de redirect diferentes.
 
-    Returns: [[link, title, company, location, work_type, hiring_regime, salary, publication_date], ...]
+    Args:
+        on_job: callback opcional ``async fn(parsed)`` invocado a cada vaga.
     """
+    import urllib.parse
+
     jobs = []
     seen_ids = set()
     session = get_session()
 
-    for stack in stacks:
+    for stack in get_active_stacks():
+        encoded = urllib.parse.quote(stack)
         # Percorrer até 10 páginas por stack (~200 vagas por stack)
         for page in range(1, 11):
             try:
-                url = f'https://br.jooble.org/SearchResult?ukw={stack}&p={page}'
+                url = f'https://br.jooble.org/SearchResult?ukw={encoded}&p={page}'
                 response = await asyncio.to_thread(session.get, url, timeout=30)
 
                 if response.status_code != 200:
@@ -262,13 +267,18 @@ async def get_jooble_jobs() -> list:
 
                         # === LINK ===
                         # Construir link para página de detalhes do Jooble (mais estável que /away/)
-                        link = f'https://br.jooble.org/desc/{uid}?ckey={stack}'
+                        link = f'https://br.jooble.org/desc/{uid}?ckey={encoded}'
 
                         # === VALIDAÇÃO FINAL ===
                         # Só adiciona vagas com título preenchido (empresa pode ser "Confidencial")
                         if job_title:
                             job = [link, job_title, company, location, work_type, hiring_regime, salary, publication_date]
                             jobs.append(job)
+                            if on_job is not None:
+                                try:
+                                    await on_job(job)
+                                except Exception:
+                                    pass
 
                     except Exception:
                         continue

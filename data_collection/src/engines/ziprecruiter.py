@@ -1,9 +1,10 @@
 import asyncio
 import re
+import urllib.parse
 from datetime import datetime, timedelta
 from curl_cffi import requests
 from bs4 import BeautifulSoup
-from variavel import stacks
+from variavel import get_active_stacks
 
 
 def parse_relative_date(date_text: str) -> str:
@@ -57,20 +58,23 @@ def get_session():
     return _session
 
 
-async def get_ziprecruiter_jobs() -> list:
+async def get_ziprecruiter_jobs(on_job=None) -> list:
     """
-    Extrai vagas do ZipRecruiter UK (internacional).
-    Returns: [[link, title, company, location, work_type, hiring_regime, salary, publication_date], ...]
+    Coleta vagas do ZipRecruiter UK paginando 10 páginas por stack do lote ativo.
+
+    Args:
+        on_job: callback opcional ``async fn(parsed)`` invocado a cada vaga.
     """
     jobs = []
     seen_links = set()
     session = get_session()
 
-    for stack in stacks:
+    for stack in get_active_stacks():
+        encoded = urllib.parse.quote(stack)
         # Percorrer 10 páginas por stack
         for page in range(1, 11):
             try:
-                url = f'https://www.ziprecruiter.co.uk/jobs/search?q={stack}&l=&page={page}'
+                url = f'https://www.ziprecruiter.co.uk/jobs/search?q={encoded}&l=&page={page}'
                 response = await asyncio.to_thread(session.get, url, timeout=30)
 
                 if response.status_code != 200:
@@ -173,6 +177,11 @@ async def get_ziprecruiter_jobs() -> list:
 
                         job = [link, job_title, company, location, work_type, hiring_regime, salary, publication_date]
                         jobs.append(job)
+                        if on_job is not None:
+                            try:
+                                await on_job(job)
+                            except Exception:
+                                pass
 
                     except Exception:
                         continue

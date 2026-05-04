@@ -34,8 +34,14 @@ async def get_programathor_links() -> list:
     return links
 
 
-async def get_programathor_jobs() -> list:
-    """Extrai detalhes das vagas do ProgramaThor."""
+async def get_programathor_jobs(on_job=None) -> list:
+    """
+    Coleta vagas do ProgramaThor (sem iterar stacks — site é nicho de tech BR
+    e a listagem por categoria já é tudo tech).
+
+    Args:
+        on_job: callback opcional ``async fn(parsed)`` invocado a cada vaga.
+    """
     jobs = []
     job_links = await get_programathor_links()
 
@@ -140,6 +146,11 @@ async def get_programathor_jobs() -> list:
 
             job = [link, job_title, company, location, work_type, hiring_regime, salary, publication_date]
             jobs.append(job)
+            if on_job is not None:
+                try:
+                    await on_job(job)
+                except Exception:
+                    pass
 
         except Exception:
             continue

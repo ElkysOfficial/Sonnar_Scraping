@@ -1,0 +1,105 @@
+"""Testes para CSVJobStore (sink CSV append-only)."""
+import csv
+from pathlib import Path
+
+import pytest
+
+from src.persistence.csv_store import CSV_COLUMNS, CSVJobStore
+
+
+@pytest.fixture
+def csv_path(tmp_path: Path) -> Path:
+    return tmp_path / "job.csv"
+
+
+def _make_payload(**overrides) -> dict:
+    base = {
+        "job_url": "https://example.com/job/1",
+        "job_title": "Engenheiro de Software",
+        "company": "ACME",
+        "location_raw": "São Paulo - SP",
+        "state_code": "SP",
+        "country_code": "BR",
+        "work_type": "Remoto",
+        "hiring_regime": "CLT",
+        "salary_raw": "R$ 8.000",
+        "salary_min": 8000,
+        "salary_max": 8000,
+        "salary_currency": "BRL",
+        "publication_date": "2026-05-03",
+        "source": "test",
+        "scraped_at": "2026-05-03T12:00:00+00:00",
+    }
+    base.update(overrides)
+    return base
+
+
+class TestCSVJobStore:
+    def test_creates_header_on_first_use(self, csv_path):
+        CSVJobStore(path=str(csv_path))
+        assert csv_path.exists()
+        with csv_path.open(encoding="utf-8") as f:
+            header = next(csv.reader(f))
+        assert header == CSV_COLUMNS
+
+    def test_append_writes_row(self, csv_path):
+        store = CSVJobStore(path=str(csv_path))
+        ok = store.append(_make_payload())
+        assert ok is True
+
+        with csv_path.open(encoding="utf-8") as f:
+            rows = list(csv.reader(f))
+        assert len(rows) == 2  # header + 1 row
+        assert rows[1][0] == "https://example.com/job/1"
+
+    def test_append_without_url_returns_false(self, csv_path):
+        store = CSVJobStore(path=str(csv_path))
+        assert store.append({"job_title": "X"}) is False
+
+    def test_appends_are_cumulative(self, csv_path):
+        store = CSVJobStore(path=str(csv_path))
+        store.append(_make_payload(job_url="https://example.com/1"))
+        store.append(_make_payload(job_url="https://example.com/2"))
+        store.append(_make_payload(job_url="https://example.com/3"))
+
+        with csv_path.open(encoding="utf-8") as f:
+            rows = list(csv.reader(f))
+        assert len(rows) == 4  # header + 3
+
+    def test_handles_unicode_correctly(self, csv_path):
+        store = CSVJobStore(path=str(csv_path))
+        store.append(_make_payload(
+            job_title="Desenvolvedor Sênior — Pleno",
+            location_raw="São Paulo, SP",
+        ))
+        with csv_path.open(encoding="utf-8") as f:
+            content = f.read()
+        assert "Sênior" in content
+        assert "São Paulo" in content
+
+    def test_none_values_become_empty_string(self, csv_path):
+        store = CSVJobStore(path=str(csv_path))
+        store.append(_make_payload(salary_min=None, salary_max=None, state_code=None))
+
+        with csv_path.open(encoding="utf-8") as f:
+            rows = list(csv.reader(f))
+        # state_code está em CSV_COLUMNS na posição 4 (0-indexed)
+        idx_state = CSV_COLUMNS.index("state_code")
+        idx_min = CSV_COLUMNS.index("salary_min")
+        assert rows[1][idx_state] == ""
+        assert rows[1][idx_min] == ""
+
+    def test_existing_file_with_header_is_preserved(self, csv_path):
+        # Cria arquivo manualmente com header + 1 linha
+        with csv_path.open("w", encoding="utf-8", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow(CSV_COLUMNS)
+            writer.writerow(["https://x/1"] + [""] * (len(CSV_COLUMNS) - 1))
+
+        # Instancia o store — não deve sobrescrever
+        store = CSVJobStore(path=str(csv_path))
+        store.append(_make_payload(job_url="https://x/2"))
+
+        with csv_path.open(encoding="utf-8") as f:
+            rows = list(csv.reader(f))
+        assert len(rows) == 3  # header + linha original + nova

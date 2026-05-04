@@ -20,6 +20,7 @@ import re
 from datetime import datetime, timezone
 from typing import Optional, Tuple
 
+from .csv_store import CSVJobStore
 from .local_store import LocalJobStore
 from .location_normalizer import normalize_location
 from .supabase_client import SupabaseJobsClient
@@ -115,10 +116,27 @@ def build_job_payload(job_data: dict, source: Optional[str] = None) -> dict:
 
 
 class JobsRepository:
-    """Orquestra normalizacao + persistencia local + Supabase."""
+    """
+    Orquestra normalização e persistência em três sinks (todos best-effort):
 
-    def __init__(self, json_path: Optional[str] = None):
+      1. ``LocalJobStore``   → ``src/data/jobs.json`` (write-through atômico,
+         fonte de verdade para envio de mensagens pelos bots).
+      2. ``CSVJobStore``     → ``src/data/job.csv``  (append-only, histórico
+         imutável para analytics).
+      3. ``SupabaseJobsClient`` → tabela ``public.jobs`` (alimenta agregados
+         da landing-page).
+
+    O método ``save`` retorna True se **pelo menos um** sink confirmou. Assim,
+    uma queda do Supabase não impede o JSON e o CSV de serem gravados.
+    """
+
+    def __init__(
+        self,
+        json_path: Optional[str] = None,
+        csv_path: Optional[str] = None,
+    ):
         self.local = LocalJobStore(path=json_path)
+        self.csv = CSVJobStore(path=csv_path)
         self.supabase = SupabaseJobsClient()
 
     async def __aenter__(self):
@@ -134,14 +152,24 @@ class JobsRepository:
 
     async def save(self, job_data: dict, source: Optional[str] = None) -> bool:
         """
-        Normaliza e persiste em (1) JSON local e (2) Supabase.
-        Retorna True se ao menos um destino aceitou.
+        Normaliza ``job_data`` e persiste nos três sinks (JSON, CSV, Supabase).
+
+        Cada sink é independente — uma falha não bloqueia os outros. A função
+        retorna True se **ao menos um** sink confirmou, garantindo que o job
+        não some completamente em caso de falha parcial.
+
+        Args:
+            job_data: dict bruto vindo do `normalize_job_result` do controller.
+            source:   nome da engine que extraiu (ex.: ``'linkedin'``).
+
+        Returns:
+            True se ao menos um sink aceitou; False só se todos falharem.
         """
         payload = build_job_payload(job_data, source=source)
         if not payload.get('job_url'):
             return False
 
-        # 1) JSON local — sempre tenta, fonte de verdade pro envio de mensagens
+        # 1) JSON local — fonte de verdade pro bot de envio de mensagens
         local_ok = True
         try:
             self.local.upsert(payload)
@@ -149,11 +177,15 @@ class JobsRepository:
             logger.error('Falha local_store.upsert: %s', exc)
             local_ok = False
 
-        # 2) Supabase — best effort
+        # 2) CSV append-only — histórico imutável para analytics
+        csv_ok = self.csv.append(payload)
+
+        # 3) Supabase — alimenta agregados da landing-page
         supa_ok = await self.supabase.upsert_job(payload)
 
-        if not (local_ok or supa_ok):
+        if not (local_ok or csv_ok or supa_ok):
             return False
+
         if not supa_ok and self.supabase.enabled:
             logger.warning('Job persistido localmente mas falhou no Supabase: %s', payload['job_url'])
         return True

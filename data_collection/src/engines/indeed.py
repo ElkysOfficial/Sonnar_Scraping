@@ -1,14 +1,14 @@
 import asyncio
 import json
+import os
 import random
 import sys
-import os
+import urllib.parse
 from bs4 import BeautifulSoup
 from curl_cffi import requests
 
-# Adiciona o diretório pai ao path para importar variavel
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
-from variavel import stacks
+from variavel import get_active_stacks
 
 
 # Sessão global para reutilizar cookies
@@ -32,13 +32,14 @@ async def get_indeed_links() -> list:
     session = get_session()
     seen_jks = set()
 
-    for stack in stacks:
+    for stack in get_active_stacks():
+        encoded = urllib.parse.quote(stack)
         for page in range(2):
             try:
                 if page > 0 or links:
                     await asyncio.sleep(random.uniform(0.5, 1.5))
 
-                url = f'https://br.indeed.com/empregos?q={stack}&limit=50&start={page*50}&sort=date'
+                url = f'https://br.indeed.com/empregos?q={encoded}&limit=50&start={page*50}&sort=date'
                 response = await asyncio.to_thread(session.get, url, timeout=30)
 
                 if response.status_code == 200:
@@ -261,15 +262,28 @@ async def fetch_job_details(link, semaphore):
         return None
 
 
-async def get_indeed_jobs() -> list:
-    """Extrai detalhes das vagas de emprego."""
+async def get_indeed_jobs(on_job=None) -> list:
+    """
+    Coleta vagas do Indeed em duas fases (lista links + fetch detalhes em paralelo).
+
+    Args:
+        on_job: callback opcional ``async fn(parsed)`` invocado a cada vaga
+                resolvida — usado pelo controller pra persistir em streaming.
+    """
     jobs = []
     job_links = await get_indeed_links()
-
-    # Semáforo para limitar requisições simultâneas
     semaphore = asyncio.Semaphore(5)
 
-    job_details = await asyncio.gather(*[fetch_job_details(link, semaphore) for link in job_links])
+    async def _fetch_and_emit(link):
+        parsed = await fetch_job_details(link, semaphore)
+        if parsed is not None and on_job is not None:
+            try:
+                await on_job(parsed)
+            except Exception:
+                pass
+        return parsed
+
+    job_details = await asyncio.gather(*[_fetch_and_emit(l) for l in job_links])
 
     for job in job_details:
         if job is not None:

@@ -8,6 +8,7 @@ tags: [flow, moc]
 | Fluxo            | Status      |
 | ---------------- | ----------- |
 | [[auth-flow]]    | ✅ documentado |
+| [[scraping-flow]]| ✅ documentado |
 | `signup-flow.md` | ⚠️ stub    |
 | `stripe-checkout-flow.md` | ⚠️ stub |
 | `payment-confirmation-flow.md` | ⚠️ stub (linkar `PaymentConfirmingPage`) |

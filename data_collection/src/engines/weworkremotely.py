@@ -1,180 +1,173 @@
+"""
+Engine WeWorkRemotely — consome múltiplos feeds RSS oficiais.
+
+Como o site é 100% focado em vagas remotas, todos os jobs viram
+``work_type='Remoto'`` automaticamente. Não há paginação por stack — os
+feeds RSS já segmentam por categoria (programming, devops, design, etc.).
+
+Por que não usa batching?
+    Os feeds são chamadas baratas (XML estático) e a lista de feeds é
+    pequena (9 categorias). Iterar tudo em um único passe é OK.
+"""
+from __future__ import annotations
+
 import asyncio
-import os
-import sys
 import xml.etree.ElementTree as ET
-from curl_cffi import requests
 from datetime import datetime
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-from utils.google_enricher import GoogleEnricher, is_missing_field
+from curl_cffi import requests
 
 
-# Sessão global
+# Sessão global (curl_cffi → impersonate Chrome para bypass de filtros básicos)
 _session = None
 
 
 def get_session():
-    """Retorna a sessão global, criando se necessário."""
+    """Sessão reutilizável; criada na primeira chamada."""
     global _session
     if _session is None:
-        _session = requests.Session(impersonate='chrome')
+        _session = requests.Session(impersonate="chrome")
     return _session
 
 
-def parse_date(date_str):
-    """Converte data do RSS para formato DD/MM/YYYY."""
-    try:
-        # Formato: Wed, 15 Jan 2026 00:00:00 +0000
-        dt = datetime.strptime(date_str.strip(), '%a, %d %b %Y %H:%M:%S %z')
-        return dt.strftime('%d/%m/%Y')
-    except:
-        try:
-            # Formato alternativo
-            dt = datetime.strptime(date_str.strip()[:16], '%a, %d %b %Y')
-            return dt.strftime('%d/%m/%Y')
-        except:
-            return ''
-
-
-async def get_weworkremotely_jobs() -> list:
-    """
-    Extrai vagas do We Work Remotely via múltiplos RSS feeds por categoria.
-    Site 100% focado em vagas remotas.
-    Returns: [[link, title, company, location, work_type, hiring_regime, salary, publication_date], ...]
-    """
-    jobs = []
-    seen_links = set()
-    session = get_session()
-
-    # Tech keywords para filtrar vagas relevantes
-    tech_keywords = {
-        'developer', 'engineer', 'programmer', 'software', 'frontend', 'backend',
-        'full stack', 'fullstack', 'devops', 'data', 'python', 'java', 'javascript',
-        'react', 'node', 'angular', 'vue', 'aws', 'cloud', 'mobile', 'ios', 'android',
-        'flutter', 'kotlin', 'swift', 'go', 'rust', 'php', 'ruby', 'rails', '.net',
-        'c#', 'typescript', 'design', 'ux', 'ui', 'product', 'qa', 'test', 'security',
-        'machine learning', 'ml', 'ai', 'blockchain', 'web3', 'defi'
-    }
-
-    # Múltiplos feeds RSS por categoria para maximizar cobertura
-    rss_feeds = [
-        'https://weworkremotely.com/remote-jobs.rss',
-        'https://weworkremotely.com/categories/remote-programming-jobs.rss',
-        'https://weworkremotely.com/categories/remote-devops-sysadmin-jobs.rss',
-        'https://weworkremotely.com/categories/remote-design-jobs.rss',
-        'https://weworkremotely.com/categories/remote-product-jobs.rss',
-        'https://weworkremotely.com/categories/remote-data-jobs.rss',
-        'https://weworkremotely.com/categories/remote-full-stack-programming-jobs.rss',
-        'https://weworkremotely.com/categories/remote-front-end-programming-jobs.rss',
-        'https://weworkremotely.com/categories/remote-back-end-programming-jobs.rss',
-    ]
-
-    for rss_url in rss_feeds:
-        try:
-            response = await asyncio.to_thread(session.get, rss_url, timeout=30)
-
-            if response.status_code != 200:
-                continue
-
-            # Parse XML
-            root = ET.fromstring(response.content)
-
-            # Encontrar todos os itens
-            for item in root.findall('.//item'):
-                try:
-                    # Título
-                    title_elem = item.find('title')
-                    job_title = title_elem.text.strip() if title_elem is not None and title_elem.text else ''
-                    if not job_title:
-                        continue
-
-                    # Filtrar apenas vagas de tech
-                    title_lower = job_title.lower()
-                    is_tech = any(kw in title_lower for kw in tech_keywords)
-                    if not is_tech:
-                        continue
-
-                    # Link
-                    link_elem = item.find('link')
-                    link = link_elem.text.strip() if link_elem is not None and link_elem.text else ''
-                    if not link:
-                        continue
-
-                    if link in seen_links:
-                        continue
-                    seen_links.add(link)
-
-                    # Empresa (no título geralmente: "Company: Job Title")
-                    company = ''
-                    if ':' in job_title:
-                        parts = job_title.split(':', 1)
-                        company = parts[0].strip()
-                        job_title = parts[1].strip()
-
-                    # Localização - sempre vazio pois é 100% remoto
-                    location = []
-                    work_type = 'Remoto'
-
-                    # Regime (heurística do título)
-                    if 'contract' in title_lower or 'contractor' in title_lower:
-                        hiring_regime = 'Contractor'
-                    elif 'part-time' in title_lower or 'part time' in title_lower:
-                        hiring_regime = 'Part-time'
-                    elif 'intern' in title_lower:
-                        hiring_regime = 'Internship'
-                    else:
-                        hiring_regime = 'Full-time'
-
-                    # Salário (não disponível no RSS)
-                    salary = ''
-
-                    # Data de publicação
-                    pub_date_elem = item.find('pubDate')
-                    publication_date = ''
-                    if pub_date_elem is not None and pub_date_elem.text:
-                        publication_date = parse_date(pub_date_elem.text)
-
-                    job = [link, job_title, company, location, work_type, hiring_regime, salary, publication_date]
-                    jobs.append(job)
-
-                except Exception:
-                    continue
-
-            await asyncio.sleep(0.3)
-
-        except Exception:
-            continue
-
-    # Enriquecer vagas com location/salary vazios usando Google
-    if jobs:
-        async with GoogleEnricher() as enricher:
-            for job_data in jobs:
-                location_str = job_data[3] if isinstance(job_data[3], str) else ", ".join(job_data[3]) if job_data[3] else ""
-                needs_location = is_missing_field(location_str)
-                needs_salary = is_missing_field(job_data[6])  # salary está no índice 6
-                if needs_location or needs_salary:
-                    enriched = await enricher.enrich_job({
-                        "company": job_data[2],
-                        "job_title": job_data[1],
-                        "location": location_str,
-                        "salary": job_data[6]
-                    })
-                    if needs_location and enriched.get("location"):
-                        job_data[3] = enriched["location"]
-                    if needs_salary and enriched.get("salary"):
-                        job_data[6] = enriched["salary"]
-
-    print(f'Foram obtidas {len(jobs)} vagas do site WeWorkRemotely')
-    return jobs
-
-
-def reset_session():
-    """Reseta a sessão (útil em caso de bloqueio)."""
+def reset_session() -> None:
     global _session
     _session = None
 
 
+# Keywords pra filtrar só vagas de tech (alguns feeds têm marketing/design não-tech)
+TECH_KEYWORDS = {
+    "developer", "engineer", "programmer", "software", "frontend", "backend",
+    "full stack", "fullstack", "devops", "data", "python", "java", "javascript",
+    "react", "node", "angular", "vue", "aws", "cloud", "mobile", "ios", "android",
+    "flutter", "kotlin", "swift", "go", "rust", "php", "ruby", "rails", ".net",
+    "c#", "typescript", "design", "ux", "ui", "product", "qa", "test", "security",
+    "machine learning", "ml", "ai", "blockchain", "web3", "defi",
+}
+
+# Feeds RSS — cobertura ampla por categoria
+RSS_FEEDS = [
+    "https://weworkremotely.com/remote-jobs.rss",
+    "https://weworkremotely.com/categories/remote-programming-jobs.rss",
+    "https://weworkremotely.com/categories/remote-devops-sysadmin-jobs.rss",
+    "https://weworkremotely.com/categories/remote-design-jobs.rss",
+    "https://weworkremotely.com/categories/remote-product-jobs.rss",
+    "https://weworkremotely.com/categories/remote-data-jobs.rss",
+    "https://weworkremotely.com/categories/remote-full-stack-programming-jobs.rss",
+    "https://weworkremotely.com/categories/remote-front-end-programming-jobs.rss",
+    "https://weworkremotely.com/categories/remote-back-end-programming-jobs.rss",
+]
+
+
+def _parse_pub_date(text: str) -> str:
+    """RFC822 (ex.: ``Wed, 15 Jan 2026 00:00:00 +0000``) → ``DD/MM/YYYY``."""
+    if not text:
+        return ""
+    text = text.strip()
+    for fmt in ("%a, %d %b %Y %H:%M:%S %z", "%a, %d %b %Y"):
+        try:
+            return datetime.strptime(text[:31] if "%H" in fmt else text[:16], fmt).strftime("%d/%m/%Y")
+        except ValueError:
+            continue
+    return ""
+
+
+def _classify_regime(title_lower: str) -> str:
+    """Heurística de regime baseada no título (RSS não tem campo estruturado)."""
+    if "contract" in title_lower or "contractor" in title_lower:
+        return "Contractor"
+    if "part-time" in title_lower or "part time" in title_lower:
+        return "Part-time"
+    if "intern" in title_lower:
+        return "Internship"
+    return "Full-time"
+
+
+def _parse_item(item: ET.Element) -> list | None:
+    """Extrai uma vaga de um <item> RSS. Devolve None se não passar no filtro tech."""
+    title_el = item.find("title")
+    job_title = title_el.text.strip() if title_el is not None and title_el.text else ""
+    if not job_title:
+        return None
+
+    title_lower = job_title.lower()
+    if not any(kw in title_lower for kw in TECH_KEYWORDS):
+        return None
+
+    link_el = item.find("link")
+    link = link_el.text.strip() if link_el is not None and link_el.text else ""
+    if not link:
+        return None
+
+    # Empresa: WeWorkRemotely usa "Company: Job Title" no <title>
+    company = ""
+    if ":" in job_title:
+        parts = job_title.split(":", 1)
+        company = parts[0].strip()
+        job_title = parts[1].strip()
+
+    pub_el = item.find("pubDate")
+    publication_date = _parse_pub_date(pub_el.text) if pub_el is not None and pub_el.text else ""
+
+    return [
+        link, job_title, company,
+        [],                # location vazia — site é 100% remoto
+        "Remoto",          # work_type
+        _classify_regime(title_lower.lower()),
+        "",                # salary não disponível no RSS
+        publication_date,
+    ]
+
+
+async def get_weworkremotely_jobs(on_job=None) -> list:
+    """
+    Busca vagas em todos os feeds RSS, filtra por tech e devolve a lista.
+
+    Args:
+        on_job: callback opcional invocado a cada vaga emitida.
+    """
+    jobs: list = []
+    seen: set[str] = set()
+    session = get_session()
+
+    for rss_url in RSS_FEEDS:
+        try:
+            response = await asyncio.to_thread(session.get, rss_url, timeout=30)
+        except Exception:
+            continue
+        if response.status_code != 200:
+            continue
+
+        try:
+            root = ET.fromstring(response.content)
+        except ET.ParseError:
+            continue
+
+        for item in root.findall(".//item"):
+            try:
+                parsed = _parse_item(item)
+            except Exception:
+                continue
+            if not parsed:
+                continue
+            link = parsed[0]
+            if link in seen:
+                continue
+            seen.add(link)
+            jobs.append(parsed)
+            if on_job is not None:
+                try:
+                    await on_job(parsed)
+                except Exception:
+                    pass
+
+        await asyncio.sleep(0.3)
+
+    print(f"Foram obtidas {len(jobs)} vagas do site WeWorkRemotely")
+    return jobs
+
+
 if __name__ == "__main__":
-    jobs = asyncio.run(get_weworkremotely_jobs())
-    for job in jobs[:5]:
-        print(job)
+    result = asyncio.run(get_weworkremotely_jobs())
+    for j in result[:5]:
+        print(j)

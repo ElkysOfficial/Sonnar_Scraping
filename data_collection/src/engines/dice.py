@@ -7,8 +7,9 @@ from bs4 import BeautifulSoup
 # Importar stacks do arquivo variavel
 import sys
 import os
+import urllib.parse
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-from variavel import stacks
+from variavel import get_active_stacks
 
 
 # Sessao global
@@ -92,24 +93,26 @@ def extract_work_type(text: str, location: str) -> str:
     return 'Presencial'
 
 
-async def get_dice_jobs() -> list:
+async def get_dice_jobs(on_job=None) -> list:
     """
-    Extrai vagas do Dice.com (foco em vagas de tech nos EUA).
+    Extrai vagas do Dice.com (foco em tech, predominantemente EUA).
 
-    URL Pattern: https://www.dice.com/jobs?q={stack}&radius=30&radiusUnit=mi&page={page}
+    URL Pattern: ``https://www.dice.com/jobs?q={stack}&radius=30&radiusUnit=mi&page={page}``
 
-    Dice e um job board especializado em tecnologia, predominantemente EUA.
-    Utiliza data-testid para identificar elementos.
+    Args:
+        on_job: callback opcional ``async fn(parsed)`` invocado a cada vaga
+                parseada (modo streaming usado pelo controller).
 
-    Returns: [[link, title, company, location, work_type, hiring_regime, salary, publication_date], ...]
+    Returns:
+        Lista de vagas no formato canônico
+        ``[link, title, company, location, work_type, regime, salary, date]``.
     """
     jobs = []
     seen_links = set()
     session = get_session()
 
-    for stack in stacks:
-        # Converter stack para query parameter
-        stack_query = stack.replace('_', ' ')
+    for stack in get_active_stacks():
+        stack_query = urllib.parse.quote(stack.replace('_', ' '))
 
         # Percorrer todas as paginas ate nao encontrar mais vagas
         page = 1
@@ -240,6 +243,11 @@ async def get_dice_jobs() -> list:
                             job = [link, job_title, company, location, work_type, hiring_regime, salary, publication_date]
                             jobs.append(job)
                             jobs_found_this_page += 1
+                            if on_job is not None:
+                                try:
+                                    await on_job(job)
+                                except Exception:
+                                    pass
 
                     except Exception:
                         continue

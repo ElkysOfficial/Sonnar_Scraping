@@ -1,5 +1,8 @@
 # Perfil do Chrome (contém cache e dados do navegador)
 chrome_profile/
 
-# Cache do Google Enricher (opcional - remova se quiser versionar)
-# google_cache.json
+# Snapshots de runtime do scraper — não versionar
+jobs.json
+job.csv
+google_cache.json
+job_vacancies.csv

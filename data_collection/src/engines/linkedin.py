@@ -1,26 +1,36 @@
-import sys
+import asyncio
 import os
+import sys
+
 import httpx
 from bs4 import BeautifulSoup
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from utils.google_enricher import GoogleEnricher, is_missing_field
-from variavel import stacks
+from variavel import get_active_stacks
+import urllib.parse
 
-async def get_linkedin_jobs() -> list:
-    '''
-    Asynchronous function that returns a list of lists with the following structure:
+# Configuração de enriquecimento (Google Search via Playwright — lento)
+# Por padrão desligado: ENABLE_GOOGLE_ENRICHMENT=1 para ligar.
+ENRICH_ENABLED = os.getenv("ENABLE_GOOGLE_ENRICHMENT", "0") == "1"
+ENRICH_MAX_JOBS = int(os.getenv("LINKEDIN_ENRICH_MAX", "30"))
+ENRICH_CONCURRENCY = int(os.getenv("LINKEDIN_ENRICH_CONCURRENCY", "5"))
 
-    [[code, title, company, location, link], [...], [...], ...]
+async def get_linkedin_jobs(on_job=None) -> list:
+    """
+    Coleta vagas do LinkedIn via API pública ``seeMoreJobPostings/search``
+    para cada stack do lote ativo, paginando até 100 resultados por stack.
 
-    Each list within the returned list represents a job vacancy published in the LinkedIn website.
-    '''
-
+    Args:
+        on_job: callback opcional ``async fn(parsed)`` invocado a cada vaga
+                parseada — usado pelo controller pra persistir em streaming.
+    """
     jobs = []
-    for stack in stacks:
+    for stack in get_active_stacks():
+        encoded = urllib.parse.quote(stack)
         for page in range(0, 100, 10):
             async with httpx.AsyncClient() as client:
-                response = await client.get(f'https://br.linkedin.com/jobs/api/seeMoreJobPostings/search?keywords={stack}&location=Brasil&geoId=106057199&start={page}')
+                response = await client.get(f'https://br.linkedin.com/jobs/api/seeMoreJobPostings/search?keywords={encoded}&location=Brasil&geoId=106057199&start={page}')
 
                 if response.status_code == 200:
                     soup = BeautifulSoup(response.content, 'html.parser')
@@ -93,26 +103,58 @@ async def get_linkedin_jobs() -> list:
 
                         job = [link, job_title, company, location, work_type, hiring_regime, salary, publication_date]
                         jobs.append(job)
-    print(f'Foram encontradas {len(jobs)} vagas preliminares no LinkedIn, iniciando enriquecimento...')
+                        if on_job is not None:
+                            try:
+                                await on_job(job)
+                            except Exception:
+                                pass
+    print(f'Foram encontradas {len(jobs)} vagas preliminares no LinkedIn')
 
-    # Enriquecer vagas com location/salary vazios usando Google
-    if jobs:
-        async with GoogleEnricher() as enricher:
-            for job_data in jobs:
-                location_str = job_data[3] if isinstance(job_data[3], str) else ", ".join(job_data[3]) if job_data[3] else ""
-                needs_location = is_missing_field(location_str)
-                needs_salary = is_missing_field(job_data[6])  # salary está no índice 6
-                if needs_location or needs_salary:
-                    enriched = await enricher.enrich_job({
-                        "company": job_data[2],
-                        "job_title": job_data[1],
-                        "location": location_str,
-                        "salary": job_data[6]
-                    })
-                    if needs_location and enriched.get("location"):
-                        job_data[3] = enriched["location"]
-                    if needs_salary and enriched.get("salary"):
-                        job_data[6] = enriched["salary"]
+    if jobs and ENRICH_ENABLED:
+        await _enrich_linkedin_jobs(jobs)
 
     print(f'Foram obtidas {len(jobs)} vagas do site LinkedIn')
     return jobs
+
+
+async def _enrich_linkedin_jobs(jobs: list) -> None:
+    """Enriquece location/salary em paralelo via Google. Limitado por env vars."""
+    sem = asyncio.Semaphore(ENRICH_CONCURRENCY)
+
+    # Seleciona alvos: jobs que precisam de enriquecimento, até ENRICH_MAX_JOBS
+    targets = []
+    for job_data in jobs:
+        loc = job_data[3]
+        loc_str = loc if isinstance(loc, str) else (", ".join(loc) if loc else "")
+        if is_missing_field(loc_str) or is_missing_field(job_data[6]):
+            targets.append(job_data)
+            if len(targets) >= ENRICH_MAX_JOBS:
+                break
+
+    if not targets:
+        return
+
+    print(f'  enriquecendo {len(targets)} vagas (concurrency={ENRICH_CONCURRENCY})...')
+
+    async with GoogleEnricher() as enricher:
+        async def _one(job_data):
+            async with sem:
+                loc = job_data[3]
+                loc_str = loc if isinstance(loc, str) else (", ".join(loc) if loc else "")
+                needs_location = is_missing_field(loc_str)
+                needs_salary = is_missing_field(job_data[6])
+                try:
+                    enriched = await enricher.enrich_job({
+                        "company": job_data[2],
+                        "job_title": job_data[1],
+                        "location": loc_str,
+                        "salary": job_data[6],
+                    })
+                except Exception:
+                    return
+                if needs_location and enriched.get("location"):
+                    job_data[3] = enriched["location"]
+                if needs_salary and enriched.get("salary"):
+                    job_data[6] = enriched["salary"]
+
+        await asyncio.gather(*(_one(j) for j in targets), return_exceptions=True)
