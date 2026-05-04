@@ -89,6 +89,30 @@ class TestCSVJobStore:
         assert rows[1][idx_state] == ""
         assert rows[1][idx_min] == ""
 
+    def test_duplicate_url_is_not_appended(self, csv_path):
+        """A mesma job_url emitida 2x só grava 1 linha."""
+        store = CSVJobStore(path=str(csv_path))
+        ok1 = store.append(_make_payload(job_url="https://x/dup"))
+        ok2 = store.append(_make_payload(job_url="https://x/dup", job_title="Outro"))
+        assert ok1 is True
+        assert ok2 is False
+        with csv_path.open(encoding="utf-8") as f:
+            rows = list(csv.reader(f))
+        assert len(rows) == 2  # header + 1 linha (não 2)
+
+    def test_dedup_persists_across_instances(self, csv_path):
+        """URLs gravadas num run anterior são respeitadas no próximo."""
+        store = CSVJobStore(path=str(csv_path))
+        store.append(_make_payload(job_url="https://x/run1"))
+
+        # Novo store: pré-carrega URLs do arquivo existente
+        store2 = CSVJobStore(path=str(csv_path))
+        ok = store2.append(_make_payload(job_url="https://x/run1", job_title="Outro"))
+        assert ok is False
+        with csv_path.open(encoding="utf-8") as f:
+            rows = list(csv.reader(f))
+        assert len(rows) == 2  # header + 1 (não 2)
+
     def test_existing_file_with_header_is_preserved(self, csv_path):
         # Cria arquivo manualmente com header + 1 linha
         with csv_path.open("w", encoding="utf-8", newline="") as f:
