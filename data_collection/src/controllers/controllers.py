@@ -29,9 +29,7 @@ from typing import Awaitable, Callable
 from variavel import iter_batches, set_active_batch
 
 from .job_getters import getters
-from ..models.models import Job
 from ..persistence.jobs_repository import JobsRepository
-from ..routes.routes import send_to_embed_service_job
 from ..utils.google_enricher import GoogleEnricher, is_missing_field
 from ..utils.jobsUtils import process_salary
 
@@ -149,24 +147,6 @@ async def _process_one_job(
         return
 
     sent_jobs.add(job_url)
-
-    # Discord embed — best-effort, não bloqueia o pipeline
-    try:
-        job = Job(
-            job_data.get("job_url", ""),
-            job_data.get("job_title", ""),
-            job_data.get("company", ""),
-            job_data.get("location", ""),
-            job_data.get("work_type", ""),
-            job_data.get("hiring_regime", ""),
-            job_data.get("salary", ""),
-            job_data.get("publication_date", ""),
-        )
-        response = await send_to_embed_service_job(job.to_dict())
-        if not (response and response.get("success")):
-            logger.warning("Embed service não confirmou job: %s", title)
-    except Exception as exc:
-        logger.error("Erro ao enviar embed: %s", exc)
 
 
 # ---------------------------------------------------------------------------
