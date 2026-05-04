@@ -1,7 +1,7 @@
 # Perfil do Chrome (contém cache e dados do navegador)
 chrome_profile/
 
-# Snapshots de runtime do scraper — não versionar
+# Snapshots de runtime do scraper - não versionar
 jobs.json
 job.csv
 google_cache.json

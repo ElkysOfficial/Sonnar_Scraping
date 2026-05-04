@@ -30,7 +30,7 @@ dist-ssr
 # Supabase CLI session state
 supabase/.temp/
 
-# Obsidian — a config compartilhada do vault (tema, plugins, hotkeys, graph)
+# Obsidian - a config compartilhada do vault (tema, plugins, hotkeys, graph)
 # é versionada em obsidian/.obsidian/. Apenas estado por dev/sessão fica fora.
 obsidian/.obsidian/workspace.json
 obsidian/.obsidian/workspace-mobile.json

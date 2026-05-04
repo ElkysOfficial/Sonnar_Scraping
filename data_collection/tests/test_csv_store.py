@@ -69,7 +69,7 @@ class TestCSVJobStore:
     def test_handles_unicode_correctly(self, csv_path):
         store = CSVJobStore(path=str(csv_path))
         store.append(_make_payload(
-            job_title="Desenvolvedor Sênior — Pleno",
+            job_title="Desenvolvedor Sênior - Pleno",
             location_raw="São Paulo, SP",
         ))
         with csv_path.open(encoding="utf-8") as f:
@@ -96,7 +96,7 @@ class TestCSVJobStore:
             writer.writerow(CSV_COLUMNS)
             writer.writerow(["https://x/1"] + [""] * (len(CSV_COLUMNS) - 1))
 
-        # Instancia o store — não deve sobrescrever
+        # Instancia o store - não deve sobrescrever
         store = CSVJobStore(path=str(csv_path))
         store.append(_make_payload(job_url="https://x/2"))
 

@@ -74,5 +74,5 @@ class TestParseDate:
         assert _parse_date(text) is None
 
     def test_non_string_input_coerced(self):
-        # _parse_date faz str(value) — datetime/date deveriam funcionar via repr
+        # _parse_date faz str(value) - datetime/date deveriam funcionar via repr
         assert _parse_date(12345) is None  # "12345" não bate em nenhum formato

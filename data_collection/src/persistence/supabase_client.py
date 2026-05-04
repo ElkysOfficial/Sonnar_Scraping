@@ -1,7 +1,7 @@
 """
 Cliente Supabase minimalista para upsert de vagas.
 
-Usa a REST API direta (PostgREST) — evita dependencia do supabase-py.
+Usa a REST API direta (PostgREST) - evita dependencia do supabase-py.
 Auth: SUPABASE_SERVICE_ROLE_KEY (escrita full-access, contorna RLS).
 
 Variaveis de ambiente esperadas:
