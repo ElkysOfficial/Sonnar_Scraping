@@ -28,8 +28,7 @@ class TestStackCatalog:
             assert items, f"Categoria '{category}' está vazia"
 
     def test_category_count(self):
-        # 14 categorias documentadas no docstring do módulo
-        assert len(STACK_CATEGORIES) == 14
+        assert len(STACK_CATEGORIES) == 15
 
 
 class TestIterBatches:

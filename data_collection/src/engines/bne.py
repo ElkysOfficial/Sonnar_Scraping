@@ -67,6 +67,34 @@ BNE_AREAS = [
     "Software",
 ]
 
+def _extract_full_description(soup) -> str:
+    """Extrai a descricao completa do DOM da pagina de detalhe da BNE.
+
+    Estrategia (em ordem de preferencia):
+      1. ``.requisitos__vaga`` + ``.atribuicoes__vaga`` quando presentes -
+         vagas detalhadas dividem o texto nestes dois blocos e ele e mais
+         completo que o resumo abaixo.
+      2. ``.descricao__vaga`` - vagas simples colocam tudo num bloco unico.
+
+    Retorna string vazia se nenhum dos blocos existir - o caller deve cair
+    no JSON-LD truncado (fallback).
+    """
+    parts = []
+    req = soup.select_one('.requisitos__vaga')
+    if req:
+        parts.append(req.get_text('\n', strip=True))
+    atr = soup.select_one('.atribuicoes__vaga')
+    if atr:
+        parts.append(atr.get_text('\n', strip=True))
+    if parts:
+        return '\n\n'.join(p for p in parts if p)
+
+    desc_node = soup.select_one('.descricao__vaga')
+    if desc_node:
+        return desc_node.get_text('\n', strip=True)
+    return ''
+
+
 _REGIME_MAP = {
     "CONTRACTOR": "Autônomo",
     "PART_TIME": "Meio Período",
@@ -215,7 +243,14 @@ async def _fetch_job_detail(job_id, semaphore: asyncio.Semaphore) -> list | None
             else:
                 publication_date = date_raw
 
-            description = strip_html(data.get("description", ""))
+            # JSON-LD da BNE entrega description truncada (~189-314 chars,
+            # cortando frases pela metade). O texto completo vive no DOM em:
+            #   Layout A: .requisitos__vaga + .atribuicoes__vaga (separados)
+            #   Layout B: .descricao__vaga                     (bloco unico)
+            # Cai no JSON-LD apenas se o DOM nao tiver nenhuma das classes.
+            description = _extract_full_description(soup)
+            if not description:
+                description = strip_html(data.get("description", ""))
             skills = extract_skills(description) if description else []
 
             return [link, job_title, company, location, work_type,

@@ -12,6 +12,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 from src.utils.http_session import HttpSession  # noqa: E402
+from src.utils.text_utils import extract_skills, strip_html  # noqa: E402
 
 
 # --- Sessão (padrão httpx compartilhado) ---------------------------------
@@ -47,6 +48,9 @@ _QUERY_BODY = {
             "pagination": {"page": 0, "perPage": 1000},
         }
     },
+    # ``city.state`` e omitido de proposito - quando ``city`` e null o schema
+    # ainda exige state non-null e quebra o item; ``city.name`` ja entrega
+    # "Cidade - UF" que o location_normalizer descompoe.
     "query": """
     query findShowcaseJobs($showcaseParams: SearchJobFilter!) {
       findShowcaseJobs(showcaseParams: $showcaseParams) {
@@ -66,11 +70,49 @@ _QUERY_BODY = {
           remoteWork
           slug
           title
+          description
+          requirements
+          experienceLevel
+          technologies { name }
         }
       }
     }
     """,
 }
+
+
+def _build_description(description: str | None, requirements: str | None) -> str:
+    """Concatena ``description`` e ``requirements`` (HTML) e devolve texto limpo.
+
+    O GeekHunter quase sempre coloca o conteudo em ``requirements`` (titulo,
+    responsabilidades, beneficios). ``description`` aparece vazia na maior
+    parte das vagas - e mantida como prefixo quando existe.
+    """
+    parts = [p for p in (description, requirements) if p and p.strip()]
+    if not parts:
+        return ""
+    return strip_html("\n\n".join(parts))
+
+
+def _merge_skills(technologies: list, description: str) -> list:
+    """Une tags do GeekHunter com skills detectadas no texto via vocabulario.
+
+    Mantem ordem de descoberta (technologies primeiro, depois extract_skills),
+    sem duplicatas case-insensitive.
+    """
+    found: list = []
+    seen: set = set()
+    for tech in technologies or []:
+        name = (tech.get("name") if isinstance(tech, dict) else "") or ""
+        name = name.strip()
+        if name and name.lower() not in seen:
+            found.append(name)
+            seen.add(name.lower())
+    for skill in extract_skills(description):
+        if skill.lower() not in seen:
+            found.append(skill)
+            seen.add(skill.lower())
+    return found
 
 
 # --- Função pública --------------------------------------------------------
@@ -87,7 +129,8 @@ async def get_geekhunter_jobs(on_job=None) -> list:
 
     Returns:
         Lista no formato canônico ``[link, title, company, location,
-        work_type, hiring_regime, salary, publication_date]``.
+        work_type, hiring_regime, salary, publication_date, skills,
+        description]`` (10 campos, alinhado com Catho/Dice/BNE).
     """
     jobs = []
 
@@ -111,10 +154,13 @@ async def get_geekhunter_jobs(on_job=None) -> list:
             link = f"https://www.geekhunter.com.br/{company_slug}/jobs/{job_slug}"
             job_title = result.get("title", "")
 
-            # Localização como lista
+            # Localização: ``city.name`` ja vem como "Cidade - UF" quando ha
+            # presencial. Anexamos "Brasil" para ajudar o normalizer (todas
+            # vagas do GeekHunter sao no Brasil - nao ha campo country no
+            # schema). Para 100% remoto sem cidade, fica so ["Brasil"].
             city_obj = result.get("city")
             city_name = city_obj.get("name", "") if city_obj else ""
-            location = [city_name] if city_name else []
+            location = [city_name, "Brasil"] if city_name else ["Brasil"]
 
             # Modalidade de trabalho
             is_remote = result.get("remoteWork", False)
@@ -179,8 +225,14 @@ async def get_geekhunter_jobs(on_job=None) -> list:
             else:
                 publication_date = date_raw
 
+            description = _build_description(
+                result.get("description"), result.get("requirements")
+            )
+            skills = _merge_skills(result.get("technologies") or [], description)
+
             job = [link, job_title, company_name, location, work_type,
-                   hiring_regime, salary, publication_date]
+                   hiring_regime, salary, publication_date,
+                   skills, description]
             jobs.append(job)
             if on_job is not None:
                 try:

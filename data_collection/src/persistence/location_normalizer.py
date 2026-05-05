@@ -33,6 +33,26 @@ US_STATES = {
     'WI', 'WY', 'DC', 'PR',
 }
 
+# Nome por extenso -> sigla US (JSON-LD do Dice frequentemente entrega
+# addressRegion como "New York" em vez de "NY"). Chaves em lowercase
+# sem acentos para casar com a saida de _normalize().
+US_STATE_NAMES = {
+    'alabama': 'AL', 'alaska': 'AK', 'arizona': 'AZ', 'arkansas': 'AR',
+    'california': 'CA', 'colorado': 'CO', 'connecticut': 'CT', 'delaware': 'DE',
+    'florida': 'FL', 'georgia': 'GA', 'hawaii': 'HI', 'idaho': 'ID',
+    'illinois': 'IL', 'indiana': 'IN', 'iowa': 'IA', 'kansas': 'KS',
+    'kentucky': 'KY', 'louisiana': 'LA', 'maine': 'ME', 'maryland': 'MD',
+    'massachusetts': 'MA', 'michigan': 'MI', 'minnesota': 'MN', 'mississippi': 'MS',
+    'missouri': 'MO', 'montana': 'MT', 'nebraska': 'NE', 'nevada': 'NV',
+    'new hampshire': 'NH', 'new jersey': 'NJ', 'new mexico': 'NM', 'new york': 'NY',
+    'north carolina': 'NC', 'north dakota': 'ND', 'ohio': 'OH', 'oklahoma': 'OK',
+    'oregon': 'OR', 'pennsylvania': 'PA', 'rhode island': 'RI', 'south carolina': 'SC',
+    'south dakota': 'SD', 'tennessee': 'TN', 'texas': 'TX', 'utah': 'UT',
+    'vermont': 'VT', 'virginia': 'VA', 'washington': 'WA', 'west virginia': 'WV',
+    'wisconsin': 'WI', 'wyoming': 'WY', 'district of columbia': 'DC',
+    'puerto rico': 'PR',
+}
+
 # Nome em portugues -> UF (para casos sem sigla explicita)
 BR_STATE_NAMES = {
     'acre': 'AC', 'alagoas': 'AL', 'amapa': 'AP', 'amazonas': 'AM',
@@ -213,6 +233,12 @@ def normalize_location(raw_location: str) -> Tuple[Optional[str], Optional[str]]
         for token in re.findall(r'\b([A-Z]{2})\b', raw):
             if token in US_STATES and token != 'US':
                 return token, 'US'
+        # Fallback: nome do estado por extenso (ex.: "New York, New York,
+        # United States" - JSON-LD do Dice). Ordena do nome mais longo pro
+        # mais curto pra evitar match parcial ("virginia" antes de "west virginia").
+        for name in sorted(US_STATE_NAMES.keys(), key=len, reverse=True):
+            if re.search(rf'(?:^|[^a-z]){re.escape(name)}(?:[^a-z]|$)', normalized):
+                return US_STATE_NAMES[name], 'US'
         return None, 'US'
 
     # Tenta UF brasileira (ambígua com US - só vale se country for BR ou desconhecido)

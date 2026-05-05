@@ -63,11 +63,14 @@ STACK_CATEGORIES: dict[str, List[str]] = {
         "Docker", "Kubernetes", "Terraform", "Ansible", "Jenkins",
         "CI/CD", "DevOps", "SRE", "GitOps", "ArgoCD", "Helm",
         "Linux", "Unix", "Bash", "Shell Script",
+        "Grafana", "Logstash", "Prometheus", "ELK", "Datadog",
+        "Azure Service Bus",
     ],
     "Data & Analytics": [
         "Data Engineer", "Data Analyst", "Business Intelligence", "BI",
         "Power BI", "Tableau", "Looker", "Metabase",
         "ETL", "Data Pipeline", "Apache Spark", "Apache Kafka",
+        "Kafka", "RabbitMQ",
         "Airflow", "dbt", "Snowflake", "Databricks", "BigQuery",
     ],
     "Machine Learning & AI": [
@@ -75,10 +78,13 @@ STACK_CATEGORIES: dict[str, List[str]] = {
         "TensorFlow", "PyTorch", "Keras", "Scikit-learn",
         "NLP", "Computer Vision", "MLOps", "LLM", "GPT",
         "Pandas", "NumPy", "Jupyter",
+        "LangChain", "CrewAI", "RAG", "Hugging Face",
     ],
     "Arquitetura & Padrões": [
         "Microservices", "REST API", "GraphQL", "gRPC",
-        "Software Architecture", "System Design", "Domain Driven Design",
+        "Software Architecture", "System Design",
+        "Domain Driven Design", "Domain-Driven Design", "DDD",
+        "Hexagonal Architecture", "Clean Architecture",
         "Event Driven", "Serverless", "Cloud Native",
     ],
     "Segurança": [
@@ -107,6 +113,15 @@ STACK_CATEGORIES: dict[str, List[str]] = {
         "Analista de QA", "Analista de Testes",
         "Administrador de Banco de Dados", "DBA",
         "Analista de Segurança", "Analista DevOps",
+    ],
+    "Suporte & Infraestrutura": [
+        "Suporte Técnico", "Suporte de TI", "Help Desk", "Helpdesk",
+        "Service Desk", "Analista de Suporte", "Técnico de TI",
+        "Técnico de Informática", "Operador de TI",
+        "Administrador de Redes", "Administrador de Sistemas",
+        "Analista de Infraestrutura", "Infraestrutura de TI",
+        "Network Engineer", "System Administrator", "Sysadmin",
+        "Active Directory", "Windows Server",
     ],
     "Níveis de Experiência": [
         "Junior Developer", "Senior Developer", "Staff Engineer",

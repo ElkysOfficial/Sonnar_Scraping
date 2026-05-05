@@ -3,11 +3,17 @@ Helpers de texto compartilhados pelas engines.
 
   - ``strip_html``: remove tags HTML e normaliza whitespace, preservando
     quebras de linha em <br>, <p>, <li>, etc.
-  - ``extract_skills``: faz match das stacks conhecidas (``variavel.stacks``)
+  - ``extract_skills``: faz match das skills conhecidas (``SKILLS_VOCABULARY``)
     contra um texto livre, devolvendo a lista (ordenada pela 1ª ocorrência).
 
-Centralizado aqui para evitar duplicação entre engines (bne, careerjet,
-catho, dice, indeed, infojobs, linkedin, programathor).
+A extração usa um vocabulário próprio (``skills_vocabulary``), separado de
+``variavel.stacks`` que controla os termos de BUSCA. Isso permite reduzir
+``variavel.stacks`` para testes rápidos sem zerar a extração de skills.
+
+Boundary regex: ``\\b`` falha em tokens que começam/terminam com não-word
+chars (``.NET``, ``C#``, ``C++``, ``Node.js``, ``CI/CD``). Usamos lookarounds
+sobre ``[A-Za-z0-9]`` - basta haver um char não-alfanumérico (ou borda da
+string) antes e depois para o token ser aceito.
 """
 from __future__ import annotations
 
@@ -16,13 +22,14 @@ from typing import List
 
 from bs4 import BeautifulSoup
 
-from variavel import stacks as _ALL_STACKS
+from .skills_vocabulary import SKILLS_VOCABULARY
 
 
 # ``R`` e ``C`` são muito barulhentos no texto livre - exigem 2+ chars.
 _SKILL_PATTERNS: List[tuple] = [
-    (s, re.compile(r"\b" + re.escape(s) + r"\b", re.IGNORECASE))
-    for s in _ALL_STACKS
+    (s, re.compile(r"(?<![A-Za-z0-9])" + re.escape(s) + r"(?![A-Za-z0-9])",
+                   re.IGNORECASE))
+    for s in SKILLS_VOCABULARY
     if len(s) >= 2
 ]
 

@@ -39,7 +39,8 @@ from bs4 import BeautifulSoup
 from curl_cffi import requests
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
-from variavel import get_active_stacks, stacks as _ALL_STACKS  # noqa: E402
+from variavel import get_active_stacks  # noqa: E402
+from src.utils.text_utils import extract_skills  # noqa: E402
 
 
 # --- Sessão ---------------------------------------------------------------
@@ -170,32 +171,6 @@ def _detect_work_type(title: str, description: str = "") -> str:
     return "Presencial"
 
 
-# ``R`` e ``C`` são muito barulhentos para match em texto livre - pulamos.
-_SKILL_PATTERNS: list[tuple[str, re.Pattern]] = [
-    (s, re.compile(r"\b" + re.escape(s) + r"\b", re.IGNORECASE))
-    for s in _ALL_STACKS
-    if len(s) >= 2
-]
-
-
-def _extract_skills(description: str) -> list[str]:
-    """Match das stacks conhecidas contra o texto da descrição.
-
-    Retorna lista preservando ordem da primeira ocorrência. Sem duplicatas.
-    """
-    if not description:
-        return []
-    found: list[str] = []
-    seen: set[str] = set()
-    for skill, pat in _SKILL_PATTERNS:
-        if skill in seen:
-            continue
-        if pat.search(description):
-            found.append(skill)
-            seen.add(skill)
-    return found
-
-
 # --- Página de detalhe (__NEXT_DATA__ + JSON-LD) --------------------------
 
 _RE_NEXT_DATA = re.compile(
@@ -266,7 +241,7 @@ def _strip_html_lite(text: str) -> str:
     return re.sub(r"\n{3,}", "\n\n", text).strip()
 
 
-def _parse_job_detail(html: str) -> dict:
+def _parse_job_detail(html: str) -> dict | None:
     """Extrai campos enriquecidos do HTML da página de detalhe.
 
     A Catho serve duas variantes:
@@ -277,7 +252,20 @@ def _parse_job_detail(html: str) -> dict:
 
     Em ambos os casos, refinamos ``city/uf`` extraindo o ``Local:`` da
     descrição quando presente - é a fonte mais confiável.
+
+    Retorna ``None`` quando nenhuma das variantes está presente. Isso indica
+    soft-block do Akamai (HTML 200 mas sem dados estruturados da vaga) e o
+    caller usa esse sinal para resetar a sessão.
     """
+    data = _extract_next_data(html)
+    has_jobaddata = bool(
+        data and data.get("props", {}).get("pageProps", {}).get("jobAdData")
+    )
+    jp_jsonld = _extract_jsonld_jobposting(html) if not has_jobaddata else None
+
+    if not has_jobaddata and not jp_jsonld:
+        return None
+
     out: dict = {
         "title": "",
         "company": "",
@@ -290,8 +278,7 @@ def _parse_job_detail(html: str) -> dict:
     }
 
     # --- Camada 1: __NEXT_DATA__ (preferida) ---
-    data = _extract_next_data(html)
-    if data:
+    if has_jobaddata:
         job = data.get("props", {}).get("pageProps", {}).get("jobAdData") or {}
         if isinstance(job, dict):
             out["title"] = (job.get("titulo") or "").strip()
@@ -309,7 +296,7 @@ def _parse_job_detail(html: str) -> dict:
 
     # --- Camada 2: JSON-LD (fallback se __NEXT_DATA__ ausente/incompleto) ---
     if not out["title"] or not out["description"]:
-        jp = _extract_jsonld_jobposting(html)
+        jp = jp_jsonld or _extract_jsonld_jobposting(html)
         if jp:
             if not out["title"]:
                 out["title"] = (jp.get("title") or "").strip()
@@ -349,16 +336,21 @@ def _parse_job_detail(html: str) -> dict:
     return out
 
 
-async def fetch_job_detail(url: str, session=None) -> dict:
-    """Busca a página de detalhe e devolve dict de enriquecimento (vazio em falha)."""
+async def fetch_job_detail(url: str, session=None) -> dict | None:
+    """Busca a página de detalhe e devolve dict de enriquecimento.
+
+    Retorna ``None`` quando o HTML não tem ``__NEXT_DATA__`` nem ``JobPosting``
+    JSON-LD - sinal de soft-block do Akamai. O caller usa isso para resetar
+    a sessão.
+    """
     session = session or get_session()
     try:
         response = await asyncio.to_thread(session.get, url, timeout=30)
         if response.status_code != 200:
-            return {}
+            return None
         return _parse_job_detail(response.text)
     except Exception:
-        return {}
+        return None
 
 
 # --- Listing (cards) + função pública -------------------------------------
@@ -436,6 +428,7 @@ async def get_catho_jobs(on_job=None) -> list:
     fetch_detail = os.getenv("CATHO_FETCH_DETAIL", "1") == "1"
 
     empty_stack_streak = 0
+    softblock_streak = 0  # detail fetches consecutivos sem dados estruturados
     max_pages = 5
 
     for stack in get_active_stacks():
@@ -486,10 +479,20 @@ async def get_catho_jobs(on_job=None) -> list:
                     description = ""
                     if fetch_detail:
                         detail = await fetch_job_detail(url_key, session)
-                        if detail:
+                        if detail is None:
+                            # Soft-block do Akamai: HTML 200 sem dados.
+                            # Após 3 seguidos, reset agressivo e cooldown.
+                            softblock_streak += 1
+                            if softblock_streak >= 3:
+                                reset_session()
+                                session = get_session()
+                                softblock_streak = 0
+                                await asyncio.sleep(random.uniform(15, 25))
+                        else:
+                            softblock_streak = 0
                             if detail.get("description"):
                                 description = detail["description"]
-                                skills = _extract_skills(description)
+                                skills = extract_skills(description)
                             if detail.get("regime"):
                                 parsed[5] = detail["regime"]
                             if detail.get("publication_date"):
@@ -500,7 +503,7 @@ async def get_catho_jobs(on_job=None) -> list:
                                 parsed[3] = [f"{detail['city']} - {detail['uf']}"]
                             # work_type pode mudar agora que temos descrição
                             parsed[4] = _detect_work_type(title, description)
-                        await asyncio.sleep(random.uniform(0.25, 0.5))
+                        await asyncio.sleep(random.uniform(1.0, 2.0))
 
                     parsed_full = parsed + [skills, description]
                     jobs.append(parsed_full)
@@ -545,6 +548,9 @@ if __name__ == "__main__":
             for u in sys.argv[1:]:
                 d = await fetch_job_detail(u, session)
                 print(f"\n=== {u} ===")
+                if d is None:
+                    print("  (soft-block: HTML sem __NEXT_DATA__ nem JSON-LD)")
+                    continue
                 print(f"  title    : {d.get('title')}")
                 print(f"  company  : {d.get('company')}")
                 print(f"  city/uf  : {d.get('city')} / {d.get('uf')}")
@@ -552,7 +558,7 @@ if __name__ == "__main__":
                 print(f"  pub_date : {d.get('publication_date')}")
                 desc = d.get("description", "")
                 print(f"  desc     : {desc[:250]}{'...' if len(desc) > 250 else ''}")
-                skills = _extract_skills(desc)
+                skills = extract_skills(desc)
                 print(f"  skills   : {skills}")
                 slug = _slug_from_url(u)
                 print(f"  relevant : {_is_tech_relevant(d.get('title',''), slug)} (slug={slug})")

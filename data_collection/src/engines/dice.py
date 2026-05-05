@@ -28,6 +28,7 @@ from curl_cffi import requests
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from variavel import get_active_stacks  # noqa: E402
+from src.utils.text_utils import extract_skills  # noqa: E402
 
 
 # --- Sessão ---------------------------------------------------------------
@@ -122,11 +123,13 @@ def _parse_location(raw: str):
             return None, None, None, work_hint
         text = rest
 
-    # Esperado: "City, ST, CC" ou "City, ST" ou "City"
+    # Esperado: "City, ST, CC" ou "City, ST" ou "City". O Dice as vezes
+    # devolve sigla com case inconsistente ('Tx' em vez de 'TX'); aceitamos
+    # qualquer case e normalizamos para upper.
     parts = [p.strip() for p in text.split(',') if p.strip()]
     city = parts[0] if parts else None
-    state_code = parts[1] if len(parts) > 1 and re.fullmatch(r'[A-Z]{2}', parts[1]) else None
-    country_code = parts[2] if len(parts) > 2 and re.fullmatch(r'[A-Z]{2}', parts[2]) else None
+    state_code = parts[1].upper() if len(parts) > 1 and re.fullmatch(r'[A-Za-z]{2}', parts[1]) else None
+    country_code = parts[2].upper() if len(parts) > 2 and re.fullmatch(r'[A-Za-z]{2}', parts[2]) else None
 
     return city, state_code, country_code, work_hint
 
@@ -258,6 +261,7 @@ def _parse_job_detail(html: str) -> dict:
     """
     soup = BeautifulSoup(html, 'html.parser')
     out = {
+        'company': '',
         'location_raw': '',
         'salary_raw': '',
         'hiring_regime_raw': '',
@@ -270,6 +274,14 @@ def _parse_job_detail(html: str) -> dict:
     # 1) JSON-LD JobPosting - fonte mais confiável
     jp = _extract_jsonld_jobposting(html)
     if jp:
+        # hiringOrganization.name e mais confiavel que a heuristica do card
+        # (que descarta strings com virgula tipo "Motion Recruitment Partners, LLC").
+        org = jp.get('hiringOrganization')
+        if isinstance(org, dict):
+            out['company'] = (org.get('name') or '').strip()
+        elif isinstance(org, str):
+            out['company'] = org.strip()
+
         out['description'] = _strip_html(jp.get('description', ''))
         # employmentType: 'FULL_TIME' | 'CONTRACTOR' | string lista
         emp = jp.get('employmentType') or ''
@@ -286,6 +298,14 @@ def _parse_job_detail(html: str) -> dict:
             city = addr.get('addressLocality') or ''
             region = addr.get('addressRegion') or ''
             country = addr.get('addressCountry') or ''
+            # schema.org permite Country/State como string OU objeto
+            # ({"@type": "Country", "name": "United States"}).
+            if isinstance(region, dict):
+                region = region.get('name') or region.get('identifier') or ''
+            if isinstance(country, dict):
+                country = country.get('name') or country.get('identifier') or ''
+            region = str(region).strip()
+            country = str(country).strip()
             country_code = country if len(country) == 2 else {'USA': 'US', 'United States': 'US'}.get(country, country[:2].upper() if country else '')
             # Junta apenas as partes presentes - location_normalizer agora
             # entende tanto "City, ST, CC" quanto "ST, CC" (sem cidade)
@@ -386,6 +406,16 @@ def _parse_job_detail(html: str) -> dict:
                 if container:
                     out['description'] = container.get_text('\n', strip=True)
                     break
+
+    # Skills canonicas via vocabulario do projeto (forma curta, ex.: "Python"
+    # em vez de "Python (Programming Language)"). Cai nas skills do JSON-LD
+    # ou dos chips do DOM apenas quando nao temos descricao para parsear -
+    # essas variantes sao ricas mas heterogeneas e nem sempre vivem no nosso
+    # vocab (ex.: "QE Automation", "Trade fucntion").
+    if out['description']:
+        canonical = extract_skills(out['description'])
+        if canonical:
+            out['skills'] = canonical
 
     # Localização, salário, regime - varrer todo texto procurando padrões
     page_text = soup.get_text('\n', strip=True)
@@ -580,6 +610,11 @@ async def get_dice_jobs(on_job=None) -> list:
                             if detail:
                                 skills = detail.get('skills') or []
                                 description = detail.get('description') or ''
+                                # JSON-LD vence a heuristica do card pra company:
+                                # ela despreza strings com virgula, perdendo
+                                # nomes como "Motion Recruitment Partners, LLC".
+                                if detail.get('company'):
+                                    company = detail['company'].encode('ascii', 'ignore').decode('ascii').strip()
                                 if detail.get('location_raw'):
                                     location_raw = detail['location_raw']
                                 if detail.get('salary_raw'):
@@ -648,6 +683,7 @@ async def _debug_one(url: str):
     salary_clean = _format_salary(detail.get('salary_raw', ''))
     pub_date = detail.get('publication_date') or _parse_relative_date(detail.get('publication_raw', ''))
     print(f'URL: {url}')
+    print(f'  company      : {detail.get("company")!r}')
     print(f'  location_raw : {detail.get("location_raw")!r}')
     print(f'  city         : {city}')
     print(f'  state_code   : {st}')

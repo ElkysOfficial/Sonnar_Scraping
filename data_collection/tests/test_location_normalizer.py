@@ -59,7 +59,7 @@ class TestForeignCountries:
     @pytest.mark.parametrize("raw,expected_country", [
         ("Lisboa, Portugal", "PT"),
         ("Remote - United States", "US"),
-        ("New York, USA", "US"),
+        ("Boston, USA", "US"),
         ("London, United Kingdom", "GB"),
         ("Berlin, Germany", "DE"),
         ("Madrid, Spain", "ES"),
