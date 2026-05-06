@@ -10,6 +10,7 @@ Referência cruzada com [[../06-api/index]].
 ## Notas
 
 - [[scraper-persistence]] ✅ Persistência do scraper em 3 sinks (JSON / CSV / Supabase).
+- [[engine-indeed]] ✅ Engine Indeed via listing JSON (mosaic-provider-jobcards) + enrichment opcional.
 
 ## Notas a criar
 

@@ -7,10 +7,11 @@ tags: [adr, decisions, moc]
 
 Padrão: cada ADR contém **Contexto → Decisão → Alternativas → Consequências**.
 
-| ID                                       | Título                                                                  | Status   | Release |
-| ---------------------------------------- | ----------------------------------------------------------------------- | -------- | ------- |
-| [[ADR-001-auth-hardening]]               | Auth hardening (guard global meta-driven, intended route, inactivity)   | Aceito   | v1.8.0  |
-| [[ADR-002-jwt-storage-csp-hardening]]    | JWT em localStorage com CSP estrita (defesa em profundidade)            | Aceito   | v1.9.0  |
+| ID                                              | Título                                                                  | Status   | Release                |
+| ------------------------------------------------ | ----------------------------------------------------------------------- | -------- | ---------------------- |
+| [[ADR-001-auth-hardening]]                       | Auth hardening (guard global meta-driven, intended route, inactivity)   | Aceito   | v1.8.0                 |
+| [[ADR-002-jwt-storage-csp-hardening]]            | JWT em localStorage com CSP estrita (defesa em profundidade)            | Aceito   | v1.9.0                 |
+| [[ADR-003-indeed-listing-json-extraction]]       | Indeed engine via listing JSON (substitui detail-fetch por vaga)        | Aceito   | data_collection v2026.05 |
 
 ## Como adicionar um ADR novo
 
