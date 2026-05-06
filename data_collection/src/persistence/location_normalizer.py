@@ -252,6 +252,22 @@ def normalize_location(raw_location: str) -> Tuple[Optional[str], Optional[str]]
     if us_match and us_match.group(1) in US_STATES:
         return us_match.group(1), country or 'US'
 
+    # Estado US: padrao "City - ST" (sem virgula nem mencao explicita de pais).
+    # Cobre strings tipo "Venice - CA", "Austin - TX", "Saratoga Springs - NY"
+    # vindas de ``company.location`` do GeekHunter para empresas estrangeiras.
+    # So aplica quando country nao foi resolvido pra outra coisa.
+    if country is None:
+        dash_match = re.search(r'-\s*([A-Z]{2})\s*$', raw)
+        if dash_match and dash_match.group(1) in US_STATES and dash_match.group(1) not in BR_STATES:
+            return dash_match.group(1), 'US'
+
+    # UK: codigos de pais/regiao em sufixo apos hifen ("Manchester - EN",
+    # "Wolverhampton - WM"). Sem detalhe de subdivisao - so atribui country.
+    if country is None:
+        uk_match = re.search(r'-\s*(EN|WLS|NIR|WM|GL|YH|EM|EE|SE|SW|NE|NW|LDN)\s*$', raw)
+        if uk_match:
+            return None, 'GB'
+
     if country:
         return None, country
 

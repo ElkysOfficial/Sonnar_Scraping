@@ -7,10 +7,14 @@ chamada já cobre o catálogo inteiro do site.
 """
 from __future__ import annotations
 
+import asyncio
+import json
 import os
+import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+
 from src.utils.http_session import HttpSession  # noqa: E402
 from src.utils.text_utils import extract_skills, strip_html  # noqa: E402
 
@@ -56,7 +60,7 @@ _QUERY_BODY = {
       findShowcaseJobs(showcaseParams: $showcaseParams) {
         data {
           id
-          company { name slug }
+          company { name slug city { name } }
           city { name }
           cltMaxSalary
           cltMinSalary
@@ -79,6 +83,173 @@ _QUERY_BODY = {
     }
     """,
 }
+
+
+_PJ_RE = re.compile(r"\bPJ\b|\bpessoa\s+jur[ií]dica\b|contrata[çc][ãa]o\s+(?:no\s+modelo\s+)?PJ", re.IGNORECASE)
+_CLT_RE = re.compile(r"\bCLT\b|\bcarteira\s+assinada\b|\bregime\s+celetista\b", re.IGNORECASE)
+
+# RSC/Flight do Next.js: payload vem em chunks `self.__next_f.push([1, "<json-string>"])`.
+# Concatenando os chunks decodificados (json.loads remove escapes), achamos os campos
+# que o GraphQL publico nao expoe.
+_NEXT_FLIGHT_RE = re.compile(r'self\.__next_f\.push\(\[1,(".+?")\]\)', re.DOTALL)
+_COMPANY_LOC_RE = re.compile(r'"NestCompany"[^}]*?"location"\s*:\s*"([^"]+)"', re.DOTALL)
+_WORK_MODALITY_RE = re.compile(r'"workModality"\s*:\s*"([^"]+)"')
+_ATS_SALARIES_RE = re.compile(r'"atsJobSalaries"\s*:\s*\[(.*?)\]', re.DOTALL)
+_SALARY_EXPECT_RE = re.compile(r'"salaryExpectation"\s*:\s*\[(.*?)\]', re.DOTALL)
+_CONTRACT_TYPE_RE = re.compile(r'"contractType"\s*:\s*"([^"]+)"')
+_ATS_JOB_SKILLS_RE = re.compile(r'"atsJobSkills"\s*:\s*\[(.*?)\](?=,"|\})', re.DOTALL)
+_ATS_SKILL_NAME_RE = re.compile(r'"AtsSkill"[^}]*?"name"\s*:\s*"([^"]+)"')
+
+# Enum de contractType -> rotulo legivel.
+_CONTRACT_LABELS = {
+    "CLT": "CLT",
+    "PJ": "PJ",
+    "INT": "Estágio",
+    "TEMP": "Temporário",
+    "APP": "Aprendiz",
+}
+
+_WORK_MODALITY_LABELS = {
+    "remote": "Remoto",
+    "hybrid": "Híbrido",
+    "onsite": "Presencial",
+    "presential": "Presencial",
+}
+
+_HTML_FALLBACK_CONCURRENCY = 10
+_HTML_FALLBACK_TIMEOUT = 15.0
+
+# Tokens que indicam pais ja presente na string de cidade. Quando ``city.name``
+# do GraphQL ja vem com pais embutido (caso de empresas internacionais com
+# "Mexico City, CDMX, Mexico" ou simplesmente "Brasil"), nao devemos anexar
+# "- Brasil" cego no fim - isso corrompe o normalizer.
+_COUNTRY_TOKEN_RE = re.compile(
+    r'\b(brasil|brazil|estados\s+unidos|united\s+states|usa|portugal|reino\s+unido|'
+    r'united\s+kingdom|england|argentina|chile|mexico|m[eé]xico|panama|panam[aá]|'
+    r'colombia|col[oô]mbia|uruguai|uruguay|paraguai|paraguay|peru|venezuela|'
+    r'bolivia|equador|ecuador|cuba|jamaica|canada|canad[aá])\b',
+    re.IGNORECASE,
+)
+
+# Cidade com UF brasileira no sufixo (ex.: "São Paulo - SP"). Confirma BR e
+# autoriza anexar "Brasil" para o location_normalizer.
+_BR_UF_SUFFIX_RE = re.compile(
+    r'-\s*(AC|AL|AP|AM|BA|CE|DF|ES|GO|MA|MT|MS|MG|PA|PB|PR|PE|PI|RJ|RN|RS|'
+    r'RO|RR|SC|SP|SE|TO)\s*$'
+)
+
+
+def _extract_regime_from_flight(flight: str) -> str:
+    """Inferir regime a partir de ``atsJobSalaries`` e ``salaryExpectation``.
+
+    ``supportModalityCLT/PJ`` (boolean) costumam vir ``false/false`` mesmo
+    em vagas com regime definido - nao sao fonte confiavel. O ``contractType``
+    desses dois arrays e a verdade. Coleta unica e ordenada (CLT, PJ, Estagio,
+    Temporario, Aprendiz). Retorna "" se nada for achado.
+    """
+    contract_types: list = []
+    seen: set = set()
+    for array_re in (_ATS_SALARIES_RE, _SALARY_EXPECT_RE):
+        match = array_re.search(flight)
+        if not match:
+            continue
+        for ct in _CONTRACT_TYPE_RE.findall(match.group(1)):
+            if ct not in seen:
+                seen.add(ct)
+                contract_types.append(ct)
+    if not contract_types:
+        return ""
+    labels = [_CONTRACT_LABELS.get(ct, ct) for ct in contract_types]
+    # Ordem canonica: CLT antes de PJ (resto na ordem encontrada).
+    canon = sorted(set(labels), key=lambda x: (x != "CLT", x != "PJ", x))
+    return "/".join(canon)
+
+
+def _extract_skills_from_flight(flight: str) -> list:
+    """Extrai skills oficiais da vaga via ``atsJobSkills[].AtsSkill.name``.
+
+    Mais rico que ``technologies`` do GraphQL em varios casos (StudentCrowd
+    tem 8 skills no HTML vs 0 no GraphQL). Retorna lista de strings unicas
+    preservando ordem.
+    """
+    match = _ATS_JOB_SKILLS_RE.search(flight)
+    if not match:
+        return []
+    out: list = []
+    seen: set = set()
+    for name in _ATS_SKILL_NAME_RE.findall(match.group(1)):
+        key = name.strip().lower()
+        if name.strip() and key not in seen:
+            out.append(name.strip())
+            seen.add(key)
+    return out
+
+
+async def _fetch_html_extras(client, url: str) -> dict:
+    """Busca campos faltantes na pagina HTML que o GraphQL publico nao expoe.
+
+    Faz GET na pagina, concatena os chunks ``self.__next_f.push`` (RSC do Next)
+    e extrai via regex: regime de contratacao real, modalidade de trabalho,
+    cidade da empresa, e skills oficiais (``atsJobSkills``).
+
+    Retorna dict com ``regime``, ``work_type``, ``company_location`` e ``skills``
+    (lista). Campos nao encontrados vem vazios.
+    """
+    empty = {"regime": "", "work_type": "", "company_location": "", "skills": []}
+    try:
+        response = await client.get(url, timeout=_HTML_FALLBACK_TIMEOUT)
+        if response.status_code != 200:
+            return empty
+        html = response.text
+    except Exception:
+        return empty
+
+    chunks: list = []
+    for match in _NEXT_FLIGHT_RE.finditer(html):
+        try:
+            chunks.append(json.loads(match.group(1)))
+        except Exception:
+            continue
+    flight = "".join(chunks)
+
+    regime = _extract_regime_from_flight(flight)
+
+    work_type = ""
+    wm = _WORK_MODALITY_RE.search(flight)
+    if wm:
+        work_type = _WORK_MODALITY_LABELS.get(wm.group(1).lower(), "")
+
+    company_location = ""
+    loc_match = _COMPANY_LOC_RE.search(flight)
+    if loc_match:
+        company_location = loc_match.group(1).strip()
+
+    skills = _extract_skills_from_flight(flight)
+
+    return {
+        "regime": regime,
+        "work_type": work_type,
+        "company_location": company_location,
+        "skills": skills,
+    }
+
+
+def _infer_regime_from_text(*texts: str) -> str:
+    """Detecta PJ/CLT/CLT/PJ no titulo ou descricao quando o salario e null.
+
+    Usado como fallback quando ``cltMin/Max`` e ``pjMin/Max`` vem todos
+    null (vagas com salario "a combinar"). Retorna "" se nada for achado.
+    """
+    blob = " \n ".join(t for t in texts if t)
+    has_pj = bool(_PJ_RE.search(blob))
+    has_clt = bool(_CLT_RE.search(blob))
+    if has_pj and has_clt:
+        return "CLT/PJ"
+    if has_pj:
+        return "PJ"
+    if has_clt:
+        return "CLT"
+    return ""
 
 
 def _build_description(description: str | None, requirements: str | None) -> str:
@@ -154,13 +325,34 @@ async def get_geekhunter_jobs(on_job=None) -> list:
             link = f"https://www.geekhunter.com.br/{company_slug}/jobs/{job_slug}"
             job_title = result.get("title", "")
 
-            # Localização: ``city.name`` ja vem como "Cidade - UF" quando ha
-            # presencial. Anexamos "Brasil" para ajudar o normalizer (todas
-            # vagas do GeekHunter sao no Brasil - nao ha campo country no
-            # schema). Para 100% remoto sem cidade, fica so ["Brasil"].
+            # Localizacao: ``city.name`` ja vem como "Cidade - UF" quando a
+            # vaga tem cidade fixa. Em vagas remotas, ``city`` e null - nesse
+            # caso usamos ``company.city.name`` (mesmo formato "Cidade - UF")
+            # como proxy do estado da empresa, que o location_normalizer
+            # decompoe em state_code.
+            #
+            # GeekHunter nao tem campo country - assumimos BR por default. Mas
+            # so anexamos "Brasil" quando a string nao tem pais embutido, para
+            # evitar duplicacoes ("Brasil - Brasil") e nao corromper vagas
+            # internacionais ("Mexico City, CDMX, Mexico - Brasil").
             city_obj = result.get("city")
             city_name = city_obj.get("name", "") if city_obj else ""
-            location = [city_name, "Brasil"] if city_name else ["Brasil"]
+            if not city_name:
+                company_city = (company_obj.get("city") or {}).get("name", "") or ""
+                city_name = company_city
+            if not city_name:
+                location = ["Brasil"]
+            elif _COUNTRY_TOKEN_RE.search(city_name):
+                # Pais ja embutido: "Brasil", "Mexico City... Mexico", etc.
+                location = [city_name]
+            elif _BR_UF_SUFFIX_RE.search(city_name):
+                # UF brasileira no sufixo: anexa "Brasil" para o normalizer.
+                location = [city_name, "Brasil"]
+            else:
+                # Ambiguo (sigla estrangeira como "Venice - CA",
+                # "Wolverhampton - WM"): nao anexa "Brasil" - o normalizer
+                # decide via Fix C/D do location_normalizer.
+                location = [city_name]
 
             # Modalidade de trabalho
             is_remote = result.get("remoteWork", False)
@@ -230,11 +422,59 @@ async def get_geekhunter_jobs(on_job=None) -> list:
             )
             skills = _merge_skills(result.get("technologies") or [], description)
 
+            # Fallback de regime: quando todos os campos de salario sao null
+            # ("a combinar"), inferimos PJ/CLT do titulo + descricao.
+            if not hiring_regime:
+                hiring_regime = _infer_regime_from_text(job_title, description)
+
             job = [link, job_title, company_name, location, work_type,
                    hiring_regime, salary, publication_date,
                    skills, description]
             jobs.append(job)
-            if on_job is not None:
+
+        # Fallback HTML para campos que o GraphQL publico nao expoe:
+        # contractType (regime real), workModality (Hibrido/Remoto/Presencial),
+        # company.location e atsJobSkills. Buscamos so vagas com algum campo
+        # incompleto - tipicamente regime vazio, location apenas "Brasil",
+        # work_type Presencial (pode ser hibrido), ou skills vazias.
+        incomplete = [
+            i for i, j in enumerate(jobs)
+            if (not j[5])
+               or (isinstance(j[3], list) and j[3] == ["Brasil"])
+               or j[4] == "Presencial"
+               or not j[8]
+        ]
+        if incomplete:
+            sem = asyncio.Semaphore(_HTML_FALLBACK_CONCURRENCY)
+
+            async def _enrich(idx: int) -> None:
+                async with sem:
+                    extras = await _fetch_html_extras(client, jobs[idx][0])
+                if extras["regime"] and not jobs[idx][5]:
+                    jobs[idx][5] = extras["regime"]
+                if extras["work_type"]:
+                    # workModality do HTML e a verdade (Hibrido era invisivel
+                    # ao GraphQL, que so expoe ``remoteWork`` boolean).
+                    jobs[idx][4] = extras["work_type"]
+                if extras["company_location"] and jobs[idx][3] == ["Brasil"]:
+                    # company.location vem como "Cidade - UF, Brasil" ou
+                    # "Cidade - XX" (US/UK). location_normalizer decompoe.
+                    jobs[idx][3] = [extras["company_location"]]
+                if extras["skills"]:
+                    # Mescla skills do HTML (``atsJobSkills``) com as do
+                    # GraphQL/extract_skills sem duplicar.
+                    existing = jobs[idx][8] or []
+                    seen = {s.lower() for s in existing}
+                    for s in extras["skills"]:
+                        if s.lower() not in seen:
+                            existing.append(s)
+                            seen.add(s.lower())
+                    jobs[idx][8] = existing
+
+            await asyncio.gather(*(_enrich(i) for i in incomplete))
+
+        if on_job is not None:
+            for job in jobs:
                 try:
                     await on_job(job)
                 except Exception:
@@ -250,7 +490,5 @@ async def get_geekhunter_jobs(on_job=None) -> list:
 # --- Modo debug ------------------------------------------------------------
 
 if __name__ == "__main__":
-    import asyncio
-
     for j in asyncio.run(get_geekhunter_jobs())[:10]:
         print(j)
