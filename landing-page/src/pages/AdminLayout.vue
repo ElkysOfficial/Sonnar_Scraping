@@ -38,6 +38,17 @@
         </div>
 
         <div class="nav-group">
+          <span class="nav-group-label">Engine de Coleta</span>
+
+          <router-link to="/admin/scraper" class="nav-item" :class="{ active: isRoute('/admin/scraper') }">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 3v11.25A2.25 2.25 0 006 16.5h2.25M3.75 3h-1.5m1.5 0h16.5m0 0h1.5m-1.5 0v11.25A2.25 2.25 0 0118 16.5h-2.25m-7.5 0h7.5m-7.5 0l-1 3m8.5-3l1 3m0 0l.5 1.5m-.5-1.5h-9.5m0 0l-.5 1.5m.75-9l3-3 2.148 2.148A12.061 12.061 0 0116.5 7.605" />
+            </svg>
+            Observabilidade
+          </router-link>
+        </div>
+
+        <div class="nav-group">
           <span class="nav-group-label">Administração</span>
 
           <router-link
@@ -156,6 +167,16 @@
               <path stroke-linecap="round" stroke-linejoin="round" d="M19 7.5v3m0 0v3m0-3h3m-3 0h-3" />
             </svg>
             Novo Cliente
+          </router-link>
+        </div>
+
+        <div class="nav-group">
+          <span class="nav-group-label">Engine de Coleta</span>
+          <router-link to="/admin/scraper" class="nav-item" @click="closeMobileMenu">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75z" />
+            </svg>
+            Observabilidade
           </router-link>
         </div>
 

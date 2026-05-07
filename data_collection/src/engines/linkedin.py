@@ -22,8 +22,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
-import random
 import re
 import sys
 import urllib.parse
@@ -34,9 +34,16 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from variavel import get_active_stacks  # noqa: E402
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
-from src.utils.http_session import HttpSession  # noqa: E402
+from src.utils.http_session import HttpSession, fetch  # noqa: E402
 from src.utils.job_fallbacks import apply_description_fallbacks  # noqa: E402
+from src.utils.metrics import metrics  # noqa: E402
 from src.utils.text_utils import extract_skills, strip_html  # noqa: E402
+
+
+logger = logging.getLogger("scraper.engine.linkedin")
+
+# Versão do parser - bump quando mudar selectors. Permite reenrichment futuro.
+PARSER_VERSION = "linkedin-2026.05.07"
 
 
 # --- Sessao (httpx compartilhado) ----------------------------------------
@@ -54,15 +61,11 @@ def reset_session() -> None:
 
 # --- Configuracao ---------------------------------------------------------
 
-# Concorrencia do detail-fetch. LinkedIn rate-limita agressivamente quando
-# o numero de requests guest sobe rapido - 429 medido empiricamente apos ~50
-# fetches em paralelo=8. Mantemos 3 + sleep aleatorio (0.8-1.5s) para um
-# throughput sustentavel de ~2 req/s.
-_DETAIL_CONCURRENCY = int(os.getenv("LINKEDIN_DETAIL_CONCURRENCY", "3"))
-
-# Apos N respostas 429 consecutivas, abortamos o enriquecimento pra nao
-# desperdicar tempo - as vagas restantes ficam com seed do listing apenas.
-_RATELIMIT_THRESHOLD = 5
+# Concorrência efetiva é controlada por DomainRateLimiter (rate_limiter.py).
+# Mantemos um teto local de coroutines paralelas pra não criar tasks demais
+# (todas vão ser serializadas pelo limitador, mas evitamos overhead de
+# scheduling). Baixo = fluxo previsível, sem flooding inicial.
+_DETAIL_CONCURRENCY = int(os.getenv("LINKEDIN_DETAIL_CONCURRENCY", "4"))
 
 # Mapeamento employmentType (schema.org) -> vocabulario interno canonico.
 # Compativel com job_fallbacks.refine_hiring_regime().
@@ -177,7 +180,12 @@ def _parse_listing_card(cell) -> dict | None:
 
 
 async def get_linkedin_links() -> list[dict]:
-    """Coleta seeds (link + dados parciais) de todas as stacks ativas."""
+    """Coleta seeds (link + dados parciais) de todas as stacks ativas.
+
+    Usa ``fetch`` (policy wrapper) pra cada pagina: rate-limit por host,
+    retry/backoff em 429/5xx/timeout e circuit breaker. Sem isso o listing
+    disparava ~100 reqs/stack sem throttle - principal vetor de bloqueio.
+    """
     seeds: list[dict] = []
     seen: set[str] = set()
     client = await get_session()
@@ -189,11 +197,13 @@ async def get_linkedin_links() -> list[dict]:
                 "https://br.linkedin.com/jobs/api/seeMoreJobPostings/search"
                 f"?keywords={encoded}&location=Brasil&geoId=106057199&start={start}"
             )
-            try:
-                response = await client.get(url)
-            except Exception:
-                continue
+            response = await fetch(client, url)
+            if response is None:
+                metrics.event("listing.aborted", domain="br.linkedin.com",
+                              stack=stack, start=start)
+                break
             if response.status_code != 200:
+                metrics.incr("listing.non_200", domain="br.linkedin.com")
                 break
 
             soup = BeautifulSoup(response.content, "html.parser")
@@ -213,8 +223,9 @@ async def get_linkedin_links() -> list[dict]:
                 new_in_page += 1
 
             if new_in_page == 0:
-                break  # pagina so com duplicatas - resultset esgotou
+                break
 
+    metrics.set_gauge("listing.seeds", len(seeds), domain="br.linkedin.com")
     return seeds
 
 
@@ -318,13 +329,13 @@ def _regime_from_criteria(criteria: dict) -> str:
     return ""
 
 
-async def _fetch_detail(seed: dict, sem: asyncio.Semaphore, client,
-                        state: dict) -> dict:
+async def _fetch_detail(seed: dict, sem: asyncio.Semaphore, client) -> dict:
     """Busca a pagina canonica e devolve dict de enriquecimento.
 
-    Best-effort: campos ausentes voltam vazios; erros sao silenciosos.
-    Mutate ``state`` para counting global de 429s; quando o threshold
-    eh atingido o fetch passa a ser no-op (apenas seed sera persistido).
+    Rate-limit, retry/backoff e circuit breaker são aplicados pelo
+    ``fetch`` (policy wrapper). Quando ele devolve ``None`` (circuit aberto
+    ou retries esgotados), retornamos seed apenas - o controller já sabe
+    que enriquecimento eh best-effort.
     """
     out = {
         "description": "",
@@ -334,24 +345,13 @@ async def _fetch_detail(seed: dict, sem: asyncio.Semaphore, client,
         "location": [],
         "hiring_regime": "",
     }
-    if state.get("aborted"):
-        return out
     async with sem:
-        await asyncio.sleep(random.uniform(0.8, 1.5))
-        try:
-            r = await client.get(seed["link"], follow_redirects=True)
-        except Exception:
+        r = await fetch(client, seed["link"])
+        if r is None:
+            metrics.incr("detail.skipped", domain="br.linkedin.com")
             return out
-
-        if r.status_code == 429:
-            state["consec_429"] = state.get("consec_429", 0) + 1
-            if state["consec_429"] >= _RATELIMIT_THRESHOLD:
-                state["aborted"] = True
-            return out
-        # reset contador apos sucesso
-        state["consec_429"] = 0
-
         if r.status_code != 200 or len(r.text) < 1000:
+            metrics.incr("detail.empty", domain="br.linkedin.com")
             return out
 
         soup = BeautifulSoup(r.text, "html.parser")
@@ -450,25 +450,36 @@ async def get_linkedin_jobs(on_job=None) -> list:
     sem = asyncio.Semaphore(_DETAIL_CONCURRENCY)
     client = await get_session()
     jobs: list = []
-    state: dict = {"consec_429": 0, "aborted": False}
 
     async def _resolve(seed: dict) -> None:
-        detail = await _fetch_detail(seed, sem, client, state)
+        try:
+            detail = await _fetch_detail(seed, sem, client)
+        except Exception as exc:
+            metrics.event("parser.error", domain="br.linkedin.com",
+                          url=seed.get("link"), error=str(exc))
+            logger.exception("detail_parser_error", extra={
+                "url": seed.get("link"), "errorMessage": str(exc),
+            })
+            detail = {}
         parsed = apply_description_fallbacks(_merge_detail_over_seed(seed, detail))
         jobs.append(parsed)
         if on_job is not None:
             try:
                 await on_job(parsed)
-            except Exception:
-                pass
+            except Exception as exc:
+                metrics.incr("on_job.error", domain="linkedin")
+                logger.exception("on_job_error", extra={
+                    "url": seed.get("link"), "errorMessage": str(exc),
+                })
 
     await asyncio.gather(*(_resolve(s) for s in seeds))
 
     enriched = sum(1 for j in jobs if len(j[9]) > 200)
-    suffix = " (rate-limit detectado, fallback pro seed)" if state["aborted"] else ""
+    metrics.set_gauge("jobs.total", len(jobs), domain="br.linkedin.com")
+    metrics.set_gauge("jobs.enriched", enriched, domain="br.linkedin.com")
     print(
         f"Foram obtidas {len(jobs)} vagas do site LinkedIn "
-        f"({enriched} com descricao completa){suffix}"
+        f"({enriched} com descricao completa)"
     )
     return jobs
 

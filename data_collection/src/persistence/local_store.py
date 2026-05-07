@@ -1,29 +1,25 @@
 """
 Persistencia local em JSON (UTF-8) para vagas extraidas.
 
-Formato:
-{
-  "<job_url>": {
-    "job_url": "...",
-    "job_title": "...",
-    "company": "...",
-    "location_raw": "...",
-    "state_code": "SP" | null,
-    "country_code": "BR" | null,
-    "work_type": "...",
-    "hiring_regime": "...",
-    "salary_raw": "...",
-    "salary_min": 8000 | null,
-    "salary_max": 12000 | null,
-    "publication_date": "...",
-    "source": "linkedin",
-    "scraped_at": "2026-05-02T14:30:00Z",
-    "sent_to": []                 // canais que ja receberam (whatsapp, discord)
-  }
-}
+Formato: ver versão anterior (chave = job_url).
 
-A chave eh job_url para dedup O(1) e leitura rapida pelo message_sending.
-Persistido a cada job (write-through) com replace atomico (.tmp + os.replace).
+Mudança 2026-05: ``upsert`` é write-back **em batch**.
+Antes: cada upsert reserializava o JSON inteiro (O(N) por save), bloqueando o
+event loop em volumes >5k vagas.
+
+Agora: o flush para disco acontece quando:
+    - acumular FLUSH_THRESHOLD upserts pendentes, OU
+    - passar FLUSH_INTERVAL_S desde o último flush, OU
+    - chamada explícita de ``flush_now()``.
+
+Isso preserva a propriedade "fonte de verdade pro message_sending" porque
+toda leitura passa por ``known_urls()``/``has()``/``get()`` que lêem do
+buffer em memória — sempre consistente — e o flush garante durabilidade
+em janelas curtas (default 5s).
+
+Em desligamento normal o controlador chama ``flush_now()``. Em SIGKILL
+perdem-se até 5s de upserts; o CSV (append-only) e o Supabase continuam
+preservando os mesmos jobs.
 """
 from __future__ import annotations
 
@@ -31,20 +27,29 @@ import json
 import logging
 import os
 import threading
+import time
 from typing import Dict, Optional
 
 
 logger = logging.getLogger(__name__)
 
 
+FLUSH_THRESHOLD = int(os.getenv("LOCAL_STORE_FLUSH_THRESHOLD", "50"))
+FLUSH_INTERVAL_S = float(os.getenv("LOCAL_STORE_FLUSH_INTERVAL_S", "5.0"))
+
+
 class LocalJobStore:
-    """Store JSON UTF-8 thread-safe (lock para escritas concorrentes)."""
+    """Store JSON UTF-8 thread-safe com flush em batch."""
 
     def __init__(self, path: Optional[str] = None):
         self.path = path or os.path.join('src', 'data', 'jobs.json')
         self._lock = threading.Lock()
         self._data: Dict[str, dict] = {}
+        self._dirty = 0
+        self._last_flush = 0.0
         self._load()
+
+    # ---------------- carregamento ----------------
 
     def _load(self) -> None:
         if not os.path.exists(self.path):
@@ -57,9 +62,11 @@ class LocalJobStore:
         except (json.JSONDecodeError, OSError) as exc:
             logger.error('Falha ao carregar jobs.json (%s); iniciando vazio.', exc)
             self._data = {}
+        self._last_flush = time.monotonic()
+
+    # ---------------- leitura ----------------
 
     def known_urls(self) -> set:
-        """Retorna o conjunto de job_urls ja persistidos. Usado pra dedup."""
         with self._lock:
             return set(self._data.keys())
 
@@ -67,29 +74,40 @@ class LocalJobStore:
         with self._lock:
             return job_url in self._data
 
+    def get(self, job_url: str) -> Optional[dict]:
+        with self._lock:
+            entry = self._data.get(job_url)
+            return dict(entry) if entry else None
+
+    # ---------------- escrita (batched) ----------------
+
     def upsert(self, job: dict) -> None:
-        """
-        Insere ou atualiza um job. Preserva campo 'sent_to' se ja existir
-        (nao sobrescreve historico de envios).
-        """
         url = job.get('job_url')
         if not url:
             return
-
         with self._lock:
             existing = self._data.get(url, {})
             sent_to = existing.get('sent_to', [])
             merged = {**existing, **job}
             merged['sent_to'] = sent_to
             self._data[url] = merged
-            self._flush_unlocked()
+            self._dirty += 1
+            if self._should_flush_unlocked():
+                self._flush_unlocked()
+
+    def mark_sent(self, job_url: str, channel: str) -> None:
+        with self._lock:
+            entry = self._data.get(job_url)
+            if not entry:
+                return
+            sent = set(entry.get('sent_to', []))
+            sent.add(channel)
+            entry['sent_to'] = sorted(sent)
+            self._dirty += 1
+            if self._should_flush_unlocked():
+                self._flush_unlocked()
 
     def delete_older_than(self, cutoff_iso: str) -> int:
-        """Remove entries com publication_date < cutoff_iso ('YYYY-MM-DD').
-
-        Entradas sem publication_date sao preservadas (nao da pra julgar idade).
-        Retorna a quantidade removida.
-        """
         removed = 0
         with self._lock:
             for url in list(self._data.keys()):
@@ -98,19 +116,24 @@ class LocalJobStore:
                     del self._data[url]
                     removed += 1
             if removed:
+                self._dirty += removed
                 self._flush_unlocked()
         return removed
 
-    def mark_sent(self, job_url: str, channel: str) -> None:
-        """Marca que um job foi enviado por um canal especifico (idempotente)."""
+    def flush_now(self) -> None:
+        """Força flush imediato (use no shutdown/idle)."""
         with self._lock:
-            entry = self._data.get(job_url)
-            if not entry:
-                return
-            sent = set(entry.get('sent_to', []))
-            sent.add(channel)
-            entry['sent_to'] = sorted(sent)
-            self._flush_unlocked()
+            if self._dirty > 0:
+                self._flush_unlocked()
+
+    # ---------------- internos ----------------
+
+    def _should_flush_unlocked(self) -> bool:
+        if self._dirty >= FLUSH_THRESHOLD:
+            return True
+        if (time.monotonic() - self._last_flush) >= FLUSH_INTERVAL_S and self._dirty > 0:
+            return True
+        return False
 
     def _flush_unlocked(self) -> None:
         os.makedirs(os.path.dirname(self.path), exist_ok=True)
@@ -119,6 +142,8 @@ class LocalJobStore:
             with open(tmp_path, 'w', encoding='utf-8') as f:
                 json.dump(self._data, f, ensure_ascii=False, indent=2)
             os.replace(tmp_path, self.path)
+            self._dirty = 0
+            self._last_flush = time.monotonic()
         except OSError as exc:
             logger.error('Falha ao gravar jobs.json: %s', exc)
             if os.path.exists(tmp_path):

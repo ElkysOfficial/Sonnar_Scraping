@@ -20,6 +20,7 @@ from datetime import datetime
 from curl_cffi import requests
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+from src.utils.http_session import fetch_sync  # noqa: E402
 from src.utils.job_fallbacks import apply_description_fallbacks  # noqa: E402
 from src.utils.text_utils import extract_skills, strip_html  # noqa: E402
 
@@ -160,11 +161,8 @@ async def get_weworkremotely_jobs(on_job=None) -> list:
     session = get_session()
 
     for rss_url in RSS_FEEDS:
-        try:
-            response = await asyncio.to_thread(session.get, rss_url, timeout=30)
-        except Exception:
-            continue
-        if response.status_code != 200:
+        response = await fetch_sync(session, rss_url, timeout=30)
+        if response is None or response.status_code != 200:
             continue
 
         try:

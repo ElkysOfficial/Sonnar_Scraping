@@ -19,7 +19,7 @@ import sys
 from bs4 import BeautifulSoup
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
-from src.utils.http_session import HttpSession  # noqa: E402
+from src.utils.http_session import HttpSession, fetch  # noqa: E402
 from src.utils.job_fallbacks import apply_description_fallbacks  # noqa: E402
 from src.utils.text_utils import extract_skills, strip_html  # noqa: E402
 
@@ -145,10 +145,10 @@ def _format_jsonld_date(jp: dict) -> str:
 async def _fetch_job_detail(link: str, client, semaphore: asyncio.Semaphore) -> dict:
     """Busca detalhe e devolve enriquecimentos. Vazio se falhar."""
     async with semaphore:
+        response = await fetch(client, link)
+        if response is None or response.status_code != 200:
+            return {}
         try:
-            response = await client.get(link)
-            if response.status_code != 200:
-                return {}
             jp = _parse_jsonld_jobposting(response.text)
             if not jp:
                 return {}
@@ -184,9 +184,9 @@ async def get_michaelpage_jobs(on_job=None) -> list:
     for category in MICHAELPAGE_CATEGORIES:
         try:
             url = f"https://www.michaelpage.com.br/jobs/{category}"
-            response = await client.get(url)
+            response = await fetch(client, url)
 
-            if response.status_code == 200:
+            if response is not None and response.status_code == 200:
                 soup = BeautifulSoup(response.text, "html.parser")
 
                 # ESTRATÉGIA PRINCIPAL: links /job-detail/ no DOM.

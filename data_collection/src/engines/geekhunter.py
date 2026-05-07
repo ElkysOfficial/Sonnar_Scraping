@@ -15,7 +15,8 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
-from src.utils.http_session import HttpSession  # noqa: E402
+from src.utils.http_session import HttpSession, fetch  # noqa: E402
+from src.utils.rate_limiter import request_with_policy  # noqa: E402
 from src.utils.job_fallbacks import apply_description_fallbacks  # noqa: E402
 from src.utils.text_utils import extract_skills, strip_html  # noqa: E402
 
@@ -197,13 +198,10 @@ async def _fetch_html_extras(client, url: str) -> dict:
     (lista). Campos nao encontrados vem vazios.
     """
     empty = {"regime": "", "work_type": "", "company_location": "", "skills": []}
-    try:
-        response = await client.get(url, timeout=_HTML_FALLBACK_TIMEOUT)
-        if response.status_code != 200:
-            return empty
-        html = response.text
-    except Exception:
+    response = await fetch(client, url, timeout=_HTML_FALLBACK_TIMEOUT)
+    if response is None or response.status_code != 200:
         return empty
+    html = response.text
 
     chunks: list = []
     for match in _NEXT_FLIGHT_RE.finditer(html):
@@ -308,7 +306,12 @@ async def get_geekhunter_jobs(on_job=None) -> list:
 
     try:
         client = await get_session()
-        response = await client.post(_GRAPHQL_URL, headers=_HEADERS, json=_QUERY_BODY)
+        response = await request_with_policy(
+            client, _GRAPHQL_URL, method="POST",
+            headers=_HEADERS, json=_QUERY_BODY,
+        )
+        if response is None:
+            return jobs
         response.raise_for_status()
         results = (
             response.json()

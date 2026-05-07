@@ -17,6 +17,7 @@ const AdminDashboard = () => import('../pages/AdminDashboard.vue')
 const AdminSubscribers = () => import('../pages/AdminSubscribers.vue')
 const AdminNewClient = () => import('../pages/AdminNewClient.vue')
 const AdminManageAdmins = () => import('../pages/AdminManageAdmins.vue')
+const AdminScraper = () => import('../pages/AdminScraper.vue')
 const TermsPage = () => import('../pages/TermsPage.vue')
 const PrivacyPage = () => import('../pages/PrivacyPage.vue')
 const CookiesPage = () => import('../pages/CookiesPage.vue')
@@ -86,7 +87,8 @@ const routes = [
       { path: '', name: 'AdminDashboard', component: AdminDashboard },
       { path: 'subscribers', name: 'AdminSubscribers', component: AdminSubscribers },
       { path: 'new-client', name: 'AdminNewClient', component: AdminNewClient },
-      { path: 'admins', name: 'AdminManageAdmins', component: AdminManageAdmins, meta: { requiresOwner: true } }
+      { path: 'admins', name: 'AdminManageAdmins', component: AdminManageAdmins, meta: { requiresOwner: true } },
+      { path: 'scraper', name: 'AdminScraper', component: AdminScraper }
     ]
   },
   // Catch-all: renderiza 404 explícito pro usuário entender que a rota não

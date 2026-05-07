@@ -40,6 +40,7 @@ from curl_cffi import requests
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 from variavel import get_active_stacks  # noqa: E402
+from src.utils.http_session import fetch_sync  # noqa: E402
 from src.utils.job_fallbacks import apply_description_fallbacks  # noqa: E402
 from src.utils.text_utils import extract_skills  # noqa: E402
 
@@ -346,8 +347,8 @@ async def fetch_job_detail(url: str, session=None) -> dict | None:
     """
     session = session or get_session()
     try:
-        response = await asyncio.to_thread(session.get, url, timeout=30)
-        if response.status_code != 200:
+        response = await fetch_sync(session, url, timeout=30)
+        if response is None or response.status_code != 200:
             return None
         return _parse_job_detail(response.text)
     except Exception:
@@ -444,9 +445,9 @@ async def get_catho_jobs(on_job=None) -> list:
                     await asyncio.sleep(random.uniform(0.5, 1.2))
 
                 url = f"https://www.catho.com.br/vagas/{encoded}/?page={page}"
-                response = await asyncio.to_thread(session.get, url, timeout=30)
+                response = await fetch_sync(session, url, timeout=30)
 
-                if response.status_code != 200:
+                if response is None or response.status_code != 200:
                     consecutive_empty_pages += 1
                     page += 1
                     continue

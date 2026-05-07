@@ -29,6 +29,7 @@ from curl_cffi import requests
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 from variavel import get_active_stacks  # noqa: E402
+from src.utils.http_session import fetch_sync  # noqa: E402
 from src.utils.job_fallbacks import apply_description_fallbacks  # noqa: E402
 from src.utils.text_utils import extract_skills, strip_html  # noqa: E402
 
@@ -627,7 +628,10 @@ async def _fetch_html_with_fallback(url: str, *, timeout: int = 30) -> str | Non
     """
     session = get_session()
     try:
-        response = await asyncio.to_thread(session.get, url, timeout=timeout)
+        response = await fetch_sync(session, url, timeout=timeout)
+        if response is None:
+            html = await _try_browser_fetch(url)
+            return html if html and not _looks_blocked(html) else None
         status = response.status_code
         text = response.text or ""
         if status == 200 and not _looks_blocked(text):

@@ -28,6 +28,7 @@ from curl_cffi import requests
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from variavel import get_active_stacks  # noqa: E402
+from src.utils.http_session import fetch_sync  # noqa: E402
 from src.utils.job_fallbacks import apply_description_fallbacks  # noqa: E402
 from src.utils.text_utils import extract_skills  # noqa: E402
 
@@ -474,8 +475,8 @@ async def fetch_job_detail(url: str, session=None) -> dict:
     """Busca a página de detalhe de uma vaga e retorna campos enriquecidos."""
     session = session or get_session()
     try:
-        response = await asyncio.to_thread(session.get, url, timeout=30)
-        if response.status_code != 200:
+        response = await fetch_sync(session, url, timeout=30)
+        if response is None or response.status_code != 200:
             return {}
         return _parse_job_detail(response.text)
     except Exception:
@@ -515,9 +516,9 @@ async def get_dice_jobs(on_job=None) -> list:
         while page <= max_pages:
             try:
                 url = f'https://www.dice.com/jobs?q={stack_query}&radius=30&radiusUnit=mi&page={page}'
-                response = await asyncio.to_thread(session.get, url, timeout=30)
+                response = await fetch_sync(session, url, timeout=30)
 
-                if response.status_code != 200:
+                if response is None or response.status_code != 200:
                     break
 
                 soup = BeautifulSoup(response.text, 'html.parser')
