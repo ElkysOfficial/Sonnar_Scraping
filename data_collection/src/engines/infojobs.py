@@ -20,7 +20,11 @@ from bs4 import BeautifulSoup
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 from variavel import get_active_stacks  # noqa: E402
+from src.persistence.extraction_tracker import tracker  # noqa: E402
 from src.utils.http_session import HttpSession, fetch  # noqa: E402
+
+
+PARSER_VERSION = "infojobs-2026.05.07"
 from src.utils.job_fallbacks import apply_description_fallbacks  # noqa: E402
 from src.utils.text_utils import extract_skills, strip_html  # noqa: E402
 
@@ -285,6 +289,7 @@ async def get_infojobs_links() -> list[str]:
                 full = f"https://www.infojobs.com.br{href}"
                 if full not in seen:
                     seen.add(full)
+                    tracker.discover(full, engine="infojobs")
                     links.append(full)
                     new_count += 1
             if new_count == 0:
@@ -334,6 +339,15 @@ async def get_infojobs_jobs(on_job=None) -> list:
     jobs = [r for r in results if r is not None]
     print(f"Foram obtidas {len(jobs)} vagas do site InfoJobs")
     return jobs
+
+
+async def refetch_one(url: str) -> list | None:
+    """Reprocessa uma URL específica do InfoJobs (passe de reenrichment)."""
+    client = await get_session()
+    response = await fetch(client, url)
+    if response is None or response.status_code != 200:
+        return None
+    return _parse_job_detail(response.text, url)
 
 
 # --- Modo debug ----------------------------------------------------------

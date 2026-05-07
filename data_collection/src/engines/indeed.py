@@ -29,9 +29,13 @@ from curl_cffi import requests
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 from variavel import get_active_stacks  # noqa: E402
+from src.persistence.extraction_tracker import tracker  # noqa: E402
 from src.utils.http_session import fetch_sync  # noqa: E402
 from src.utils.job_fallbacks import apply_description_fallbacks  # noqa: E402
 from src.utils.text_utils import extract_skills, strip_html  # noqa: E402
+
+
+PARSER_VERSION = "indeed-2026.05.07"
 
 
 # --- Sessão ---------------------------------------------------------------
@@ -746,7 +750,9 @@ async def _fetch_listing(url: str, seen: set, links: list) -> bool:
         jk = link_elem.get("data-jk")
         if jk and jk not in seen:
             seen.add(jk)
-            links.append(f"https://br.indeed.com/viewjob?jk={jk}")
+            url_v = f"https://br.indeed.com/viewjob?jk={jk}"
+            tracker.discover(url_v, engine="indeed")
+            links.append(url_v)
             found += 1
     return found > 0 or bool(cells)
 
@@ -1158,6 +1164,23 @@ async def _legacy_get_indeed_jobs(on_job=None) -> list:  # pragma: no cover
 
     print(f"Foram obtidas {len(jobs)} vagas do site Indeed")
     return jobs
+
+
+async def refetch_one(url: str) -> list | None:
+    """Reprocessa uma URL específica do Indeed (passe de reenrichment)."""
+    detail = await fetch_indeed_detail(url)
+    if not detail or not detail.get("description"):
+        return None
+    seed = {"url": url, "title": detail.get("title", ""),
+            "company": "", "location": "", "snippet": "",
+            "work_type": "", "salary_raw": "", "publication_date": ""}
+    detail["work_type"] = _refine_work_type(
+        detail.get("work_type", ""),
+        detail.get("title") or "",
+        detail.get("description") or "",
+    )
+    parsed = _merge_detail_over_seed(seed, detail)
+    return apply_description_fallbacks(parsed)
 
 
 # --- Modo debug -----------------------------------------------------------

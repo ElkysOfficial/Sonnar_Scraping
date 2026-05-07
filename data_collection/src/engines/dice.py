@@ -28,9 +28,13 @@ from curl_cffi import requests
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from variavel import get_active_stacks  # noqa: E402
+from src.persistence.extraction_tracker import tracker  # noqa: E402
 from src.utils.http_session import fetch_sync  # noqa: E402
 from src.utils.job_fallbacks import apply_description_fallbacks  # noqa: E402
 from src.utils.text_utils import extract_skills  # noqa: E402
+
+
+PARSER_VERSION = "dice-2026.05.07"
 
 
 # --- Sessão ---------------------------------------------------------------
@@ -546,6 +550,7 @@ async def get_dice_jobs(on_job=None) -> list:
                         if link in seen_links:
                             continue
                         seen_links.add(link)
+                        tracker.discover(link, engine="dice")
 
                         # Título
                         aria_label = link_elem.get('aria-label', '')
@@ -674,6 +679,33 @@ async def get_dice_jobs(on_job=None) -> list:
 
     print(f'Foram obtidas {len(jobs)} vagas do site Dice')
     return jobs
+
+
+async def refetch_one(url: str) -> list | None:
+    """Reprocessa uma URL específica do Dice (passe de reenrichment)."""
+    detail = await fetch_job_detail(url)
+    if not detail:
+        return None
+    description = detail.get("description") or ""
+    if not description:
+        return None
+    skills = extract_skills(description)
+    city, st, cc, hint = _parse_location(detail.get("location_raw", ""))
+    location_parts = [p for p in (city, st) if p]
+    salary_clean = _format_salary(detail.get("salary_raw", ""))
+    pub_date = detail.get("publication_date") or _parse_relative_date(detail.get("publication_raw", ""))
+    return apply_description_fallbacks([
+        url,
+        detail.get("title", ""),
+        detail.get("company", ""),
+        location_parts or [cc] if cc else [],
+        hint or "",
+        detail.get("hiring_regime", ""),
+        salary_clean,
+        pub_date,
+        skills,
+        description,
+    ])
 
 
 # --- Modo debug -----------------------------------------------------------

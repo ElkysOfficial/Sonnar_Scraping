@@ -62,15 +62,45 @@ JobCallback = Callable[[list, str], Awaitable[None]]
 # Engines com refetch_one(url) participam do passe de reenrichment.
 
 def _build_engine_registry() -> dict:
+    """Mapa engine_name -> {parser_version, refetch_one}.
+
+    refetch_one é opcional: engines API-only (gupy, remoteok, etc.) não têm
+    refetch separado - o reenrichment delas acontece naturalmente quando
+    o listing do próximo ciclo trouxer as URLs.
+    """
+    from ..engines import (
+        bne as _bne,
+        careerjet as _careerjet,
+        catho as _catho,
+        dice as _dice,
+        geekhunter as _geekhunter,
+        gupy as _gupy,
+        indeed as _indeed,
+        infojobs as _infojobs,
+        jooble as _jooble,
+        linkedin as _linkedin,
+        michaelpage as _michaelpage,
+        programathor as _programathor,
+        remoteok as _remoteok,
+        remotive as _remotive,
+        simplyhired as _simplyhired,
+        weworkremotely as _weworkremotely,
+        ziprecruiter as _ziprecruiter,
+    )
+    modules = {
+        "bne": _bne, "careerjet": _careerjet, "catho": _catho, "dice": _dice,
+        "geekhunter": _geekhunter, "gupy": _gupy, "indeed": _indeed,
+        "infojobs": _infojobs, "jooble": _jooble, "linkedin": _linkedin,
+        "michaelpage": _michaelpage, "programathor": _programathor,
+        "remoteok": _remoteok, "remotive": _remotive, "simplyhired": _simplyhired,
+        "weworkremotely": _weworkremotely, "ziprecruiter": _ziprecruiter,
+    }
     registry: dict = {}
-    try:
-        from ..engines import linkedin as _linkedin
-        registry["linkedin"] = {
-            "parser_version": getattr(_linkedin, "PARSER_VERSION", None),
-            "refetch_one": getattr(_linkedin, "refetch_one", None),
+    for name, mod in modules.items():
+        registry[name] = {
+            "parser_version": getattr(mod, "PARSER_VERSION", None),
+            "refetch_one": getattr(mod, "refetch_one", None),
         }
-    except Exception:
-        pass
     return registry
 
 

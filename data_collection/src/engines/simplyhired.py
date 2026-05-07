@@ -33,9 +33,13 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from variavel import get_active_stacks  # noqa: E402
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+from src.persistence.extraction_tracker import tracker  # noqa: E402
 from src.utils.http_session import fetch_sync  # noqa: E402
 from src.utils.job_fallbacks import apply_description_fallbacks  # noqa: E402
 from src.utils.text_utils import extract_skills, strip_html  # noqa: E402
+
+
+PARSER_VERSION = "simplyhired-2026.05.07"
 
 # Import preguiçoso de Playwright: só carrega no listing (que precisa dele
 # pra passar Cloudflare). O fetch_detail usa curl_cffi e roda sem Playwright.
@@ -248,6 +252,7 @@ def _parse_job_item(item: dict, seen: set) -> list | None:
     if link in seen:
         return None
     seen.add(link)
+    tracker.discover(link, engine="simplyhired")
 
     job_title = item.get("title", "")
     if not job_title:
@@ -376,6 +381,25 @@ async def get_simplyhired_jobs(on_job=None) -> list:
 def reset_session():
     """No-op: o SimplyHired usa Playwright (sessão gerida em ``browser_fetch``)."""
     pass
+
+
+async def refetch_one(url: str) -> list | None:
+    """Reprocessa uma URL específica do SimplyHired (passe de reenrichment)."""
+    sem = asyncio.Semaphore(1)
+    detail = await _fetch_job_detail(url, sem)
+    if not detail or not detail.get("description"):
+        return None
+    location_str = detail.get("location_str", "")
+    parsed = [
+        url, "", "",
+        [location_str] if location_str else [],
+        "Remoto" if "remoto" in (detail.get("description") or "").lower() else "Presencial",
+        detail.get("hiring_regime", ""),
+        "", detail.get("publication_date", ""),
+        detail.get("skills", []),
+        detail.get("description", ""),
+    ]
+    return apply_description_fallbacks(parsed)
 
 
 # --- Modo debug ----------------------------------------------------------

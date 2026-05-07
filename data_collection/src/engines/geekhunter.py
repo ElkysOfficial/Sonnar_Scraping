@@ -15,8 +15,12 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
+from src.persistence.extraction_tracker import tracker  # noqa: E402
 from src.utils.http_session import HttpSession, fetch  # noqa: E402
 from src.utils.rate_limiter import request_with_policy  # noqa: E402
+
+
+PARSER_VERSION = "geekhunter-2026.05.07"
 from src.utils.job_fallbacks import apply_description_fallbacks  # noqa: E402
 from src.utils.text_utils import extract_skills, strip_html  # noqa: E402
 
@@ -434,6 +438,7 @@ async def get_geekhunter_jobs(on_job=None) -> list:
             job = [link, job_title, company_name, location, work_type,
                    hiring_regime, salary, publication_date,
                    skills, description]
+            tracker.discover(link, engine="geekhunter")
             jobs.append(job)
 
         # Fallback HTML para campos que o GraphQL publico nao expoe:

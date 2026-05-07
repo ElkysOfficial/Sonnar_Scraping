@@ -15,9 +15,13 @@ from curl_cffi import requests
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 from variavel import stacks  # noqa: E402
+from src.persistence.extraction_tracker import tracker  # noqa: E402
 from src.utils.http_session import fetch_sync  # noqa: E402
 from src.utils.job_fallbacks import apply_description_fallbacks  # noqa: E402
 from src.utils.text_utils import extract_skills, strip_html  # noqa: E402
+
+
+PARSER_VERSION = "remoteok-2026.05.07"
 
 
 # --- Sessão ---------------------------------------------------------------
@@ -179,6 +183,7 @@ async def get_remoteok_jobs(on_job=None) -> list:
             if parsed is None:
                 continue
             seen_ids.add(job_id)
+            tracker.discover(parsed[0], engine="remoteok")
             jobs.append(parsed)
             if on_job is not None:
                 try:

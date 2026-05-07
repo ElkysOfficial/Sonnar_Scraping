@@ -17,9 +17,13 @@ import re
 
 from bs4 import BeautifulSoup
 
+from ..persistence.extraction_tracker import tracker
 from ..utils.job_fallbacks import apply_description_fallbacks
 from ..utils.text_utils import extract_skills, strip_html
 from ..utils.http_session import HttpSession, fetch
+
+
+PARSER_VERSION = "programathor-2026.05.07"
 
 
 # --- Sessão (padrão httpx compartilhado) ---------------------------------
@@ -92,6 +96,7 @@ async def get_programathor_links() -> list:
                     link = f"https://programathor.com.br{link_elem['href']}"
                     if link not in links:
                         links.append(link)
+                        tracker.discover(link, engine="programathor")
             page += 1
         except Exception:
             empty_pages += 1
