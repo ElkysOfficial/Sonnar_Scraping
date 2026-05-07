@@ -235,6 +235,19 @@
       </div>
 
       <h3 class="subhead">Detalhamento por site</h3>
+      <div v-if="selectedEngine" class="action-toolbar">
+        <span class="action-toolbar__hint">
+          Filtrando por <strong>{{ friendlyEngine(selectedEngine) }}</strong>.
+          Reprocessar marca todas as URLs desta engine como "aguardando coleta" — útil quando o leitor (parser) foi atualizado.
+        </span>
+        <button
+          class="btn-action btn-action--primary"
+          :disabled="actionBusy"
+          @click="onReenrichEngine(selectedEngine)"
+        >
+          {{ actionBusy ? 'Processando…' : 'Reprocessar todas as URLs desta engine' }}
+        </button>
+      </div>
       <div class="table-wrap">
         <table class="table">
           <thead>
@@ -259,6 +272,36 @@
         Vagas que falharam 3 vezes seguidas e foram colocadas de lado para você olhar.
         Geralmente indica que o site mudou o layout ou a vaga foi removida.
       </p>
+
+      <div class="action-toolbar action-toolbar--bulk">
+        <span class="action-toolbar__title">Limpar DLQ por filtro</span>
+        <label class="filter-group filter-group--inline">
+          <span>Site</span>
+          <select v-model="bulkClearEngine" class="select select--sm">
+            <option value="">Qualquer site</option>
+            <option v-for="opt in engineOptions" :key="opt.value" :value="opt.value">
+              {{ opt.label }}
+            </option>
+          </select>
+        </label>
+        <label class="filter-group filter-group--inline">
+          <span>Tipo de erro</span>
+          <select v-model="bulkClearErrorType" class="select select--sm">
+            <option value="">Qualquer erro</option>
+            <option v-for="t in dlqErrorTypeOptions" :key="t" :value="t">
+              {{ friendlyError(t) }}
+            </option>
+          </select>
+        </label>
+        <button
+          class="btn-action btn-action--danger"
+          :disabled="actionBusy"
+          @click="onClearDlq"
+        >
+          {{ actionBusy ? 'Limpando…' : 'Limpar DLQ' }}
+        </button>
+      </div>
+
       <div class="table-wrap">
         <table class="table">
           <thead>
@@ -268,6 +311,7 @@
               <th>Link da vaga</th>
               <th class="num">Tentativas</th>
               <th>O que aconteceu</th>
+              <th>Ações</th>
             </tr>
           </thead>
           <tbody>
@@ -284,11 +328,87 @@
                 <span class="pill pill-danger">{{ friendlyError(row.last_error_type) }}</span>
                 <small v-if="row.last_error_msg">{{ row.last_error_msg }}</small>
               </td>
+              <td class="action-cell">
+                <button
+                  class="btn-action btn-action--xs btn-action--primary"
+                  :disabled="actionBusy"
+                  title="Recoloca a URL na fila de coleta com 0 tentativas"
+                  @click="onRetryDlq(row.job_url)"
+                >
+                  Tentar de novo
+                </button>
+                <button
+                  class="btn-action btn-action--xs btn-action--ghost"
+                  :disabled="actionBusy"
+                  title="Apaga esta entrada da DLQ permanentemente"
+                  @click="onDeleteDlq(row.job_url)"
+                >
+                  Remover
+                </button>
+              </td>
             </tr>
             <tr v-if="!dlqFiltered.length">
-              <td colspan="5" class="empty success-msg">
+              <td colspan="6" class="empty success-msg">
                 Nenhuma vaga problemática no período — tudo limpo!
               </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Vagas próximas dos 90 dias -->
+    <section class="card">
+      <h2>Vagas próximas dos 90 dias</h2>
+      <p class="card-help">
+        A partir dos 90 dias as vagas saem do JSON dos bots de mensagem (mas continuam no banco
+        para histórico). Aqui aparecem as que estão entre {{ nearPurgeMinDays }} e {{ nearPurgeMaxDays }} dias —
+        revise se alguma ainda merece estar ativa.
+      </p>
+      <div class="action-toolbar action-toolbar--bulk">
+        <label class="filter-group filter-group--inline">
+          <span>Idade mínima (dias)</span>
+          <input v-model.number="nearPurgeMinDays" type="number" min="0" max="365" class="select select--sm" />
+        </label>
+        <label class="filter-group filter-group--inline">
+          <span>Idade máxima (dias)</span>
+          <input v-model.number="nearPurgeMaxDays" type="number" min="0" max="365" class="select select--sm" />
+        </label>
+        <button
+          class="btn-action btn-action--ghost"
+          :disabled="nearPurgeLoading"
+          @click="loadNearPurge"
+        >
+          {{ nearPurgeLoading ? 'Atualizando…' : 'Atualizar lista' }}
+        </button>
+      </div>
+      <div class="table-wrap">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Idade</th>
+              <th>Publicada em</th>
+              <th>Site</th>
+              <th>Título</th>
+              <th>Local</th>
+              <th>Regime</th>
+              <th>Link</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="row in nearPurgeJobs" :key="row.id">
+              <td><span class="pill" :class="row.age_days >= 88 ? 'pill-danger' : 'pill-warn'">{{ row.age_days }}d</span></td>
+              <td>{{ formatDateOnly(row.publication_date) }}</td>
+              <td>{{ friendlyEngine(row.source) }}</td>
+              <td>{{ row.job_title }}</td>
+              <td>{{ row.location_raw || row.state_code || row.country_code || '—' }}</td>
+              <td>{{ row.hiring_regime || '—' }}</td>
+              <td class="url-cell">
+                <a :href="row.job_url" target="_blank" rel="noopener" :title="row.job_url">abrir</a>
+              </td>
+            </tr>
+            <tr v-if="!nearPurgeJobs.length">
+              <td colspan="7" class="empty">Nenhuma vaga na faixa selecionada.</td>
             </tr>
           </tbody>
         </table>
@@ -332,6 +452,17 @@ const queue = ref({})
 const queueStats = ref([])
 const dlq = ref([])
 const selectedEngine = ref('')   // '' = todos
+
+// Painel de controle (Fase 3)
+const actionBusy = ref(false)
+const bulkClearEngine = ref('')
+const bulkClearErrorType = ref('')
+
+// Vagas próximas dos 90 dias
+const nearPurgeJobs = ref([])
+const nearPurgeMinDays = ref(80)
+const nearPurgeMaxDays = ref(90)
+const nearPurgeLoading = ref(false)
 
 const health = computed(() => {
   const h = healthRow.value || {}
@@ -522,6 +653,13 @@ const dlqFiltered = computed(() =>
     ? dlq.value.filter(r => r.engine === selectedEngine.value)
     : dlq.value
 )
+const dlqErrorTypeOptions = computed(() => {
+  const types = new Set()
+  for (const row of dlq.value || []) {
+    if (row.last_error_type) types.add(row.last_error_type)
+  }
+  return [...types].sort()
+})
 const queueAggregated = computed(() => {
   if (!selectedEngine.value) return queue.value || {}
   // Quando filtra por engine, recalcula os totais a partir do queueStats filtrado
@@ -592,6 +730,8 @@ async function loadAll () {
     queueStats.value = qs.data || []
     queue.value = (q.data && q.data[0]) || {}
     dlq.value = d.data || []
+    // Atualiza near-purge sem bloquear loadAll
+    loadNearPurge().catch(() => { /* já trata erro internamente */ })
   } catch (err) {
     errorMsg.value = err.message || 'Falha ao carregar métricas.'
   } finally {
@@ -632,6 +772,100 @@ function formatTimestamp (ts) {
   const d = new Date(ts)
   return d.toLocaleString('pt-BR', { hour12: false })
 }
+function formatDateOnly (iso) {
+  if (!iso) return '—'
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return iso
+  return d.toLocaleDateString('pt-BR')
+}
+
+// ---------- Painel de controle (Fase 3) ----------
+
+async function withAction (fn, successMsg) {
+  if (actionBusy.value) return
+  actionBusy.value = true
+  errorMsg.value = ''
+  try {
+    const result = await fn()
+    if (successMsg) {
+      // Mensagem leve via title temporário; loadAll() refresca os números.
+      console.info('[admin]', successMsg, result)
+    }
+    await loadAll()
+    return result
+  } catch (err) {
+    errorMsg.value = err.message || 'Falha ao executar ação.'
+  } finally {
+    actionBusy.value = false
+  }
+}
+
+async function onRetryDlq (jobUrl) {
+  if (!jobUrl) return
+  if (!confirm('Recolocar esta URL na fila de coleta?')) return
+  await withAction(async () => {
+    const { data, error } = await supabase.rpc('admin_retry_dlq_url', { p_job_url: jobUrl })
+    if (error) throw error
+    return data
+  }, 'URL reagendada')
+}
+
+async function onDeleteDlq (jobUrl) {
+  if (!jobUrl) return
+  if (!confirm('Apagar esta entrada da DLQ permanentemente? A URL não será mais tentada.')) return
+  await withAction(async () => {
+    const { data, error } = await supabase.rpc('admin_delete_dlq_entry', { p_job_url: jobUrl })
+    if (error) throw error
+    return data
+  }, 'Entrada removida')
+}
+
+async function onClearDlq () {
+  const engine = bulkClearEngine.value || null
+  const errorType = bulkClearErrorType.value || null
+  const filterDesc = [
+    engine ? `site=${friendlyEngine(engine)}` : null,
+    errorType ? `erro=${friendlyError(errorType)}` : null,
+  ].filter(Boolean).join(' / ') || 'TODAS as entradas'
+  if (!confirm(`Limpar DLQ (${filterDesc})? Esta ação não pode ser desfeita.`)) return
+  await withAction(async () => {
+    const { data, error } = await supabase.rpc('admin_clear_dlq', {
+      p_engine: engine,
+      p_error_type: errorType,
+    })
+    if (error) throw error
+    return data
+  }, 'DLQ limpa')
+}
+
+async function onReenrichEngine (engine) {
+  if (!engine) return
+  if (!confirm(`Marcar todas as URLs de ${friendlyEngine(engine)} como "aguardando coleta"? O scraper vai reprocessá-las no próximo passe.`)) return
+  await withAction(async () => {
+    const { data, error } = await supabase.rpc('admin_reenrich_engine', { p_engine: engine })
+    if (error) throw error
+    return data
+  }, 'Engine marcada para reprocessamento')
+}
+
+async function loadNearPurge () {
+  nearPurgeLoading.value = true
+  errorMsg.value = ''
+  try {
+    const { data, error } = await supabase.rpc('get_jobs_near_purge', {
+      p_min_age_days: Number(nearPurgeMinDays.value) || 80,
+      p_max_age_days: Number(nearPurgeMaxDays.value) || 90,
+      p_engine: selectedEngine.value || null,
+      p_max_rows: 200,
+    })
+    if (error) throw error
+    nearPurgeJobs.value = data || []
+  } catch (err) {
+    errorMsg.value = err.message || 'Falha ao carregar vagas próximas dos 90 dias.'
+  } finally {
+    nearPurgeLoading.value = false
+  }
+}
 
 let timer = null
 onMounted(() => {
@@ -640,6 +874,8 @@ onMounted(() => {
 })
 onBeforeUnmount(() => { if (timer) clearInterval(timer) })
 watch(windowMinutes, loadAll)
+watch(selectedEngine, loadNearPurge)
+watch([nearPurgeMinDays, nearPurgeMaxDays], loadNearPurge)
 </script>
 
 <style scoped>
@@ -831,5 +1067,73 @@ watch(windowMinutes, loadAll)
   border: 1px solid rgba(220,38,38,0.25);
   padding: 10px 14px; border-radius: 8px;
   font-size: 13px;
+}
+
+/* Painel de controle (Fase 3) */
+.action-toolbar {
+  display: flex;
+  align-items: end;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 12px 14px;
+  margin: 0 0 14px;
+  background: var(--color-glass-bg, rgba(0,0,0,0.02));
+  border: 1px dashed var(--color-border);
+  border-radius: 10px;
+}
+.action-toolbar--bulk { background: var(--color-surface); }
+.action-toolbar__hint {
+  flex: 1 1 280px;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  line-height: 1.5;
+}
+.action-toolbar__title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  align-self: center;
+  margin-right: 4px;
+}
+.filter-group--inline { flex-direction: column; gap: 4px; }
+.select--sm { height: 32px; min-width: 140px; font-size: 12px; padding: 0 10px; }
+
+.btn-action {
+  height: 32px;
+  padding: 0 14px;
+  border-radius: 8px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: filter 120ms ease, opacity 120ms ease;
+  font-family: inherit;
+  white-space: nowrap;
+}
+.btn-action:hover:not(:disabled) { filter: brightness(1.05); }
+.btn-action:disabled { opacity: 0.55; cursor: progress; }
+.btn-action--primary {
+  background: var(--color-accent);
+  color: var(--color-text-inverse, #fff);
+  border-color: transparent;
+}
+.btn-action--danger {
+  background: rgba(220,38,38,0.1);
+  color: #dc2626;
+  border-color: rgba(220,38,38,0.3);
+}
+.btn-action--ghost {
+  background: transparent;
+}
+.btn-action--xs { height: 26px; padding: 0 10px; font-size: 11px; }
+
+.action-cell {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
 }
 </style>

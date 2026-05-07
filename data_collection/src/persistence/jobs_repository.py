@@ -196,18 +196,21 @@ class JobsRepository:
         return self
 
     async def purge_stale(self, days: int = MAX_AGE_DAYS) -> None:
-        """Apaga vagas com publication_date mais antigo que `days` em todos os sinks."""
+        """
+        Política de purge (Fase 3):
+          - JSON local: vagas com publication_date < cutoff são removidas
+            (ele alimenta os bots de mensagem; >90d não devem ser enviadas).
+          - Supabase (banco): mantém todas as vagas para histórico/analytics.
+            O painel admin lista vagas próximas dos 90 dias para ação manual,
+            e oferece purge sob demanda via RPC, mas não é mais automático.
+        """
         cutoff = _cutoff_iso(days)
         try:
             removed_local = self.local.delete_older_than(cutoff)
             if removed_local:
-                logger.info('Purge local: %d vagas removidas (< %s).', removed_local, cutoff)
+                logger.info('Purge local (JSON): %d vagas removidas (< %s).', removed_local, cutoff)
         except Exception as exc:
             logger.error('Falha purge local: %s', exc)
-        try:
-            await self.supabase.delete_older_than(cutoff)
-        except Exception as exc:
-            logger.error('Falha purge supabase: %s', exc)
 
     async def __aexit__(self, exc_type, exc, tb):
         try:
