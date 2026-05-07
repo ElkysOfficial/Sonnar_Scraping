@@ -34,6 +34,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from variavel import get_active_stacks  # noqa: E402
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+from src.persistence.extraction_tracker import tracker  # noqa: E402
 from src.utils.http_session import HttpSession, fetch  # noqa: E402
 from src.utils.job_fallbacks import apply_description_fallbacks  # noqa: E402
 from src.utils.metrics import metrics  # noqa: E402
@@ -220,6 +221,7 @@ async def get_linkedin_links() -> list[dict]:
                     continue
                 seen.add(seed["link"])
                 seeds.append(seed)
+                tracker.discover(seed["link"], engine="linkedin")
                 new_in_page += 1
 
             if new_in_page == 0:
@@ -482,6 +484,35 @@ async def get_linkedin_jobs(on_job=None) -> list:
         f"({enriched} com descricao completa)"
     )
     return jobs
+
+
+async def refetch_one(url: str) -> list | None:
+    """Reprocessa uma URL específica (passe de reenrichment).
+
+    Pula o listing - vai direto na página canônica buscar o JSON-LD.
+    Devolve a lista canônica de 10 campos ou None se o detail falhar.
+    Útil quando o ``parser_version`` é bumpado e queremos reprocessar
+    URLs antigas sem esperar o listing trazê-las de novo.
+    """
+    seed = {
+        "link": url,
+        "title": "",
+        "company": "",
+        "location": [],
+        "work_type": "",
+        "hiring_regime": "",
+        "publication_date": "",
+    }
+    sem = asyncio.Semaphore(1)
+    client = await get_session()
+    try:
+        detail = await _fetch_detail(seed, sem, client)
+    except Exception as exc:
+        logger.warning("refetch_error", extra={"url": url, "errorMessage": str(exc)})
+        return None
+    if not detail.get("description") and not detail.get("hiring_regime"):
+        return None  # nada novo - deixa o tracker marcar como failed
+    return apply_description_fallbacks(_merge_detail_over_seed(seed, detail))
 
 
 # --- Modo debug ------------------------------------------------------------
