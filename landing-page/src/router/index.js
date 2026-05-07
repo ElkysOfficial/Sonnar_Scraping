@@ -18,6 +18,7 @@ const AdminSubscribers = () => import('../pages/AdminSubscribers.vue')
 const AdminNewClient = () => import('../pages/AdminNewClient.vue')
 const AdminManageAdmins = () => import('../pages/AdminManageAdmins.vue')
 const AdminScraper = () => import('../pages/AdminScraper.vue')
+const AdminEngineDrilldown = () => import('../pages/AdminEngineDrilldown.vue')
 const TermsPage = () => import('../pages/TermsPage.vue')
 const PrivacyPage = () => import('../pages/PrivacyPage.vue')
 const CookiesPage = () => import('../pages/CookiesPage.vue')
@@ -103,6 +104,12 @@ const routes = [
       {
         path: 'scraper', name: 'AdminScraper', component: AdminScraper,
         meta: { title: 'Coleta de Vagas', subtitle: 'Como o sistema está buscando vagas nos sites parceiros.' }
+      },
+      {
+        path: 'scraper/engine/:engine',
+        name: 'AdminEngineDrilldown',
+        component: AdminEngineDrilldown,
+        meta: { title: 'Drill-down por engine', subtitle: 'Métricas, eventos e histórico de proteção da engine selecionada.' }
       }
     ]
   },

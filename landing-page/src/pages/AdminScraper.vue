@@ -32,9 +32,17 @@
       <span>
         Mostrando apenas: <strong>{{ friendlyEngine(selectedEngine) }}</strong>
       </span>
-      <button class="filter-clear" @click="selectedEngine = ''" type="button">
-        Limpar filtro ✕
-      </button>
+      <span class="filter-pill__actions">
+        <router-link
+          :to="`/admin/scraper/engine/${selectedEngine}`"
+          class="filter-clear"
+        >
+          Ver drill-down detalhado →
+        </router-link>
+        <button class="filter-clear" @click="selectedEngine = ''" type="button">
+          Limpar filtro ✕
+        </button>
+      </span>
     </div>
 
     <!-- Banner de saúde geral -->
@@ -920,6 +928,9 @@ watch([nearPurgeMinDays, nearPurgeMaxDays], loadNearPurge)
   background: transparent; border: none; color: var(--color-accent);
   cursor: pointer; font-size: 12px; font-weight: 600; text-decoration: underline;
 }
+.filter-pill__actions { display: inline-flex; align-items: center; gap: 14px; }
+.filter-pill__actions a.filter-clear { text-decoration: none; }
+.filter-pill__actions a.filter-clear:hover { text-decoration: underline; }
 
 .row-clickable { cursor: pointer; transition: background-color 120ms ease; }
 .row-clickable:hover { background: var(--color-glass-bg, rgba(0,0,0,0.03)); }
