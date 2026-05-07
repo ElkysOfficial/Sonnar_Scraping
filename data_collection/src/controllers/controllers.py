@@ -29,6 +29,7 @@ from typing import Awaitable, Callable
 from variavel import iter_batches, set_active_batch
 
 from .job_getters import getters
+from ..persistence.extraction_tracker import tracker
 from ..persistence.jobs_repository import JobsRepository
 from ..utils.jobsUtils import process_salary
 from ..utils.metrics import metrics
@@ -51,6 +52,34 @@ METRICS_FLUSH_INTERVAL_S = float(os.getenv("METRICS_FLUSH_INTERVAL_S", "30"))
 
 # Tipo do callback: ``async fn(job_data: dict, engine: str) -> None``.
 JobCallback = Callable[[list, str], Awaitable[None]]
+
+
+# ---------------------------------------------------------------------------
+# Registry de parser_version e refetch por engine
+# ---------------------------------------------------------------------------
+# Bump a constante PARSER_VERSION em cada engine quando o parser mudar - o
+# tracker detecta a mudança no startup e reagenda as vagas antigas.
+# Engines com refetch_one(url) participam do passe de reenrichment.
+
+def _build_engine_registry() -> dict:
+    registry: dict = {}
+    try:
+        from ..engines import linkedin as _linkedin
+        registry["linkedin"] = {
+            "parser_version": getattr(_linkedin, "PARSER_VERSION", None),
+            "refetch_one": getattr(_linkedin, "refetch_one", None),
+        }
+    except Exception:
+        pass
+    return registry
+
+
+_ENGINE_REGISTRY = _build_engine_registry()
+
+
+def _parser_version(engine: str) -> str | None:
+    info = _ENGINE_REGISTRY.get(engine) or {}
+    return info.get("parser_version")
 
 
 # ---------------------------------------------------------------------------
@@ -124,19 +153,20 @@ async def _process_one_job(
     if not job_url or job_url in sent_jobs:
         return
 
-    # Marca ANTES do await pra fechar race com outras engines concorrentes:
-    # asyncio é cooperativo - se a marcação ficasse pós-save, dois callers
-    # poderiam passar o check antes de qualquer save começar e o CSV
-    # (que é append-only sem dedup interno) gravaria duplicata.
     sent_jobs.add(job_url)
+    tracker.mark_running(job_url, engine=engine)
 
     try:
         title = job_data.get("job_title", "")
         job_data["salary"] = process_salary(job_data.get("salary", ""), title)
     except Exception as exc:
-        logger.error("Erro ao processar salário do job %s: %s", job_url, exc)
+        logger.error("salary_failed", extra={
+            "engine": engine, "url": job_url, "errorMessage": str(exc),
+        })
 
-    # Persistência (JSON + CSV + Supabase) - atômica do ponto de vista do job
+    description_len = len(job_data.get("description") or "")
+    parser_version = _parser_version(engine)
+
     try:
         persisted = await repo.save(job_data, source=engine)
     except Exception as exc:
@@ -144,14 +174,25 @@ async def _process_one_job(
             "engine": engine, "url": job_url, "errorMessage": str(exc),
         })
         metrics.incr("persist.error", domain=engine)
-        sent_jobs.discard(job_url)  # libera pra retry numa próxima tentativa
+        tracker.mark_failed(job_url, engine=engine,
+                            error_type=type(exc).__name__, error_msg=str(exc))
+        sent_jobs.discard(job_url)
         return
 
     if persisted:
         metrics.incr("persist.ok", domain=engine)
+        # Heurística: descrição < 200 chars = enriquecimento incompleto.
+        # Marca como partial pra o reenrichment retentar quando o parser_version mudar.
+        if description_len < 200 and parser_version:
+            tracker.mark_partial(job_url, engine=engine, parser_version=parser_version)
+        else:
+            tracker.mark_completed(job_url, engine=engine, parser_version=parser_version)
     else:
         metrics.incr("persist.skipped", domain=engine)
         sent_jobs.discard(job_url)
+        tracker.mark_failed(job_url, engine=engine,
+                            error_type="persist_skipped",
+                            error_msg="repo.save retornou False")
 
 
 # ---------------------------------------------------------------------------
@@ -200,6 +241,49 @@ async def _run_one_batch(
 
 
 # ---------------------------------------------------------------------------
+# Reenrichment pass (entre lotes)
+# ---------------------------------------------------------------------------
+
+REENRICH_LIMIT = int(os.getenv("REENRICH_LIMIT_PER_PASS", "100"))
+
+
+async def _run_reenrichment_pass(*, repo: JobsRepository, sent_jobs: set) -> None:
+    """Para cada engine que expõe ``refetch_one``, busca URLs em ``state=discovered``
+    no Supabase e reprocessa. Limita o passe a ``REENRICH_LIMIT`` por engine
+    pra não deixar o reenrichment dominar o ciclo - URLs restantes ficam no
+    próximo lote.
+    """
+    for engine_name, info in _ENGINE_REGISTRY.items():
+        refetch = info.get("refetch_one")
+        if not refetch:
+            continue
+        urls = await tracker.pick_pending(engine_name, REENRICH_LIMIT)
+        if not urls:
+            continue
+        logger.info("reenrich_pass_start", extra={
+            "engine": engine_name, "count": len(urls),
+        })
+        metrics.event("reenrich.start", domain=engine_name, count=len(urls))
+
+        for url in urls:
+            tracker.mark_running(url, engine=engine_name)
+            try:
+                parsed = await refetch(url)
+            except Exception as exc:
+                tracker.mark_failed(url, engine=engine_name,
+                                    error_type=type(exc).__name__,
+                                    error_msg=str(exc))
+                continue
+            if parsed is None:
+                tracker.mark_failed(url, engine=engine_name,
+                                    error_type="refetch_empty",
+                                    error_msg="refetch_one devolveu None")
+                continue
+            await _process_one_job(parsed, engine_name,
+                                   repo=repo, sent_jobs=sent_jobs)
+
+
+# ---------------------------------------------------------------------------
 # Loop principal - itera lotes e dorme entre eles
 # ---------------------------------------------------------------------------
 
@@ -219,11 +303,28 @@ async def scrape_jobs() -> None:
     não são reprocessadas.
     """
     metrics_task = asyncio.create_task(metrics.run_flusher(METRICS_FLUSH_INTERVAL_S))
+    tracker_task = asyncio.create_task(tracker.run_flusher())
 
     try:
         async with JobsRepository() as repo:
-            sent_jobs: set = repo.known_urls()
-            logger.info("scraper_init", extra={"known_jobs": len(sent_jobs)})
+            local_known = repo.known_urls()
+            tracker_known = await tracker.load_completed()
+            sent_jobs: set = local_known | tracker_known
+
+            # Auto-reenrichment: bump de PARSER_VERSION reagenda automaticamente.
+            for engine_name, info in _ENGINE_REGISTRY.items():
+                pv = info.get("parser_version")
+                if pv:
+                    n = await tracker.requeue_stale_partial(engine_name, pv)
+                    if n:
+                        logger.info("auto_reenrich", extra={
+                            "engine": engine_name, "parser_version": pv, "requeued": n,
+                        })
+
+            logger.info("scraper_init", extra={
+                "local_known": len(local_known),
+                "tracker_known": len(tracker_known),
+            })
 
             while True:
                 batches = list(iter_batches(BATCH_SIZE))
@@ -244,8 +345,13 @@ async def scrape_jobs() -> None:
                         })
                         metrics.event("batch.error", domain="", category=category)
 
+                    # Reenrichment pass: pega URLs em state=discovered (vindas
+                    # de auto-reenrich ou listings anteriores) e chama refetch_one.
+                    await _run_reenrichment_pass(repo=repo, sent_jobs=sent_jobs)
+
                     # Flush local entre lotes + fechar Playwright para liberar RAM
                     repo.flush_now()
+                    await tracker.flush()
                     try:
                         from ..utils.browser_fetch import close_browser
                         await close_browser()
@@ -261,8 +367,9 @@ async def scrape_jobs() -> None:
                 logger.info("cycle_complete")
                 set_active_batch(None)
     finally:
-        metrics_task.cancel()
-        try:
-            await metrics_task
-        except (asyncio.CancelledError, Exception):
-            pass
+        for t in (metrics_task, tracker_task):
+            t.cancel()
+            try:
+                await t
+            except (asyncio.CancelledError, Exception):
+                pass
