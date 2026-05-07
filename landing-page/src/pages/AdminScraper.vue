@@ -2,111 +2,163 @@
   <div class="scraper-page">
     <header class="page-head">
       <div>
-        <h1>Engine de Coleta</h1>
-        <p class="subtitle">Saúde, vazão e estado do scraper em tempo quase real.</p>
+        <h1>Coleta de Vagas</h1>
+        <p class="subtitle">
+          Acompanhe em tempo real como o sistema está buscando vagas nos sites parceiros.
+          Saúde geral, sites visitados, vagas coletadas e qualquer problema aparecem aqui.
+        </p>
       </div>
       <div class="head-actions">
-        <select v-model.number="windowMinutes" class="select">
-          <option :value="15">Últimos 15 min</option>
-          <option :value="60">Última 1 h</option>
-          <option :value="360">Últimas 6 h</option>
-          <option :value="1440">Últimas 24 h</option>
+        <select v-model.number="windowMinutes" class="select" aria-label="Janela de tempo">
+          <option :value="15">Últimos 15 minutos</option>
+          <option :value="60">Última hora</option>
+          <option :value="360">Últimas 6 horas</option>
+          <option :value="1440">Últimas 24 horas</option>
         </select>
         <button class="btn-refresh" @click="loadAll" :disabled="loading">
-          {{ loading ? 'Carregando…' : 'Atualizar' }}
+          {{ loading ? 'Atualizando…' : 'Atualizar agora' }}
         </button>
       </div>
     </header>
 
-    <!-- Saúde global -->
+    <!-- Banner de saúde geral -->
+    <section class="health-banner" :class="health.healthClass">
+      <div class="health-icon" aria-hidden="true">{{ health.healthIcon }}</div>
+      <div class="health-text">
+        <strong>{{ health.headline }}</strong>
+        <span>{{ health.subline }}</span>
+      </div>
+    </section>
+
+    <!-- KPIs principais com linguagem humana -->
     <section class="kpi-grid">
-      <article class="kpi" :class="health.healthClass">
-        <span class="kpi-label">Requests</span>
+      <article class="kpi" :class="health.healthClass" :title="kpiHelp.requests">
+        <span class="kpi-label">Acessos aos sites</span>
         <span class="kpi-value">{{ formatInt(health.total_requests) }}</span>
-        <span class="kpi-hint">{{ health.error_rate_pct }}% erro</span>
+        <span class="kpi-hint">{{ health.error_rate_pct }}% deram erro</span>
       </article>
-      <article class="kpi" :class="{ danger: (health.total_429 || 0) > 0 }">
-        <span class="kpi-label">429 (rate-limit)</span>
-        <span class="kpi-value">{{ formatInt(health.total_429) }}</span>
-      </article>
-      <article class="kpi" :class="{ warn: (health.total_5xx || 0) > 0 }">
-        <span class="kpi-label">5xx</span>
-        <span class="kpi-value">{{ formatInt(health.total_5xx) }}</span>
-      </article>
-      <article class="kpi" :class="{ warn: (health.open_circuits || 0) > 0 }">
-        <span class="kpi-label">Circuits abertos</span>
-        <span class="kpi-value">{{ health.open_circuits || 0 }}</span>
-      </article>
-      <article class="kpi">
-        <span class="kpi-label">Retries</span>
-        <span class="kpi-value">{{ formatInt(health.total_retries) }}</span>
-      </article>
-      <article class="kpi success">
-        <span class="kpi-label">Vagas persistidas</span>
+
+      <article class="kpi success" :title="kpiHelp.persisted">
+        <span class="kpi-label">Vagas salvas</span>
         <span class="kpi-value">{{ formatInt(health.jobs_persisted_ok) }}</span>
-        <span class="kpi-hint">{{ formatInt(health.jobs_persisted_error) }} falhas</span>
+        <span class="kpi-hint">
+          <template v-if="(health.jobs_persisted_error || 0) > 0">
+            {{ formatInt(health.jobs_persisted_error) }} falharam ao salvar
+          </template>
+          <template v-else>nenhuma falha ao salvar</template>
+        </span>
+      </article>
+
+      <article class="kpi" :class="{ warn: (health.total_429 || 0) > 0 }" :title="kpiHelp.rateLimit">
+        <span class="kpi-label">Avisos de excesso</span>
+        <span class="kpi-value">{{ formatInt(health.total_429) }}</span>
+        <span class="kpi-hint">o site pediu pra ir mais devagar</span>
+      </article>
+
+      <article class="kpi" :class="{ warn: (health.total_5xx || 0) > 0 }" :title="kpiHelp.serverError">
+        <span class="kpi-label">Erros do site</span>
+        <span class="kpi-value">{{ formatInt(health.total_5xx) }}</span>
+        <span class="kpi-hint">o site falhou em responder</span>
+      </article>
+
+      <article class="kpi" :class="{ danger: (health.open_circuits || 0) > 0 }" :title="kpiHelp.circuits">
+        <span class="kpi-label">Sites em pausa de proteção</span>
+        <span class="kpi-value">{{ health.open_circuits || 0 }}</span>
+        <span class="kpi-hint">descansando para não ser bloqueado</span>
+      </article>
+
+      <article class="kpi" :title="kpiHelp.retries">
+        <span class="kpi-label">Tentativas extras</span>
+        <span class="kpi-value">{{ formatInt(health.total_retries) }}</span>
+        <span class="kpi-hint">requests refeitas após erro temporário</span>
       </article>
     </section>
 
-    <!-- Resumo por domínio -->
+    <!-- Como ler esta página (caixa explicativa) -->
+    <details class="info-box">
+      <summary>Como ler esta página?</summary>
+      <div class="info-content">
+        <p>
+          O sistema visita 17 sites de vagas (LinkedIn, Indeed, Gupy, etc.) a cada 2 horas e
+          salva o que encontra. Esta página mostra o que está acontecendo agora.
+        </p>
+        <ul>
+          <li><strong>Acessos aos sites</strong> — quantas vezes pedimos uma página a algum site no período.</li>
+          <li><strong>Vagas salvas</strong> — vagas extraídas e gravadas no banco/JSON com sucesso.</li>
+          <li><strong>Avisos de excesso</strong> — quando um site responde "está vindo rápido demais" (HTTP 429). O sistema reduz a velocidade automaticamente.</li>
+          <li><strong>Erros do site</strong> — quando o servidor do site responde com erro (HTTP 500/502/503/504). Geralmente passageiro.</li>
+          <li><strong>Sites em pausa de proteção</strong> — quando um site está dando muito erro, paramos por 15 min a 2 h para não sermos banidos.</li>
+          <li><strong>Tentativas extras</strong> — requisições que precisaram ser refeitas por erro temporário (timeout, 5xx, 429).</li>
+        </ul>
+      </div>
+    </details>
+
+    <!-- Resumo por site -->
     <section class="card">
-      <h2>Por domínio</h2>
+      <h2>Por site</h2>
+      <p class="card-help">
+        Quanto cada site está sendo acessado, com que rapidez responde e se algo está dando errado.
+      </p>
       <div class="table-wrap">
         <table class="table">
           <thead>
             <tr>
-              <th>Domínio</th>
-              <th class="num">Reqs</th>
-              <th class="num">2xx</th>
-              <th class="num">429</th>
-              <th class="num">5xx</th>
-              <th class="num">Retries</th>
-              <th class="num">p50 (ms)</th>
-              <th class="num">p95 (ms)</th>
-              <th class="num">Rate (req/s)</th>
+              <th>Site</th>
+              <th class="num" title="Total de páginas pedidas ao site no período">Acessos</th>
+              <th class="num" title="Páginas que responderam com sucesso (status 2xx)">Sucesso</th>
+              <th class="num" title="Avisos do site para reduzir o ritmo (HTTP 429)">Excesso</th>
+              <th class="num" title="Erros do servidor do site (HTTP 5xx)">Erros do site</th>
+              <th class="num" title="Requisições que precisaram ser refeitas">Refeitas</th>
+              <th class="num" title="Mediana do tempo de resposta (ms)">Tempo médio</th>
+              <th class="num" title="P95 do tempo de resposta — 95% das requests respondem em até esse tempo (ms)">Tempo pior caso</th>
+              <th class="num" title="Velocidade atual aplicada — em requisições por segundo">Ritmo atual</th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="row in summary" :key="row.domain">
-              <td>{{ row.domain }}</td>
+              <td>{{ friendlyDomain(row.domain) }}</td>
               <td class="num">{{ formatInt(row.req_total) }}</td>
               <td class="num">{{ formatInt(row.status_2xx) }}</td>
               <td class="num" :class="{ danger: row.status_429 > 0 }">{{ formatInt(row.status_429) }}</td>
               <td class="num" :class="{ warn: row.status_5xx > 0 }">{{ formatInt(row.status_5xx) }}</td>
               <td class="num">{{ formatInt(row.retries) }}</td>
-              <td class="num">{{ formatNum(row.latency_p50) }}</td>
-              <td class="num">{{ formatNum(row.latency_p95) }}</td>
+              <td class="num">{{ formatMs(row.latency_p50) }}</td>
+              <td class="num">{{ formatMs(row.latency_p95) }}</td>
               <td class="num">{{ formatRate(row.effective_rate) }}</td>
             </tr>
             <tr v-if="!summary.length">
-              <td colspan="9" class="empty">Sem dados na janela selecionada.</td>
+              <td colspan="9" class="empty">Sem dados no período selecionado.</td>
             </tr>
           </tbody>
         </table>
       </div>
     </section>
 
-    <!-- Circuit breakers -->
+    <!-- Estado de proteção dos sites -->
     <section class="card">
-      <h2>Circuit breakers</h2>
+      <h2>Proteção contra bloqueio</h2>
+      <p class="card-help">
+        Quando um site começa a errar muito, pausamos automaticamente por um tempo para não sermos
+        banidos. Esta tabela mostra o estado atual de cada site.
+      </p>
       <div class="table-wrap">
         <table class="table">
           <thead>
             <tr>
-              <th>Domínio</th>
-              <th>Estado</th>
-              <th class="num">Erro 5m</th>
-              <th class="num">Sucesso 5m</th>
-              <th class="num">Taxa erro</th>
-              <th class="num">Reabre em</th>
+              <th>Site</th>
+              <th>Situação</th>
+              <th class="num">Erros (5 min)</th>
+              <th class="num">Sucessos (5 min)</th>
+              <th class="num">% de erro</th>
+              <th class="num">Volta em</th>
               <th>Atualizado</th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="row in circuits" :key="row.domain">
-              <td>{{ row.domain }}</td>
+              <td>{{ friendlyDomain(row.domain) }}</td>
               <td>
-                <span class="pill" :class="circuitClass(row.state)">{{ row.state }}</span>
+                <span class="pill" :class="circuitClass(row.state)">{{ circuitLabel(row.state) }}</span>
               </td>
               <td class="num">{{ row.failures_5m }}</td>
               <td class="num">{{ row.successes_5m }}</td>
@@ -115,86 +167,125 @@
               <td>{{ formatTimestamp(row.updated_at) }}</td>
             </tr>
             <tr v-if="!circuits.length">
-              <td colspan="7" class="empty">Nenhum circuito registrado ainda.</td>
+              <td colspan="7" class="empty">Nenhum site monitorado ainda — comece o scraper para ver dados aqui.</td>
             </tr>
           </tbody>
         </table>
       </div>
     </section>
 
-    <!-- Fila de extração -->
+    <!-- Fila de vagas -->
     <section class="card">
-      <h2>Fila de extração</h2>
+      <h2>Vagas em processamento</h2>
+      <p class="card-help">
+        Cada vaga descoberta passa por etapas até ser salva. Veja onde elas estão agora.
+      </p>
       <div class="queue-grid">
-        <div class="q-card"><span class="q-label">Descobertas</span><span class="q-value">{{ formatInt(queue.discovered) }}</span></div>
-        <div class="q-card"><span class="q-label">Em execução</span><span class="q-value">{{ formatInt(queue.running) }}</span></div>
-        <div class="q-card warn"><span class="q-label">Parciais</span><span class="q-value">{{ formatInt(queue.partial) }}</span></div>
-        <div class="q-card success"><span class="q-label">Completas</span><span class="q-value">{{ formatInt(queue.completed) }}</span></div>
-        <div class="q-card warn"><span class="q-label">Falharam</span><span class="q-value">{{ formatInt(queue.failed) }}</span></div>
-        <div class="q-card warn"><span class="q-label">Bloqueadas</span><span class="q-value">{{ formatInt(queue.blocked) }}</span></div>
-        <div class="q-card danger"><span class="q-label">DLQ</span><span class="q-value">{{ formatInt(queue.dlq_total) }}</span></div>
+        <div class="q-card" :title="queueHelp.discovered">
+          <span class="q-label">Aguardando coleta</span>
+          <span class="q-value">{{ formatInt(queue.discovered) }}</span>
+        </div>
+        <div class="q-card" :title="queueHelp.running">
+          <span class="q-label">Coletando agora</span>
+          <span class="q-value">{{ formatInt(queue.running) }}</span>
+        </div>
+        <div class="q-card warn" :title="queueHelp.partial">
+          <span class="q-label">Coletadas parcialmente</span>
+          <span class="q-value">{{ formatInt(queue.partial) }}</span>
+        </div>
+        <div class="q-card success" :title="queueHelp.completed">
+          <span class="q-label">Concluídas com sucesso</span>
+          <span class="q-value">{{ formatInt(queue.completed) }}</span>
+        </div>
+        <div class="q-card warn" :title="queueHelp.failed">
+          <span class="q-label">Falharam (vão tentar de novo)</span>
+          <span class="q-value">{{ formatInt(queue.failed) }}</span>
+        </div>
+        <div class="q-card warn" :title="queueHelp.blocked">
+          <span class="q-label">Esperando site liberar</span>
+          <span class="q-value">{{ formatInt(queue.blocked) }}</span>
+        </div>
+        <div class="q-card danger" :title="queueHelp.dlq">
+          <span class="q-label">Sem solução automática</span>
+          <span class="q-value">{{ formatInt(queue.dlq_total) }}</span>
+        </div>
       </div>
 
-      <h3 class="subhead">Por engine × estado</h3>
+      <h3 class="subhead">Detalhamento por site</h3>
       <div class="table-wrap">
         <table class="table">
           <thead>
-            <tr><th>Engine</th><th>Estado</th><th class="num">Total</th></tr>
+            <tr><th>Site</th><th>Etapa</th><th class="num">Quantidade</th></tr>
           </thead>
           <tbody>
             <tr v-for="(row, i) in queueStats" :key="i">
-              <td>{{ row.engine }}</td>
-              <td><span class="pill" :class="stateClass(row.state)">{{ row.state }}</span></td>
+              <td>{{ friendlyEngine(row.engine) }}</td>
+              <td><span class="pill" :class="stateClass(row.state)">{{ stateLabel(row.state) }}</span></td>
               <td class="num">{{ formatInt(row.total) }}</td>
             </tr>
-            <tr v-if="!queueStats.length"><td colspan="3" class="empty">Fila vazia.</td></tr>
+            <tr v-if="!queueStats.length"><td colspan="3" class="empty">Nenhuma vaga em processamento ainda.</td></tr>
           </tbody>
         </table>
       </div>
     </section>
 
-    <!-- Dead-letter queue -->
+    <!-- Vagas que precisam de análise manual (DLQ) -->
     <section class="card">
-      <h2>Dead-letter queue (últimas falhas persistentes)</h2>
+      <h2>Vagas que precisam de análise manual</h2>
+      <p class="card-help">
+        Vagas que falharam 3 vezes seguidas e foram colocadas de lado para você olhar.
+        Geralmente indica que o site mudou o layout ou a vaga foi removida.
+      </p>
       <div class="table-wrap">
         <table class="table">
           <thead>
             <tr>
-              <th>Quando</th>
-              <th>Engine</th>
-              <th>URL</th>
+              <th>Quando falhou</th>
+              <th>Site</th>
+              <th>Link da vaga</th>
               <th class="num">Tentativas</th>
-              <th>Erro</th>
+              <th>O que aconteceu</th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="(row, i) in dlq" :key="i">
               <td>{{ formatTimestamp(row.failed_at) }}</td>
-              <td>{{ row.engine }}</td>
-              <td class="url-cell"><a :href="row.job_url" target="_blank" rel="noopener">{{ row.job_url }}</a></td>
+              <td>{{ friendlyEngine(row.engine) }}</td>
+              <td class="url-cell">
+                <a :href="row.job_url" target="_blank" rel="noopener" :title="row.job_url">
+                  {{ row.job_url }}
+                </a>
+              </td>
               <td class="num">{{ row.attempts }}</td>
               <td>
-                <span class="pill pill-danger">{{ row.last_error_type || '—' }}</span>
-                <small>{{ row.last_error_msg }}</small>
+                <span class="pill pill-danger">{{ friendlyError(row.last_error_type) }}</span>
+                <small v-if="row.last_error_msg">{{ row.last_error_msg }}</small>
               </td>
             </tr>
-            <tr v-if="!dlq.length"><td colspan="5" class="empty">Nenhuma falha persistente.</td></tr>
+            <tr v-if="!dlq.length">
+              <td colspan="5" class="empty success-msg">
+                Nenhuma vaga problemática no período — tudo limpo!
+              </td>
+            </tr>
           </tbody>
         </table>
       </div>
     </section>
 
-    <!-- Eventos -->
+    <!-- Histórico de eventos -->
     <section class="card">
-      <h2>Eventos recentes</h2>
+      <h2>Histórico recente</h2>
+      <p class="card-help">
+        Eventos importantes que aconteceram, em ordem do mais recente para o mais antigo.
+      </p>
       <ul class="event-list">
         <li v-for="(ev, idx) in events" :key="idx" :class="eventClass(ev.kind)">
           <span class="ev-ts">{{ formatTimestamp(ev.ts) }}</span>
-          <span class="ev-kind">{{ ev.kind }}</span>
-          <span class="ev-domain">{{ ev.domain || '—' }}</span>
-          <span class="ev-data">{{ ev.data ? JSON.stringify(ev.data) : '' }}</span>
+          <span class="ev-kind">{{ friendlyEvent(ev.kind) }}</span>
+          <span class="ev-domain">{{ ev.domain ? friendlyDomain(ev.domain) : '—' }}</span>
+          <span class="ev-data" v-if="ev.data">{{ formatEventData(ev.data) }}</span>
         </li>
-        <li v-if="!events.length" class="empty">Sem eventos na janela selecionada.</li>
+        <li v-if="!events.length" class="empty">Nenhum evento no período selecionado.</li>
       </ul>
     </section>
 
@@ -221,15 +312,157 @@ const dlq = ref([])
 const health = computed(() => {
   const h = healthRow.value || {}
   const errPct = h.error_rate ? (h.error_rate * 100) : 0
+  const openCircuits = h.open_circuits || 0
+  const totalReq = h.total_requests || 0
+
   let healthClass = 'success'
-  if (errPct > 5) healthClass = 'warn'
-  if (errPct > 15 || (h.open_circuits || 0) > 0) healthClass = 'danger'
+  let healthIcon = '✓'
+  let headline = 'Tudo funcionando bem'
+  let subline = 'Coletas saindo dentro do esperado, nenhum site bloqueado.'
+
+  if (totalReq === 0) {
+    healthClass = 'idle'
+    healthIcon = '○'
+    headline = 'Coleta parada ou ainda sem dados no período'
+    subline = 'Nenhum acesso registrado no período selecionado. Selecione uma janela maior ou verifique se o scraper está rodando.'
+  } else if (errPct > 15 || openCircuits > 0) {
+    healthClass = 'danger'
+    healthIcon = '!'
+    headline = openCircuits > 0
+      ? `${openCircuits} site${openCircuits > 1 ? 's' : ''} em pausa de proteção`
+      : 'Taxa de erro elevada'
+    subline = openCircuits > 0
+      ? 'Estamos descansando esses sites para não sermos banidos. Vão voltar automaticamente.'
+      : `${errPct.toFixed(1)}% das chamadas estão falhando — investigue se algum site mudou.`
+  } else if (errPct > 5) {
+    healthClass = 'warn'
+    healthIcon = '!'
+    headline = 'Atenção: alguns erros acima do normal'
+    subline = `${errPct.toFixed(1)}% das chamadas falharam. Não é crítico, mas vale acompanhar.`
+  }
+
   return {
     ...h,
     error_rate_pct: errPct.toFixed(1),
     healthClass,
+    healthIcon,
+    headline,
+    subline,
   }
 })
+
+// Tooltips para os KPIs (em linguagem humana, sem jargão técnico)
+const kpiHelp = {
+  requests: 'Quantas vezes pedimos uma página a algum site no período.',
+  persisted: 'Vagas extraídas e gravadas no banco/JSON com sucesso.',
+  rateLimit: 'Quando um site responde "está vindo rápido demais". O sistema reduz a velocidade automaticamente.',
+  serverError: 'Erros do servidor do site (ex.: site fora do ar). Geralmente passageiro — refazemos a chamada.',
+  circuits: 'Sites onde paramos temporariamente (15 min a 2 h) porque estavam dando erro demais. Volta sozinho.',
+  retries: 'Requisições que precisaram ser refeitas após erro temporário (timeout ou erro do servidor).',
+}
+
+const queueHelp = {
+  discovered: 'Vagas que descobrimos no listing mas ainda não buscamos os detalhes.',
+  running: 'Vagas que estão sendo coletadas neste exato momento.',
+  partial: 'Vagas salvas mas com dados incompletos (descrição vazia, por exemplo). Serão reprocessadas quando melhorarmos o leitor.',
+  completed: 'Vagas extraídas e salvas com sucesso em todos os destinos.',
+  failed: 'Vagas que falharam neste ciclo. Serão tentadas novamente no próximo.',
+  blocked: 'Vagas em sites que estão em pausa de proteção. Voltam quando o site liberar.',
+  dlq: 'Vagas que falharam 3 vezes seguidas. Precisam de análise manual — geralmente o site mudou o layout.',
+}
+
+// ---------- Mapas de tradução para linguagem humana ----------
+
+const ENGINE_LABELS = {
+  linkedin: 'LinkedIn',
+  indeed: 'Indeed',
+  gupy: 'Gupy',
+  jooble: 'Jooble',
+  catho: 'Catho',
+  careerjet: 'Careerjet',
+  geekhunter: 'GeekHunter',
+  michaelpage: 'Michael Page',
+  programathor: 'ProgramaThor',
+  remoteok: 'RemoteOK',
+  remotive: 'Remotive',
+  weworkremotely: 'WeWorkRemotely',
+  ziprecruiter: 'ZipRecruiter',
+  simplyhired: 'SimplyHired',
+  bne: 'BNE',
+  dice: 'Dice',
+  infojobs: 'InfoJobs',
+}
+
+const STATE_LABELS = {
+  discovered: 'Aguardando coleta',
+  running: 'Coletando agora',
+  partial: 'Coletada parcialmente',
+  completed: 'Concluída',
+  failed: 'Falhou (vai tentar de novo)',
+  blocked: 'Aguardando site liberar',
+}
+
+const CIRCUIT_LABELS = {
+  closed: 'Funcionando normal',
+  open: 'Em pausa de proteção',
+  half_open: 'Testando volta',
+}
+
+const EVENT_LABELS = {
+  'circuit.open': '🛡️ Site colocado em pausa de proteção',
+  'circuit.closed': '✓ Site voltou ao normal',
+  'circuit.half_open': '🔄 Testando se site voltou',
+  'engine.start': '▶️ Coleta iniciada',
+  'engine.finish': '✓ Coleta concluída',
+  'engine.error': '⚠️ Erro durante coleta',
+  'batch.start': '▶️ Novo lote iniciado',
+  'batch.error': '⚠️ Erro no lote',
+  'parser.error': '⚠️ Erro ao ler vaga',
+  'listing.aborted': '⛔ Listagem interrompida',
+  'reenrich.start': '🔄 Reprocessando vagas antigas',
+}
+
+const ERROR_LABELS = {
+  TimeoutError: 'Site demorou demais para responder',
+  TimeoutException: 'Site demorou demais para responder',
+  ConnectError: 'Não conseguimos conectar ao site',
+  ConnectionError: 'Não conseguimos conectar ao site',
+  ReadError: 'Conexão caiu enquanto líamos a resposta',
+  ReadTimeout: 'Conexão caiu enquanto líamos a resposta',
+  JSONDecodeError: 'Site enviou resposta com formato inválido',
+  KeyError: 'Site mudou a estrutura — campo esperado não existe mais',
+  ParserError: 'Não conseguimos entender o conteúdo da página',
+  refetch_empty: 'Reprocessamento não trouxe dados novos',
+  persist_skipped: 'Vaga foi descartada antes de salvar',
+}
+
+function friendlyEngine (name) { return ENGINE_LABELS[name] || name }
+function stateLabel    (s)    { return STATE_LABELS[s] || s }
+function circuitLabel  (s)    { return CIRCUIT_LABELS[s] || s }
+function friendlyEvent (k)    { return EVENT_LABELS[k] || k }
+function friendlyError (e)    { return ERROR_LABELS[e] || (e || 'Erro não identificado') }
+
+function friendlyDomain (d) {
+  if (!d) return '—'
+  // Remove 'www.', 'br.', 'm.' do começo para uma leitura mais limpa
+  return d.replace(/^(?:www\.|br\.|m\.)/, '')
+}
+
+function formatEventData (data) {
+  if (!data) return ''
+  // Apresenta os campos chave em formato legível (chave: valor, separados por vírgula)
+  if (typeof data !== 'object') return String(data)
+  return Object.entries(data)
+    .map(([k, v]) => `${k}: ${v}`)
+    .join(', ')
+}
+
+function formatMs (ms) {
+  if (ms == null) return '—'
+  const n = Number(ms)
+  if (n < 1000) return Math.round(n) + ' ms'
+  return (n / 1000).toFixed(1) + ' s'
+}
 
 async function loadAll () {
   loading.value = true
@@ -326,6 +559,62 @@ watch(windowMinutes, loadAll)
 }
 .btn-refresh { background: var(--color-accent); color: var(--color-on-accent, #fff); border-color: transparent; }
 .btn-refresh:disabled { opacity: 0.6; cursor: progress; }
+
+/* Banner de saúde geral — semáforo visual */
+.health-banner {
+  display: flex; align-items: center; gap: 14px;
+  padding: 14px 18px; border-radius: 12px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+.health-banner.success { background: rgba(22,163,74,0.06);  border-color: rgba(22,163,74,0.25);  }
+.health-banner.warn    { background: rgba(217,119,6,0.06);  border-color: rgba(217,119,6,0.25);  }
+.health-banner.danger  { background: rgba(220,38,38,0.06);  border-color: rgba(220,38,38,0.25);  }
+.health-banner.idle    { background: var(--color-glass-bg); }
+.health-icon {
+  width: 36px; height: 36px; flex-shrink: 0;
+  border-radius: 10px; display: grid; place-items: center;
+  font-size: 18px; font-weight: 700;
+  background: var(--color-surface); border: 1px solid var(--color-border);
+}
+.health-banner.success .health-icon { color: #16a34a; border-color: rgba(22,163,74,0.4); }
+.health-banner.warn    .health-icon { color: #d97706; border-color: rgba(217,119,6,0.4); }
+.health-banner.danger  .health-icon { color: #dc2626; border-color: rgba(220,38,38,0.4); }
+.health-banner.idle    .health-icon { color: var(--color-text-muted); }
+.health-text { display: flex; flex-direction: column; gap: 2px; }
+.health-text strong { font-size: 14px; color: var(--color-text-primary); }
+.health-text span   { font-size: 13px; color: var(--color-text-secondary); }
+
+/* Caixa "Como ler esta página" */
+.info-box {
+  background: var(--color-surface); border: 1px solid var(--color-border);
+  border-radius: 10px; padding: 0;
+}
+.info-box summary {
+  cursor: pointer; padding: 12px 16px;
+  font-size: 13px; font-weight: 600; color: var(--color-text-primary);
+  list-style: none;
+}
+.info-box summary::-webkit-details-marker { display: none; }
+.info-box summary::before {
+  content: 'ⓘ'; margin-right: 8px; color: var(--color-accent);
+}
+.info-box[open] summary { border-bottom: 1px solid var(--color-border); }
+.info-content {
+  padding: 14px 18px;
+  font-size: 13px; color: var(--color-text-secondary);
+  line-height: 1.55;
+}
+.info-content p { margin: 0 0 10px; }
+.info-content ul { margin: 0; padding-left: 18px; }
+.info-content li { margin-bottom: 6px; }
+.info-content strong { color: var(--color-text-primary); }
+
+.card-help {
+  margin: -4px 0 14px; font-size: 12px;
+  color: var(--color-text-secondary); line-height: 1.5;
+}
+.success-msg { color: #16a34a !important; font-weight: 500; }
 
 .kpi-grid {
   display: grid;

@@ -123,111 +123,105 @@ async def get_programathor_jobs(on_job=None) -> list:
 
     for link in job_links:
         try:
-            response = await fetch(client, link)
-
-            if response is None or response.status_code != 200:
+            job = await refetch_one(link, client=client)
+            if job is None:
                 continue
-
-            soup = BeautifulSoup(response.text, "html.parser")
-            script = soup.find("script", type="application/ld+json")
-
-            if not script or not script.string:
-                continue
-
-            # Limpa control chars que quebram o decoder
-            json_text = script.string.strip()
-            json_text = re.sub(r"[\x00-\x1F\x7F-\x9F]", "", json_text)
-            data = json.loads(json_text)
-
-            # Título
-            job_title = data.get("title", "")
-            if not job_title:
-                continue
-
-            # Empresa
-            hiring_org = data.get("hiringOrganization", {})
-            company = hiring_org.get("name", "") if isinstance(hiring_org, dict) else ""
-
-            # Localização e modalidade
-            job_location = data.get("jobLocation", {})
-            address = job_location.get("address", {}) if isinstance(job_location, dict) else {}
-
-            locality = address.get("addressLocality", "") if isinstance(address, dict) else ""
-            street = address.get("streetAddress", "") if isinstance(address, dict) else ""
-
-            # work_type baseado no jobLocationType + título + locality
-            job_location_type = data.get("jobLocationType", "")
-            title_lower = job_title.lower()
-            locality_lower = locality.lower() if locality else ""
-
-            if job_location_type == "TELECOMMUTE" or "remoto" in title_lower or "remoto" in locality_lower or "remote" in title_lower:
-                work_type = "Remoto"
-                location = []
-            elif "híbrido" in title_lower or "hibrido" in title_lower or "híbrido" in locality_lower:
-                work_type = "Híbrido"
-                if street:
-                    parts = street.split(",")
-                    location = [parts[0].strip()] if parts else []
-                else:
-                    location = []
-            else:
-                work_type = "Presencial"
-                if street:
-                    parts = [p.strip() for p in street.split(",") if p.strip()]
-                    location = parts[:2] if len(parts) >= 2 else parts
-                else:
-                    location = []
-
-            # Regime de contratação
-            employment_type = data.get("employmentType", "")
-            if isinstance(employment_type, list):
-                employment_type = employment_type[0] if employment_type else ""
-            hiring_regime = _REGIME_MAP.get(employment_type, "CLT")
-
-            # Salário
-            salary = ""
-            base_salary = data.get("baseSalary", {})
-            if isinstance(base_salary, dict):
-                currency = base_salary.get("currency", "BRL")
-                value = base_salary.get("value", {})
-                if isinstance(value, dict):
-                    min_val = value.get("minValue", value.get("value", ""))
-                    max_val = value.get("maxValue", min_val)
-                    if min_val and max_val and min_val != max_val:
-                        salary = f"{currency} {min_val} - {max_val}"
-                    elif min_val:
-                        salary = f"{currency} {min_val}"
-                elif value:
-                    salary = f"{currency} {value}"
-
-            # Data ISO -> DD/MM/YYYY
-            date_posted = data.get("datePosted", "")
-            date_raw = date_posted[:10] if date_posted else ""
-            if date_raw and len(date_raw) == 10 and "-" in date_raw:
-                parts = date_raw.split("-")
-                publication_date = f"{parts[2]}/{parts[1]}/{parts[0]}"
-            else:
-                publication_date = date_raw
-
-            description = strip_html(data.get("description", ""))
-            skills = extract_skills(description) if description else []
-
-            job = apply_description_fallbacks([
-                link, job_title, company, location, work_type, hiring_regime, salary, publication_date,
-                skills, description,
-            ])
             jobs.append(job)
             if on_job is not None:
                 try:
                     await on_job(job)
                 except Exception:
                     pass
-
         except Exception:
             continue
 
     print(f"Foram obtidas {len(jobs)} vagas do site ProgramaThor")
     return jobs
+
+
+async def refetch_one(url: str, *, client=None) -> list | None:
+    """Reprocessa uma URL especifica do ProgramaThor (passe de reenrichment)."""
+    if client is None:
+        client = await get_session()
+    response = await fetch(client, url)
+    if response is None or response.status_code != 200:
+        return None
+    soup = BeautifulSoup(response.text, "html.parser")
+    script = soup.find("script", type="application/ld+json")
+    if not script or not script.string:
+        return None
+
+    try:
+        json_text = re.sub(r"[\x00-\x1F\x7F-\x9F]", "", script.string.strip())
+        data = json.loads(json_text)
+    except Exception:
+        return None
+
+    job_title = data.get("title", "")
+    if not job_title:
+        return None
+
+    hiring_org = data.get("hiringOrganization", {})
+    company = hiring_org.get("name", "") if isinstance(hiring_org, dict) else ""
+
+    job_location = data.get("jobLocation", {})
+    address = job_location.get("address", {}) if isinstance(job_location, dict) else {}
+    locality = address.get("addressLocality", "") if isinstance(address, dict) else ""
+    street = address.get("streetAddress", "") if isinstance(address, dict) else ""
+
+    job_location_type = data.get("jobLocationType", "")
+    title_lower = job_title.lower()
+    locality_lower = locality.lower() if locality else ""
+
+    if job_location_type == "TELECOMMUTE" or "remoto" in title_lower or "remoto" in locality_lower or "remote" in title_lower:
+        work_type = "Remoto"
+        location = []
+    elif "híbrido" in title_lower or "hibrido" in title_lower or "híbrido" in locality_lower:
+        work_type = "Híbrido"
+        location = [street.split(",")[0].strip()] if street else []
+    else:
+        work_type = "Presencial"
+        if street:
+            parts = [p.strip() for p in street.split(",") if p.strip()]
+            location = parts[:2] if len(parts) >= 2 else parts
+        else:
+            location = []
+
+    employment_type = data.get("employmentType", "")
+    if isinstance(employment_type, list):
+        employment_type = employment_type[0] if employment_type else ""
+    hiring_regime = _REGIME_MAP.get(employment_type, "CLT")
+
+    salary = ""
+    base_salary = data.get("baseSalary", {})
+    if isinstance(base_salary, dict):
+        currency = base_salary.get("currency", "BRL")
+        value = base_salary.get("value", {})
+        if isinstance(value, dict):
+            min_val = value.get("minValue", value.get("value", ""))
+            max_val = value.get("maxValue", min_val)
+            if min_val and max_val and min_val != max_val:
+                salary = f"{currency} {min_val} - {max_val}"
+            elif min_val:
+                salary = f"{currency} {min_val}"
+        elif value:
+            salary = f"{currency} {value}"
+
+    date_posted = data.get("datePosted", "")
+    date_raw = date_posted[:10] if date_posted else ""
+    if date_raw and len(date_raw) == 10 and "-" in date_raw:
+        parts = date_raw.split("-")
+        publication_date = f"{parts[2]}/{parts[1]}/{parts[0]}"
+    else:
+        publication_date = date_raw
+
+    description = strip_html(data.get("description", ""))
+    skills = extract_skills(description) if description else []
+
+    return apply_description_fallbacks([
+        url, job_title, company, location, work_type, hiring_regime,
+        salary, publication_date, skills, description,
+    ])
 
 
 # --- Modo debug -----------------------------------------------------------
