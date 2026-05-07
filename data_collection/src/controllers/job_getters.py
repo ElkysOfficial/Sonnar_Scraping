@@ -17,14 +17,14 @@ from ..engines.weworkremotely import get_weworkremotely_jobs
 from ..engines.ziprecruiter import get_ziprecruiter_jobs
 
 getters = [
-    # get_bne_jobs,
-    # get_careerjet_jobs,
-    # get_catho_jobs,
-    # get_dice_jobs,
-    # get_geekhunter_jobs,
+    get_bne_jobs,
+    get_careerjet_jobs,
+    get_catho_jobs,
+    get_dice_jobs,
+    get_geekhunter_jobs,
     get_gupy_jobs,
-    # get_indeed_jobs,
-    # get_infojobs_jobs,
+    get_indeed_jobs,
+    get_infojobs_jobs,
     # get_jooble_jobs,
     # get_linkedin_jobs,
     # get_michaelpage_jobs,
