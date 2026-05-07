@@ -17,7 +17,7 @@ from urllib.parse import urlparse, urlunparse
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from variavel import get_active_stacks  # noqa: E402
-from src.utils.http_session import HttpSession  # noqa: E402
+from src.utils.http_session import HttpSession, fetch  # noqa: E402
 from src.utils.job_fallbacks import apply_description_fallbacks  # noqa: E402
 from src.utils.text_utils import extract_skills, strip_html  # noqa: E402
 
@@ -142,11 +142,8 @@ async def get_gupy_jobs(on_job=None) -> list:
     for stack in get_active_stacks():
         encoded = urllib.parse.quote(stack)
         url = f"https://portal.api.gupy.io/api/v1/jobs?jobName={encoded}&limit=1000"
-        try:
-            response = await client.get(url)
-        except Exception:
-            continue
-        if response.status_code != 200:
+        response = await fetch(client, url)
+        if response is None or response.status_code != 200:
             continue
 
         for item in response.json().get("data", []):

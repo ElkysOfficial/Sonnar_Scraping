@@ -33,6 +33,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from variavel import get_active_stacks  # noqa: E402
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+from src.utils.http_session import fetch_sync  # noqa: E402
 from src.utils.job_fallbacks import apply_description_fallbacks  # noqa: E402
 from src.utils.text_utils import extract_skills, strip_html  # noqa: E402
 
@@ -210,8 +211,8 @@ async def _fetch_job_detail(link: str, semaphore: asyncio.Semaphore) -> dict:
     async with semaphore:
         try:
             session = _get_detail_session()
-            response = await asyncio.to_thread(session.get, link, timeout=20)
-            if response.status_code != 200:
+            response = await fetch_sync(session, link, timeout=20)
+            if response is None or response.status_code != 200:
                 return {}
             jp = _parse_jsonld_jobposting(response.text)
             if not jp:

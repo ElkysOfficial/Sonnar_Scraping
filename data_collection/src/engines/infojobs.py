@@ -20,7 +20,7 @@ from bs4 import BeautifulSoup
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 from variavel import get_active_stacks  # noqa: E402
-from src.utils.http_session import HttpSession  # noqa: E402
+from src.utils.http_session import HttpSession, fetch  # noqa: E402
 from src.utils.job_fallbacks import apply_description_fallbacks  # noqa: E402
 from src.utils.text_utils import extract_skills, strip_html  # noqa: E402
 
@@ -268,11 +268,8 @@ async def get_infojobs_links() -> list[str]:
                 f"https://www.infojobs.com.br/empregos.aspx"
                 f"?palabra={encoded}&Page={page}"
             )
-            try:
-                response = await client.get(url)
-            except Exception:
-                break
-            if response.status_code != 200:
+            response = await fetch(client, url)
+            if response is None or response.status_code != 200:
                 break
 
             soup = BeautifulSoup(response.text, "html.parser")
@@ -319,18 +316,18 @@ async def get_infojobs_jobs(on_job=None) -> list:
         """Fetch + parse de uma URL, respeitando o semáforo."""
         async with semaphore:
             client = await get_session()
-            try:
-                response = await client.get(link)
-            except Exception:
-                return None
-            if response.status_code != 200:
+            response = await fetch(client, link)
+            if response is None or response.status_code != 200:
                 return None
             parsed = _parse_job_detail(response.text, link)
             if parsed is not None and on_job is not None:
                 try:
                     await on_job(parsed)
-                except Exception:
-                    pass
+                except Exception as exc:
+                    import logging
+                    logging.getLogger("scraper.engine.infojobs").exception(
+                        "on_job_error", extra={"url": link, "errorMessage": str(exc)}
+                    )
             return parsed
 
     results = await asyncio.gather(*(_fetch(l) for l in links))

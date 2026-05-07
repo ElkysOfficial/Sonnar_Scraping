@@ -24,6 +24,7 @@ from curl_cffi import requests
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 from variavel import get_active_stacks  # noqa: E402
+from src.utils.http_session import fetch_sync  # noqa: E402
 from src.utils.job_fallbacks import apply_description_fallbacks  # noqa: E402
 from src.utils.text_utils import extract_skills, strip_html  # noqa: E402
 
@@ -118,9 +119,8 @@ async def _fetch_job_detail(link: str, session, semaphore: asyncio.Semaphore) ->
     """
     async with semaphore:
         try:
-            await asyncio.sleep(random.uniform(0.2, 0.6))
-            response = await asyncio.to_thread(session.get, link, timeout=20)
-            if response.status_code != 200:
+            response = await fetch_sync(session, link, timeout=20)
+            if response is None or response.status_code != 200:
                 return None
 
             soup = BeautifulSoup(response.text, "html.parser")
@@ -216,11 +216,9 @@ async def get_careerjet_links() -> list:
         encoded = urllib.parse.quote(stack)
         for page in range(1, 6):
             try:
-                if page > 1:
-                    await asyncio.sleep(random.uniform(0.4, 1.0))
                 url = f"https://www.careerjet.com.br/vagas?s={encoded}&l=Brasil&p={page}"
-                response = await asyncio.to_thread(session.get, url, timeout=20)
-                if response.status_code != 200:
+                response = await fetch_sync(session, url, timeout=20)
+                if response is None or response.status_code != 200:
                     break
 
                 soup = BeautifulSoup(response.text, "html.parser")

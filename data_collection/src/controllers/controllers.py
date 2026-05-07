@@ -31,10 +31,12 @@ from variavel import iter_batches, set_active_batch
 from .job_getters import getters
 from ..persistence.jobs_repository import JobsRepository
 from ..utils.jobsUtils import process_salary
+from ..utils.metrics import metrics
+from ..utils.structured_logging import setup_logging
 
 
-logging.basicConfig(filename="errors.log", level=logging.ERROR)
-logger = logging.getLogger(__name__)
+setup_logging(log_path=os.getenv("SCRAPER_LOG_PATH", "scraper.log"))
+logger = logging.getLogger("scraper.controller")
 
 
 # ---------------------------------------------------------------------------
@@ -43,7 +45,9 @@ logger = logging.getLogger(__name__)
 
 BATCH_SIZE = int(os.getenv("BATCH_SIZE", "10"))
 BATCH_INTERVAL_SECONDS = int(os.getenv("BATCH_INTERVAL_SECONDS", "7200"))  # 2h
-MAX_CONCURRENT_ENGINES = int(os.getenv("MAX_CONCURRENT_ENGINES", "3"))
+# 2 vCPUs => 2 engines paralelas. Atual default era 3 e levava à contenção.
+MAX_CONCURRENT_ENGINES = int(os.getenv("MAX_CONCURRENT_ENGINES", "2"))
+METRICS_FLUSH_INTERVAL_S = float(os.getenv("METRICS_FLUSH_INTERVAL_S", "30"))
 
 # Tipo do callback: ``async fn(job_data: dict, engine: str) -> None``.
 JobCallback = Callable[[list, str], Awaitable[None]]
@@ -136,11 +140,17 @@ async def _process_one_job(
     try:
         persisted = await repo.save(job_data, source=engine)
     except Exception as exc:
-        logger.error("Erro ao persistir %s: %s", job_url, exc)
+        logger.error("persist_failed", extra={
+            "engine": engine, "url": job_url, "errorMessage": str(exc),
+        })
+        metrics.incr("persist.error", domain=engine)
         sent_jobs.discard(job_url)  # libera pra retry numa próxima tentativa
         return
 
-    if not persisted:
+    if persisted:
+        metrics.incr("persist.ok", domain=engine)
+    else:
+        metrics.incr("persist.skipped", domain=engine)
         sent_jobs.discard(job_url)
 
 
@@ -172,19 +182,19 @@ async def _run_one_batch(
             )
 
         async with semaphore:
+            metrics.event("engine.start", domain=engine)
+            logger.info("engine_start", extra={"engine": engine})
             try:
-                print(f"Buscando em {engine}...")
-                # Engines que aceitam o callback fazem streaming. As que não
-                # aceitam continuam funcionando: o try/except apanha o
-                # TypeError e cai no fallback (retorno em batch).
                 try:
                     results = await getter(on_job=on_job)
                 except TypeError:
                     results = await getter()
                     for raw in results or []:
                         await on_job(raw)
+                metrics.event("engine.finish", domain=engine)
             except Exception as exc:
-                logger.error("Erro ao executar %s: %s", engine, exc)
+                metrics.event("engine.error", domain=engine, error=str(exc))
+                logger.exception("engine_error", extra={"engine": engine})
 
     await asyncio.gather(*(_run_engine(g) for g in getters))
 
@@ -208,28 +218,51 @@ async def scrape_jobs() -> None:
     do JSON local), de modo que vagas já processadas em ciclos anteriores
     não são reprocessadas.
     """
-    async with JobsRepository() as repo:
-        sent_jobs: set = repo.known_urls()
-        logger.info("Inicializando: %d vagas já conhecidas no JSON local.", len(sent_jobs))
+    metrics_task = asyncio.create_task(metrics.run_flusher(METRICS_FLUSH_INTERVAL_S))
 
-        while True:
-            batches = list(iter_batches(BATCH_SIZE))
-            total = len(batches)
+    try:
+        async with JobsRepository() as repo:
+            sent_jobs: set = repo.known_urls()
+            logger.info("scraper_init", extra={"known_jobs": len(sent_jobs)})
 
-            for idx, (category, batch) in enumerate(batches, start=1):
-                set_active_batch(batch)
-                print(
-                    f"\n=== Lote {idx}/{total} | {category} | {len(batch)} stacks: "
-                    f"{', '.join(batch)} ==="
-                )
-                try:
-                    await _run_one_batch(repo=repo, sent_jobs=sent_jobs)
-                except Exception as exc:
-                    logger.error("Erro geral no lote %s: %s", category, exc)
+            while True:
+                batches = list(iter_batches(BATCH_SIZE))
+                total = len(batches)
 
-                if idx < total:
-                    print(f"Lote {idx} concluído. Dormindo {BATCH_INTERVAL_SECONDS // 60} min.")
-                    await asyncio.sleep(BATCH_INTERVAL_SECONDS)
+                for idx, (category, batch) in enumerate(batches, start=1):
+                    set_active_batch(batch)
+                    logger.info("batch_start", extra={
+                        "batch_idx": idx, "batch_total": total,
+                        "category": category, "stacks": batch,
+                    })
+                    metrics.event("batch.start", domain="", category=category, idx=idx)
+                    try:
+                        await _run_one_batch(repo=repo, sent_jobs=sent_jobs)
+                    except Exception as exc:
+                        logger.exception("batch_error", extra={
+                            "category": category, "errorMessage": str(exc),
+                        })
+                        metrics.event("batch.error", domain="", category=category)
 
-            print("Ciclo completo das categorias concluído. Reiniciando.")
-            set_active_batch(None)  # libera o lote ativo no fim
+                    # Flush local entre lotes + fechar Playwright para liberar RAM
+                    repo.flush_now()
+                    try:
+                        from ..utils.browser_fetch import close_browser
+                        await close_browser()
+                    except Exception:
+                        pass
+
+                    if idx < total:
+                        logger.info("batch_sleep", extra={
+                            "seconds": BATCH_INTERVAL_SECONDS,
+                        })
+                        await asyncio.sleep(BATCH_INTERVAL_SECONDS)
+
+                logger.info("cycle_complete")
+                set_active_batch(None)
+    finally:
+        metrics_task.cancel()
+        try:
+            await metrics_task
+        except (asyncio.CancelledError, Exception):
+            pass

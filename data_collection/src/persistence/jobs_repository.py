@@ -210,7 +210,17 @@ class JobsRepository:
             logger.error('Falha purge supabase: %s', exc)
 
     async def __aexit__(self, exc_type, exc, tb):
+        try:
+            self.local.flush_now()
+        except Exception as flush_exc:
+            logger.error('Falha flush_now no shutdown: %s', flush_exc)
         await self.supabase.__aexit__(exc_type, exc, tb)
+
+    def flush_now(self) -> None:
+        try:
+            self.local.flush_now()
+        except Exception as exc:
+            logger.error('Falha flush_now: %s', exc)
 
     def known_urls(self) -> set:
         """Conjunto de job_urls ja persistidos (do JSON local). Usado em dedup."""

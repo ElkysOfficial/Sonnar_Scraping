@@ -15,6 +15,7 @@ from curl_cffi import requests
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 from variavel import stacks  # noqa: E402
+from src.utils.http_session import fetch_sync  # noqa: E402
 from src.utils.job_fallbacks import apply_description_fallbacks  # noqa: E402
 from src.utils.text_utils import extract_skills, strip_html  # noqa: E402
 
@@ -148,8 +149,8 @@ async def get_remotive_jobs(on_job=None) -> list:
     for category in REMOTIVE_CATEGORIES:
         try:
             url = f"https://remotive.com/api/remote-jobs?category={category}"
-            response = await asyncio.to_thread(session.get, url, timeout=30)
-            if response.status_code != 200:
+            response = await fetch_sync(session, url, timeout=30)
+            if response is None or response.status_code != 200:
                 continue
 
             for item in response.json().get("jobs", []):

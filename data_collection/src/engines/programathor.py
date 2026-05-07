@@ -19,7 +19,7 @@ from bs4 import BeautifulSoup
 
 from ..utils.job_fallbacks import apply_description_fallbacks
 from ..utils.text_utils import extract_skills, strip_html
-from ..utils.http_session import HttpSession
+from ..utils.http_session import HttpSession, fetch
 
 
 # --- Sessão (padrão httpx compartilhado) ---------------------------------
@@ -66,9 +66,9 @@ async def get_programathor_links() -> list:
     client = await get_session()
     while page <= max_pages and empty_pages < max_empty_pages:
         try:
-            response = await client.get(f"https://programathor.com.br/jobs/page/{page}")
+            response = await fetch(client, f"https://programathor.com.br/jobs/page/{page}")
 
-            if response.status_code != 200:
+            if response is None or response.status_code != 200:
                 empty_pages += 1
                 page += 1
                 continue
@@ -118,9 +118,9 @@ async def get_programathor_jobs(on_job=None) -> list:
 
     for link in job_links:
         try:
-            response = await client.get(link)
+            response = await fetch(client, link)
 
-            if response.status_code != 200:
+            if response is None or response.status_code != 200:
                 continue
 
             soup = BeautifulSoup(response.text, "html.parser")

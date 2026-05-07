@@ -15,6 +15,7 @@ from curl_cffi import requests
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 from variavel import stacks  # noqa: E402
+from src.utils.http_session import fetch_sync  # noqa: E402
 from src.utils.job_fallbacks import apply_description_fallbacks  # noqa: E402
 from src.utils.text_utils import extract_skills, strip_html  # noqa: E402
 
@@ -153,10 +154,11 @@ async def get_remoteok_jobs(on_job=None) -> list:
     session = get_session()
 
     try:
-        response = await asyncio.to_thread(session.get, "https://remoteok.com/api", timeout=30)
+        response = await fetch_sync(session, "https://remoteok.com/api", timeout=30)
 
-        if response.status_code != 200:
-            print(f"Erro ao acessar API RemoteOK: {response.status_code}")
+        if response is None or response.status_code != 200:
+            status = response.status_code if response is not None else "circuit/retry"
+            print(f"Erro ao acessar API RemoteOK: {status}")
             return []
 
         data = response.json()

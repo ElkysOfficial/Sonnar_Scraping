@@ -32,6 +32,7 @@ import re
 import cloudscraper
 from bs4 import BeautifulSoup
 
+from ..utils.http_session import fetch_sync
 from ..utils.job_fallbacks import apply_description_fallbacks
 from ..utils.text_utils import extract_skills, strip_html
 
@@ -272,9 +273,9 @@ async def _scan_area(area: str, scraper, max_pages: int = BNE_MAX_PAGES) -> set:
                 await asyncio.sleep(random.uniform(0.3, 0.8))
 
             url = f"https://www.bne.com.br/vagas-de-emprego-na-area-de-{area}?Area={area}&Sort=0&Page={page}"
-            response = await asyncio.to_thread(scraper.get, url, timeout=20)
+            response = await fetch_sync(scraper, url, timeout=20)
 
-            if response.status_code != 200:
+            if response is None or response.status_code != 200:
                 consecutive_empty += 1
                 page += 1
                 continue
@@ -321,8 +322,8 @@ async def _fetch_job_detail(job_id, semaphore: asyncio.Semaphore) -> list | None
         link = f"https://www.bne.com.br/vagas-de-emprego/{job_id}"
 
         try:
-            response = await asyncio.to_thread(scraper.get, link, timeout=30)
-            if response.status_code != 200:
+            response = await fetch_sync(scraper, link, timeout=30)
+            if response is None or response.status_code != 200:
                 return None
 
             soup = BeautifulSoup(response.text, "html.parser")
