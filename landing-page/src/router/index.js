@@ -84,11 +84,26 @@ const routes = [
     component: AdminLayout,
     meta: { requiresAdmin: true },
     children: [
-      { path: '', name: 'AdminDashboard', component: AdminDashboard },
-      { path: 'subscribers', name: 'AdminSubscribers', component: AdminSubscribers },
-      { path: 'new-client', name: 'AdminNewClient', component: AdminNewClient },
-      { path: 'admins', name: 'AdminManageAdmins', component: AdminManageAdmins, meta: { requiresOwner: true } },
-      { path: 'scraper', name: 'AdminScraper', component: AdminScraper }
+      {
+        path: '', name: 'AdminDashboard', component: AdminDashboard,
+        meta: { title: 'Visão Geral', subtitle: 'Resumo da operação: assinantes, MRR, crescimento e coleta.' }
+      },
+      {
+        path: 'subscribers', name: 'AdminSubscribers', component: AdminSubscribers,
+        meta: { title: 'Lista de Assinantes', subtitle: 'Gerencie todos os clientes ativos e em trial.' }
+      },
+      {
+        path: 'new-client', name: 'AdminNewClient', component: AdminNewClient,
+        meta: { title: 'Novo Cliente', subtitle: 'Adicione manualmente um cliente no sistema.' }
+      },
+      {
+        path: 'admins', name: 'AdminManageAdmins', component: AdminManageAdmins,
+        meta: { requiresOwner: true, title: 'Administradores', subtitle: 'Conceda ou revogue acesso administrativo.' }
+      },
+      {
+        path: 'scraper', name: 'AdminScraper', component: AdminScraper,
+        meta: { title: 'Coleta de Vagas', subtitle: 'Como o sistema está buscando vagas nos sites parceiros.' }
+      }
     ]
   },
   // Catch-all: renderiza 404 explícito pro usuário entender que a rota não

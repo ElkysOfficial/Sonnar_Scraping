@@ -1,20 +1,9 @@
 <template>
   <div class="admin-dashboard">
-    <!-- Page Header (título + data + sino) -->
-    <header class="dashboard-header animate-fade-in-up">
-      <div class="header-text">
-        <h1 class="page-title">Visão Geral</h1>
-        <p class="page-subtitle">Panorama executivo da operação com leitura direta de assinantes, MRR e crescimento.</p>
-      </div>
-      <div class="header-meta">
-        <span class="header-date">{{ currentDate }}</span>
-        <button type="button" class="header-bell" aria-label="Notificações">
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0" />
-          </svg>
-        </button>
-      </div>
-    </header>
+    <!-- Indicador de data (título e subtítulo vêm da topbar) -->
+    <div class="page-meta animate-fade-in-up">
+      <span class="page-meta__date">{{ currentDate }}</span>
+    </div>
 
     <!-- Hero Card (MRR no período + seletor) -->
     <section class="hero-card animate-fade-in-up stagger-1">
@@ -313,61 +302,17 @@ function formatMoney(value: number): string {
   gap: var(--space-6);
 }
 
-/* ===== Header ===== */
-.dashboard-header {
+/* ===== Page meta (apenas data — título e subtítulo vêm da topbar) ===== */
+.page-meta {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--space-4);
-}
-
-.header-text { min-width: 0; }
-
-.page-title {
-  font-size: var(--text-2xl);
-  font-weight: var(--font-bold);
-  color: var(--color-text-primary);
-  margin-bottom: var(--space-1);
-}
-
-.page-subtitle {
-  font-size: var(--text-base);
-  color: var(--color-text-secondary);
-  max-width: 60ch;
-}
-
-.header-meta {
-  display: flex;
+  justify-content: flex-end;
   align-items: center;
-  gap: var(--space-3);
-  flex-shrink: 0;
 }
 
-.header-date {
+.page-meta__date {
   font-size: var(--text-sm);
   color: var(--color-text-secondary);
   white-space: nowrap;
-}
-
-.header-bell {
-  width: 2.25rem;
-  height: 2.25rem;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-full, 999px);
-  color: var(--color-text-secondary);
-  cursor: pointer;
-  transition: all var(--transition-fast);
-}
-
-.header-bell svg { width: 1.125rem; height: 1.125rem; }
-
-.header-bell:hover {
-  color: var(--color-accent);
-  border-color: var(--color-accent);
 }
 
 /* ===== Hero Card ===== */
@@ -696,11 +641,7 @@ function formatMoney(value: number): string {
 }
 
 @media (max-width: 768px) {
-  .dashboard-header {
-    flex-direction: column;
-    align-items: stretch;
-  }
-  .header-meta { justify-content: space-between; }
+  .page-meta { justify-content: flex-start; }
   .hero-top { flex-direction: column; align-items: stretch; }
   .period-selector { align-self: flex-start; }
   .subscribers-table-wrapper { display: none; }

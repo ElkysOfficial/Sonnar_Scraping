@@ -1,25 +1,41 @@
 <template>
   <div class="scraper-page">
-    <header class="page-head">
-      <div>
-        <h1>Coleta de Vagas</h1>
-        <p class="subtitle">
-          Acompanhe em tempo real como o sistema está buscando vagas nos sites parceiros.
-          Saúde geral, sites visitados, vagas coletadas e qualquer problema aparecem aqui.
-        </p>
+    <!-- Controles (título e subtítulo vêm da topbar) -->
+    <div class="page-controls">
+      <div class="page-controls__filters">
+        <label class="filter-group">
+          <span>Período</span>
+          <select v-model.number="windowMinutes" class="select" aria-label="Janela de tempo">
+            <option :value="15">Últimos 15 minutos</option>
+            <option :value="60">Última hora</option>
+            <option :value="360">Últimas 6 horas</option>
+            <option :value="1440">Últimas 24 horas</option>
+          </select>
+        </label>
+        <label class="filter-group">
+          <span>Site</span>
+          <select v-model="selectedEngine" class="select" aria-label="Filtrar por site">
+            <option value="">Todos os sites</option>
+            <option v-for="opt in engineOptions" :key="opt.value" :value="opt.value">
+              {{ opt.label }}
+            </option>
+          </select>
+        </label>
       </div>
-      <div class="head-actions">
-        <select v-model.number="windowMinutes" class="select" aria-label="Janela de tempo">
-          <option :value="15">Últimos 15 minutos</option>
-          <option :value="60">Última hora</option>
-          <option :value="360">Últimas 6 horas</option>
-          <option :value="1440">Últimas 24 horas</option>
-        </select>
-        <button class="btn-refresh" @click="loadAll" :disabled="loading">
-          {{ loading ? 'Atualizando…' : 'Atualizar agora' }}
-        </button>
-      </div>
-    </header>
+      <button class="btn-refresh" @click="loadAll" :disabled="loading">
+        {{ loading ? 'Atualizando…' : 'Atualizar agora' }}
+      </button>
+    </div>
+
+    <!-- Indicador de filtro ativo -->
+    <div v-if="selectedEngine" class="filter-pill">
+      <span>
+        Mostrando apenas: <strong>{{ friendlyEngine(selectedEngine) }}</strong>
+      </span>
+      <button class="filter-clear" @click="selectedEngine = ''" type="button">
+        Limpar filtro ✕
+      </button>
+    </div>
 
     <!-- Banner de saúde geral -->
     <section class="health-banner" :class="health.healthClass">
@@ -115,7 +131,14 @@
             </tr>
           </thead>
           <tbody>
-            <tr v-for="row in summary" :key="row.domain">
+            <tr
+              v-for="row in summaryFiltered"
+              :key="row.domain"
+              class="row-clickable"
+              :class="{ 'row-active': selectedEngine && domainBelongsToEngine(row.domain, selectedEngine) }"
+              @click="selectEngineByDomain(row.domain)"
+              :title="'Clique para ver só este site'"
+            >
               <td>{{ friendlyDomain(row.domain) }}</td>
               <td class="num">{{ formatInt(row.req_total) }}</td>
               <td class="num">{{ formatInt(row.status_2xx) }}</td>
@@ -126,7 +149,7 @@
               <td class="num">{{ formatMs(row.latency_p95) }}</td>
               <td class="num">{{ formatRate(row.effective_rate) }}</td>
             </tr>
-            <tr v-if="!summary.length">
+            <tr v-if="!summaryFiltered.length">
               <td colspan="9" class="empty">Sem dados no período selecionado.</td>
             </tr>
           </tbody>
@@ -155,7 +178,7 @@
             </tr>
           </thead>
           <tbody>
-            <tr v-for="row in circuits" :key="row.domain">
+            <tr v-for="row in circuitsFiltered" :key="row.domain">
               <td>{{ friendlyDomain(row.domain) }}</td>
               <td>
                 <span class="pill" :class="circuitClass(row.state)">{{ circuitLabel(row.state) }}</span>
@@ -166,7 +189,7 @@
               <td class="num">{{ formatSeconds(row.open_until_s) }}</td>
               <td>{{ formatTimestamp(row.updated_at) }}</td>
             </tr>
-            <tr v-if="!circuits.length">
+            <tr v-if="!circuitsFiltered.length">
               <td colspan="7" class="empty">Nenhum site monitorado ainda — comece o scraper para ver dados aqui.</td>
             </tr>
           </tbody>
@@ -183,31 +206,31 @@
       <div class="queue-grid">
         <div class="q-card" :title="queueHelp.discovered">
           <span class="q-label">Aguardando coleta</span>
-          <span class="q-value">{{ formatInt(queue.discovered) }}</span>
+          <span class="q-value">{{ formatInt(queueAggregated.discovered) }}</span>
         </div>
         <div class="q-card" :title="queueHelp.running">
           <span class="q-label">Coletando agora</span>
-          <span class="q-value">{{ formatInt(queue.running) }}</span>
+          <span class="q-value">{{ formatInt(queueAggregated.running) }}</span>
         </div>
         <div class="q-card warn" :title="queueHelp.partial">
           <span class="q-label">Coletadas parcialmente</span>
-          <span class="q-value">{{ formatInt(queue.partial) }}</span>
+          <span class="q-value">{{ formatInt(queueAggregated.partial) }}</span>
         </div>
         <div class="q-card success" :title="queueHelp.completed">
           <span class="q-label">Concluídas com sucesso</span>
-          <span class="q-value">{{ formatInt(queue.completed) }}</span>
+          <span class="q-value">{{ formatInt(queueAggregated.completed) }}</span>
         </div>
         <div class="q-card warn" :title="queueHelp.failed">
           <span class="q-label">Falharam (vão tentar de novo)</span>
-          <span class="q-value">{{ formatInt(queue.failed) }}</span>
+          <span class="q-value">{{ formatInt(queueAggregated.failed) }}</span>
         </div>
         <div class="q-card warn" :title="queueHelp.blocked">
           <span class="q-label">Esperando site liberar</span>
-          <span class="q-value">{{ formatInt(queue.blocked) }}</span>
+          <span class="q-value">{{ formatInt(queueAggregated.blocked) }}</span>
         </div>
         <div class="q-card danger" :title="queueHelp.dlq">
           <span class="q-label">Sem solução automática</span>
-          <span class="q-value">{{ formatInt(queue.dlq_total) }}</span>
+          <span class="q-value">{{ formatInt(queueAggregated.dlq_total) }}</span>
         </div>
       </div>
 
@@ -218,12 +241,12 @@
             <tr><th>Site</th><th>Etapa</th><th class="num">Quantidade</th></tr>
           </thead>
           <tbody>
-            <tr v-for="(row, i) in queueStats" :key="i">
+            <tr v-for="(row, i) in queueStatsFiltered" :key="i">
               <td>{{ friendlyEngine(row.engine) }}</td>
               <td><span class="pill" :class="stateClass(row.state)">{{ stateLabel(row.state) }}</span></td>
               <td class="num">{{ formatInt(row.total) }}</td>
             </tr>
-            <tr v-if="!queueStats.length"><td colspan="3" class="empty">Nenhuma vaga em processamento ainda.</td></tr>
+            <tr v-if="!queueStatsFiltered.length"><td colspan="3" class="empty">Nenhuma vaga em processamento ainda.</td></tr>
           </tbody>
         </table>
       </div>
@@ -248,7 +271,7 @@
             </tr>
           </thead>
           <tbody>
-            <tr v-for="(row, i) in dlq" :key="i">
+            <tr v-for="(row, i) in dlqFiltered" :key="i">
               <td>{{ formatTimestamp(row.failed_at) }}</td>
               <td>{{ friendlyEngine(row.engine) }}</td>
               <td class="url-cell">
@@ -262,7 +285,7 @@
                 <small v-if="row.last_error_msg">{{ row.last_error_msg }}</small>
               </td>
             </tr>
-            <tr v-if="!dlq.length">
+            <tr v-if="!dlqFiltered.length">
               <td colspan="5" class="empty success-msg">
                 Nenhuma vaga problemática no período — tudo limpo!
               </td>
@@ -279,13 +302,13 @@
         Eventos importantes que aconteceram, em ordem do mais recente para o mais antigo.
       </p>
       <ul class="event-list">
-        <li v-for="(ev, idx) in events" :key="idx" :class="eventClass(ev.kind)">
+        <li v-for="(ev, idx) in eventsFiltered" :key="idx" :class="eventClass(ev.kind)">
           <span class="ev-ts">{{ formatTimestamp(ev.ts) }}</span>
           <span class="ev-kind">{{ friendlyEvent(ev.kind) }}</span>
           <span class="ev-domain">{{ ev.domain ? friendlyDomain(ev.domain) : '—' }}</span>
           <span class="ev-data" v-if="ev.data">{{ formatEventData(ev.data) }}</span>
         </li>
-        <li v-if="!events.length" class="empty">Nenhum evento no período selecionado.</li>
+        <li v-if="!eventsFiltered.length" class="empty">Nenhum evento no período selecionado.</li>
       </ul>
     </section>
 
@@ -308,6 +331,7 @@ const healthRow = ref(null)
 const queue = ref({})
 const queueStats = ref([])
 const dlq = ref([])
+const selectedEngine = ref('')   // '' = todos
 
 const health = computed(() => {
   const h = healthRow.value || {}
@@ -436,11 +460,94 @@ const ERROR_LABELS = {
   persist_skipped: 'Vaga foi descartada antes de salvar',
 }
 
+// Mapa de engine -> domain(s) conhecido(s) para filtrar tabelas que vêm por domínio
+const ENGINE_DOMAINS = {
+  linkedin: ['br.linkedin.com', 'linkedin.com'],
+  indeed: ['br.indeed.com', 'indeed.com', 'indeed.com.br'],
+  gupy: ['portal.api.gupy.io', 'gupy.io'],
+  jooble: ['br.jooble.org', 'jooble.org'],
+  catho: ['catho.com.br', 'www.catho.com.br'],
+  careerjet: ['careerjet.com.br', 'www.careerjet.com.br'],
+  geekhunter: ['geekhunter.com.br', 'www.geekhunter.com.br'],
+  michaelpage: ['michaelpage.com.br', 'www.michaelpage.com.br'],
+  programathor: ['programathor.com.br'],
+  remoteok: ['remoteok.com'],
+  remotive: ['remotive.com'],
+  weworkremotely: ['weworkremotely.com'],
+  ziprecruiter: ['ziprecruiter.co.uk', 'ziprecruiter.com'],
+  simplyhired: ['simplyhired.com.br'],
+  bne: ['bne.com.br', 'www.bne.com.br'],
+  dice: ['dice.com', 'www.dice.com'],
+  infojobs: ['infojobs.com.br', 'www.infojobs.com.br'],
+}
+
+function domainBelongsToEngine (domain, engine) {
+  if (!engine) return true
+  if (!domain) return false
+  const list = ENGINE_DOMAINS[engine] || []
+  return list.includes(domain) || domain.includes(engine)
+}
+
+const engineOptions = computed(() => {
+  const fromQueue = (queueStats.value || []).map(r => r.engine)
+  const fromDlq = (dlq.value || []).map(r => r.engine)
+  const all = new Set([...Object.keys(ENGINE_LABELS), ...fromQueue, ...fromDlq])
+  return [...all].sort().map(e => ({ value: e, label: ENGINE_LABELS[e] || e }))
+})
+
+// Listas filtradas por selectedEngine
+const summaryFiltered = computed(() =>
+  selectedEngine.value
+    ? summary.value.filter(r => domainBelongsToEngine(r.domain, selectedEngine.value))
+    : summary.value
+)
+const circuitsFiltered = computed(() =>
+  selectedEngine.value
+    ? circuits.value.filter(r => domainBelongsToEngine(r.domain, selectedEngine.value))
+    : circuits.value
+)
+const eventsFiltered = computed(() =>
+  selectedEngine.value
+    ? events.value.filter(r =>
+        r.domain ? domainBelongsToEngine(r.domain, selectedEngine.value) : true)
+    : events.value
+)
+const queueStatsFiltered = computed(() =>
+  selectedEngine.value
+    ? queueStats.value.filter(r => r.engine === selectedEngine.value)
+    : queueStats.value
+)
+const dlqFiltered = computed(() =>
+  selectedEngine.value
+    ? dlq.value.filter(r => r.engine === selectedEngine.value)
+    : dlq.value
+)
+const queueAggregated = computed(() => {
+  if (!selectedEngine.value) return queue.value || {}
+  // Quando filtra por engine, recalcula os totais a partir do queueStats filtrado
+  const totals = { discovered: 0, running: 0, partial: 0, completed: 0, failed: 0, blocked: 0, dlq_total: 0 }
+  for (const r of queueStatsFiltered.value) {
+    if (totals[r.state] != null) totals[r.state] += Number(r.total) || 0
+  }
+  totals.dlq_total = dlqFiltered.value.length
+  return totals
+})
+
 function friendlyEngine (name) { return ENGINE_LABELS[name] || name }
 function stateLabel    (s)    { return STATE_LABELS[s] || s }
 function circuitLabel  (s)    { return CIRCUIT_LABELS[s] || s }
 function friendlyEvent (k)    { return EVENT_LABELS[k] || k }
 function friendlyError (e)    { return ERROR_LABELS[e] || (e || 'Erro não identificado') }
+
+function selectEngineByDomain (domain) {
+  // Encontra o engine correspondente ao domínio clicado e seleciona
+  for (const [engine, domains] of Object.entries(ENGINE_DOMAINS)) {
+    if (domains.includes(domain)) {
+      selectedEngine.value = selectedEngine.value === engine ? '' : engine
+      return
+    }
+  }
+}
 
 function friendlyDomain (d) {
   if (!d) return '—'
@@ -540,25 +647,48 @@ watch(windowMinutes, loadAll)
   display: flex;
   flex-direction: column;
   gap: 20px;
-  max-width: 1400px;
 }
-.page-head {
+
+.page-controls {
   display: flex;
-  align-items: flex-end;
+  align-items: end;
   justify-content: space-between;
   gap: 16px;
   flex-wrap: wrap;
 }
-.page-head h1 { font-size: 24px; font-weight: 700; margin: 0; color: var(--color-text-primary); }
-.subtitle { margin: 4px 0 0; color: var(--color-text-secondary); font-size: 14px; }
-.head-actions { display: flex; gap: 8px; }
+.page-controls__filters { display: flex; gap: 12px; flex-wrap: wrap; }
+.filter-group {
+  display: flex; flex-direction: column; gap: 4px;
+  font-size: 11px; color: var(--color-text-muted);
+  text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600;
+}
 .select, .btn-refresh {
   height: 36px; padding: 0 12px; border-radius: 8px;
   border: 1px solid var(--color-border); background: var(--color-surface);
   color: var(--color-text-primary); font-size: 13px; cursor: pointer;
+  font-family: inherit; min-width: 180px;
 }
-.btn-refresh { background: var(--color-accent); color: var(--color-on-accent, #fff); border-color: transparent; }
+.btn-refresh {
+  background: var(--color-accent); color: var(--color-text-inverse, #fff);
+  border-color: transparent; min-width: 140px; align-self: end;
+}
 .btn-refresh:disabled { opacity: 0.6; cursor: progress; }
+
+.filter-pill {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; padding: 10px 14px; border-radius: 10px;
+  background: var(--color-accent-soft); color: var(--color-accent);
+  font-size: 13px; border: 1px solid var(--color-accent);
+}
+.filter-clear {
+  background: transparent; border: none; color: var(--color-accent);
+  cursor: pointer; font-size: 12px; font-weight: 600; text-decoration: underline;
+}
+
+.row-clickable { cursor: pointer; transition: background-color 120ms ease; }
+.row-clickable:hover { background: var(--color-glass-bg, rgba(0,0,0,0.03)); }
+.row-active { background: var(--color-accent-soft) !important; }
+.row-active td:first-child { font-weight: 600; }
 
 /* Banner de saúde geral — semáforo visual */
 .health-banner {
