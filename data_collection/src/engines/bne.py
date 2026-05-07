@@ -27,6 +27,7 @@ import asyncio
 import json
 import os
 import random
+import re
 
 import cloudscraper
 from bs4 import BeautifulSoup
@@ -112,6 +113,140 @@ _REGIME_MAP = {
     "TEMPORARY": "Temporário",
     "FULL_TIME": "Efetivo",
 }
+
+
+# --- Curadoria tech ------------------------------------------------------
+#
+# A area "informatica" do BNE e contaminada por vagas que usam termos
+# tech no titulo mas pertencem a outras areas:
+#   - "programador" CNC/torno (manufatura)
+#   - "auxiliar de servicos de internet" (operacional de loja)
+#   - "coordenador de projetos" (gestao geral)
+#   - "digitador" como TikTok creator (marketing)
+#   - "auxiliar de processamento" como auxiliar de professor (educacao)
+#   - "tecnico de suporte" como atendimento ao cliente (call center)
+#
+# Filtragem em duas camadas:
+#   1. Titulo: blacklist de cargos claramente nao-tech (CNC/torno, etc).
+#   2. Descricao: presenca de termos tech reais (linguagens, frameworks,
+#      protocolos, ferramentas) E ausencia de termos de manufatura/varejo/
+#      educacao que indiquem contaminacao da area.
+
+# Cargos com termos tech no nome mas que sao claramente nao-tech.
+_TITLE_BLACKLIST_RE = re.compile(
+    r"\b(?:"
+    r"programador\s+(?:cnc|torno|de\s+m[áa]quinas|industrial)|"
+    r"operador\s+(?:cnc|torno|de\s+m[áa]quinas|industrial)|"
+    r"auxiliar\s+de\s+servi[çc]os\s+de\s+internet|"
+    r"auxiliar\s+de\s+(?:professor|professora|creche|escola)|"
+    r"auxiliar\s+de\s+processamento(?!\s+de\s+dados)|"  # processamento de dados E ok
+    r"recepcionist[ao]|"
+    r"motoboy|motorist[ao]"
+    r")\b",
+    re.IGNORECASE,
+)
+
+# Termos tech que confirmam que a vaga e de TI quando aparecem na
+# descricao. Suficientemente especificos para nao gerar falso-positivo
+# em vagas de manufatura/varejo.
+_TECH_SIGNALS_RE = re.compile(
+    r"\b(?:"
+    # Linguagens / frameworks
+    r"python|java|javascript|typescript|c#|c\+\+|\.net|asp\.net|"
+    r"php|ruby|go(?:lang)?|rust|kotlin|swift|scala|"
+    r"react|angular|vue|node\.?js|express|django|flask|fastapi|"
+    r"spring|laravel|symfony|rails|nest\.?js|"
+    # Banco / dados
+    r"sql|mysql|postgres(?:ql)?|mongo(?:db)?|redis|oracle|sqlite|"
+    r"cassandra|dynamodb|elasticsearch|"
+    # Infra / cloud
+    r"docker|kubernetes|k8s|terraform|ansible|jenkins|"
+    r"aws|azure|gcp|google\s+cloud|cloud\s+computing|"
+    # Conceitos / praticas tech
+    r"api\s+rest|restful|graphql|microservi[çc]os?|microservices|"
+    r"devops|sre|ci/cd|continuous\s+integration|"
+    r"backend|back[-\s]?end|frontend|front[-\s]?end|fullstack|full[-\s]?stack|"
+    # SAP (BNE tem muitas vagas SAP - confirma tech)
+    r"\bsap\b|abap|hana|fiori|"
+    # Sistemas operacionais / redes tech
+    r"linux|unix|windows\s+server|active\s+directory|"
+    r"tcp/?ip|firewall|vpn|switch|roteador|"
+    # ML / dados
+    r"machine\s+learning|deep\s+learning|inteligencia\s+artificial|"
+    r"data\s+science|big\s+data|hadoop|spark|"
+    # Frontend basico
+    r"\bhtml\b|\bcss\b|sass|scss|bootstrap|tailwind|"
+    # Versionamento / dev tools
+    r"\bgit\b|github|gitlab|bitbucket|jira|"
+    # Testes
+    r"\bqa\b|pytest|jest|junit|selenium|cypress|"
+    # Helpdesk / suporte tech especifico
+    r"helpdesk|help\s+desk|service\s+desk|chamados\s+(?:de\s+)?ti|"
+    # Outros
+    r"webdesign|web\s+design|ux\s+design|ui\s+design|"
+    r"automa[çc][ãa]o\s+(?:de\s+)?(?:processos|testes|rpa)|"
+    r"scrum|kanban|agile"
+    r")\b",
+    re.IGNORECASE,
+)
+
+# Termos que indicam vaga claramente de outra area, mesmo que o titulo
+# tenha "programador" ou "tecnico". Aplicado quando NAO ha sinal tech.
+_NON_TECH_SIGNALS_RE = re.compile(
+    r"\b(?:"
+    # Manufatura / industrial
+    r"torno\s+cnc|usinagem|envernizad|litografia|"
+    r"comando\s+(?:numerico|el[ée]trico)|setup\s+(?:da|de)\s+m[áa]quina|"
+    r"\bpcm\b|planejamento\s+e\s+controle\s+de\s+manuten[çc][ãa]o|"
+    r"manuten[çc][ãa]o\s+predial|manut\s+predial|"
+    r"superestrutura\s+ferrovi|via\s+permanente|ferrovi[áa]ri[ao]|"
+    # Educacao
+    r"professor[ao]?|sala\s+de\s+aula|educa[çc][ãa]o\s+infantil|"
+    r"creche|berc[áa]rio|materno-?infantil|curso\s+t[ée]cnico\s+de\s+inform|"
+    # Atendimento / call center
+    r"atendimento\s+(?:ao\s+cliente|presencial|telef[ôo]nico)|"
+    r"call\s+center|televendas|telemarketing|"
+    r"chat\s+e\s+telefone|liga[çc][ãa]o\s+e\s+(?:via\s+)?chat|"
+    # Varejo / vendas
+    r"loja\s+(?:matriz|f[ií]sica|multicanal|multicanais)|varejo|"
+    r"caixa\s+(?:de\s+)?(?:loja|supermerc)|estoquista|"
+    r"vendedor\s+de\s+inform[áa]tica|"  # "vendedor de informatica" e varejo
+    r"executivo\s+de\s+solu[çc][õo]es|(?:equipe|time)\s+comercial|"
+    r"consultor\s+hospitalar|"
+    # Logistica / operacional
+    r"motoboy|entrega|delivery|"
+    r"recepcionista|telefonista|secretari[ao]|"
+    # Marketing de redes sociais (nao confundir com tech)
+    r"tiktok|content\s+creator|trend\s+content|cultura\s+digital|"
+    r"vivencia\s+em\s+(?:redes\s+sociais|instagram|tiktok)|"
+    # Outras areas com sigla TI confusa
+    r"design\s+ou\s+arquitetura"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+def _is_tech_relevant(title: str, description: str) -> bool:
+    """Decide se a vaga deve ser mantida no dataset tech.
+
+    Politica:
+        1. Titulo casa blacklist (ex.: "programador CNC") -> rejeita.
+        2. Descricao tem sinal tech explicito -> aceita.
+        3. Descricao tem sinal nao-tech sem sinal tech -> rejeita.
+        4. Default -> aceita (nao rejeita por silencio para preservar
+           vagas com descricao curta/incompleta).
+    """
+    if not title:
+        return True
+    if _TITLE_BLACKLIST_RE.search(title):
+        return False
+    if not description:
+        return True
+    if _TECH_SIGNALS_RE.search(description):
+        return True
+    if _NON_TECH_SIGNALS_RE.search(description):
+        return False
+    return True
 
 
 # --- Helpers privados ----------------------------------------------------
@@ -262,6 +397,12 @@ async def _fetch_job_detail(job_id, semaphore: asyncio.Semaphore) -> list | None
             if not description:
                 description = strip_html(data.get("description", ""))
             skills = extract_skills(description) if description else []
+
+            # Curadoria: a area "informatica" do BNE traz contaminacao de
+            # outras areas (CNC, varejo, educacao, call center). Filtramos
+            # com base em titulo + descricao antes de emitir.
+            if not _is_tech_relevant(job_title, description):
+                return None
 
             return apply_description_fallbacks([
                 link, job_title, company, location, work_type,
