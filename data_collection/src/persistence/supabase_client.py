@@ -89,3 +89,24 @@ class SupabaseJobsClient:
         except httpx.HTTPError as exc:
             logger.error('Supabase upsert erro de rede: %s', exc)
             return False
+
+    async def delete_older_than(self, cutoff_iso: str) -> bool:
+        """DELETE /jobs?publication_date=lt.<cutoff_iso>. cutoff_iso = 'YYYY-MM-DD'."""
+        if not self.enabled or not self._client:
+            return False
+        try:
+            response = await self._client.delete(
+                '/jobs',
+                params={'publication_date': f'lt.{cutoff_iso}'},
+            )
+            if response.status_code in (200, 204):
+                return True
+            logger.error(
+                'Supabase delete_older_than falhou status=%s body=%s',
+                response.status_code,
+                response.text[:300],
+            )
+            return False
+        except httpx.HTTPError as exc:
+            logger.error('Supabase delete_older_than erro de rede: %s', exc)
+            return False

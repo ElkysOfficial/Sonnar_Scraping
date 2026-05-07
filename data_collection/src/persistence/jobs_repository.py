@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import logging
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Tuple
 
 from .csv_store import CSVJobStore
@@ -27,6 +27,15 @@ from .supabase_client import SupabaseJobsClient
 
 
 logger = logging.getLogger(__name__)
+
+
+# Janela de retencao: vagas com publication_date anterior a esse cutoff
+# sao descartadas no save() e apagadas dos sinks no startup do repo.
+MAX_AGE_DAYS = 90
+
+
+def _cutoff_iso(days: int = MAX_AGE_DAYS) -> str:
+    return (datetime.now(timezone.utc).date() - timedelta(days=days)).isoformat()
 
 
 def _detect_currency(salary_text: str) -> str:
@@ -183,7 +192,22 @@ class JobsRepository:
 
     async def __aenter__(self):
         await self.supabase.__aenter__()
+        await self.purge_stale()
         return self
+
+    async def purge_stale(self, days: int = MAX_AGE_DAYS) -> None:
+        """Apaga vagas com publication_date mais antigo que `days` em todos os sinks."""
+        cutoff = _cutoff_iso(days)
+        try:
+            removed_local = self.local.delete_older_than(cutoff)
+            if removed_local:
+                logger.info('Purge local: %d vagas removidas (< %s).', removed_local, cutoff)
+        except Exception as exc:
+            logger.error('Falha purge local: %s', exc)
+        try:
+            await self.supabase.delete_older_than(cutoff)
+        except Exception as exc:
+            logger.error('Falha purge supabase: %s', exc)
 
     async def __aexit__(self, exc_type, exc, tb):
         await self.supabase.__aexit__(exc_type, exc, tb)
@@ -209,6 +233,12 @@ class JobsRepository:
         """
         payload = build_job_payload(job_data, source=source)
         if not payload.get('job_url'):
+            return False
+
+        # Vagas com publication_date anterior ao cutoff sao ignoradas.
+        # Sem publication_date passa direto (nao da pra julgar idade).
+        pub = payload.get('publication_date')
+        if pub and pub < _cutoff_iso():
             return False
 
         # 1) JSON local - fonte de verdade pro bot de envio de mensagens
