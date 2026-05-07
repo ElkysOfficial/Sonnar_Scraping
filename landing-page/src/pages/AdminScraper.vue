@@ -45,6 +45,26 @@
       </span>
     </div>
 
+    <!-- Tab strip — separa a página em 5 abas para reduzir scroll -->
+    <nav class="tab-strip" role="tablist" aria-label="Abas da página de coleta">
+      <button
+        v-for="t in tabs"
+        :key="t.id"
+        role="tab"
+        :aria-selected="activeTab === t.id"
+        type="button"
+        class="tab-btn"
+        :class="{ 'tab-btn--active': activeTab === t.id }"
+        @click="activeTab = t.id"
+      >
+        <span class="tab-btn__label">{{ t.label }}</span>
+        <span v-if="t.badge != null" class="tab-btn__badge" :class="t.badgeClass">{{ t.badge }}</span>
+      </button>
+    </nav>
+
+    <!-- =========== Aba: Visão geral =========== -->
+    <template v-if="activeTab === 'overview'">
+
     <!-- Banner de saúde geral -->
     <section class="health-banner" :class="health.healthClass">
       <div class="health-icon" aria-hidden="true">{{ health.healthIcon }}</div>
@@ -165,6 +185,11 @@
       </div>
     </section>
 
+    </template>
+
+    <!-- =========== Aba: Proteção =========== -->
+    <template v-if="activeTab === 'protection'">
+
     <!-- Estado de proteção dos sites -->
     <section class="card">
       <h2>Proteção contra bloqueio</h2>
@@ -204,6 +229,11 @@
         </table>
       </div>
     </section>
+
+    </template>
+
+    <!-- =========== Aba: Fila =========== -->
+    <template v-if="activeTab === 'queue'">
 
     <!-- Fila de vagas -->
     <section class="card">
@@ -272,6 +302,11 @@
         </table>
       </div>
     </section>
+
+    </template>
+
+    <!-- =========== Aba: DLQ & Operações =========== -->
+    <template v-if="activeTab === 'dlq'">
 
     <!-- Vagas que precisam de análise manual (DLQ) -->
     <section class="card">
@@ -365,6 +400,11 @@
       </div>
     </section>
 
+    </template>
+
+    <!-- =========== Aba: Manutenção =========== -->
+    <template v-if="activeTab === 'maintenance'">
+
     <!-- Vagas próximas dos 90 dias -->
     <section class="card">
       <h2>Vagas próximas dos 90 dias</h2>
@@ -440,13 +480,35 @@
       </ul>
     </section>
 
+    </template>
+
     <p v-if="errorMsg" class="error-msg">{{ errorMsg }}</p>
   </div>
 </template>
 
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { supabase } from '@/integrations/supabase/client'
+
+const route = useRoute()
+const router = useRouter()
+
+const VALID_TABS = ['overview', 'protection', 'queue', 'dlq', 'maintenance']
+const activeTab = ref(VALID_TABS.includes(route.query.tab) ? route.query.tab : 'overview')
+
+// Mantém ?tab=xxx em sincronia com a aba ativa (sem empilhar histórico)
+watch(activeTab, (newTab) => {
+  if (route.query.tab !== newTab) {
+    router.replace({ query: { ...route.query, tab: newTab } })
+  }
+})
+// Permite voltar/avançar pelo histórico do browser
+watch(() => route.query.tab, (newTab) => {
+  if (newTab && VALID_TABS.includes(newTab) && newTab !== activeTab.value) {
+    activeTab.value = newTab
+  }
+})
 
 const windowMinutes = ref(60)
 const loading = ref(false)
@@ -661,6 +723,29 @@ const dlqFiltered = computed(() =>
     ? dlq.value.filter(r => r.engine === selectedEngine.value)
     : dlq.value
 )
+// Lista de abas com badges contextuais
+const tabs = computed(() => {
+  const openCircuits = (circuits.value || []).filter(c => c.state !== 'closed').length
+  const dlqCount = dlqFiltered.value.length
+  const partialCount = (queueAggregated.value && queueAggregated.value.partial) || 0
+  const nearPurgeCount = nearPurgeJobs.value.length
+  return [
+    { id: 'overview',    label: 'Visão geral' },
+    { id: 'protection',  label: 'Proteção',
+      badge: openCircuits || null,
+      badgeClass: openCircuits ? 'tab-btn__badge--danger' : '' },
+    { id: 'queue',       label: 'Fila',
+      badge: partialCount || null,
+      badgeClass: partialCount ? 'tab-btn__badge--warn' : '' },
+    { id: 'dlq',         label: 'DLQ & Operações',
+      badge: dlqCount || null,
+      badgeClass: dlqCount ? 'tab-btn__badge--danger' : '' },
+    { id: 'maintenance', label: 'Manutenção',
+      badge: nearPurgeCount || null,
+      badgeClass: nearPurgeCount ? 'tab-btn__badge--warn' : '' },
+  ]
+})
+
 const dlqErrorTypeOptions = computed(() => {
   const types = new Set()
   for (const row of dlq.value || []) {
@@ -1146,5 +1231,62 @@ watch([nearPurgeMinDays, nearPurgeMaxDays], loadNearPurge)
   display: flex;
   gap: 6px;
   flex-wrap: wrap;
+}
+
+/* ===== Tab strip ===== */
+.tab-strip {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  background: var(--color-glass-bg, rgba(0,0,0,0.03));
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+.tab-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color 120ms ease, color 120ms ease;
+  font-family: inherit;
+}
+.tab-btn:hover {
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+}
+.tab-btn--active {
+  background: var(--color-surface);
+  color: var(--color-accent);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+}
+.tab-btn__badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--color-glass-bg, rgba(0,0,0,0.05));
+  color: var(--color-text-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.tab-btn--active .tab-btn__badge { background: var(--color-accent-soft); color: var(--color-accent); }
+.tab-btn__badge--danger { background: rgba(220,38,38,0.12); color: #dc2626; }
+.tab-btn__badge--warn   { background: rgba(217,119,6,0.12); color: #d97706; }
+
+@media (max-width: 640px) {
+  .tab-btn { padding: 8px 10px; font-size: 12px; }
 }
 </style>
