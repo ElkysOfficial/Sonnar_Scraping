@@ -45,7 +45,7 @@
       </span>
     </div>
 
-    <!-- Tab strip — separa a página em 5 abas para reduzir scroll -->
+    <!-- Tab strip - separa a página em 5 abas para reduzir scroll -->
     <nav class="tab-strip" role="tablist" aria-label="Abas da página de coleta">
       <button
         v-for="t in tabs"
@@ -127,12 +127,12 @@
           salva o que encontra. Esta página mostra o que está acontecendo agora.
         </p>
         <ul>
-          <li><strong>Acessos aos sites</strong> — quantas vezes pedimos uma página a algum site no período.</li>
-          <li><strong>Vagas salvas</strong> — vagas extraídas e gravadas no banco/JSON com sucesso.</li>
-          <li><strong>Avisos de excesso</strong> — quando um site responde "está vindo rápido demais" (HTTP 429). O sistema reduz a velocidade automaticamente.</li>
-          <li><strong>Erros do site</strong> — quando o servidor do site responde com erro (HTTP 500/502/503/504). Geralmente passageiro.</li>
-          <li><strong>Sites em pausa de proteção</strong> — quando um site está dando muito erro, paramos por 15 min a 2 h para não sermos banidos.</li>
-          <li><strong>Tentativas extras</strong> — requisições que precisaram ser refeitas por erro temporário (timeout, 5xx, 429).</li>
+          <li><strong>Acessos aos sites</strong> - quantas vezes pedimos uma página a algum site no período.</li>
+          <li><strong>Vagas salvas</strong> - vagas extraídas e gravadas no banco/JSON com sucesso.</li>
+          <li><strong>Avisos de excesso</strong> - quando um site responde "está vindo rápido demais" (HTTP 429). O sistema reduz a velocidade automaticamente.</li>
+          <li><strong>Erros do site</strong> - quando o servidor do site responde com erro (HTTP 500/502/503/504). Geralmente passageiro.</li>
+          <li><strong>Sites em pausa de proteção</strong> - quando um site está dando muito erro, paramos por 15 min a 2 h para não sermos banidos.</li>
+          <li><strong>Tentativas extras</strong> - requisições que precisaram ser refeitas por erro temporário (timeout, 5xx, 429).</li>
         </ul>
       </div>
     </details>
@@ -154,8 +154,8 @@
               <th class="num" title="Erros do servidor do site (HTTP 5xx)">Erros do site</th>
               <th class="num" title="Requisições que precisaram ser refeitas">Refeitas</th>
               <th class="num" title="Mediana do tempo de resposta (ms)">Tempo médio</th>
-              <th class="num" title="P95 do tempo de resposta — 95% das requests respondem em até esse tempo (ms)">Tempo pior caso</th>
-              <th class="num" title="Velocidade atual aplicada — em requisições por segundo">Ritmo atual</th>
+              <th class="num" title="P95 do tempo de resposta - 95% das requests respondem em até esse tempo (ms)">Tempo pior caso</th>
+              <th class="num" title="Velocidade atual aplicada - em requisições por segundo">Ritmo atual</th>
             </tr>
           </thead>
           <tbody>
@@ -223,7 +223,7 @@
               <td>{{ formatTimestamp(row.updated_at) }}</td>
             </tr>
             <tr v-if="!circuitsFiltered.length">
-              <td colspan="7" class="empty">Nenhum site monitorado ainda — comece o scraper para ver dados aqui.</td>
+              <td colspan="7" class="empty">Nenhum site monitorado ainda - comece o scraper para ver dados aqui.</td>
             </tr>
           </tbody>
         </table>
@@ -276,7 +276,7 @@
       <div v-if="selectedEngine" class="action-toolbar">
         <span class="action-toolbar__hint">
           Filtrando por <strong>{{ friendlyEngine(selectedEngine) }}</strong>.
-          Reprocessar marca todas as URLs desta engine como "aguardando coleta" — útil quando o leitor (parser) foi atualizado.
+          Reprocessar marca todas as URLs desta engine como "aguardando coleta" - útil quando o leitor (parser) foi atualizado.
         </span>
         <button
           class="btn-action btn-action--primary"
@@ -392,7 +392,7 @@
             </tr>
             <tr v-if="!dlqFiltered.length">
               <td colspan="6" class="empty success-msg">
-                Nenhuma vaga problemática no período — tudo limpo!
+                Nenhuma vaga problemática no período - tudo limpo!
               </td>
             </tr>
           </tbody>
@@ -410,7 +410,7 @@
       <h2>Vagas próximas dos 90 dias</h2>
       <p class="card-help">
         A partir dos 90 dias as vagas saem do JSON dos bots de mensagem (mas continuam no banco
-        para histórico). Aqui aparecem as que estão entre {{ nearPurgeMinDays }} e {{ nearPurgeMaxDays }} dias —
+        para histórico). Aqui aparecem as que estão entre {{ nearPurgeMinDays }} e {{ nearPurgeMaxDays }} dias -
         revise se alguma ainda merece estar ativa.
       </p>
       <div class="action-toolbar action-toolbar--bulk">
@@ -449,8 +449,8 @@
               <td>{{ formatDateOnly(row.publication_date) }}</td>
               <td>{{ friendlyEngine(row.source) }}</td>
               <td>{{ row.job_title }}</td>
-              <td>{{ row.location_raw || row.state_code || row.country_code || '—' }}</td>
-              <td>{{ row.hiring_regime || '—' }}</td>
+              <td>{{ row.location_raw || row.state_code || row.country_code || '-' }}</td>
+              <td>{{ row.hiring_regime || '-' }}</td>
               <td class="url-cell">
                 <a :href="row.job_url" target="_blank" rel="noopener" :title="row.job_url">abrir</a>
               </td>
@@ -473,7 +473,7 @@
         <li v-for="(ev, idx) in eventsFiltered" :key="idx" :class="eventClass(ev.kind)">
           <span class="ev-ts">{{ formatTimestamp(ev.ts) }}</span>
           <span class="ev-kind">{{ friendlyEvent(ev.kind) }}</span>
-          <span class="ev-domain">{{ ev.domain ? friendlyDomain(ev.domain) : '—' }}</span>
+          <span class="ev-domain">{{ ev.domain ? friendlyDomain(ev.domain) : '-' }}</span>
           <span class="ev-data" v-if="ev.data">{{ formatEventData(ev.data) }}</span>
         </li>
         <li v-if="!eventsFiltered.length" class="empty">Nenhum evento no período selecionado.</li>
@@ -558,7 +558,7 @@ const health = computed(() => {
       : 'Taxa de erro elevada'
     subline = openCircuits > 0
       ? 'Estamos descansando esses sites para não sermos banidos. Vão voltar automaticamente.'
-      : `${errPct.toFixed(1)}% das chamadas estão falhando — investigue se algum site mudou.`
+      : `${errPct.toFixed(1)}% das chamadas estão falhando - investigue se algum site mudou.`
   } else if (errPct > 5) {
     healthClass = 'warn'
     healthIcon = '!'
@@ -581,7 +581,7 @@ const kpiHelp = {
   requests: 'Quantas vezes pedimos uma página a algum site no período.',
   persisted: 'Vagas extraídas e gravadas no banco/JSON com sucesso.',
   rateLimit: 'Quando um site responde "está vindo rápido demais". O sistema reduz a velocidade automaticamente.',
-  serverError: 'Erros do servidor do site (ex.: site fora do ar). Geralmente passageiro — refazemos a chamada.',
+  serverError: 'Erros do servidor do site (ex.: site fora do ar). Geralmente passageiro - refazemos a chamada.',
   circuits: 'Sites onde paramos temporariamente (15 min a 2 h) porque estavam dando erro demais. Volta sozinho.',
   retries: 'Requisições que precisaram ser refeitas após erro temporário (timeout ou erro do servidor).',
 }
@@ -593,7 +593,7 @@ const queueHelp = {
   completed: 'Vagas extraídas e salvas com sucesso em todos os destinos.',
   failed: 'Vagas que falharam neste ciclo. Serão tentadas novamente no próximo.',
   blocked: 'Vagas em sites que estão em pausa de proteção. Voltam quando o site liberar.',
-  dlq: 'Vagas que falharam 3 vezes seguidas. Precisam de análise manual — geralmente o site mudou o layout.',
+  dlq: 'Vagas que falharam 3 vezes seguidas. Precisam de análise manual - geralmente o site mudou o layout.',
 }
 
 // ---------- Mapas de tradução para linguagem humana ----------
@@ -655,7 +655,7 @@ const ERROR_LABELS = {
   ReadError: 'Conexão caiu enquanto líamos a resposta',
   ReadTimeout: 'Conexão caiu enquanto líamos a resposta',
   JSONDecodeError: 'Site enviou resposta com formato inválido',
-  KeyError: 'Site mudou a estrutura — campo esperado não existe mais',
+  KeyError: 'Site mudou a estrutura - campo esperado não existe mais',
   ParserError: 'Não conseguimos entender o conteúdo da página',
   refetch_empty: 'Reprocessamento não trouxe dados novos',
   persist_skipped: 'Vaga foi descartada antes de salvar',
@@ -781,7 +781,7 @@ function selectEngineByDomain (domain) {
 }
 
 function friendlyDomain (d) {
-  if (!d) return '—'
+  if (!d) return '-'
   // Remove 'www.', 'br.', 'm.' do começo para uma leitura mais limpa
   return d.replace(/^(?:www\.|br\.|m\.)/, '')
 }
@@ -796,7 +796,7 @@ function formatEventData (data) {
 }
 
 function formatMs (ms) {
-  if (ms == null) return '—'
+  if (ms == null) return '-'
   const n = Number(ms)
   if (n < 1000) return Math.round(n) + ' ms'
   return (n / 1000).toFixed(1) + ' s'
@@ -850,23 +850,23 @@ function eventClass (kind) {
   return ''
 }
 
-function formatInt (n) { return n == null ? '—' : Number(n).toLocaleString('pt-BR') }
-function formatNum (n) { return n == null ? '—' : Number(n).toFixed(0) }
-function formatPct (n) { return n == null ? '—' : (n * 100).toFixed(1) + '%' }
-function formatRate (n) { return n == null ? '—' : Number(n).toFixed(2) }
+function formatInt (n) { return n == null ? '-' : Number(n).toLocaleString('pt-BR') }
+function formatNum (n) { return n == null ? '-' : Number(n).toFixed(0) }
+function formatPct (n) { return n == null ? '-' : (n * 100).toFixed(1) + '%' }
+function formatRate (n) { return n == null ? '-' : Number(n).toFixed(2) }
 function formatSeconds (s) {
-  if (!s || s <= 0) return '—'
+  if (!s || s <= 0) return '-'
   if (s < 60) return Math.round(s) + 's'
   if (s < 3600) return Math.round(s / 60) + 'm'
   return (s / 3600).toFixed(1) + 'h'
 }
 function formatTimestamp (ts) {
-  if (!ts) return '—'
+  if (!ts) return '-'
   const d = new Date(ts)
   return d.toLocaleString('pt-BR', { hour12: false })
 }
 function formatDateOnly (iso) {
-  if (!iso) return '—'
+  if (!iso) return '-'
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return iso
   return d.toLocaleDateString('pt-BR')
@@ -1022,7 +1022,7 @@ watch([nearPurgeMinDays, nearPurgeMaxDays], loadNearPurge)
 .row-active { background: var(--color-accent-soft) !important; }
 .row-active td:first-child { font-weight: 600; }
 
-/* Banner de saúde geral — semáforo visual */
+/* Banner de saúde geral - semáforo visual */
 .health-banner {
   display: flex; align-items: center; gap: 14px;
   padding: 14px 18px; border-radius: 12px;

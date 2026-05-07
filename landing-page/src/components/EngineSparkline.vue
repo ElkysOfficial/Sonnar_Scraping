@@ -103,7 +103,7 @@ function legendLabel (key) { return SERIES_LABELS[key] || key }
 function lastValue (arr) { return arr.length ? arr[arr.length - 1].y : 0 }
 function maxValue (arr) { return arr.length ? Math.max(...arr.map(p => p.y || 0)) : 0 }
 function formatVal (v) {
-  if (v == null) return '—'
+  if (v == null) return '-'
   const n = Number(v)
   if (n >= 1000) return Math.round(n).toLocaleString('pt-BR')
   if (n >= 100) return Math.round(n)

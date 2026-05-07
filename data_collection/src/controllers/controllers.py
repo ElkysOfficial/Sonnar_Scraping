@@ -55,6 +55,42 @@ JobCallback = Callable[[list, str], Awaitable[None]]
 
 
 # ---------------------------------------------------------------------------
+# Mapa engine → domínio primário
+#
+# As engines (e o rate_limiter) emitem métricas com o domínio real
+# (ex.: "br.linkedin.com"). Eventos do controller (engine.start, persist.ok,
+# etc.) precisam usar o MESMO domínio para evitar linhas duplicadas no
+# dashboard ("bne" + "bne.com.br"). Quem desconhece o domínio cai no nome
+# da engine como fallback (compat com engines novas).
+# ---------------------------------------------------------------------------
+
+ENGINE_PRIMARY_DOMAIN = {
+    "linkedin":       "br.linkedin.com",
+    "indeed":         "br.indeed.com",
+    "gupy":           "portal.api.gupy.io",
+    "jooble":         "br.jooble.org",
+    "catho":          "catho.com.br",
+    "careerjet":      "careerjet.com.br",
+    "geekhunter":     "geekhunter.com.br",
+    "michaelpage":    "michaelpage.com.br",
+    "programathor":   "programathor.com.br",
+    "remoteok":       "remoteok.com",
+    "remotive":       "remotive.com",
+    "weworkremotely": "weworkremotely.com",
+    "ziprecruiter":   "ziprecruiter.com",
+    "simplyhired":    "simplyhired.com.br",
+    "bne":            "bne.com.br",
+    "dice":           "dice.com",
+    "infojobs":       "infojobs.com.br",
+}
+
+
+def _engine_domain(engine: str) -> str:
+    """Domínio primário da engine para emissão de métricas."""
+    return ENGINE_PRIMARY_DOMAIN.get(engine, engine)
+
+
+# ---------------------------------------------------------------------------
 # Registry de parser_version e refetch por engine
 # ---------------------------------------------------------------------------
 # Bump a constante PARSER_VERSION em cada engine quando o parser mudar - o
@@ -203,14 +239,14 @@ async def _process_one_job(
         logger.error("persist_failed", extra={
             "engine": engine, "url": job_url, "errorMessage": str(exc),
         })
-        metrics.incr("persist.error", domain=engine)
+        metrics.incr("persist.error", domain=_engine_domain(engine))
         tracker.mark_failed(job_url, engine=engine,
                             error_type=type(exc).__name__, error_msg=str(exc))
         sent_jobs.discard(job_url)
         return
 
     if persisted:
-        metrics.incr("persist.ok", domain=engine)
+        metrics.incr("persist.ok", domain=_engine_domain(engine))
         # Heurística: descrição < 200 chars = enriquecimento incompleto.
         # Marca como partial pra o reenrichment retentar quando o parser_version mudar.
         if description_len < 200 and parser_version:
@@ -218,7 +254,7 @@ async def _process_one_job(
         else:
             tracker.mark_completed(job_url, engine=engine, parser_version=parser_version)
     else:
-        metrics.incr("persist.skipped", domain=engine)
+        metrics.incr("persist.skipped", domain=_engine_domain(engine))
         sent_jobs.discard(job_url)
         tracker.mark_failed(job_url, engine=engine,
                             error_type="persist_skipped",
@@ -253,7 +289,7 @@ async def _run_one_batch(
             )
 
         async with semaphore:
-            metrics.event("engine.start", domain=engine)
+            metrics.event("engine.start", domain=_engine_domain(engine))
             logger.info("engine_start", extra={"engine": engine})
             try:
                 try:
@@ -262,9 +298,9 @@ async def _run_one_batch(
                     results = await getter()
                     for raw in results or []:
                         await on_job(raw)
-                metrics.event("engine.finish", domain=engine)
+                metrics.event("engine.finish", domain=_engine_domain(engine))
             except Exception as exc:
-                metrics.event("engine.error", domain=engine, error=str(exc))
+                metrics.event("engine.error", domain=_engine_domain(engine), error=str(exc))
                 logger.exception("engine_error", extra={"engine": engine})
 
     await asyncio.gather(*(_run_engine(g) for g in getters))
@@ -293,7 +329,7 @@ async def _run_reenrichment_pass(*, repo: JobsRepository, sent_jobs: set) -> Non
         logger.info("reenrich_pass_start", extra={
             "engine": engine_name, "count": len(urls),
         })
-        metrics.event("reenrich.start", domain=engine_name, count=len(urls))
+        metrics.event("reenrich.start", domain=_engine_domain(engine_name), count=len(urls))
 
         for url in urls:
             tracker.mark_running(url, engine=engine_name)

@@ -61,6 +61,47 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+_PGRST_HINTS = {
+    "PGRST102": "linhas com chaves diferentes no batch (corrigir payload).",
+    "PGRST116": "RLS bloqueou a operação (verifique service_role).",
+    "PGRST301": "JWT expirado ou inválido.",
+    "23505":    "violação de UNIQUE (linha já existe).",
+    "23502":    "coluna NOT NULL recebeu NULL.",
+    "23503":    "FK quebrada (referência inexistente).",
+    "42P01":    "tabela não existe (migration faltando?).",
+    "42501":    "permissão negada (RLS ou GRANT).",
+}
+
+
+def _humanize_postgrest_error(sink: str, status: int, body: str) -> str:
+    """Transforma erro do PostgREST em mensagem legível para o operador."""
+    import json
+    code = ""
+    message = ""
+    try:
+        payload = json.loads(body) if body else {}
+        code = payload.get("code") or ""
+        message = payload.get("message") or ""
+    except Exception:
+        message = (body or "")[:200]
+
+    sink_label = {
+        "extraction_jobs":   "salvar vagas em processamento",
+        "extraction_dlq":    "salvar dead-letter queue",
+        "dlq_remove":        "limpar entradas migradas para DLQ",
+    }.get(sink, sink)
+
+    hint = _PGRST_HINTS.get(code, "")
+    parts = [f"Falha ao {sink_label} no Supabase (HTTP {status})"]
+    if code:
+        parts.append(f"código={code}")
+    if message:
+        parts.append(f'"{message}"')
+    if hint:
+        parts.append(f"→ {hint}")
+    return " | ".join(parts)
+
+
 @dataclass
 class _Pending:
     job_url: str
@@ -91,6 +132,33 @@ class ExtractionTracker:
         self._attempts_local: Dict[str, int] = defaultdict(int)
         self._lock = asyncio.Lock()
         self._last_flush = time.monotonic()
+        # Throttle de logs repetidos: (sink, http_status, code) -> (count, last_logged_at)
+        self._warn_throttle: Dict[tuple, tuple] = {}
+
+    # Helper: loga warning agregando repetições (uma a cada 60s).
+    def _warn_throttled(self, sink: str, status: int, body: str) -> None:
+        # Tenta extrair "code" do JSON do PostgREST para agrupar erros similares.
+        code = ""
+        try:
+            import json
+            payload = json.loads(body) if body else {}
+            code = (payload.get("code") or payload.get("message") or "")[:40]
+        except Exception:
+            code = body[:40]
+
+        bucket = (sink, status, code)
+        now = time.monotonic()
+        count, last_at = self._warn_throttle.get(bucket, (0, 0.0))
+        count += 1
+
+        # Loga: primeira vez OU pelo menos 60s desde o último log do mesmo bucket.
+        if count == 1 or (now - last_at) >= 60.0:
+            human = _humanize_postgrest_error(sink, status, body)
+            suffix = f" (vista {count}x desde a última mensagem)" if count > 1 else ""
+            logger.warning("%s%s", human, suffix)
+            self._warn_throttle[bucket] = (0, now)
+        else:
+            self._warn_throttle[bucket] = (count, last_at)
 
     # ---------------- bootstrap ----------------
 
@@ -301,10 +369,10 @@ class ExtractionTracker:
             return
 
         async with self._lock:
-            jobs_payload = [
-                {k: v for k, v in p.__dict__.items() if v is not None}
-                for p in self._pending.values()
-            ]
+            # PostgREST batch insert exige chaves idênticas em todas as linhas
+            # (PGRST102 "All object keys must match"). Garantimos isso enviando
+            # todos os campos do dataclass — None vira NULL no banco.
+            jobs_payload = [dict(p.__dict__) for p in self._pending.values()]
             dlq_payload = list(self._dlq_buffer)
             dlq_remove = list(self._dlq_remove)
             self._pending.clear()
@@ -323,13 +391,11 @@ class ExtractionTracker:
                         params={"on_conflict": "job_url"},
                     )
                     if r.status_code >= 400:
-                        logger.warning("tracker flush jobs status=%s body=%s",
-                                       r.status_code, r.text[:300])
+                        self._warn_throttled("extraction_jobs", r.status_code, r.text)
                 if dlq_payload:
                     r = await cli.post("/extraction_dlq", json=dlq_payload)
                     if r.status_code >= 400:
-                        logger.warning("tracker flush dlq status=%s body=%s",
-                                       r.status_code, r.text[:300])
+                        self._warn_throttled("extraction_dlq", r.status_code, r.text)
                 if dlq_remove:
                     in_list = ",".join(f'"{u}"' for u in dlq_remove)
                     r = await cli.delete(
@@ -337,10 +403,9 @@ class ExtractionTracker:
                         params={"job_url": f"in.({in_list})"},
                     )
                     if r.status_code >= 400:
-                        logger.warning("tracker flush dlq-remove status=%s body=%s",
-                                       r.status_code, r.text[:300])
+                        self._warn_throttled("dlq_remove", r.status_code, r.text)
         except Exception as exc:
-            logger.warning("tracker flush erro: %s", exc)
+            logger.warning("Falha ao conectar com Supabase para flush do tracker: %s", exc)
 
     def _should_flush(self) -> bool:
         if len(self._pending) >= FLUSH_THRESHOLD:

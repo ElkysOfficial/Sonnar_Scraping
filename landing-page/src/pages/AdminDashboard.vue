@@ -302,7 +302,7 @@ function formatMoney(value: number): string {
   gap: var(--space-6);
 }
 
-/* ===== Page meta (apenas data — título e subtítulo vêm da topbar) ===== */
+/* ===== Page meta (apenas data - título e subtítulo vêm da topbar) ===== */
 .page-meta {
   display: flex;
   justify-content: flex-end;
@@ -356,7 +356,7 @@ function formatMoney(value: number): string {
 .hero-value.success { color: var(--color-success); }
 .hero-value.muted { color: var(--color-text-muted); }
 
-/* Period selector — pill estilo Elkys */
+/* Period selector - pill estilo Elkys */
 .period-selector {
   display: inline-flex;
   align-items: center;
