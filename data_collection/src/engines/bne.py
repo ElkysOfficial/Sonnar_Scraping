@@ -22,6 +22,7 @@ import random
 import cloudscraper
 from bs4 import BeautifulSoup
 
+from ..utils.job_fallbacks import apply_description_fallbacks
 from ..utils.text_utils import extract_skills, strip_html
 
 
@@ -253,9 +254,11 @@ async def _fetch_job_detail(job_id, semaphore: asyncio.Semaphore) -> list | None
                 description = strip_html(data.get("description", ""))
             skills = extract_skills(description) if description else []
 
-            return [link, job_title, company, location, work_type,
-                    hiring_regime, salary, publication_date,
-                    skills, description]
+            return apply_description_fallbacks([
+                link, job_title, company, location, work_type,
+                hiring_regime, salary, publication_date,
+                skills, description,
+            ])
 
         except Exception:
             return None

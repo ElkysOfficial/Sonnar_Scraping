@@ -84,6 +84,23 @@ class LocalJobStore:
             self._data[url] = merged
             self._flush_unlocked()
 
+    def delete_older_than(self, cutoff_iso: str) -> int:
+        """Remove entries com publication_date < cutoff_iso ('YYYY-MM-DD').
+
+        Entradas sem publication_date sao preservadas (nao da pra julgar idade).
+        Retorna a quantidade removida.
+        """
+        removed = 0
+        with self._lock:
+            for url in list(self._data.keys()):
+                pub = self._data[url].get('publication_date')
+                if pub and pub < cutoff_iso:
+                    del self._data[url]
+                    removed += 1
+            if removed:
+                self._flush_unlocked()
+        return removed
+
     def mark_sent(self, job_url: str, channel: str) -> None:
         """Marca que um job foi enviado por um canal especifico (idempotente)."""
         with self._lock:

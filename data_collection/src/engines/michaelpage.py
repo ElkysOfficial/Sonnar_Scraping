@@ -20,6 +20,7 @@ from bs4 import BeautifulSoup
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 from src.utils.http_session import HttpSession  # noqa: E402
+from src.utils.job_fallbacks import apply_description_fallbacks  # noqa: E402
 from src.utils.text_utils import extract_skills, strip_html  # noqa: E402
 
 
@@ -293,6 +294,8 @@ async def get_michaelpage_jobs(on_job=None) -> list:
                 job[8] = extra["skills"]
             if extra.get("description"):
                 job[9] = extra["description"]
+            # Pos-processamento: minera campos vazios da descricao.
+            apply_description_fallbacks(job)
             if on_job is not None:
                 try:
                     await on_job(job)
@@ -303,6 +306,7 @@ async def get_michaelpage_jobs(on_job=None) -> list:
     elif on_job is not None:
         # MP_FETCH_DETAIL desligado: emite o que veio do listing
         for j in jobs:
+            apply_description_fallbacks(j)
             try:
                 await on_job(j)
             except Exception:

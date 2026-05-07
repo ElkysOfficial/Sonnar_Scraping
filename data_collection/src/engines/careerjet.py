@@ -24,6 +24,7 @@ from curl_cffi import requests
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 from variavel import get_active_stacks  # noqa: E402
+from src.utils.job_fallbacks import apply_description_fallbacks  # noqa: E402
 from src.utils.text_utils import extract_skills, strip_html  # noqa: E402
 
 
@@ -194,9 +195,11 @@ async def _fetch_job_detail(link: str, session, semaphore: asyncio.Semaphore) ->
             description = strip_html(data.get("description", ""))
             skills = extract_skills(description) if description else []
 
-            return [link, job_title, company, location, work_type,
-                    hiring_regime, salary, publication_date,
-                    skills, description]
+            return apply_description_fallbacks([
+                link, job_title, company, location, work_type,
+                hiring_regime, salary, publication_date,
+                skills, description,
+            ])
         except Exception:
             return None
 
