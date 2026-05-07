@@ -32,9 +32,13 @@ import re
 import cloudscraper
 from bs4 import BeautifulSoup
 
+from ..persistence.extraction_tracker import tracker
 from ..utils.http_session import fetch_sync
 from ..utils.job_fallbacks import apply_description_fallbacks
 from ..utils.text_utils import extract_skills, strip_html
+
+
+PARSER_VERSION = "bne-2026.05.07"
 
 
 # --- Sessão ---------------------------------------------------------------
@@ -293,6 +297,10 @@ async def _scan_area(area: str, scraper, max_pages: int = BNE_MAX_PAGES) -> set:
                 job_id = job.get("id", "").replace("job-", "")
                 if job_id and job_id not in found:
                     found.add(job_id)
+                    tracker.discover(
+                        f"https://www.bne.com.br/vagas-de-emprego/{job_id}",
+                        engine="bne",
+                    )
                     new_count += 1
 
             consecutive_empty = 0 if new_count else (consecutive_empty + 1)
@@ -463,6 +471,19 @@ async def get_bne_jobs(on_job=None) -> list:
 
     print(f"Foram obtidas {len(jobs)} vagas do site BNE")
     return jobs
+
+
+async def refetch_one(url: str) -> list | None:
+    """Reprocessa uma URL específica do BNE (passe de reenrichment).
+
+    Extrai o job_id da URL e usa ``_fetch_job_detail`` para buscar o JSON-LD.
+    """
+    m = re.search(r"/vagas-de-emprego/(\d+)", url)
+    if not m:
+        return None
+    job_id = m.group(1)
+    sem = asyncio.Semaphore(1)
+    return await _fetch_job_detail(job_id, sem)
 
 
 # --- Modo debug ----------------------------------------------------------

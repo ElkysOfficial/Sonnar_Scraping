@@ -31,9 +31,13 @@ from curl_cffi import requests
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 from variavel import get_active_stacks  # noqa: E402
+from src.persistence.extraction_tracker import tracker  # noqa: E402
 from src.utils.http_session import fetch_sync  # noqa: E402
 from src.utils.job_fallbacks import apply_description_fallbacks  # noqa: E402
 from src.utils.text_utils import extract_skills, strip_html  # noqa: E402
+
+
+PARSER_VERSION = "jooble-2026.05.07"
 
 
 # --- Configuração --------------------------------------------------------
@@ -353,6 +357,7 @@ async def get_jooble_jobs(on_job=None) -> list:
                         continue
                     if parsed is None:
                         continue
+                    tracker.discover(parsed[0], engine="jooble")
                     jobs.append(parsed)
                     if on_job is not None:
                         try:

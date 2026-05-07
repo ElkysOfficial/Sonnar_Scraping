@@ -24,9 +24,13 @@ from curl_cffi import requests
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 from variavel import get_active_stacks  # noqa: E402
+from src.persistence.extraction_tracker import tracker  # noqa: E402
 from src.utils.http_session import fetch_sync  # noqa: E402
 from src.utils.job_fallbacks import apply_description_fallbacks  # noqa: E402
 from src.utils.text_utils import extract_skills, strip_html  # noqa: E402
+
+
+PARSER_VERSION = "careerjet-2026.05.07"
 
 
 # --- Sessão ---------------------------------------------------------------
@@ -236,6 +240,7 @@ async def get_careerjet_links() -> list:
                         href = "https://www.careerjet.com.br" + href
                     if href not in seen:
                         seen.add(href)
+                        tracker.discover(href, engine="careerjet")
                         links.append(href)
                         added += 1
                 if added == 0:
@@ -281,6 +286,13 @@ async def get_careerjet_jobs(on_job=None) -> list:
 
     print(f"Foram obtidas {len(jobs)} vagas do site careerjet")
     return jobs
+
+
+async def refetch_one(url: str) -> list | None:
+    """Reprocessa uma URL específica do Careerjet (passe de reenrichment)."""
+    session = get_session()
+    sem = asyncio.Semaphore(1)
+    return await _fetch_job_detail(url, session, sem)
 
 
 # --- Modo debug -----------------------------------------------------------

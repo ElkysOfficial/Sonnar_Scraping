@@ -19,7 +19,11 @@ from curl_cffi import requests
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 from variavel import get_active_stacks  # noqa: E402
+from src.persistence.extraction_tracker import tracker  # noqa: E402
 from src.utils.http_session import fetch_sync  # noqa: E402
+
+
+PARSER_VERSION = "ziprecruiter-2026.05.07"
 
 
 # --- Sessão ---------------------------------------------------------------
@@ -154,6 +158,7 @@ async def get_ziprecruiter_jobs(on_job=None) -> list:
                         if link in seen_links:
                             continue
                         seen_links.add(link)
+                        tracker.discover(link, engine="ziprecruiter")
 
                         job_title = title_elem.get_text(strip=True)
                         if not job_title:

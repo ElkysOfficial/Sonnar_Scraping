@@ -40,9 +40,13 @@ from curl_cffi import requests
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 from variavel import get_active_stacks  # noqa: E402
+from src.persistence.extraction_tracker import tracker  # noqa: E402
 from src.utils.http_session import fetch_sync  # noqa: E402
 from src.utils.job_fallbacks import apply_description_fallbacks  # noqa: E402
 from src.utils.text_utils import extract_skills  # noqa: E402
+
+
+PARSER_VERSION = "catho-2026.05.07"
 
 
 # --- Sessão ---------------------------------------------------------------
@@ -469,6 +473,7 @@ async def get_catho_jobs(on_job=None) -> list:
                     if url_key in seen:
                         continue
                     seen.add(url_key)
+                    tracker.discover(url_key, engine="catho")
 
                     # Filtro de relevância: rejeita varejo/serviços antes
                     # mesmo de gastar request na página de detalhe.
@@ -538,6 +543,36 @@ async def get_catho_jobs(on_job=None) -> list:
 
     print(f"Foram obtidas {len(jobs)} vagas do site Catho")
     return jobs
+
+
+async def refetch_one(url: str) -> list | None:
+    """Reprocessa uma URL específica via fetch_job_detail.
+
+    Usado pelo passe de reenrichment quando ``PARSER_VERSION`` muda.
+    """
+    session = get_session()
+    detail = await fetch_job_detail(url, session)
+    if not detail:
+        return None
+    description = detail.get("description") or ""
+    skills = extract_skills(description) if description else []
+    location_parts = []
+    if detail.get("city"):
+        location_parts.append(detail["city"])
+    if detail.get("uf"):
+        location_parts.append(detail["uf"])
+    return apply_description_fallbacks([
+        url,
+        detail.get("title", ""),
+        detail.get("company", ""),
+        location_parts,
+        _detect_work_type(detail.get("title", "")),
+        detail.get("regime") or "CLT",
+        "",
+        detail.get("publication_date", ""),
+        skills,
+        description,
+    ])
 
 
 # --- Modo debug -----------------------------------------------------------

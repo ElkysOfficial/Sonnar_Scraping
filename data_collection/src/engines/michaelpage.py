@@ -19,7 +19,11 @@ import sys
 from bs4 import BeautifulSoup
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+from src.persistence.extraction_tracker import tracker  # noqa: E402
 from src.utils.http_session import HttpSession, fetch  # noqa: E402
+
+
+PARSER_VERSION = "michaelpage-2026.05.07"
 from src.utils.job_fallbacks import apply_description_fallbacks  # noqa: E402
 from src.utils.text_utils import extract_skills, strip_html  # noqa: E402
 
@@ -211,6 +215,7 @@ async def get_michaelpage_jobs(on_job=None) -> list:
                         if link in seen_links:
                             continue
                         seen_links.add(link)
+                        tracker.discover(link, engine="michaelpage")
 
                         job_title = link_elem.get_text(strip=True)
                         if not job_title or len(job_title) < 3:
@@ -314,6 +319,25 @@ async def get_michaelpage_jobs(on_job=None) -> list:
 
     print(f"Foram obtidas {len(jobs)} vagas do site MichaelPage")
     return jobs
+
+
+async def refetch_one(url: str) -> list | None:
+    """Reprocessa uma URL específica do Michael Page (passe de reenrichment)."""
+    client = await get_session()
+    sem = asyncio.Semaphore(1)
+    detail = await _fetch_job_detail(url, client, sem)
+    if not detail or not detail.get("description"):
+        return None
+    location_str = detail.get("location_str", "")
+    parsed = [
+        url, "", "",
+        [location_str] if location_str else [],
+        "", detail.get("hiring_regime", ""),
+        "", detail.get("publication_date", ""),
+        detail.get("skills", []),
+        detail.get("description", ""),
+    ]
+    return apply_description_fallbacks(parsed)
 
 
 # --- Modo debug -----------------------------------------------------------
