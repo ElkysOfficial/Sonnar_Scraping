@@ -256,12 +256,48 @@ def _is_canonical_regime(text: str) -> bool:
     return (text or "").strip() in canon
 
 
+# Beneficios trabalhistas brasileiros classicos. Vagas com 2+ desses na
+# descricao sao quase sempre CLT (regime celetista exige esses encargos).
+_CLT_BENEFITS_RE = re.compile(
+    r"\b(?:vale[\s\-]?(?:refei[çc][ãa]o|alimenta[çc][ãa]o|transporte)|"
+    r"\bVR\b|\bVA\b|\bVT\b|"
+    r"plano\s+de\s+sa[úu]de|plano\s+odontol[óo]gico|assist[êe]ncia\s+m[ée]dica|"
+    r"f[ée]rias\s+(?:remunerada|anuais|\+1/3)|"
+    r"13[ºo°]\s*sal[áa]rio|d[ée]cimo\s+terceiro|"
+    r"\bFGTS\b|seguro\s+de\s+vida|"
+    r"gympass|wellhub|totalpass|"
+    r"licen[çc]a\s+(?:maternidade|paternidade))\b",
+    re.IGNORECASE,
+)
+
+# "Tempo integral" / "Full-time" - sinal forte de CLT no Brasil quando
+# combinado com falta de mencao explicita a PJ/Estagio/etc.
+_FULLTIME_RE = re.compile(
+    r"\b(?:tempo\s+integral|per[íi]odo\s+integral|"
+    r"full[\s\-]?time|jornada\s+integral)\b",
+    re.IGNORECASE,
+)
+
+# Indicador de PJ via moeda estrangeira ou contrato anual.
+_PJ_CURRENCY_RE = re.compile(
+    r"\b(?:USD|US\$|EUR|annual\s+salary|per\s+annum|/\s*year(?:ly)?)\b",
+    re.IGNORECASE,
+)
+
+
 def extract_regime_from_description(description: str) -> str:
     """Minera regime da descricao. Empty se nada bater.
 
-    Combinacoes ("PJ ou Cooperado", "CLT ou PJ") tem precedencia sobre
-    individuais. Combinacao requer conectivo explicito (ou/e/,/) - co-ocorrencia
-    casual de PJ e CLT no texto nao dispara combinacao.
+    Pipeline em 3 camadas:
+      1. Combinacoes ("PJ ou Cooperado", "CLT ou PJ") com conectivo explicito.
+      2. Patterns individuais (Cooperado, Estagio, Trainee, ..., CLT, PJ).
+      3. Sinais derivados como ultimo recurso:
+           - 2+ beneficios trabalhistas BR -> CLT
+           - Moeda estrangeira / annual salary -> PJ
+           - "Tempo integral" / "full-time" sem outro sinal -> CLT
+
+    Combinacao requer conectivo explicito (ou/e/,/) - co-ocorrencia casual
+    de PJ e CLT no texto nao dispara combinacao.
     """
     if not description:
         return ""
@@ -271,6 +307,13 @@ def extract_regime_from_description(description: str) -> str:
     for label, pat in _REGIME_INDIVIDUAL_PATTERNS:
         if pat.search(description):
             return label
+    # Sinais derivados (ultimo recurso)
+    if len(_CLT_BENEFITS_RE.findall(description)) >= 2:
+        return "CLT"
+    if _PJ_CURRENCY_RE.search(description):
+        return "PJ"
+    if _FULLTIME_RE.search(description):
+        return "CLT"
     return ""
 
 

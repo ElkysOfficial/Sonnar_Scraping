@@ -2,8 +2,15 @@
 Engine Jooble Brasil - listing HTML com ``__INITIAL_STATE__`` embutido.
 
 O Jooble é um agregador. Cada listing serve um JSON ``__INITIAL_STATE__`` no
-HTML que contém os jobs estruturados. Iteramos por stack do lote ativo,
-paginando até 10 páginas (~200 vagas/stack).
+HTML que contém os jobs estruturados. Cada chamada devolve no máximo 20
+vagas - o site usa scroll infinito via XHR fechado por Cloudflare, e os
+parâmetros de paginação tradicionais (``p=N``, ``page=N``, ``start=N``) são
+silenciosamente ignorados pelo backend (medido em mai/2026).
+
+Como compensação, expandimos a cobertura via filtros ortogonais que o
+backend respeita: ``date=1`` (24h), ``date=3`` (3 dias) e ``rgns=<UF>``
+para as regiões mais populosas. A união desses recortes gera 4-7x mais
+vagas únicas que a busca pura.
 
 Particularidade: o link "real" da vaga é um redirect (``/away/...``). Usamos
 ``uid`` como chave de deduplicação e construímos URL canônica via
@@ -26,6 +33,37 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 from variavel import get_active_stacks  # noqa: E402
 from src.utils.job_fallbacks import apply_description_fallbacks  # noqa: E402
 from src.utils.text_utils import extract_skills, strip_html  # noqa: E402
+
+
+# --- Configuração --------------------------------------------------------
+
+# Variantes de busca ortogonais. Cada uma e aplicada por stack ativa e os
+# uids sao unidos com dedup global. Selecionadas empiricamente:
+#   - baseline (sem filtro): 20 vagas baseline.
+#   - date=1/3: vagas das ultimas 24h/3 dias - alto rendimento de novidade.
+#   - rgns=<UF>: top 12 regioes do Brasil; cada UF traz 6-19 vagas
+#     novas observadas (regioes menores trazem mais novas pois sao
+#     subexploradas pela busca padrao).
+#
+# date=7d e salary=* foram removidos pois nao filtravam (overlap completo
+# com baseline). w=fulltime, sort=date, remote=1 idem.
+_LISTING_VARIANTS = [
+    "",                       # baseline
+    "&date=1",                # ultimas 24h
+    "&date=3",                # ultimos 3 dias
+    "&rgns=Sao%20Paulo",
+    "&rgns=Rio%20de%20Janeiro",
+    "&rgns=Minas%20Gerais",
+    "&rgns=Rio%20Grande%20do%20Sul",
+    "&rgns=Parana",
+    "&rgns=Santa%20Catarina",
+    "&rgns=Bahia",
+    "&rgns=Brasilia",          # DF
+    "&rgns=Pernambuco",
+    "&rgns=Goias",
+    "&rgns=Ceara",
+    "&rgns=Espirito%20Santo",
+]
 
 
 # --- Sessão ---------------------------------------------------------------
@@ -280,14 +318,13 @@ async def get_jooble_jobs(on_job=None) -> list:
 
     for stack in get_active_stacks():
         encoded = urllib.parse.quote(stack)
-        for page in range(1, 11):
+        for variant in _LISTING_VARIANTS:
             try:
-                url = f"https://br.jooble.org/SearchResult?ukw={encoded}&p={page}"
+                url = f"https://br.jooble.org/SearchResult?ukw={encoded}{variant}"
                 response = await asyncio.to_thread(session.get, url, timeout=30)
                 if response.status_code != 200:
-                    break
+                    continue
 
-                # Extrai __INITIAL_STATE__ do HTML
                 match = re.search(
                     r"__INITIAL_STATE__\s*=\s*({.+?});?\s*</script>",
                     response.text,
@@ -300,11 +337,13 @@ async def get_jooble_jobs(on_job=None) -> list:
                 except json.JSONDecodeError:
                     continue
 
-                serp_jobs = data.get("serpJobs", {})
-                jobs_pages = serp_jobs.get("jobs", [])
-                if not jobs_pages:
+                items = (
+                    data.get("serpJobs", {})
+                    .get("jobs", [{}])[0]
+                    .get("items", [])
+                )
+                if not items:
                     continue
-                items = jobs_pages[0].get("items", [])
 
                 for item in items:
                     try:
@@ -320,14 +359,10 @@ async def get_jooble_jobs(on_job=None) -> list:
                         except Exception:
                             pass
 
-                # Para se a página estiver vazia (fim dos resultados)
-                if len(items) == 0:
-                    break
-
                 await asyncio.sleep(0.3)
 
             except Exception:
-                break
+                continue
 
     print(f"Foram obtidas {len(jobs)} vagas do site Jooble")
     return jobs
