@@ -4,19 +4,28 @@ Engine BNE - listing → fetch detalhe (JSON-LD) por vaga, via cloudscraper.
 A BNE usa proteção anti-bot que ``httpx`` não passa. Usamos ``cloudscraper``
 que resolve o desafio JavaScript da Cloudflare-like.
 
-Particularidade: a BNE **não suporta busca por texto livre** - só por área
-hardcoded. Por isso esta engine **não participa do batching** de stacks:
-sempre cobre as mesmas 5 áreas tech.
+Particularidade: a BNE **não suporta busca por texto livre** - apenas filtros
+por área hardcoded. O site tem 28 áreas no total e somente ``informatica``
+é tech. Por isso esta engine não participa do batching de stacks - cobre
+sempre a mesma área e ganha volume via paginação profunda.
 
 Fluxo:
-    1. ``get_bne_job_ids()`` - paginação paralela das 5 áreas, coletando IDs.
+    1. ``get_bne_job_ids()`` - pagina ``BNE_AREA`` até ``BNE_MAX_PAGES``,
+       coletando job_ids únicos.
     2. ``get_bne_jobs()`` - resolve cada ID em paralelo (semáforo=10),
        parseando o ``<script type=application/ld+json>`` JobPosting.
+
+Tunáveis (env vars):
+    ``BNE_MAX_PAGES`` (default 50) - paginação máxima por área. Em medição
+    empírica (mai/2026), Page=500 ainda devolve vagas distintas, mas o
+    cutoff de 90 dias da camada de persistência derruba as antigas. 50
+    páginas ≈ 950 vagas únicas, cobrindo confortavelmente vagas recentes.
 """
 from __future__ import annotations
 
 import asyncio
 import json
+import os
 import random
 
 import cloudscraper
@@ -58,15 +67,15 @@ def reset_session() -> None:
 
 # --- Configuração --------------------------------------------------------
 
-# Áreas tech da BNE (URL-encoded). Não há busca por texto livre - usamos
-# essa lista fixa, e por isso a engine ignora o batching de stacks.
-BNE_AREAS = [
-    "Inform%C3%A1tica",
-    "Tecnologia",
-    "Desenvolvimento",
-    "Programador",
-    "Software",
-]
+# Slug oficial da única área tech do BNE. Verificado empiricamente em
+# mai/2026: as áreas "Tecnologia", "Desenvolvimento", "Programador" e
+# "Software" usadas anteriormente devolvem 0 vagas (não existem no
+# catálogo do site). O slug é case-insensitive mas sem acento; com acento
+# (``Inform%C3%A1tica``) o backend retorna um subconjunto reduzido.
+BNE_AREA = "informatica"
+
+# Limite de paginação por execução. Configurável via env var.
+BNE_MAX_PAGES = int(os.getenv("BNE_MAX_PAGES", "50"))
 
 def _extract_full_description(soup) -> str:
     """Extrai a descricao completa do DOM da pagina de detalhe da BNE.
@@ -107,11 +116,11 @@ _REGIME_MAP = {
 
 # --- Helpers privados ----------------------------------------------------
 
-async def _scan_area(area: str, scraper, max_pages: int = 15) -> set:
+async def _scan_area(area: str, scraper, max_pages: int = BNE_MAX_PAGES) -> set:
     """Pagina uma área até encontrar 2 páginas vazias consecutivas ou ``max_pages``.
 
     Args:
-        area: slug URL-encoded da área (ex.: ``"Inform%C3%A1tica"``).
+        area: slug da área (ex.: ``"informatica"``).
         scraper: instância de ``cloudscraper``.
         max_pages: limite duro de páginas a percorrer.
 
@@ -267,40 +276,31 @@ async def _fetch_job_detail(job_id, semaphore: asyncio.Semaphore) -> list | None
 # --- Fase 1: coleta de IDs -----------------------------------------------
 
 async def get_bne_job_ids() -> list:
-    """Coleta IDs únicos de vagas paralelizando as 5 áreas tech.
-
-    Cada área roda em sua própria thread via ``asyncio.to_thread``, então o
-    fetch das 5 áreas é efetivamente paralelo.
+    """Coleta IDs únicos de vagas via paginação profunda da área ``informatica``.
 
     Returns:
         Lista de IDs únicos (strings) prontos para ``_fetch_job_detail``.
     """
     scraper = get_scraper()
-    results = await asyncio.gather(
-        *(_scan_area(a, scraper) for a in BNE_AREAS),
-        return_exceptions=True,
-    )
-    job_ids: set[str] = set()
-    for r in results:
-        if isinstance(r, set):
-            job_ids.update(r)
+    job_ids = await _scan_area(BNE_AREA, scraper)
     return list(job_ids)
 
 
 # --- Fase 2 / Função pública ---------------------------------------------
 
 async def get_bne_jobs(on_job=None) -> list:
-    """Coleta vagas da BNE em duas fases (lista IDs por área + fetch detalhes).
+    """Coleta vagas da BNE em duas fases (paginação da área TI + detalhes).
 
-    A BNE não filtra por stack - usa 5 áreas hardcoded de TI. Logo, esta
-    engine não participa do batching: ela sempre cobre as mesmas 5 áreas.
+    A BNE só tem uma área tech (``informatica``) - não filtra por stack
+    nem por palavra-chave livre. O ganho de cobertura vem da paginação
+    profunda controlada por ``BNE_MAX_PAGES``.
 
     Args:
         on_job: callback opcional ``async fn(parsed)`` invocado a cada vaga
                 resolvida - usado pelo controller para persistir em streaming.
 
     Returns:
-        Lista no formato canônico de 8 campos.
+        Lista no formato canônico de 10 campos.
     """
     jobs = []
     job_ids = await get_bne_job_ids()
