@@ -469,7 +469,7 @@ async def get_linkedin_jobs(on_job=None) -> list:
             try:
                 await on_job(parsed)
             except Exception as exc:
-                metrics.incr("on_job.error", domain="linkedin")
+                metrics.incr("on_job.error", domain="br.linkedin.com")
                 logger.exception("on_job_error", extra={
                     "url": seed.get("link"), "errorMessage": str(exc),
                 })

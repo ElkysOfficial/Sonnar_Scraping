@@ -102,7 +102,7 @@
               </td>
             </tr>
             <tr v-if="!dlqBreakdown.length">
-              <td colspan="4" class="empty success-msg">Nenhuma vaga na DLQ — tudo limpo.</td>
+              <td colspan="4" class="empty success-msg">Nenhuma vaga na DLQ - tudo limpo.</td>
             </tr>
           </tbody>
         </table>
@@ -119,11 +119,11 @@
         <li v-for="(ev, i) in circuitHistory" :key="i" :class="circuitEventClass(ev.kind)">
           <span class="ev-ts">{{ formatTimestamp(ev.ts) }}</span>
           <span class="ev-kind">{{ circuitEventLabel(ev.kind) }}</span>
-          <span class="ev-domain">{{ ev.domain || '—' }}</span>
+          <span class="ev-domain">{{ ev.domain || '-' }}</span>
           <span class="ev-data" v-if="ev.data">{{ formatEventData(ev.data) }}</span>
         </li>
         <li v-if="!circuitHistory.length" class="empty">
-          Nenhuma transição de proteção no período — circuito estável.
+          Nenhuma transição de proteção no período - circuito estável.
         </li>
       </ul>
     </section>
@@ -138,7 +138,7 @@
         <li v-for="(ev, i) in events" :key="i" :class="eventClass(ev.kind)">
           <span class="ev-ts">{{ formatTimestamp(ev.ts) }}</span>
           <span class="ev-kind">{{ friendlyEvent(ev.kind) }}</span>
-          <span class="ev-domain">{{ ev.domain || '—' }}</span>
+          <span class="ev-domain">{{ ev.domain || '-' }}</span>
           <span class="ev-data" v-if="ev.data">{{ formatEventData(ev.data) }}</span>
         </li>
         <li v-if="!events.length" class="empty">Sem eventos no período.</li>
@@ -193,7 +193,7 @@ const ERROR_LABELS = {
   ReadError: 'Conexão caiu enquanto líamos a resposta',
   ReadTimeout: 'Conexão caiu enquanto líamos a resposta',
   JSONDecodeError: 'Site enviou resposta com formato inválido',
-  KeyError: 'Site mudou a estrutura — campo esperado não existe mais',
+  KeyError: 'Site mudou a estrutura - campo esperado não existe mais',
   ParserError: 'Não conseguimos entender o conteúdo da página',
   refetch_empty: 'Reprocessamento não trouxe dados novos',
   persist_skipped: 'Vaga foi descartada antes de salvar',
@@ -308,9 +308,9 @@ function formatEventData (data) {
   if (typeof data !== 'object') return String(data)
   return Object.entries(data).map(([k, v]) => `${k}: ${v}`).join(', ')
 }
-function formatInt (n) { return n == null ? '—' : Number(n).toLocaleString('pt-BR') }
+function formatInt (n) { return n == null ? '-' : Number(n).toLocaleString('pt-BR') }
 function formatTimestamp (ts) {
-  if (!ts) return '—'
+  if (!ts) return '-'
   return new Date(ts).toLocaleString('pt-BR', { hour12: false })
 }
 
