@@ -1,236 +1,235 @@
 <template>
-  <div class="admin-layout">
-    <!-- Sidebar -->
-    <aside class="sidebar">
-      <div class="sidebar-header">
-        <router-link to="/" class="logo-link">
-          <div class="logo-mark">S</div>
-          <span class="logo-text">Sonnar</span>
+  <div class="dl">
+    <!-- ============== SIDEBAR ============== -->
+    <aside
+      class="dl-side"
+      :class="{ 'dl-side--collapsed': collapsed && !mobileOpen, 'dl-side--mobile-open': mobileOpen }"
+      :aria-hidden="isMobile && !mobileOpen"
+    >
+      <header class="dl-side__head">
+        <router-link to="/" class="dl-brand" aria-label="Sonnar - Início">
+          <span class="dl-logo">S</span>
+          <span class="dl-brand__text">Sonnar</span>
         </router-link>
-      </div>
 
-      <nav class="sidebar-nav">
-        <div class="nav-group">
-          <router-link to="/admin" class="nav-item" :class="{ active: isRoute('/admin') }" exact>
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" />
-            </svg>
-            Visão Geral
-          </router-link>
-        </div>
-
-        <div class="nav-group">
-          <span class="nav-group-label">Assinantes</span>
-
-          <router-link to="/admin/subscribers" class="nav-item" :class="{ active: isRoute('/admin/subscribers') }">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" />
-            </svg>
-            Lista de Assinantes
-          </router-link>
-
-          <router-link to="/admin/new-client" class="nav-item" :class="{ active: isRoute('/admin/new-client') }">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M19 7.5v3m0 0v3m0-3h3m-3 0h-3m-2.25-4.125a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zM4 19.235v-.11a6.375 6.375 0 0112.75 0v.109A12.318 12.318 0 0110.374 21c-2.331 0-4.512-.645-6.374-1.766z" />
-            </svg>
-            Novo Cliente
-          </router-link>
-        </div>
-
-        <div class="nav-group">
-          <span class="nav-group-label">Engine de Coleta</span>
-
-          <router-link to="/admin/scraper" class="nav-item" :class="{ active: isRoute('/admin/scraper') }">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 3v11.25A2.25 2.25 0 006 16.5h2.25M3.75 3h-1.5m1.5 0h16.5m0 0h1.5m-1.5 0v11.25A2.25 2.25 0 0118 16.5h-2.25m-7.5 0h7.5m-7.5 0l-1 3m8.5-3l1 3m0 0l.5 1.5m-.5-1.5h-9.5m0 0l-.5 1.5m.75-9l3-3 2.148 2.148A12.061 12.061 0 0116.5 7.605" />
-            </svg>
-            Observabilidade
-          </router-link>
-        </div>
-
-        <div class="nav-group">
-          <span class="nav-group-label">Administração</span>
-
-          <router-link
-            v-if="isOwner"
-            to="/admin/admins"
-            class="nav-item"
-            :class="{ active: isRoute('/admin/admins') }"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" />
-            </svg>
-            Administradores
-          </router-link>
-
-          <router-link to="/change-password" class="nav-item" :class="{ active: isRoute('/change-password') }">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
-            </svg>
-            Alterar Senha
-          </router-link>
-        </div>
-      </nav>
-
-      <div class="sidebar-footer">
-        <div class="user-info">
-          <div class="user-avatar">
-            {{ userInitials }}
-          </div>
-          <div class="user-details">
-            <span class="user-name">{{ userName }}</span>
-            <span class="user-role">{{ roleLabel }}</span>
-          </div>
-        </div>
-        <div class="sidebar-actions">
-          <ThemeToggle />
-          <button @click="handleLogout" class="btn-logout" title="Sair" aria-label="Sair">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9" />
-            </svg>
-          </button>
-        </div>
-      </div>
-    </aside>
-
-    <!-- Mobile Header -->
-    <header class="mobile-header">
-      <button
-        @click="toggleMobileMenu"
-        class="menu-toggle"
-        :aria-expanded="showMobileMenu"
-        aria-controls="admin-mobile-menu"
-        aria-label="Abrir menu administrativo"
-      >
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
-        </svg>
-      </button>
-      <router-link to="/" class="logo-link">
-        <div class="logo-mark-sm">S</div>
-        <span class="logo-text-sm">Sonnar</span>
-      </router-link>
-      <div class="mobile-header-actions">
-        <ThemeToggle />
-        <button @click="handleLogout" class="btn-logout-mobile" title="Sair" aria-label="Sair">
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9" />
+        <button
+          v-if="isMobile"
+          class="dl-icon-btn"
+          aria-label="Fechar menu"
+          @click="closeMobile"
+        >
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+            <line x1="6" y1="6" x2="18" y2="18" />
+            <line x1="18" y1="6" x2="6" y2="18" />
           </svg>
         </button>
-      </div>
-    </header>
+      </header>
 
-    <!-- Mobile Menu Overlay -->
-    <Transition name="motion-drawer">
-      <div
-        v-if="showMobileMenu"
-        ref="mobileMenuRef"
-        class="mobile-menu-overlay motion-drawer-overlay"
-        role="dialog"
-        aria-modal="true"
-        aria-label="Menu administrativo"
-        tabindex="-1"
-        @click="closeMobileMenu"
-        @keydown.esc="closeMobileMenu"
-      >
-      <nav id="admin-mobile-menu" class="mobile-menu motion-drawer-panel" @click.stop>
-        <div class="mobile-menu-header">
-          <router-link to="/" class="logo-link" @click="closeMobileMenu">
-            <div class="logo-mark">S</div>
-            <span class="logo-text">Sonnar</span>
-          </router-link>
-          <button @click="closeMobileMenu" class="close-menu" data-autofocus aria-label="Fechar menu">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
-        <div class="nav-group">
-          <router-link to="/admin" class="nav-item" @click="closeMobileMenu">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" />
-            </svg>
-            Visão Geral
-          </router-link>
-        </div>
-
-        <div class="nav-group">
-          <span class="nav-group-label">Assinantes</span>
-          <router-link to="/admin/subscribers" class="nav-item" @click="closeMobileMenu">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952" />
-            </svg>
-            Lista de Assinantes
-          </router-link>
-          <router-link to="/admin/new-client" class="nav-item" @click="closeMobileMenu">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M19 7.5v3m0 0v3m0-3h3m-3 0h-3" />
-            </svg>
-            Novo Cliente
-          </router-link>
-        </div>
-
-        <div class="nav-group">
-          <span class="nav-group-label">Engine de Coleta</span>
-          <router-link to="/admin/scraper" class="nav-item" @click="closeMobileMenu">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75z" />
-            </svg>
-            Observabilidade
-          </router-link>
-        </div>
-
-        <div class="nav-group">
-          <span class="nav-group-label">Administração</span>
-          <router-link v-if="isOwner" to="/admin/admins" class="nav-item" @click="closeMobileMenu">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036" />
-            </svg>
-            Administradores
-          </router-link>
-          <router-link to="/change-password" class="nav-item" @click="closeMobileMenu">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75" />
-            </svg>
-            Alterar Senha
+      <nav class="dl-nav" aria-label="Navegação do admin">
+        <div v-for="(group, gi) in visibleGroups" :key="gi" class="dl-nav-group">
+          <span v-if="group.label" class="dl-nav-group__label">{{ group.label }}</span>
+          <router-link
+            v-for="item in group.items"
+            :key="item.to"
+            :to="item.to"
+            class="dl-nav__link"
+            :class="{ 'dl-nav__link--active': isActive(item.to, item.exact) }"
+            @click="closeMobile"
+          >
+            <span class="dl-nav__icon" v-html="item.icon"></span>
+            <span class="dl-nav__label">{{ item.label }}</span>
           </router-link>
         </div>
       </nav>
+
+      <div class="dl-side__foot">
+        <div class="dl-userchip">
+          <span class="dl-avatar">{{ initials }}</span>
+          <span class="dl-userchip__meta">
+            <span class="dl-userchip__name">{{ userName }}</span>
+            <span class="dl-userchip__plan">{{ roleLabel }}</span>
+          </span>
+        </div>
+
+        <button class="dl-nav__link dl-logout" @click="onLogout">
+          <span class="dl-nav__icon">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+              <polyline points="16 17 21 12 16 7" />
+              <line x1="21" y1="12" x2="9" y2="12" />
+            </svg>
+          </span>
+          <span class="dl-nav__label">Sair</span>
+        </button>
       </div>
+
+      <!-- Toggle de colapso (apenas desktop) -->
+      <button
+        v-if="!isMobile"
+        class="dl-collapse"
+        :aria-label="collapsed ? 'Expandir menu' : 'Recolher menu'"
+        @click="collapsed = !collapsed"
+      >
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <polyline :points="collapsed ? '9 18 15 12 9 6' : '15 18 9 12 15 6'" />
+        </svg>
+      </button>
+    </aside>
+
+    <!-- Scrim mobile -->
+    <Transition name="dl-fade">
+      <div v-if="isMobile && mobileOpen" class="dl-scrim" aria-hidden="true" @click="closeMobile"></div>
     </Transition>
 
-    <!-- Main Content -->
-    <main class="main-content">
-      <div class="main-scroll">
-        <router-view />
-      </div>
-    </main>
+    <!-- ============== MAIN ============== -->
+    <div class="dl-main" :class="{ 'dl-main--with-collapsed': collapsed && !isMobile }">
+      <header class="dl-topbar">
+        <button
+          v-if="isMobile"
+          class="dl-icon-btn"
+          aria-label="Abrir menu"
+          @click="mobileOpen = true"
+        >
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+            <line x1="4" y1="7" x2="20" y2="7" />
+            <line x1="4" y1="13" x2="20" y2="13" />
+            <line x1="4" y1="19" x2="14" y2="19" />
+          </svg>
+        </button>
+
+        <div class="dl-topbar__title">
+          <h1>{{ pageTitle }}</h1>
+          <p v-if="pageSubtitle">{{ pageSubtitle }}</p>
+        </div>
+
+        <div class="dl-topbar__actions">
+          <span class="dl-admin-badge" v-if="userRole === 'owner'">Owner</span>
+          <span class="dl-admin-badge" v-else-if="userRole === 'admin'">Admin</span>
+          <ThemeToggle />
+        </div>
+      </header>
+
+      <main class="dl-content">
+        <router-view v-slot="{ Component }">
+          <transition name="dl-fade" mode="out-in">
+            <component :is="Component" />
+          </transition>
+        </router-view>
+      </main>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useAuth } from '@/composables/useAuth'
-import { useModalFocus } from '@/composables/useModalFocus'
 import ThemeToggle from '@/components/ThemeToggle.vue'
 
-const router = useRouter()
 const route = useRoute()
+const router = useRouter()
 const { signOut, user, isOwner, userRole } = useAuth()
 
-const showMobileMenu = ref(false)
-const mobileMenuRef = ref<HTMLElement | null>(null)
+const collapsed = ref(false)
+const mobileOpen = ref(false)
+const isMobile = ref(false)
 
-useModalFocus(showMobileMenu, mobileMenuRef)
+const navGroups = computed(() => [
+  {
+    label: '',
+    items: [
+      {
+        to: '/admin',
+        label: 'Visão Geral',
+        exact: true,
+        icon: `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="3" y="3" width="7" height="9" rx="1.5" />
+          <rect x="14" y="3" width="7" height="5" rx="1.5" />
+          <rect x="14" y="12" width="7" height="9" rx="1.5" />
+          <rect x="3" y="16" width="7" height="5" rx="1.5" />
+        </svg>`
+      }
+    ]
+  },
+  {
+    label: 'Coleta',
+    items: [
+      {
+        to: '/admin/scraper',
+        label: 'Coleta de Vagas',
+        icon: `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="9" />
+          <circle cx="12" cy="12" r="6" opacity="0.55" />
+          <circle cx="12" cy="12" r="3" opacity="0.3" />
+          <line x1="12" y1="12" x2="18" y2="7" />
+          <circle cx="17.2" cy="7.6" r="1.6" fill="currentColor" stroke="none" />
+        </svg>`
+      }
+    ]
+  },
+  {
+    label: 'Assinantes',
+    items: [
+      {
+        to: '/admin/subscribers',
+        label: 'Lista de Assinantes',
+        icon: `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="9" cy="8" r="3.4" />
+          <path d="M2.5 20a6.5 6.5 0 0 1 13 0" />
+          <circle cx="17.5" cy="9" r="2.6" />
+          <path d="M14.5 14.6A5.4 5.4 0 0 1 21.5 20" />
+        </svg>`
+      },
+      {
+        to: '/admin/new-client',
+        label: 'Novo Cliente',
+        icon: `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="9" cy="8" r="3.4" />
+          <path d="M2.5 20a6.5 6.5 0 0 1 13 0" />
+          <line x1="19" y1="6" x2="19" y2="12" />
+          <line x1="16" y1="9" x2="22" y2="9" />
+        </svg>`
+      }
+    ]
+  },
+  {
+    label: 'Administração',
+    items: [
+      ...(isOwner.value ? [{
+        to: '/admin/admins',
+        label: 'Administradores',
+        icon: `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M12 2.5l8 3.5v6c0 4.6-3.2 8.7-8 10-4.8-1.3-8-5.4-8-10v-6l8-3.5z" />
+          <path d="M9 12.5l2 2 4-4" />
+        </svg>`
+      }] : []),
+      {
+        to: '/change-password',
+        label: 'Alterar Senha',
+        icon: `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="4" y="11" width="16" height="10" rx="2" />
+          <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+        </svg>`
+      }
+    ]
+  }
+])
+
+const visibleGroups = computed(() => navGroups.value.filter(g => g.items.length > 0))
+
+const pageTitle = computed(() => (route.meta.title as string) ?? 'Admin')
+const pageSubtitle = computed(() => (route.meta.subtitle as string) ?? '')
 
 const userName = computed(() => {
-  return user.value?.user_metadata?.full_name || user.value?.email?.split('@')[0] || 'Admin'
+  const u: any = user.value
+  return u?.user_metadata?.full_name || u?.email?.split('@')[0] || 'Admin'
 })
 
-const userInitials = computed(() => {
-  const name = userName.value
-  return name.split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2)
+const initials = computed(() => {
+  const name = userName.value as string
+  const parts = name.trim().split(/\s+/)
+  if (parts.length === 1) return parts[0].slice(0, 1).toUpperCase()
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
 })
 
 const roleLabel = computed(() => {
@@ -239,201 +238,267 @@ const roleLabel = computed(() => {
   return 'Usuário'
 })
 
-function isRoute(path: string): boolean {
-  if (path === '/admin') {
-    return route.path === '/admin'
-  }
-  return route.path.startsWith(path)
+function isActive(path: string, exact = false) {
+  if (exact) return route.path === path
+  return route.path === path || route.path.startsWith(`${path}/`)
 }
 
-function toggleMobileMenu() {
-  showMobileMenu.value = !showMobileMenu.value
+function checkViewport() {
+  isMobile.value = window.innerWidth < 768
+  if (!isMobile.value) mobileOpen.value = false
 }
 
-function closeMobileMenu() {
-  showMobileMenu.value = false
+function closeMobile() {
+  mobileOpen.value = false
 }
 
-async function handleLogout() {
+async function onLogout() {
   await signOut()
   router.push('/')
 }
+
+watch(() => route.path, () => closeMobile())
+
+onMounted(() => {
+  checkViewport()
+  window.addEventListener('resize', checkViewport, { passive: true })
+})
+
+onUnmounted(() => {
+  window.removeEventListener('resize', checkViewport)
+})
 </script>
 
 <style scoped>
-/* ============================================================
-   Admin Layout — Design System (Linear / Vercel inspired)
-   - Sidebar: 248px / mobile-header: 56px / content: 24px
-   - Tipografia: nav 14px/500, label 11px/600 uppercase
-   - Spacing: 4 / 8 / 12 / 16 / 24
-   ============================================================ */
+/* Admin Layout — espelho do DashboardLayout (cliente) com grupos de nav. */
 
-.admin-layout {
+.dl {
   height: 100dvh;
-  display: flex;
   background: var(--color-background);
   color: var(--color-text-primary);
+  display: grid;
+  grid-template-columns: 248px 1fr;
   overflow: hidden;
   font-family: var(--font-family);
 }
 
-/* Sidebar */
-.sidebar {
-  width: 248px;
+.dl:has(.dl-side--collapsed) {
+  grid-template-columns: 64px 1fr;
+}
+
+@media (max-width: 767px) {
+  .dl { grid-template-columns: 1fr; }
+}
+
+.dl-side {
+  position: relative;
   background: var(--color-surface);
   border-right: 1px solid var(--color-border);
   display: flex;
   flex-direction: column;
-  position: fixed;
-  top: 0;
-  left: 0;
-  bottom: 0;
+  height: 100dvh;
+  transition: width var(--transition-base) cubic-bezier(0.32, 0.72, 0, 1);
   z-index: var(--z-fixed);
 }
 
-.sidebar-header {
-  padding: 0 16px;
-  border-bottom: 1px solid var(--color-border);
-  height: 56px;
+.dl-side--collapsed { width: 64px; }
+.dl-side--collapsed .dl-nav__label,
+.dl-side--collapsed .dl-brand__text,
+.dl-side--collapsed .dl-userchip__meta,
+.dl-side--collapsed .dl-nav-group__label { display: none; }
+.dl-side--collapsed .dl-side__head { padding: 0; justify-content: center; }
+.dl-side--collapsed .dl-brand { gap: 0; justify-content: center; width: 100%; }
+.dl-side--collapsed .dl-userchip { justify-content: center; padding: 0; background: transparent; border-color: transparent; }
+.dl-side--collapsed .dl-nav__link { justify-content: center; padding: var(--space-2) 0; }
+.dl-side--collapsed .dl-side__foot { padding: var(--space-3) var(--space-2); }
+.dl-side--collapsed .dl-nav__link--active::before { display: none; }
+
+@media (max-width: 767px) {
+  .dl-side {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: min(280px, 86vw);
+    transform: translateX(-100%);
+    transition: transform 280ms cubic-bezier(0.32, 0.72, 0, 1);
+    box-shadow: var(--shadow-lg);
+  }
+  .dl-side--mobile-open { transform: translateX(0); }
+}
+
+.dl-side__head {
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--space-4);
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+  height: 56px;
   box-sizing: border-box;
 }
 
-.logo-link {
-  display: flex;
+.dl-brand {
+  display: inline-flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--space-2);
   text-decoration: none;
-  letter-spacing: -0.015em;
+  color: var(--color-text-primary);
+  font-weight: var(--font-bold);
+  letter-spacing: var(--ls-tight);
+  white-space: nowrap;
+  min-width: 0;
 }
 
-.logo-mark {
+.dl-logo {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
   width: 28px;
   height: 28px;
   background: var(--color-accent);
-  border-radius: 8px;
+  color: var(--color-text-inverse);
+  border-radius: var(--radius-md);
+  font-weight: var(--font-bold);
+  font-size: var(--text-sm);
+  box-shadow: var(--shadow-sm);
+}
+
+.dl-brand__text {
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+}
+
+.dl-icon-btn {
   display: grid;
   place-items: center;
-  color: var(--color-on-accent, #fff);
-  font-weight: var(--font-bold);
-  font-size: 13px;
-  flex-shrink: 0;
-  box-shadow: 0 1px 0 rgba(255,255,255,0.06) inset, 0 4px 10px -3px var(--color-primary-glow);
+  width: 32px;
+  height: 32px;
+  background: transparent;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
 }
-
-.logo-text {
-  font-size: 14px;
-  font-weight: 600;
+.dl-icon-btn:hover {
+  background: var(--color-surface);
   color: var(--color-text-primary);
+  border-color: var(--color-text-muted);
 }
 
-.sidebar-nav {
+.dl-nav {
   flex: 1;
-  padding: 12px 8px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-2);
   overflow-y: auto;
   overflow-x: hidden;
 }
 
-.nav-group {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.nav-group-label {
-  font-size: 11px;
-  font-weight: 600;
+.dl-nav-group { display: flex; flex-direction: column; gap: 2px; }
+.dl-nav-group__label {
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
   color: var(--color-text-muted);
   text-transform: uppercase;
-  letter-spacing: 0.06em;
-  padding: 0 10px;
-  margin-bottom: 4px;
+  letter-spacing: var(--ls-wide);
+  padding: 0 var(--space-3);
+  margin-bottom: var(--space-1);
 }
 
-.nav-item {
+.dl-nav__link {
   position: relative;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 10px;
-  border-radius: 6px;
-  font-size: 14px;
-  font-weight: 500;
-  line-height: 1.4;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
   color: var(--color-text-secondary);
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  line-height: 1.4;
   text-decoration: none;
-  transition: background-color 120ms ease, color 120ms ease;
+  transition: all var(--transition-fast);
+  cursor: pointer;
+  background: transparent;
+  border: none;
+  text-align: left;
+  width: 100%;
   white-space: nowrap;
   overflow: hidden;
-  text-overflow: ellipsis;
 }
 
-.nav-item svg {
-  width: 18px;
-  height: 18px;
-  flex-shrink: 0;
-}
-
-.nav-item:hover {
-  background: var(--color-glass-bg);
+.dl-nav__link:hover {
+  background: var(--color-surface-elevated);
   color: var(--color-text-primary);
 }
 
-.nav-item.active,
-.nav-item.router-link-active {
+.dl-nav__link--active {
   background: var(--color-accent-soft);
   color: var(--color-accent);
-  font-weight: 600;
+  font-weight: var(--font-semibold);
 }
 
-.nav-item.active::before,
-.nav-item.router-link-active::before {
+.dl-nav__link--active::before {
   content: '';
   position: absolute;
-  left: -8px;
-  top: 6px;
-  bottom: 6px;
+  left: calc(-1 * var(--space-2));
+  top: var(--space-2);
+  bottom: var(--space-2);
   width: 3px;
   background: var(--color-accent);
   border-radius: 0 3px 3px 0;
 }
 
-.sidebar-footer {
-  padding: 12px;
-  border-top: 1px solid var(--color-border);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  flex-shrink: 0;
-}
-
-.user-info {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex: 1;
-  min-width: 0;
-}
-
-.user-avatar {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  background: var(--color-accent);
-  color: var(--color-on-accent, #fff);
+.dl-nav__icon {
   display: grid;
   place-items: center;
-  font-size: 11px;
-  font-weight: var(--font-semibold);
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+.dl-nav__icon svg { width: 18px; height: 18px; }
+
+.dl-nav__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dl-side__foot {
+  border-top: 1px solid var(--color-border);
+  padding: var(--space-3) var(--space-2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
   flex-shrink: 0;
 }
 
-.user-details {
+.dl-userchip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  margin-bottom: var(--space-1);
+}
+
+.dl-avatar {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-full);
+  background: var(--color-accent);
+  color: var(--color-text-inverse);
+  display: grid;
+  place-items: center;
+  font-weight: var(--font-semibold);
+  font-size: var(--text-xs);
+}
+
+.dl-userchip__meta {
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -441,220 +506,163 @@ async function handleLogout() {
   gap: 1px;
 }
 
-.user-name {
-  font-size: 13px;
-  font-weight: 600;
+.dl-userchip__name {
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
   color: var(--color-text-primary);
-  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 150px;
 }
 
-.user-role {
-  font-size: 10px;
+.dl-userchip__plan {
+  font-size: var(--text-xs);
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: var(--ls-wide);
   color: var(--color-accent);
-  font-weight: 600;
+  font-weight: var(--font-semibold);
 }
 
-.sidebar-actions {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  flex-shrink: 0;
-}
+.dl-logout { color: var(--color-text-muted); }
+.dl-logout:hover { color: var(--color-error); background: var(--color-error-soft); }
 
-.btn-logout {
-  width: 32px;
-  height: 32px;
-  display: grid;
-  place-items: center;
-  color: var(--color-text-muted);
-  background: transparent;
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-  cursor: pointer;
-  transition: background-color 150ms ease, color 150ms ease, border-color 150ms ease;
-}
-
-.btn-logout svg { width: 16px; height: 16px; }
-
-.btn-logout:hover {
-  color: var(--color-error);
-  background: var(--color-error-soft);
-  border-color: var(--color-error);
-}
-
-/* Mobile Header */
-.mobile-header {
-  display: none;
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 56px;
+.dl-collapse {
+  position: absolute;
+  top: 70px;
+  right: -10px;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--radius-full);
   background: var(--color-background);
-  border-bottom: 1px solid var(--color-border);
-  padding: 0 16px;
-  align-items: center;
-  justify-content: space-between;
-  z-index: var(--z-fixed);
-  box-sizing: border-box;
-}
-
-.menu-toggle {
-  width: 32px;
-  height: 32px;
-  display: grid;
-  place-items: center;
-  color: var(--color-text-primary);
-  background: transparent;
   border: 1px solid var(--color-border);
-  border-radius: 8px;
-  cursor: pointer;
-  transition: background-color 150ms ease, border-color 150ms ease;
-}
-.menu-toggle:hover { background: var(--color-glass-bg); border-color: var(--color-text-muted); }
-.menu-toggle svg { width: 18px; height: 18px; }
-
-.logo-mark-sm {
-  width: 26px;
-  height: 26px;
-  background: var(--color-accent);
-  border-radius: 7px;
-  display: grid;
-  place-items: center;
-  color: var(--color-on-accent, #fff);
-  font-weight: var(--font-bold);
-  font-size: 12px;
-}
-
-.logo-text-sm {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--color-text-primary);
-  letter-spacing: -0.015em;
-}
-
-.mobile-header-actions {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.btn-logout-mobile {
-  width: 32px;
-  height: 32px;
-  display: grid;
-  place-items: center;
   color: var(--color-text-muted);
-  background: transparent;
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
+  display: grid;
+  place-items: center;
   cursor: pointer;
-  transition: all 150ms ease;
+  transition: all var(--transition-fast);
+  z-index: 5;
+  box-shadow: var(--shadow-sm);
 }
-.btn-logout-mobile svg { width: 16px; height: 16px; }
-.btn-logout-mobile:hover {
-  color: var(--color-error);
-  background: var(--color-error-soft);
-  border-color: var(--color-error);
+.dl-collapse:hover {
+  color: var(--color-accent);
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
 }
 
-/* Mobile Menu Overlay */
-.mobile-menu-overlay {
-  display: none;
+.dl-scrim {
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0.5);
   backdrop-filter: blur(4px);
-  z-index: var(--z-modal);
+  z-index: var(--z-modal-backdrop);
 }
 
-.mobile-menu {
-  position: absolute;
-  top: 0;
-  left: 0;
-  bottom: 0;
-  width: min(280px, 86vw);
-  background: var(--color-surface);
-  padding: 12px 8px;
+.dl-main {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  overflow-y: auto;
-}
-
-.mobile-menu-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 8px;
-  padding: 8px 8px 16px;
-  border-bottom: 1px solid var(--color-border);
-}
-
-.close-menu {
-  width: 32px;
-  height: 32px;
-  display: grid;
-  place-items: center;
-  color: var(--color-text-muted);
-  background: transparent;
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-  cursor: pointer;
-  transition: all 150ms ease;
-}
-.close-menu svg { width: 16px; height: 16px; }
-.close-menu:hover { color: var(--color-text-primary); background: var(--color-glass-bg); }
-
-/* Main Content */
-.main-content {
-  flex: 1;
-  margin-left: 248px;
-  display: flex;
-  flex-direction: column;
+  min-width: 0;
   height: 100dvh;
   overflow: hidden;
 }
 
-.main-scroll {
+.dl-topbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 0 var(--space-6);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-background);
+  z-index: var(--z-sticky);
+  height: 56px;
+  flex-shrink: 0;
+  box-sizing: border-box;
+}
+
+.dl-topbar__title {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  line-height: var(--lh-title);
+  min-width: 0;
+}
+
+.dl-topbar__title h1 {
+  font-size: var(--text-base);
+  font-weight: var(--font-semibold);
+  letter-spacing: var(--ls-tight);
+  margin: 0;
+  color: var(--color-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dl-topbar__title p {
+  font-size: var(--text-xs);
+  font-weight: var(--font-normal);
+  color: var(--color-text-muted);
+  margin: 1px 0 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dl-topbar__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+.dl-admin-badge {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: var(--radius-sm);
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+  font-size: 10px;
+  font-weight: var(--font-bold);
+  text-transform: uppercase;
+  letter-spacing: var(--ls-wide);
+}
+
+.dl-content {
   flex: 1;
   min-height: 0;
-  padding: 24px;
+  padding: var(--space-5) var(--space-6);
+  width: 100%;
+  max-width: 1600px;
+  margin: 0 auto;
   overflow-y: auto;
   overflow-x: hidden;
 }
 
-/* Scrollbar refinada */
-.sidebar-nav::-webkit-scrollbar,
-.main-scroll::-webkit-scrollbar,
-.mobile-menu::-webkit-scrollbar { width: 8px; height: 8px; }
-.sidebar-nav::-webkit-scrollbar-thumb,
-.main-scroll::-webkit-scrollbar-thumb,
-.mobile-menu::-webkit-scrollbar-thumb {
+@media (max-width: 767px) {
+  .dl-topbar { padding: 0 var(--space-4); }
+  .dl-content { padding: var(--space-4); }
+}
+
+.dl-nav::-webkit-scrollbar,
+.dl-content::-webkit-scrollbar { width: 8px; height: 8px; }
+.dl-nav::-webkit-scrollbar-thumb,
+.dl-content::-webkit-scrollbar-thumb {
   background: var(--color-border);
   border-radius: 4px;
 }
-.sidebar-nav::-webkit-scrollbar-thumb:hover,
-.main-scroll::-webkit-scrollbar-thumb:hover,
-.mobile-menu::-webkit-scrollbar-thumb:hover {
+.dl-nav::-webkit-scrollbar-thumb:hover,
+.dl-content::-webkit-scrollbar-thumb:hover {
   background: var(--color-text-muted);
 }
-.sidebar-nav::-webkit-scrollbar-track,
-.main-scroll::-webkit-scrollbar-track,
-.mobile-menu::-webkit-scrollbar-track { background: transparent; }
+.dl-nav::-webkit-scrollbar-track,
+.dl-content::-webkit-scrollbar-track { background: transparent; }
 
-@media (max-width: 768px) {
-  .sidebar { display: none; }
-  .mobile-header { display: flex; }
-  .mobile-menu-overlay { display: block; }
-  .main-content {
-    margin-left: 0;
-    padding-top: 56px;
-  }
-  .main-scroll { padding: 16px; }
+.dl-fade-enter-active,
+.dl-fade-leave-active {
+  transition: opacity 180ms ease;
 }
+.dl-fade-enter-from,
+.dl-fade-leave-to { opacity: 0; }
 </style>
