@@ -40,6 +40,7 @@ from curl_cffi import requests
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 from variavel import get_active_stacks  # noqa: E402
+from src.utils.job_fallbacks import apply_description_fallbacks  # noqa: E402
 from src.utils.text_utils import extract_skills  # noqa: E402
 
 
@@ -505,7 +506,7 @@ async def get_catho_jobs(on_job=None) -> list:
                             parsed[4] = _detect_work_type(title, description)
                         await asyncio.sleep(random.uniform(1.0, 2.0))
 
-                    parsed_full = parsed + [skills, description]
+                    parsed_full = apply_description_fallbacks(parsed + [skills, description])
                     jobs.append(parsed_full)
                     added_this_page += 1
                     added_for_stack += 1

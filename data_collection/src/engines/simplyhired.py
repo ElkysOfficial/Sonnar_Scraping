@@ -33,6 +33,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from variavel import get_active_stacks  # noqa: E402
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+from src.utils.job_fallbacks import apply_description_fallbacks  # noqa: E402
 from src.utils.text_utils import extract_skills, strip_html  # noqa: E402
 
 # Import preguiçoso de Playwright: só carrega no listing (que precisa dele
@@ -320,6 +321,8 @@ async def get_simplyhired_jobs(on_job=None) -> list:
                     parsed[8] = extra["skills"]
                 if extra.get("description"):
                     parsed[9] = extra["description"]
+        # Pos-processamento: minera campos vazios da descricao apos detail-fetch.
+        apply_description_fallbacks(parsed)
         jobs.append(parsed)
         if on_job is not None:
             try:

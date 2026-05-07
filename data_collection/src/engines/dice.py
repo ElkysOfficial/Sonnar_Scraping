@@ -28,6 +28,7 @@ from curl_cffi import requests
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from variavel import get_active_stacks  # noqa: E402
+from src.utils.job_fallbacks import apply_description_fallbacks  # noqa: E402
 from src.utils.text_utils import extract_skills  # noqa: E402
 
 
@@ -643,11 +644,11 @@ async def get_dice_jobs(on_job=None) -> list:
                         job_title = job_title.encode('ascii', 'ignore').decode('ascii').strip()
 
                         if job_title:
-                            job = [
+                            job = apply_description_fallbacks([
                                 link, job_title, company, location_norm, work_type,
                                 hiring_regime, salary_clean, publication_date,
                                 skills, description,
-                            ]
+                            ])
                             jobs.append(job)
                             jobs_found_this_page += 1
                             if on_job is not None:

@@ -20,6 +20,7 @@ from datetime import datetime
 from curl_cffi import requests
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+from src.utils.job_fallbacks import apply_description_fallbacks  # noqa: E402
 from src.utils.text_utils import extract_skills, strip_html  # noqa: E402
 
 
@@ -182,6 +183,7 @@ async def get_weworkremotely_jobs(on_job=None) -> list:
             if link in seen:
                 continue
             seen.add(link)
+            parsed = apply_description_fallbacks(parsed)
             jobs.append(parsed)
             if on_job is not None:
                 try:

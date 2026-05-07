@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import sys
 import urllib.parse
 
@@ -20,6 +21,7 @@ from bs4 import BeautifulSoup
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 from variavel import get_active_stacks  # noqa: E402
 from src.utils.http_session import HttpSession  # noqa: E402
+from src.utils.job_fallbacks import apply_description_fallbacks  # noqa: E402
 from src.utils.text_utils import extract_skills, strip_html  # noqa: E402
 
 
@@ -39,6 +41,127 @@ def reset_session() -> None:
 # --- Configuração --------------------------------------------------------
 
 _FETCH_CONCURRENCY = 8
+
+# Paginacao do listing. InfoJobs usa ``Page=N`` (case-sensitive!) - lowercase
+# ``page=N`` e silenciosamente ignorado e devolve sempre a primeira pagina.
+# 20 paginas x 20 vagas = ate 400 por stack, cobrindo stacks populares
+# (Python, Java) com folga. Stacks de cauda longa nao pagam o custo - o
+# early-stop encerra assim que vier pagina vazia ou so com duplicatas.
+_LISTING_MAX_PAGES = 20
+
+
+# Patterns de combinacao: vagas que aceitam multiplos regimes ("PJ ou
+# Cooperado", "CLT ou PJ"). Aplicados em ambos current+description e tem
+# precedencia sobre patterns individuais - assim 11595873 (oficial="Cooperado",
+# descricao="PJ ou Cooperado") vira "PJ/Cooperado", nao "Cooperado".
+_INFOJOBS_COMBINATION_PATTERNS = [
+    ("PJ/Cooperado", re.compile(
+        r"\b(?:PJ|pessoa\s+jur[ií]dica|prestador\s+de\s+servi[çc]os?)\s*"
+        r"(?:ou|e|/|,)\s*cooperad[oa]?|"
+        r"\bcooperad[oa]?\s*(?:ou|e|/|,)\s*"
+        r"(?:PJ|pessoa\s+jur[ií]dica|prestador\s+de\s+servi[çc]os?)",
+        re.IGNORECASE,
+    )),
+    ("CLT/PJ", re.compile(
+        r"\bCLT\s*(?:ou|e|/|,)\s*PJ\b|\bPJ\s*(?:ou|e|/|,)\s*CLT\b|"
+        r"\befetivo\s*(?:ou|e|/|,)\s*PJ\b",
+        re.IGNORECASE,
+    )),
+]
+
+
+# Patterns individuais. Ordem importa - primeiro match vence. Cooperado vem
+# antes de PJ; CLT vem por ultimo entre os fortes pra nao mascarar formas
+# mais especificas (estagio, trainee, aprendiz).
+_INFOJOBS_MODALITY_PATTERNS = [
+    ("Cooperado", re.compile(
+        r"\bcooperad[oa]s?\b|\bcooperativ[ao]\b|"
+        r"(?:modalidade|regime\s+de\s+contrata[çc][ãa]o(?:\s+de\s+tipo)?)"
+        r"\s*[:\-]?\s*cooperad",
+        re.IGNORECASE,
+    )),
+    ("Estágio", re.compile(
+        r"\b(?:est[áa]gio|estagi[áa]ri[oa]|intern(?:ship)?)\b|"
+        r"regime\s+de\s+contrata[çc][ãa]o\s+(?:de\s+)?tipo\s+est[áa]gio",
+        re.IGNORECASE,
+    )),
+    ("Aprendiz", re.compile(
+        r"\b(?:jovem\s+aprendiz|aprendiz\s+legal|menor\s+aprendiz)\b|"
+        r"regime\s+de\s+contrata[çc][ãa]o\s+(?:de\s+)?tipo\s+aprendiz",
+        re.IGNORECASE,
+    )),
+    ("Trainee", re.compile(
+        r"\btrainee\b|"
+        r"regime\s+de\s+contrata[çc][ãa]o\s+(?:de\s+)?tipo\s+trainee",
+        re.IGNORECASE,
+    )),
+    ("Temporário", re.compile(
+        r"\b(?:tempor[áa]ri[oa]|fixed[-\s]?term)\b|"
+        r"regime\s+de\s+contrata[çc][ãa]o\s+(?:de\s+)?tipo\s+tempor[áa]ri",
+        re.IGNORECASE,
+    )),
+    ("Freelancer", re.compile(r"\bfreelanc(?:e|er)\b", re.IGNORECASE)),
+    ("Autônomo", re.compile(r"\baut[ôo]nomo\b", re.IGNORECASE)),
+    ("Voluntário", re.compile(r"\bvolunt[áa]ri[oa]\b", re.IGNORECASE)),
+    ("PJ", re.compile(
+        r"\b(?:PJ|pessoa\s+jur[ií]dica|prestador\s+de\s+servi[çc]os?)\b|"
+        r"(?:modalidade|regime\s+de\s+contrata[çc][ãa]o(?:\s+de\s+tipo)?)"
+        r"\s*[:\-]?\s*(?:PJ|pessoa\s+jur)",
+        re.IGNORECASE,
+    )),
+    # CLT por ultimo entre os "fortes": "Efetivo" e termo da InfoJobs para CLT.
+    ("CLT", re.compile(
+        r"\bCLT\b|carteira\s+assinada|regime\s+celetista|\befetivo\b|"
+        r"(?:modalidade|regime\s+de\s+contrata[çc][ãa]o(?:\s+de\s+tipo)?)"
+        r"\s*[:\-]?\s*(?:CLT|efetivo)",
+        re.IGNORECASE,
+    )),
+]
+
+
+def _match_canonical_regime(text: str) -> str:
+    """Devolve o primeiro label canonico cujo pattern bate em ``text``,
+    ou string vazia. Aplicado tanto ao bloco oficial quanto a descricao.
+    """
+    if not text:
+        return ""
+    for label, pat in _INFOJOBS_MODALITY_PATTERNS:
+        if pat.search(text):
+            return label
+    return ""
+
+
+def _match_combination_regime(*texts: str) -> str:
+    """Verifica patterns de combinacao (PJ/Cooperado, CLT/PJ) em todos os
+    textos passados. Combinacao em qualquer texto vence individuais.
+    """
+    blob = " \n ".join(t for t in texts if t)
+    if not blob:
+        return ""
+    for label, pat in _INFOJOBS_COMBINATION_PATTERNS:
+        if pat.search(blob):
+            return label
+    return ""
+
+
+def _refine_hiring_regime(current: str, description: str) -> str:
+    """Devolve um label canonico (CLT/PJ/Cooperado/CLT/PJ/PJ/Cooperado/...) ou vazio.
+
+    Estrategia:
+      1. Combinacao explicita em current OU descricao -> ganha (mais especifico).
+         Ex.: oficial="Cooperado" + descricao="PJ ou Cooperado" -> "PJ/Cooperado".
+      2. Senao, normaliza ``current`` para um label canonico individual
+         ("Efetivo - CLT" -> "CLT", "Trainee - Noturno" -> "Trainee").
+      3. Se ``current`` nao mapeia, minera a descricao.
+      4. Se nada bater, retorna "" (preferimos vazio a valor cru/duvidoso).
+    """
+    combo = _match_combination_regime(current, description)
+    if combo:
+        return combo
+    canon = _match_canonical_regime(current)
+    if canon:
+        return canon
+    return _match_canonical_regime(description)
 
 
 # --- Helpers privados ----------------------------------------------------
@@ -114,40 +237,61 @@ def _parse_job_detail(html: str, link: str) -> list | None:
     description = strip_html(data.get("description", ""))
     skills = extract_skills(description) if description else []
 
-    return [link, title, company, location, work_type, hiring_regime, salary, publication_date,
-            skills, description]
+    # Quando "Tipo de contrato" vem "Outros" ou vazio, minera modalidade
+    # explicita ("Modalidade de contratacao: PJ", "Cooperado") da descricao.
+    hiring_regime = _refine_hiring_regime(hiring_regime, description)
+
+    return apply_description_fallbacks([
+        link, title, company, location, work_type, hiring_regime, salary, publication_date,
+        skills, description,
+    ])
 
 
 # --- Fase 1: coleta de links ---------------------------------------------
 
 async def get_infojobs_links() -> list[str]:
-    """Coleta links únicos de vaga (1ª página por stack do lote ativo)."""
+    """Coleta links unicos de vaga, paginando ate ``_LISTING_MAX_PAGES`` por stack.
+
+    Para cada stack, itera ``page=1..N`` e para assim que uma pagina nao
+    trouxer nenhum link novo (sinal de que esgotou o resultset). Evita
+    requests desnecessarios em stacks com poucos resultados.
+    """
     links: list[str] = []
     seen: set[str] = set()
 
     client = await get_session()
     for stack in get_active_stacks():
         encoded = urllib.parse.quote(stack)
-        url = (
-            f"https://www.infojobs.com.br/empregos.aspx"
-            f"?palabra={encoded}&page=1&limit=20"
-        )
-        try:
-            response = await client.get(url)
-        except Exception:
-            continue
-        if response.status_code != 200:
-            continue
+        for page in range(1, _LISTING_MAX_PAGES + 1):
+            # ``Page`` com P maiusculo: o lowercase eh ignorado pelo backend.
+            url = (
+                f"https://www.infojobs.com.br/empregos.aspx"
+                f"?palabra={encoded}&Page={page}"
+            )
+            try:
+                response = await client.get(url)
+            except Exception:
+                break
+            if response.status_code != 200:
+                break
 
-        soup = BeautifulSoup(response.text, "html.parser")
-        for cell in soup.find_all("div", class_="js_vacancyLoad"):
-            href = cell.get("data-href")
-            if not href:
-                continue
-            full = f"https://www.infojobs.com.br{href}"
-            if full not in seen:
-                seen.add(full)
-                links.append(full)
+            soup = BeautifulSoup(response.text, "html.parser")
+            cells = soup.find_all("div", class_="js_vacancyLoad")
+            if not cells:
+                break  # paginacao esgotou
+
+            new_count = 0
+            for cell in cells:
+                href = cell.get("data-href")
+                if not href:
+                    continue
+                full = f"https://www.infojobs.com.br{href}"
+                if full not in seen:
+                    seen.add(full)
+                    links.append(full)
+                    new_count += 1
+            if new_count == 0:
+                break  # pagina so com duplicatas - resultset esgotou
 
     return links
 

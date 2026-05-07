@@ -15,6 +15,7 @@ from curl_cffi import requests
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 from variavel import stacks  # noqa: E402
+from src.utils.job_fallbacks import apply_description_fallbacks  # noqa: E402
 from src.utils.text_utils import extract_skills, strip_html  # noqa: E402
 
 
@@ -120,9 +121,11 @@ def _parse_job_item(item: dict) -> list | None:
                 skills.append(catalog[t_low])
                 seen.add(t_low)
 
-    return [link, job_title, company, location, work_type,
-            hiring_regime, salary, publication_date,
-            skills, description]
+    return apply_description_fallbacks([
+        link, job_title, company, location, work_type,
+        hiring_regime, salary, publication_date,
+        skills, description,
+    ])
 
 
 # --- Função pública -------------------------------------------------------

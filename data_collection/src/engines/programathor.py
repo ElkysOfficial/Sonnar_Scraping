@@ -17,6 +17,7 @@ import re
 
 from bs4 import BeautifulSoup
 
+from ..utils.job_fallbacks import apply_description_fallbacks
 from ..utils.text_utils import extract_skills, strip_html
 from ..utils.http_session import HttpSession
 
@@ -206,8 +207,10 @@ async def get_programathor_jobs(on_job=None) -> list:
             description = strip_html(data.get("description", ""))
             skills = extract_skills(description) if description else []
 
-            job = [link, job_title, company, location, work_type, hiring_regime, salary, publication_date,
-                   skills, description]
+            job = apply_description_fallbacks([
+                link, job_title, company, location, work_type, hiring_regime, salary, publication_date,
+                skills, description,
+            ])
             jobs.append(job)
             if on_job is not None:
                 try:

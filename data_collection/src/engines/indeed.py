@@ -29,6 +29,7 @@ from curl_cffi import requests
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 from variavel import get_active_stacks  # noqa: E402
+from src.utils.job_fallbacks import apply_description_fallbacks  # noqa: E402
 from src.utils.text_utils import extract_skills, strip_html  # noqa: E402
 
 
@@ -203,6 +204,112 @@ def _has_country_token(text: str) -> bool:
     return bool(_COUNTRY_TOKEN_RE.search(text or ""))
 
 
+# Extracao de localidade a partir do texto da descricao - usado como
+# fallback quando o JSON-LD nao tem `addressLocality`/`addressRegion`.
+# Padrao tipico no Indeed BR: "Local de Trabalho: Sao Paulo - SP",
+# "Local: Curitiba/PR", "Cidade: Belo Horizonte", "Localizacao: Recife".
+_DESC_LOCATION_RE = re.compile(
+    r"\b(?:local(?:iza[çc][ãa]o)?(?:\s+da\s+vaga|\s+de\s+trabalho)?|cidade)\s*[:\-]\s*"
+    r"([A-Za-zÀ-ÿ][\wÀ-ÿ\s\-']{2,60}?)"
+    r"(?:\s*[/\-,]\s*([A-Z]{2}|[A-ZÀ-Ú][a-zA-ZÀ-ÿ\s]{2,30}?))?"
+    r"(?=[\.\n;]|$)",
+    re.IGNORECASE,
+)
+
+
+# Salario embutido na descricao - usado como fallback quando o JSON-LD nao
+# tem ``baseSalary``. Padroes tipicos no Indeed BR:
+#   "R$ 5.000,00 a R$ 7.500,00"
+#   "Salario: R$ 5.000"
+#   "Faixa salarial: R$ 4.000 - R$ 6.000"
+#   "USD 60,000 - USD 90,000 / year"
+_DESC_SALARY_BRL_RE = re.compile(
+    r"R\$\s*([\d.,]+)\s*(?:a|at[ée]|[-–])\s*R\$\s*([\d.,]+)",
+    re.IGNORECASE,
+)
+_DESC_SALARY_BRL_SINGLE_RE = re.compile(
+    r"(?:sal[áa]rio|faixa\s+salarial|remunera[çc][ãa]o)\s*[:\-]\s*R\$\s*([\d.,]+)",
+    re.IGNORECASE,
+)
+_DESC_SALARY_USD_RE = re.compile(
+    r"(?:USD|US\$)\s*([\d.,]+)\s*(?:to|[-–])\s*(?:USD|US\$)?\s*([\d.,]+)",
+    re.IGNORECASE,
+)
+
+
+def _extract_salary_from_description(description: str) -> str:
+    """Minera faixa salarial do texto. Vazio se nada confiavel.
+
+    Prefere range (X a Y) sobre valor unico. Conservador: ignora numeros
+    soltos sem prefixo "R$" ou "USD" (evita pegar "200 vagas", anos, etc).
+    """
+    if not description:
+        return ""
+    m = _DESC_SALARY_BRL_RE.search(description)
+    if m:
+        return f"R$ {m.group(1).strip()} - R$ {m.group(2).strip()}"
+    m = _DESC_SALARY_USD_RE.search(description)
+    if m:
+        return f"USD {m.group(1).strip()} - USD {m.group(2).strip()}"
+    m = _DESC_SALARY_BRL_SINGLE_RE.search(description)
+    if m:
+        return f"R$ {m.group(1).strip()}"
+    return ""
+
+
+# Datas relativas no corpo da pagina ("Publicada ha 5 dias", "ha 2 horas").
+# Convertemos pra DD/MM/YYYY usando a data atual de execucao.
+_RELATIVE_DATE_RE = re.compile(
+    r"h[áa]\s+(\d+)\s*\+?\s*(hora|h\b|dia|semana|m[êe]s|mes|ano)s?",
+    re.IGNORECASE,
+)
+
+
+def _extract_relative_date(text: str) -> str:
+    """Converte 'ha N dias/semanas/meses' em DD/MM/YYYY. Vazio se nada bater."""
+    if not text:
+        return ""
+    m = _RELATIVE_DATE_RE.search(text)
+    if not m:
+        return ""
+    from datetime import datetime as _dt, timedelta as _td
+    n = int(m.group(1))
+    unit = m.group(2).lower()
+    if unit.startswith("h"):
+        delta = _td(hours=n)
+    elif unit.startswith("d"):
+        delta = _td(days=n)
+    elif unit.startswith("s"):
+        delta = _td(weeks=n)
+    elif unit.startswith("m"):
+        delta = _td(days=30 * n)
+    else:  # ano
+        delta = _td(days=365 * n)
+    pub = _dt.utcnow() - delta
+    return pub.strftime("%d/%m/%Y")
+
+
+def _extract_location_from_description(description: str) -> list:
+    """Minera cidade/UF a partir da descricao quando o JSON-LD falhar.
+
+    Retorna lista no formato [cidade] ou [cidade, UF]. Lista vazia se nada
+    confiavel for encontrado. Conservador: prefere devolver vazio a chutar.
+    """
+    if not description:
+        return []
+    match = _DESC_LOCATION_RE.search(description)
+    if not match:
+        return []
+    city = (match.group(1) or "").strip(" ,;:-/")
+    state = (match.group(2) or "").strip(" ,;:-/")
+    if len(city) < 3 or len(city) > 60:
+        return []
+    out = [city]
+    if state and 2 <= len(state) <= 30:
+        out.append(state)
+    return out
+
+
 # Detecção de bloqueio:
 #   - Título da pagina e o sinal mais confiavel - paginas de challenge tem
 #     ``<title>Security Check</title>``, ``Just a moment...``, etc.
@@ -306,30 +413,44 @@ def _parse_jsonld_jobposting(soup) -> dict | None:
         or "remote" in loc_lower
     )
 
-    if is_remote:
-        # Indeed BR (br.indeed.com) sempre é Brasil. Mantemos um sentinel
-        # legível ("Remoto - Brasil") para o location_normalizer extrair
-        # ``country_code='BR'`` sem inventar uma UF inexistente.
-        location = ["Remoto", "Brasil"]
-        work_type = "Remoto"
-    else:
-        if region:
-            location = [locality, region]
-        elif locality:
-            location = [locality]
-        else:
-            location = []
-        # Garante que ``country_code`` seja resolvido mesmo sem UF na string:
-        # adiciona "Brasil" quando o JSON-LD confirmar BR e a string não
-        # contiver UF/país. O normalizer já trata duplicação de país via
-        # match por substring, então o append é seguro.
-        if country_iso == "BR" and location and not _has_country_token(" ".join(location)):
-            location.append("Brasil")
+    # work_type e location sao sinais ortogonais: uma vaga remota PODE ter
+    # cidade-base (Home Office baseado em Recife). Antes da correcao, o
+    # ``is_remote=True`` descartava ``locality``/``region`` e gravava o
+    # sentinel "Remoto - Brasil". Agora preservamos a cidade quando vier.
+    loc_parts: list = []
+    if locality and locality.lower() not in ("remoto", "remote"):
+        loc_parts.append(locality)
+    if region:
+        loc_parts.append(region)
 
-        if "híbrido" in loc_lower or "hibrido" in loc_lower or "hybrid" in data_str:
-            work_type = "Híbrido"
-        else:
-            work_type = "Presencial"
+    if is_remote:
+        work_type = "Remoto"
+    elif "híbrido" in loc_lower or "hibrido" in loc_lower or "hybrid" in data_str:
+        work_type = "Híbrido"
+    else:
+        work_type = "Presencial"
+
+    if loc_parts:
+        location = loc_parts
+        # ``country_code`` so eh resolvido pelo normalizer se a string contiver
+        # token de pais/UF. Adicionamos "Brasil" quando o JSON-LD confirmar BR
+        # e a string nao contiver pais. O normalizer ja deduplica por substring.
+        if country_iso == "BR" and not _has_country_token(" ".join(location)):
+            location.append("Brasil")
+    elif is_remote:
+        # Genuinamente sem cidade-base: sentinel para o normalizer extrair
+        # country_code=BR sem inventar UF.
+        location = ["Remoto", "Brasil"]
+    else:
+        location = []
+        # Fallback: minera "Local de Trabalho: ..." da descricao quando o
+        # JSON-LD nao trouxe locality/region nem flag de remoto.
+        description_preview = strip_html(data.get("description", "") or "")
+        mined = _extract_location_from_description(description_preview)
+        if mined:
+            location = mined
+            if country_iso == "BR" and not _has_country_token(" ".join(location)):
+                location.append("Brasil")
 
     employment_type = data.get("employmentType", "")
     if isinstance(employment_type, list):
@@ -363,6 +484,12 @@ def _parse_jsonld_jobposting(soup) -> dict | None:
 
     description = strip_html(data.get("description", ""))
     skills = extract_skills(description) if description else []
+
+    # Fallbacks de campos que o JSON-LD costuma deixar vazio no Indeed BR.
+    if not salary:
+        salary = _extract_salary_from_description(description)
+    if not publication_date:
+        publication_date = _extract_relative_date(description)
 
     # Pipeline de inferência (explícito → benefícios → moeda → default por
     # work_type). Sobrescreve o ``employmentType`` genérico do JSON-LD apenas
@@ -447,7 +574,20 @@ def _parse_html_fallback(soup) -> dict | None:
         description = strip_html(str(desc_block))
     skills = extract_skills(description) if description else []
 
+    # Quando o <title> nao deu cidade, tenta minerar da descricao.
+    if not location and description:
+        mined = _extract_location_from_description(description)
+        if mined:
+            location = mined
+            if not _has_country_token(" ".join(location)):
+                location.append("Brasil")
+
     hiring_regime = _infer_regime_with_heuristics(job_title, description, work_type)
+
+    # Salario e data: minera da descricao + texto bruto da pagina (Indeed
+    # mostra "ha N dias" fora do bloco de descricao em alguns layouts).
+    salary = _extract_salary_from_description(description)
+    publication_date = _extract_relative_date(description) or _extract_relative_date(page_text)
 
     return {
         "title": job_title,
@@ -455,8 +595,8 @@ def _parse_html_fallback(soup) -> dict | None:
         "location": location,
         "work_type": work_type,
         "hiring_regime": hiring_regime,
-        "salary": "",
-        "publication_date": "",
+        "salary": salary,
+        "publication_date": publication_date,
         "skills": skills,
         "description": description,
     }
@@ -502,52 +642,75 @@ async def _fetch_html_with_fallback(url: str, *, timeout: int = 30) -> str | Non
         return html if html and not _looks_blocked(html) else None
 
 
-async def _fetch_job_detail(link: str, semaphore: asyncio.Semaphore) -> list | None:
-    """Busca a página de detalhe e devolve a lista canônica.
+async def fetch_indeed_detail(url: str) -> dict | None:
+    """Busca a pagina /viewjob e devolve dict com os campos da vaga.
 
-    Tenta JSON-LD primeiro; se falhar, faz fallback de parsing direto no HTML.
+    Camadas (do mais confiavel pro mais frouxo):
+      1. JSON-LD ``JobPosting`` (preferido - schema.org oficial).
+      2. Parser HTML direto (selectors estaveis: ``#jobDescriptionText``,
+         ``meta#indeed-share-message``, ``[data-company-name]``).
+      3. Mineracao da descricao para preencher ``location`` e ``hiring_regime``
+         quando o JSON-LD vem com cidade/regime vazios.
+
+    Retorna ``None`` quando o HTML esta bloqueado (challenge/login) ou nao
+    contem JSON-LD nem estrutura HTML reconhecivel - sinal pra o caller
+    resetar a sessao.
     """
+    html = await _fetch_html_with_fallback(url, timeout=30)
+    if not html:
+        return None
+    try:
+        soup = BeautifulSoup(html, "html.parser")
+        return _parse_jsonld_jobposting(soup) or _parse_html_fallback(soup)
+    except Exception:
+        return None
+
+
+async def _fetch_job_detail(link: str, semaphore: asyncio.Semaphore) -> list | None:
+    """Wrapper legado (lista canonica). Mantido pelo ``_legacy_get_indeed_jobs``."""
     async with semaphore:
         await asyncio.sleep(random.uniform(0.3, 0.8))
-        html = await _fetch_html_with_fallback(link, timeout=30)
-        if not html:
+        data = await fetch_indeed_detail(link)
+        if not data:
             return None
-
-        try:
-            soup = BeautifulSoup(html, "html.parser")
-            data = _parse_jsonld_jobposting(soup) or _parse_html_fallback(soup)
-            if not data:
-                return None
-
-            return [
-                link,
-                data["title"],
-                data["company"],
-                data["location"],
-                data["work_type"],
-                data["hiring_regime"],
-                data["salary"],
-                data["publication_date"],
-                data.get("skills", []),
-                data.get("description", ""),
-            ]
-        except Exception:
-            return None
+        return [
+            link,
+            data["title"],
+            data["company"],
+            data["location"],
+            data["work_type"],
+            data["hiring_regime"],
+            data["salary"],
+            data["publication_date"],
+            data.get("skills", []),
+            data.get("description", ""),
+        ]
 
 
 # --- Fase 1: coleta de links ---------------------------------------------
 
-# O Indeed BR exige login na pagina 2 (`start=50` redireciona pra /Acessar).
-# Como compensacao, fazemos varias buscas por stack com filtros diferentes -
-# cada uma devolve sua propria "primeira pagina" com conteudo distinto.
+# O Indeed BR redireciona ``start=N`` pra /Acessar (login obrigatorio na
+# pagina 2). Como nao da pra paginar, expandimos via variantes ortogonais:
+# cada filtro devolve a "primeira pagina" do recorte respectivo, e a uniao
+# (com dedup por jobkey) cobre 2-3x mais vagas que uma busca unica.
 #
-# Mantemos so 3 variantes ortogonais pra economizar rate-budget pro detail
-# fetch (que tambem e bloqueado se gastarmos demais no listing). Trade-off:
-# menos buckets no listing -> mais % de vagas resolvidas no detalhe.
+# Volume medido com q=Python (mai/2026): 8 variantes -> ~120 vagas unicas
+# vs 45 com 3 variantes. Variantes inclusas foram selecionadas por novelty
+# real (>4 vagas novas em medicao); descartadas: explvl_mid/senior, salary,
+# radius_100 (todas com 0 novas vs baseline).
+#
+# Trade-off: mais variantes = mais requests de listing = mais chance de
+# rate-limit do Cloudflare antes do detail-fetch. 8 e o sweet spot atual -
+# acima disso o Cloudflare costuma bloquear o detail.
 _LISTING_VARIANTS = [
-    "&sort=date",         # mais recentes (baixo overlap com relevancia)
-    "&jt=fulltime",       # CLT/efetivos
-    "&jt=contract",       # PJ/contractors
+    "&sort=date",            # mais recentes (baseline ortogonal a relevancia)
+    "&jt=fulltime",          # CLT/efetivos
+    "&jt=contract",          # PJ/contractors
+    "&jt=internship",        # estagios
+    "&jt=parttime",          # meio-periodo
+    "&jt=temporary",         # temporarios
+    "&fromage=1",            # ultimas 24h (alta novidade vs baseline)
+    "&explvl=entry_level",   # junior (corte demografico nao coberto pelos jt)
 ]
 
 
@@ -733,96 +896,149 @@ async def get_indeed_links() -> list:
 
 # --- Fase 2 / Função pública ---------------------------------------------
 
-# Concorrencia do enriquecimento de detalhe. Indeed bloqueia >2 simultaneas
-# do mesmo IP. Nao e gargalo em throughput porque o listing ja traz tudo
-# critico - detail e best-effort pra description completa + skills.
+# Concorrencia do detail-fetch. Indeed bloqueia >2 simultaneas do mesmo IP;
+# este limite e o teto seguro observado empiricamente.
 _DETAIL_CONCURRENCY = 2
 
-# Limite de tentativas de detail-fetch antes de desistir e marcar a sessao
-# como rate-limited (paramos de tentar pelo resto do ciclo).
-_DETAIL_MAX_FAILURES = 8
+# Soft-block detection: quantos detail-fetches consecutivos podem falhar
+# antes de fazer reset da sessao + cooldown. Padrao espelhado da engine
+# da Catho (3 falhas -> reset + dorme 15-25s).
+_SOFTBLOCK_THRESHOLD = 3
+_SOFTBLOCK_COOLDOWN_SEC = (15.0, 25.0)
 
 
-async def _enrich_with_detail(card: dict, sem: asyncio.Semaphore, state: dict) -> None:
-    """Tenta substituir ``description`` (snippet) e ``skills`` pela versao completa
-    do detail-fetch. Falha silenciosa - mantem o snippet em caso de bloqueio.
+# Pre-filtro de relevancia tech: descarta vagas obviamente fora de TI antes
+# de gastar request no detail. Espelha a estrategia da Catho - whitelist no
+# titulo aceita direto; blacklist no titulo (sem whitelist) rejeita; default
+# permissivo (mantem a vaga em duvida).
+_TECH_WHITELIST_RE = re.compile(
+    r"\b("
+    r"desenvolved|programad|engenheir(?:o|a)\s+(?:de\s+)?(?:software|dados|computa|"
+    r"sistema|machine|cloud|devops|sre|qa|teste|backend|frontend|fullstack|mobile)|"
+    r"analista\s+(?:de\s+)?(?:sistem|dados|ti|tecnolog|qa|teste|seguran|"
+    r"banco|infraestru|requisito|suporte|desenvolv|software)|"
+    r"cientista\s+de\s+dados|arquitet[oa]\s+de\s+software|"
+    r"dev(?:ops)?|qa\b|sre\b|dba\b|tech\s*lead|"
+    r"back[- ]?end|front[- ]?end|full[- ]?stack|mobile\s+dev|"
+    r"data\s+(?:scien|engin|analy)|machine\s+learning|"
+    r"software|scrum\s+master|product\s+(?:manager|owner)|"
+    r"php|python|javascript|typescript|laravel|django|flask|spring|"
+    r"react|angular|vue|node|kotlin|swift|golang|ruby|rust|"
+    r"\bsap\s+(?:abap|fiori|hana)|\bsalesforce\b"
+    r")\b",
+    re.IGNORECASE,
+)
 
-    Mutate ``state['failures']`` pra contar bloqueios consecutivos. Quando
-    excede ``_DETAIL_MAX_FAILURES``, desabilita o enriquecimento pro resto
-    do ciclo (``state['disabled'] = True``) - economiza tempo e respeita
-    o rate-limit.
+_TECH_BLACKLIST_RE = re.compile(
+    r"\b("
+    r"vendedor|atendente|operador\s+de\s+caixa|caixa\s+(?:de\s+)?(?:loja|supermerc)|"
+    r"repositor|estoquista|a[çc]ougueiro|padeiro|confeiteir|"
+    r"motoboy|motorista|"
+    r"cozinheir|gar[çc]om|copeir|chapeir|"
+    r"recepcionist|aux(?:iliar)?\s+administrativ|"
+    r"pedreiro|servente|"
+    r"enfermeir|t[ée]cnico\s+de\s+enfermag|farmac[êe]utic|"
+    r"professor(?!\s+de\s+(?:tecnologia|inform[áa]tica|programac))|"
+    r"servi[çc]o\s+de\s+limpeza|porteiro|"
+    r"seguran[çc]a\s+patrimon|bab[áa]|cuidador|domestic"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+def _is_tech_relevant(title: str) -> bool:
+    """True quando a vaga deve ser mantida; False rejeita.
+
+    Whitelist explicita no titulo -> aceita. Blacklist sem whitelist -> rejeita.
+    Sem match em nenhum -> aceita (default permissivo, evita falsos negativos
+    em titulos genericos como "Analista de Sistemas Junior").
     """
-    if state.get("disabled"):
-        return
+    if not title:
+        return True
+    if _TECH_WHITELIST_RE.search(title):
+        return True
+    if _TECH_BLACKLIST_RE.search(title):
+        return False
+    return True
 
-    raw = await _fetch_job_detail(card["url"], sem)
-    if not raw:
-        state["failures"] = state.get("failures", 0) + 1
-        if state["failures"] >= _DETAIL_MAX_FAILURES:
-            state["disabled"] = True
-        return
 
-    # raw[9] e a description completa, raw[8] sao skills extraidas do texto cheio
-    full_desc = raw[9] if len(raw) > 9 else ""
-    full_skills = raw[8] if len(raw) > 8 else []
+def _refine_work_type(current: str, title: str, description: str) -> str:
+    """Re-avalia ``work_type`` apos ter a descricao completa do detail-fetch.
 
-    # Aceita apenas se o detail trouxe descricao significativamente maior
-    # que o snippet. Caso contrario, melhor manter o snippet limpo.
-    if full_desc and len(full_desc) > len(card.get("description", "")) + 100:
-        card["description"] = full_desc
-    if full_skills:
-        # mescla, preservando ordem e sem duplicatas
-        seen = set(s.lower() for s in card.get("skills", []))
-        merged = list(card.get("skills", []))
-        for s in full_skills:
-            if s.lower() not in seen:
-                merged.append(s); seen.add(s.lower())
-        card["skills"] = merged
+    Mantem o valor atual quando ja for ``Remoto``/``Hibrido`` (sinais fortes do
+    JSON-LD nao devem ser sobrescritos). So promove ``Presencial`` -> ``Remoto``
+    ou ``Hibrido`` quando a descricao trouxer evidencia clara.
+    """
+    if current in ("Remoto", "Híbrido"):
+        return current
+    blob = ((title or "") + " \n " + (description or "")).lower()
+    if "100% remoto" in blob or "100% home office" in blob or "totalmente remoto" in blob:
+        return "Remoto"
+    if "trabalho remoto" in blob or "home office" in blob or "home-office" in blob:
+        return "Remoto"
+    if "híbrido" in blob or "hibrido" in blob or "modelo hibrido" in blob or "modelo híbrido" in blob:
+        return "Híbrido"
+    return current or "Presencial"
 
-    # reset contador apos um sucesso (rate-limit pode ter sido transitorio)
-    state["failures"] = 0
+
+def _seed_to_canonical(seed: dict) -> list:
+    """Converte um card do listing (seed) na lista canonica de 10 campos."""
+    return [
+        seed["url"], seed["title"], seed["company"], seed["location"],
+        seed["work_type"], seed["hiring_regime"], seed["salary"],
+        seed["publication_date"], seed.get("skills") or [],
+        seed.get("description") or "",
+    ]
+
+
+def _merge_detail_over_seed(seed: dict, detail: dict) -> list:
+    """Aplica os campos do detail-fetch sobre o seed do listing.
+
+    O detail tem precedencia (descricao completa, JSON-LD oficial). O seed
+    cobre lacunas - util quando o detail vem com campos vazios em A/B test
+    do Indeed.
+    """
+    return [
+        seed["url"],
+        detail.get("title") or seed["title"],
+        detail.get("company") or seed["company"],
+        detail.get("location") or seed["location"],
+        detail.get("work_type") or seed["work_type"],
+        detail.get("hiring_regime") or seed["hiring_regime"],
+        detail.get("salary") or seed["salary"],
+        detail.get("publication_date") or seed["publication_date"],
+        detail.get("skills") or seed.get("skills") or [],
+        detail.get("description") or seed.get("description") or "",
+    ]
 
 
 async def get_indeed_jobs(on_job=None) -> list:
-    """Coleta vagas do Indeed em duas camadas:
+    """Coleta vagas do Indeed em duas fases distintas:
 
-    1. **Listing JSON** (caminho rapido, 100% sucesso): extrai title, company,
-       location, work_type, regime, salary, pubdate e snippet do blob
-       ``mosaic-provider-jobcards`` - 1 request → ~15 vagas.
+    1. **Coleta de links** (listing): roda os filtros de ``_LISTING_VARIANTS``
+       para cada stack ativa e acumula jobkeys unicos. Quando o blob
+       ``mosaic-provider-jobcards`` esta presente, ja preservamos os campos
+       parciais (title/company/location/snippet) como *seed* - serve de
+       fallback se o detail-fetch falhar.
 
-    2. **Detail enrichment** (best-effort): substitui o snippet pela
-       descricao completa da pagina de detalhe e re-extrai skills do texto
-       integral. Concorrencia baixa (2). Se acumular ``_DETAIL_MAX_FAILURES``
-       bloqueios, desabilita o enriquecimento pro resto do ciclo - mantem
-       o snippet como fallback aceitavel.
+    2. **Detail-fetch por link** (caminho principal): para cada jobkey, faz
+       GET em ``/viewjob?jk=<JK>``, parseia o ``<script type=ld+json>`` e cai
+       no parser HTML quando o JSON-LD esta ausente. A descricao completa do
+       detail alimenta a inferencia de ``hiring_regime`` e a mineracao de
+       ``location`` quando o JSON-LD vem com cidade vazia.
+
+    Concorrencia baixa (``_DETAIL_CONCURRENCY``) para respeitar rate-limit do
+    Cloudflare. Falhas individuais sao silenciosas: caimos no seed do listing.
 
     Args:
         on_job: callback opcional ``async fn(parsed)`` invocado a cada vaga
-                ja enriquecida (ou com snippet, se enriquecimento falhar).
+                resolvida (streaming).
 
     Returns:
         Lista no formato canonico de 10 campos.
     """
-    seen_jks: set = set()
-    jobs: list = []
-    detail_sem = asyncio.Semaphore(_DETAIL_CONCURRENCY)
-    detail_state: dict = {"failures": 0, "disabled": False}
-
-    async def _emit(card: dict) -> None:
-        # tenta enriquecer description+skills com detail-fetch
-        await _enrich_with_detail(card, detail_sem, detail_state)
-        parsed = [
-            card["url"], card["title"], card["company"], card["location"],
-            card["work_type"], card["hiring_regime"], card["salary"],
-            card["publication_date"], card["skills"], card["description"],
-        ]
-        jobs.append(parsed)
-        if on_job is not None:
-            try:
-                await on_job(parsed)
-            except Exception:
-                pass
-
+    # Fase 1: coleta de links + seeds do listing
+    seeds: dict = {}  # jk -> dict com dados parciais do listing
     for stack in get_active_stacks():
         encoded = urllib.parse.quote(stack)
         for variant in _LISTING_VARIANTS:
@@ -837,22 +1053,78 @@ async def get_indeed_jobs(on_job=None) -> list:
                 await asyncio.sleep(random.uniform(1.0, 2.0))
                 continue
 
-            cards = _parse_jobcards(html)
-            new_cards = []
-            for c in cards:
-                jk = c["url"].rsplit("=", 1)[-1]
-                if jk in seen_jks:
-                    continue
-                seen_jks.add(jk)
-                new_cards.append(c)
+            for card in _parse_jobcards(html):
+                jk = card["url"].rsplit("=", 1)[-1]
+                if jk and jk not in seeds:
+                    seeds[jk] = card
 
-            # Enriquecimento em paralelo (bounded pelo semaforo).
-            await asyncio.gather(*(_emit(c) for c in new_cards))
+    # Pre-filtro tech: remove vagas obviamente fora de TI antes de gastar
+    # request no detail (Indeed bloqueia rapido com >2 paralelos).
+    relevant = {jk: s for jk, s in seeds.items() if _is_tech_relevant(s.get("title", ""))}
+    skipped_irrelevant = len(seeds) - len(relevant)
 
-    enriched = sum(1 for j in jobs if len(j[9]) > 400)
+    if not relevant:
+        print(
+            f"Foram obtidas 0 vagas do site Indeed (descartadas {skipped_irrelevant} "
+            "irrelevantes pelo filtro tech)"
+        )
+        return []
+
+    # Fase 2: detail-fetch sequencial (sequencial garante soft-block detection
+    # confiavel - paralelo mascara o sinal de bloqueio em rajada). Concorrencia
+    # via semaforo=2 ainda assim, pra acelerar quando o site coopera.
+    sem = asyncio.Semaphore(_DETAIL_CONCURRENCY)
+    jobs: list = []
+    stats = {"detail_ok": 0, "seed_only": 0, "softblock_resets": 0}
+    softblock_streak = 0
+
+    async def _resolve(jk: str, seed: dict) -> None:
+        nonlocal softblock_streak
+        async with sem:
+            await asyncio.sleep(random.uniform(0.4, 1.0))
+            detail = await fetch_indeed_detail(seed["url"])
+
+            if detail:
+                # Refina work_type quando o detail trouxe descricao completa.
+                detail["work_type"] = _refine_work_type(
+                    detail.get("work_type", ""),
+                    detail.get("title") or seed.get("title", ""),
+                    detail.get("description") or "",
+                )
+                parsed = _merge_detail_over_seed(seed, detail)
+                stats["detail_ok"] += 1
+                softblock_streak = 0
+            else:
+                # Detail bloqueado/ausente: emite o seed do listing como fallback
+                # e conta o soft-block. Apos N seguidos, reseta sessao + cooldown.
+                parsed = _seed_to_canonical(seed)
+                stats["seed_only"] += 1
+                softblock_streak += 1
+                if softblock_streak >= _SOFTBLOCK_THRESHOLD:
+                    reset_session()
+                    stats["softblock_resets"] += 1
+                    softblock_streak = 0
+                    await asyncio.sleep(random.uniform(*_SOFTBLOCK_COOLDOWN_SEC))
+
+            # Pos-processamento universal: minera campos faltantes da
+            # descricao (salary, location, hiring_regime, work_type).
+            # Trata "a combinar" como vazio e roda os fallbacks compartilhados.
+            parsed = apply_description_fallbacks(parsed)
+
+            jobs.append(parsed)
+            if on_job is not None:
+                try:
+                    await on_job(parsed)
+                except Exception:
+                    pass
+
+    await asyncio.gather(*(_resolve(jk, seed) for jk, seed in relevant.items()))
+
     print(
         f"Foram obtidas {len(jobs)} vagas do site Indeed "
-        f"({enriched} com descricao completa, {len(jobs)-enriched} com snippet)"
+        f"({stats['detail_ok']} via detail-fetch, {stats['seed_only']} so listing, "
+        f"{skipped_irrelevant} descartadas pelo filtro tech, "
+        f"{stats['softblock_resets']} resets por soft-block)"
     )
     return jobs
 

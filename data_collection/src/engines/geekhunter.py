@@ -16,6 +16,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
 from src.utils.http_session import HttpSession  # noqa: E402
+from src.utils.job_fallbacks import apply_description_fallbacks  # noqa: E402
 from src.utils.text_utils import extract_skills, strip_html  # noqa: E402
 
 
@@ -472,6 +473,10 @@ async def get_geekhunter_jobs(on_job=None) -> list:
                     jobs[idx][8] = existing
 
             await asyncio.gather(*(_enrich(i) for i in incomplete))
+
+        # Pos-processamento universal: minera campos faltantes da descricao.
+        for i in range(len(jobs)):
+            jobs[i] = apply_description_fallbacks(jobs[i])
 
         if on_job is not None:
             for job in jobs:

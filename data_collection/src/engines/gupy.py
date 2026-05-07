@@ -18,6 +18,7 @@ from urllib.parse import urlparse, urlunparse
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from variavel import get_active_stacks  # noqa: E402
 from src.utils.http_session import HttpSession  # noqa: E402
+from src.utils.job_fallbacks import apply_description_fallbacks  # noqa: E402
 from src.utils.text_utils import extract_skills, strip_html  # noqa: E402
 
 
@@ -114,8 +115,10 @@ def _parse_job_item(item: dict) -> list:
     description = strip_html(item.get("description", ""))
     skills = extract_skills(description) if description else []
 
-    return [link, title, company, location, work_type, hiring_regime, "", publication_date,
-            skills, description]
+    return apply_description_fallbacks([
+        link, title, company, location, work_type, hiring_regime, "", publication_date,
+        skills, description,
+    ])
 
 
 # --- Função pública -------------------------------------------------------
