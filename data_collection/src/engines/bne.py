@@ -38,7 +38,38 @@ from ..utils.job_fallbacks import apply_description_fallbacks
 from ..utils.text_utils import extract_skills, strip_html
 
 
-PARSER_VERSION = "bne-2026.05.07"
+PARSER_VERSION = "bne-2026.05.08"
+
+
+# Tamanho minimo de descricao para considerar a vaga *coletada por completo*.
+# A BNE entrega descricoes que variam de ~200 a ~1700 chars (depende de a empresa
+# ter preenchido requisitos+atribuicoes ou apenas o resumo). Abaixo de 80 chars
+# o JSON-LD tipicamente nao trouxe nada util e a vaga deve voltar pelo
+# reenrichment. Acima disso, mesmo que curta, e o que o site oferece.
+_MIN_USEFUL_DESCRIPTION = 80
+
+
+def is_partial(job_data: dict) -> bool:
+    """Decide se uma vaga BNE deve ficar em ``partial`` (volta pelo reenrichment).
+
+    Vaga BNE e considerada *completa* (mesmo que alguns campos venham vazios)
+    quando a descricao chegou. Campos que o site frequentemente nao publica
+    e que NAO disparam reenrichment:
+
+    * ``skills`` vazio - skills sao mineradas da descricao; quando o texto
+      e curto/generico, a lista vem ``[]``. Refetch nao traz mais skills.
+    * ``salary_min/max`` vazios - parte das vagas vem sem ``baseSalary`` no
+      JSON-LD, e quando vem, costuma ser uma faixa generica do site (ex.
+      "R$ 1000 - R$ 10000"). Refetch nao melhora.
+    * ``hiring_regime`` ausente - quando ``employmentType`` falta no JSON-LD,
+      caimos no default "Efetivo". Refetch traz a mesma coisa.
+
+    Sinal real de vaga incompleta: descricao ausente ou trivial. Reenrichment
+    pode ajudar quando o DOM mudou (ex.: layout A vs B) ou quando o fetch
+    inicial bateu numa pagina de erro.
+    """
+    description = (job_data.get("description") or "").strip()
+    return len(description) < _MIN_USEFUL_DESCRIPTION
 
 
 # --- Sessão ---------------------------------------------------------------
