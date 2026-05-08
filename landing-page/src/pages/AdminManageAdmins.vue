@@ -1,5 +1,15 @@
 <template>
   <div class="admin-admins">
+    <TopProgressBar :active="refreshing" />
+
+    <AdminPageSkeleton
+      v-if="initialLoading"
+      variant="card-list"
+      :show-action="true"
+      :rows="5"
+    />
+
+    <template v-else>
     <div class="page-header animate-fade-in-up">
       <div>
         <h1 class="page-title">Gerenciar Administradores</h1>
@@ -7,7 +17,7 @@
           Administradores visualizam assinantes e cadastram clientes. Não podem cancelar assinaturas nem promover outros admins.
         </p>
       </div>
-      <button @click="openAddModal" class="btn-add-admin">
+      <button @click="openAddModal" class="btn btn-primary">
         Adicionar Admin
       </button>
     </div>
@@ -66,7 +76,7 @@
           <button
             v-if="admin.role !== 'owner'"
             @click="confirmRemove(admin)"
-            class="btn-remove"
+            class="btn btn-icon btn-ghost btn-remove"
             :disabled="removingId === admin.id"
             :aria-label="`Remover ${admin.email}`"
           >
@@ -78,16 +88,13 @@
       </div>
 
       <EmptyDetection
-        v-if="admins.length === 0 && !isLoading"
+        v-if="admins.length === 0"
         icon="users"
         title="Nenhum admin detectado"
         subtitle="Adicione administradores para gerenciar o sistema"
       />
-
-      <div v-if="isLoading" class="loading-state">
-        <SonnarLoader size="md" text="Detectando admins..." />
-      </div>
     </div>
+    </template>
 
     <!-- Add Admin Modal -->
     <Transition name="motion-modal">
@@ -206,7 +213,8 @@ import { ref, computed, onMounted } from 'vue'
 import { supabase } from '@/integrations/supabase/client'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
-import SonnarLoader from '@/components/SonnarLoader.vue'
+import AdminPageSkeleton from '@/components/admin/AdminPageSkeleton.vue'
+import TopProgressBar from '@/components/admin/TopProgressBar.vue'
 import EmptyDetection from '@/components/EmptyDetection.vue'
 import { useModalFocus } from '@/composables/useModalFocus'
 
@@ -219,7 +227,8 @@ interface Admin {
 }
 
 const admins = ref<Admin[]>([])
-const isLoading = ref(true)
+const initialLoading = ref(true)
+const refreshing = ref(false)
 
 const ownersCount = computed(() => admins.value.filter(a => a.role === 'owner').length)
 const adminsCount = computed(() => admins.value.filter(a => a.role === 'admin').length)
@@ -240,11 +249,15 @@ useModalFocus(showAddModal, addModalRef)
 useModalFocus(showRemoveModal, removeModalRef)
 
 onMounted(async () => {
-  await fetchAdmins()
+  try {
+    await fetchAdmins({ silent: true })
+  } finally {
+    initialLoading.value = false
+  }
 })
 
-async function fetchAdmins() {
-  isLoading.value = true
+async function fetchAdmins(opts: { silent?: boolean } = {}) {
+  if (!opts.silent) refreshing.value = true
 
   try {
     // Use edge function to fetch admins with emails
@@ -261,7 +274,7 @@ async function fetchAdmins() {
     console.error('Error fetching admins:', err)
     admins.value = []
   } finally {
-    isLoading.value = false
+    refreshing.value = false
   }
 }
 
@@ -358,7 +371,9 @@ async function executeRemove() {
 
 <style scoped>
 .admin-admins {
-  max-width: 800px;
+  /* Sem max-width: o AdminLayout já cobre o cap em 1600px. Aqui usamos
+     o espaço disponível com um grid 2-col em telas largas. */
+  width: 100%;
 }
 
 .page-header {
@@ -386,30 +401,7 @@ async function executeRemove() {
   line-height: 1.5;
 }
 
-.btn-icon { width: 1rem; height: 1rem; margin: 0; }
-
-/* Botão Adicionar Admin — mesmo design do "Atualizar agora" */
-.btn-add-admin {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  height: 36px;
-  min-height: 36px;
-  min-width: 140px;
-  padding: 0 14px;
-  border: 1px solid transparent;
-  border-radius: 8px;
-  background: var(--color-accent);
-  color: var(--color-text-inverse, #fff);
-  font-size: 13px;
-  font-weight: var(--font-normal);
-  font-family: inherit;
-  white-space: nowrap;
-  cursor: pointer;
-  transition: opacity var(--transition-fast);
-}
-.btn-add-admin:hover { opacity: 0.9; }
-.btn-add-admin:disabled { opacity: 0.6; cursor: progress; }
+/* o ícone interno do <svg> em buttons herda dimensão do .btn-icon do globals */
 
 /* Stats compactos */
 .admin-stats {
@@ -421,43 +413,49 @@ async function executeRemove() {
 .stat-pill {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 14px;
-  border-radius: 999px;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-full);
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   transition: border-color var(--transition-fast);
 }
 .stat-pill:hover { border-color: color-mix(in srgb, var(--color-text-muted) 30%, var(--color-border)); }
 .stat-pill__label {
-  font-size: 11px;
-  font-weight: 600;
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: var(--ls-wide);
   color: var(--color-text-muted);
 }
 .stat-pill__value {
-  font-size: 14px;
-  font-weight: 700;
+  font-size: var(--text-sm);
+  font-weight: var(--font-bold);
   color: var(--color-text-primary);
   font-variant-numeric: tabular-nums;
 }
 .stat-pill--owner {
-  background: color-mix(in srgb, #fbbf24 8%, var(--color-surface));
-  border-color: rgba(251, 191, 36, 0.35);
+  background: color-mix(in srgb, var(--chart-3) 8%, var(--color-surface));
+  border-color: color-mix(in srgb, var(--chart-3) 35%, transparent);
 }
-.stat-pill--owner .stat-pill__value { color: #fbbf24; }
+.stat-pill--owner .stat-pill__value { color: var(--chart-3); }
 .stat-pill--admin {
-  background: color-mix(in srgb, #2563eb 8%, var(--color-surface));
-  border-color: rgba(37, 99, 235, 0.35);
+  background: color-mix(in srgb, var(--color-accent) 8%, var(--color-surface));
+  border-color: color-mix(in srgb, var(--color-accent) 35%, transparent);
 }
-.stat-pill--admin .stat-pill__value { color: #4d8eff; }
+.stat-pill--admin .stat-pill__value { color: var(--color-accent); }
 
 /* Lista */
+/* Lista — grid 2 colunas em telas largas, 1 em telas menores. Em vez de
+   flex column 100% width, ocupamos melhor o espaço horizontal quando há
+   admins suficientes. */
 .admins-list {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
   gap: var(--space-3);
+}
+@media (max-width: 1024px) {
+  .admins-list { grid-template-columns: 1fr; }
 }
 
 .admin-card {
@@ -482,27 +480,26 @@ async function executeRemove() {
   position: absolute;
   inset: 0 0 auto 0;
   height: 1px;
-  background: linear-gradient(90deg, transparent, var(--accent-line, #2563eb), transparent);
+  background: linear-gradient(90deg, transparent, var(--accent-line, var(--color-accent)), transparent);
   opacity: 0;
   transition: opacity 220ms ease;
 }
+/* Hover sem movimento — só a borda fica mais definida. */
 .admin-card:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 8px 24px -12px rgba(0, 0, 0, 0.4);
   border-color: color-mix(in srgb, var(--color-text-muted) 40%, var(--color-border));
 }
 .admin-card:hover::before { opacity: 0.6; }
 
 .admin-card--owner {
-  --accent-line: #fbbf24;
-  border-color: rgba(251, 191, 36, 0.3);
+  --accent-line: var(--chart-3);
+  border-color: color-mix(in srgb, var(--chart-3) 30%, transparent);
   background: linear-gradient(135deg,
-    color-mix(in srgb, #fbbf24 5%, var(--color-surface)) 0%,
+    color-mix(in srgb, var(--chart-3) 5%, var(--color-surface)) 0%,
     var(--color-surface) 60%);
 }
 .admin-card--owner:hover {
-  border-color: rgba(251, 191, 36, 0.55);
-  box-shadow: 0 8px 24px -12px rgba(251, 191, 36, 0.35);
+  border-color: color-mix(in srgb, var(--chart-3) 55%, transparent);
+  box-shadow: 0 8px 24px -12px color-mix(in srgb, var(--chart-3) 35%, transparent);
 }
 
 @keyframes fadeInUp {
@@ -519,23 +516,23 @@ async function executeRemove() {
 
 .admin-avatar {
   position: relative;
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #2563eb 0%, #4d8eff 100%);
-  color: white;
+  width: var(--control-height-md);
+  height: var(--control-height-md);
+  border-radius: var(--radius-full);
+  background: linear-gradient(135deg, var(--color-accent) 0%, var(--color-accent-hover) 100%);
+  color: var(--color-on-accent);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 14px;
-  font-weight: 700;
+  font-size: var(--text-sm);
+  font-weight: var(--font-bold);
   flex-shrink: 0;
-  box-shadow: 0 4px 12px -4px rgba(37, 99, 235, 0.5);
-  letter-spacing: 0.02em;
+  box-shadow: 0 4px 12px -4px color-mix(in srgb, var(--color-accent) 50%, transparent);
+  letter-spacing: var(--ls-normal);
 }
 .admin-avatar--owner {
-  background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%);
-  box-shadow: 0 4px 12px -4px rgba(251, 191, 36, 0.6);
+  background: linear-gradient(135deg, var(--chart-3) 0%, var(--color-accent) 100%);
+  box-shadow: 0 4px 12px -4px color-mix(in srgb, var(--chart-3) 60%, transparent);
 }
 .admin-avatar__crown {
   position: absolute;
@@ -543,14 +540,14 @@ async function executeRemove() {
   right: -4px;
   width: 18px;
   height: 18px;
-  border-radius: 50%;
-  background: #fbbf24;
-  color: #78350f;
+  border-radius: var(--radius-full);
+  background: var(--chart-3);
+  color: var(--color-text-inverse);
   display: flex;
   align-items: center;
   justify-content: center;
   border: 2px solid var(--color-surface);
-  box-shadow: 0 2px 6px rgba(251, 191, 36, 0.6);
+  box-shadow: 0 2px 6px color-mix(in srgb, var(--chart-3) 60%, transparent);
 }
 
 .admin-details {
@@ -582,14 +579,14 @@ async function executeRemove() {
   letter-spacing: 0.06em;
 }
 .admin-role-badge--admin {
-  background: rgba(37, 99, 235, 0.12);
-  color: #4d8eff;
-  border: 1px solid rgba(37, 99, 235, 0.3);
+  background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+  color: var(--color-accent);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 30%, transparent);
 }
 .admin-role-badge--owner {
-  background: rgba(251, 191, 36, 0.12);
-  color: #fbbf24;
-  border: 1px solid rgba(251, 191, 36, 0.4);
+  background: color-mix(in srgb, var(--chart-3) 12%, transparent);
+  color: var(--chart-3);
+  border: 1px solid color-mix(in srgb, var(--chart-3) 40%, transparent);
 }
 
 .admin-actions {
@@ -609,30 +606,15 @@ async function executeRemove() {
 }
 .admin-date svg { color: var(--color-text-muted); }
 
-.btn-remove {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 36px;
-  height: 36px;
-  padding: 0;
-  color: var(--color-text-muted);
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: color var(--transition-fast),
-              background var(--transition-fast),
-              border-color var(--transition-fast);
-}
+/* btn-remove herda do global .btn .btn-icon .btn-ghost — só ajustamos o
+   tom ao passar o mouse, indicando ação destrutiva. */
 .btn-remove svg { width: 18px; height: 18px; }
 .btn-remove:hover {
-  color: var(--color-error, #dc2626);
-  background: color-mix(in srgb, var(--color-error, #dc2626) 12%, transparent);
-  border-color: color-mix(in srgb, var(--color-error, #dc2626) 30%, transparent);
+  color: var(--color-error);
+  background: color-mix(in srgb, var(--color-error) 12%, transparent);
+  border-color: color-mix(in srgb, var(--color-error) 30%, transparent);
 }
-.btn-remove:active { background: color-mix(in srgb, var(--color-error, #dc2626) 18%, transparent); }
-.btn-remove:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-remove:active { background: color-mix(in srgb, var(--color-error) 18%, transparent); }
 
 .empty-state {
   text-align: center;
@@ -808,6 +790,6 @@ async function executeRemove() {
   }
   .admin-email { max-width: 100%; }
   .page-header { flex-direction: column; }
-  .btn-add-admin { width: 100%; }
+  .page-header .btn { width: 100%; }
 }
 </style>

@@ -333,8 +333,8 @@ onMounted(fetchProfile)
 .djobs-banner__icon {
   display: grid;
   place-items: center;
-  width: 44px;
-  height: 44px;
+  width: var(--control-height-md);
+  height: var(--control-height-md);
   border-radius: var(--radius-md);
   background: var(--color-accent-soft);
   color: var(--color-accent);
@@ -382,9 +382,7 @@ onMounted(fetchProfile)
   transition: box-shadow var(--transition-base), border-color var(--transition-fast), transform var(--transition-fast);
 }
 .djobs-stat:hover {
-  box-shadow: var(--shadow-md);
   border-color: var(--color-accent-muted);
-  transform: translateY(-1px);
 }
 
 .djobs-stat--accent {
@@ -396,8 +394,8 @@ onMounted(fetchProfile)
   flex-shrink: 0;
   display: grid;
   place-items: center;
-  width: 36px;
-  height: 36px;
+  width: var(--control-height-sm);
+  height: var(--control-height-sm);
   border-radius: var(--radius-md);
   background: var(--color-surface);
   border: 1px solid var(--color-border-subtle);
@@ -485,8 +483,6 @@ onMounted(fetchProfile)
 
 .djobs-card:hover {
   border-color: var(--color-accent-muted);
-  box-shadow: var(--shadow-md);
-  transform: translateY(-2px);
 }
 .djobs-card:hover::after { opacity: 1; }
 
@@ -579,8 +575,8 @@ onMounted(fetchProfile)
   flex-shrink: 0;
   display: grid;
   place-items: center;
-  width: 36px;
-  height: 36px;
+  width: var(--control-height-sm);
+  height: var(--control-height-sm);
   border-radius: var(--radius-md);
   background: var(--color-surface);
   border: 1px solid var(--color-border);
@@ -680,7 +676,6 @@ onMounted(fetchProfile)
 .djobs-tag:hover {
   background: var(--color-surface-elevated);
   color: var(--color-text-primary);
-  transform: translateY(-1px);
 }
 
 .djobs-tag--hit {
@@ -777,7 +772,7 @@ onMounted(fetchProfile)
   text-decoration: none;
   font-size: var(--text-sm);
   letter-spacing: var(--ls-tight);
-  min-height: 36px;
+  min-height: var(--control-height-sm);
   transition: all var(--transition-fast);
 }
 

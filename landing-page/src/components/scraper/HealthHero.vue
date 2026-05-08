@@ -68,14 +68,21 @@ const props = defineProps({
   trafficSeries:  { type: Array,   default: () => [] },
 })
 
-const TONE_COLOR = {
-  success: '#16a34a',
-  warn:    '#d97706',
-  danger:  '#dc2626',
-  idle:    '#94a3b8',
+function cssVar(name, fallback = '') {
+  if (typeof document === 'undefined') return fallback
+  const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim()
+  return v || fallback
 }
-
-const accentColor = computed(() => TONE_COLOR[props.tone] || TONE_COLOR.success)
+const TONE_TOKEN = {
+  success: ['--color-success', '#059669'],
+  warn:    ['--color-warning', '#D97706'],
+  danger:  ['--color-error',   '#DC2626'],
+  idle:    ['--color-text-muted', '#94a3b8'],
+}
+const accentColor = computed(() => {
+  const [token, fallback] = TONE_TOKEN[props.tone] || TONE_TOKEN.success
+  return cssVar(token, fallback)
+})
 
 const hasTrafficData = computed(() => (props.trafficSeries || []).length >= 2)
 
@@ -151,13 +158,13 @@ function formatInt(n) {
   position: absolute;
   inset: 0 0 auto 0;
   height: 1px;
-  background: linear-gradient(90deg, transparent, var(--accent, #16a34a), transparent);
+  background: linear-gradient(90deg, transparent, var(--accent, var(--color-success)), transparent);
   opacity: 0.5;
 }
-.hero--success { --accent: #16a34a; }
-.hero--warn    { --accent: #d97706; }
-.hero--danger  { --accent: #dc2626; }
-.hero--idle    { --accent: #94a3b8; }
+.hero--success { --accent: var(--color-success); }
+.hero--warn    { --accent: var(--color-warning); }
+.hero--danger  { --accent: var(--color-error); }
+.hero--idle    { --accent: var(--color-text-muted); }
 
 .hero-status {
   display: flex;
@@ -261,7 +268,7 @@ function formatInt(n) {
   font-style: italic;
   padding: 8px 12px;
   text-align: center;
-  background: linear-gradient(180deg, transparent, color-mix(in srgb, var(--accent, #16a34a) 4%, transparent));
+  background: linear-gradient(180deg, transparent, color-mix(in srgb, var(--accent, var(--color-success)) 4%, transparent));
 }
 
 /* Responsivo */

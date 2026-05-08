@@ -1,13 +1,22 @@
 <template>
   <div class="drilldown-page">
+    <TopProgressBar :active="refreshing" />
+
+    <AdminPageSkeleton
+      v-if="initialLoading"
+      variant="charts"
+      :show-header="false"
+    />
+
+    <template v-else>
     <div class="page-controls">
       <div class="page-controls__filters">
-        <router-link to="/admin/scraper" class="back-link">
+        <router-link to="/admin/scraper" class="btn btn-secondary btn-sm">
           ← Voltar
         </router-link>
         <label class="filter-group">
           <span>Período</span>
-          <select v-model.number="windowMinutes" class="select" aria-label="Janela de tempo">
+          <select v-model.number="windowMinutes" class="form-select form-select--sm" aria-label="Janela de tempo">
             <option :value="60">Última hora</option>
             <option :value="360">Últimas 6 horas</option>
             <option :value="1440">Últimas 24 horas</option>
@@ -16,14 +25,14 @@
         </label>
         <label class="filter-group">
           <span>Bucket (linha do tempo)</span>
-          <select v-model.number="bucketMinutes" class="select" aria-label="Bucket de agregação">
+          <select v-model.number="bucketMinutes" class="form-select form-select--sm" aria-label="Bucket de agregação">
             <option :value="5">5 min</option>
             <option :value="15">15 min</option>
             <option :value="60">1 hora</option>
           </select>
         </label>
       </div>
-      <button class="btn-refresh" @click="loadAll" :disabled="loading">
+      <button class="btn btn-secondary btn-sm" @click="loadAll" :disabled="loading">
         {{ loading ? 'Atualizando…' : 'Atualizar agora' }}
       </button>
     </div>
@@ -146,6 +155,7 @@
     </section>
 
     <p v-if="errorMsg" class="error-msg">{{ errorMsg }}</p>
+    </template>
   </div>
 </template>
 
@@ -153,6 +163,8 @@
 import { ref, computed, onMounted, onBeforeUnmount, watch, defineAsyncComponent } from 'vue'
 import { useRoute } from 'vue-router'
 import { supabase } from '@/integrations/supabase/client'
+import AdminPageSkeleton from '@/components/admin/AdminPageSkeleton.vue'
+import TopProgressBar from '@/components/admin/TopProgressBar.vue'
 
 const Sparkline = defineAsyncComponent(() => import('@/components/EngineSparkline.vue'))
 
@@ -219,6 +231,8 @@ const engineDomains = computed(() => ENGINE_DOMAINS[engine.value] || [])
 const windowMinutes = ref(360)
 const bucketMinutes = ref(15)
 const loading = ref(false)
+const initialLoading = ref(true)
+const refreshing = ref(false)
 const errorMsg = ref('')
 
 const events = ref([])
@@ -252,9 +266,11 @@ const trafficSeries = computed(() => {
   return { req, err }
 })
 
-async function loadAll () {
+async function loadAll (opts = {}) {
   if (!engine.value) return
+  const silent = opts.silent === true
   loading.value = true
+  if (!silent) refreshing.value = true
   errorMsg.value = ''
   try {
     const domains = engineDomains.value
@@ -281,6 +297,7 @@ async function loadAll () {
     errorMsg.value = err.message || 'Falha ao carregar drill-down.'
   } finally {
     loading.value = false
+    refreshing.value = false
   }
 }
 
@@ -315,45 +332,36 @@ function formatTimestamp (ts) {
 }
 
 let timer = null
-onMounted(() => {
-  loadAll()
-  timer = setInterval(loadAll, 30_000)
+onMounted(async () => {
+  try {
+    await loadAll({ silent: true })
+  } finally {
+    initialLoading.value = false
+  }
+  timer = setInterval(() => loadAll(), 30_000)
 })
 onBeforeUnmount(() => { if (timer) clearInterval(timer) })
-watch([engine, windowMinutes, bucketMinutes], loadAll)
+watch([engine, windowMinutes, bucketMinutes], () => loadAll())
 </script>
 
 <style scoped>
-.drilldown-page { display: flex; flex-direction: column; gap: 20px; }
+.drilldown-page { display: flex; flex-direction: column; gap: var(--space-5); width: 100%; }
 
 .page-controls {
   display: flex; align-items: end; justify-content: space-between;
   gap: 16px; flex-wrap: wrap;
 }
 .page-controls__filters { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
-.back-link {
-  align-self: end; height: 36px; display: inline-flex; align-items: center;
-  padding: 0 14px; border-radius: 8px;
-  border: 1px solid var(--color-border); background: var(--color-surface);
-  color: var(--color-text-primary); text-decoration: none; font-size: 13px; font-weight: 600;
-}
-.back-link:hover { background: var(--color-glass-bg, rgba(0,0,0,0.03)); }
+/* botão "Voltar" usa .btn .btn-secondary .btn-sm dos globals */
 .filter-group {
   display: flex; flex-direction: column; gap: 4px;
   font-size: 11px; color: var(--color-text-muted);
   text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600;
 }
-.select, .btn-refresh {
-  height: 36px; padding: 0 12px; border-radius: 8px;
-  border: 1px solid var(--color-border); background: var(--color-surface);
-  color: var(--color-text-primary); font-size: 13px; cursor: pointer;
-  font-family: inherit; min-width: 180px;
+/* selects herdam .form-select dos globals; aqui só largura mínima. */
+.form-select {
+  min-width: 11.25rem;
 }
-.btn-refresh {
-  background: var(--color-accent); color: var(--color-text-inverse, #fff);
-  border-color: transparent; min-width: 140px;
-}
-.btn-refresh:disabled { opacity: 0.6; cursor: progress; }
 
 .drilldown-title { margin: 0; font-size: 22px; font-weight: 700; color: var(--color-text-primary); }
 .drilldown-title .muted { color: var(--color-text-muted); font-weight: 400; font-size: 16px; }
@@ -368,28 +376,28 @@ watch([engine, windowMinutes, bucketMinutes], loadAll)
 
 .card {
   background: var(--color-surface); border: 1px solid var(--color-border);
-  border-radius: 12px; padding: 16px 18px;
+  border-radius: var(--radius-card); padding: var(--space-5) var(--space-6);
 }
-.card h2 { margin: 0 0 6px; font-size: 15px; font-weight: 600; color: var(--color-text-primary); }
-.card-help { margin: 0 0 12px; font-size: 12px; color: var(--color-text-secondary); line-height: 1.5; }
-.empty { color: var(--color-text-muted); font-size: 13px; padding: 12px 0; text-align: center; }
-.success-msg { color: #16a34a !important; font-weight: 500; }
+.card h2 { margin: 0 0 var(--space-2); font-size: var(--text-base); font-weight: var(--font-semibold); color: var(--color-text-primary); letter-spacing: var(--ls-tight); }
+.card-help { margin: 0 0 var(--space-4); font-size: var(--text-xs); color: var(--color-text-secondary); line-height: 1.5; }
+.empty { color: var(--color-text-muted); font-size: var(--text-sm); padding: var(--space-3) 0; text-align: center; }
+.success-msg { color: var(--color-success); font-weight: var(--font-medium); }
 .table-wrap { overflow-x: auto; }
-.table { width: 100%; border-collapse: collapse; font-size: 13px; }
-.table th, .table td { padding: 8px 10px; border-bottom: 1px solid var(--color-border); text-align: left; }
-.table th { font-weight: 600; color: var(--color-text-muted); text-transform: uppercase; font-size: 11px; letter-spacing: 0.04em; }
+.table { width: 100%; border-collapse: collapse; font-size: var(--text-sm); }
+.table th, .table td { padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--color-border); text-align: left; }
+.table th { font-weight: var(--font-semibold); color: var(--color-text-muted); text-transform: uppercase; font-size: var(--text-xs); letter-spacing: var(--ls-wide); }
 .table td.num, .table th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .raw-type { display: block; font-size: 10px; color: var(--color-text-muted); margin-top: 2px; }
 .url-cell a { color: var(--color-accent); text-decoration: none; }
 .url-cell a:hover { text-decoration: underline; }
 
 .pill {
-  display: inline-block; padding: 2px 10px; border-radius: 999px;
-  font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;
+  display: inline-block; padding: 2px var(--space-3); border-radius: var(--radius-full);
+  font-size: var(--text-xs); font-weight: var(--font-semibold); text-transform: uppercase; letter-spacing: var(--ls-wide);
 }
-.pill-danger { background: rgba(220,38,38,0.12); color: #dc2626; }
+.pill-danger { background: color-mix(in srgb, var(--color-error) 12%, transparent); color: var(--color-error); }
 
-.event-list { list-style: none; padding: 0; margin: 0; max-height: 360px; overflow-y: auto; }
+.event-list { list-style: none; padding: 0; margin: 0; min-height: 8rem; max-height: min(60vh, 600px); overflow-y: auto; }
 .event-list li {
   display: grid; grid-template-columns: 160px 220px 180px 1fr; gap: 8px;
   padding: 6px 4px; font-size: 12px; border-bottom: 1px solid var(--color-border);
@@ -400,14 +408,14 @@ watch([engine, windowMinutes, bucketMinutes], loadAll)
 .ev-kind   { color: var(--color-text-primary); font-weight: 600; }
 .ev-domain { color: var(--color-text-secondary); }
 .ev-data   { color: var(--color-text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.ev-warn   .ev-kind { color: #d97706; }
-.ev-danger .ev-kind { color: #dc2626; }
+.ev-warn   .ev-kind { color: var(--color-warning); }
+.ev-danger .ev-kind { color: var(--color-error); }
 
 .error-msg {
-  color: var(--color-error, #dc2626);
-  background: rgba(220,38,38,0.08);
-  border: 1px solid rgba(220,38,38,0.25);
-  padding: 10px 14px; border-radius: 8px;
-  font-size: 13px;
+  color: var(--color-error);
+  background: color-mix(in srgb, var(--color-error) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-error) 25%, transparent);
+  padding: var(--space-3) var(--space-4); border-radius: var(--radius-md);
+  font-size: var(--text-sm);
 }
 </style>

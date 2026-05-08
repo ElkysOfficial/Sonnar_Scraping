@@ -1,5 +1,19 @@
 <template>
   <div class="admin-dashboard">
+    <TopProgressBar :active="refreshing" />
+
+    <!-- Skeleton enquanto a página inteira carrega pela primeira vez. Mantemos
+         o mesmo container e gap, então a transição p/ conteúdo real é suave. -->
+    <AdminPageSkeleton
+      v-if="initialLoading"
+      variant="dashboard"
+      :show-header="false"
+      :kpi-count="6"
+      :rows="5"
+      :columns="4"
+    />
+
+    <template v-else>
     <!-- Indicador de data (título e subtítulo vêm da topbar) -->
     <div class="page-meta animate-fade-in-up">
       <span class="page-meta__date">{{ currentDate }}</span>
@@ -190,6 +204,7 @@
         />
       </div>
     </section>
+    </template>
   </div>
 </template>
 
@@ -200,6 +215,8 @@ import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import EmptyDetection from '@/components/EmptyDetection.vue'
 import TabChartCard from '@/components/scraper/TabChartCard.vue'
+import AdminPageSkeleton from '@/components/admin/AdminPageSkeleton.vue'
+import TopProgressBar from '@/components/admin/TopProgressBar.vue'
 
 interface Subscriber {
   id: string
@@ -245,9 +262,19 @@ const currentDate = computed(() => {
 
 const adminUserIds = ref<Set<string>>(new Set())
 
+// `initialLoading` é o boot da página (mostra skeleton ocupando o espaço inteiro);
+// `refreshing` é usado em recargas sob demanda (mostra apenas a barra fina no topo
+// e mantém os dados visíveis para não perder contexto).
+const initialLoading = ref(true)
+const refreshing = ref(false)
+
 onMounted(async () => {
-  await fetchAdmins()
-  await Promise.all([fetchStats(), fetchRecentSubscribers()])
+  try {
+    await fetchAdmins()
+    await Promise.all([fetchStats(), fetchRecentSubscribers()])
+  } finally {
+    initialLoading.value = false
+  }
 })
 
 async function fetchAdmins() {
@@ -341,9 +368,17 @@ function formatMoney(value: number): string {
 // =====================================================================
 // Gráficos
 // =====================================================================
-const CHART_TEXT = 'rgba(148, 163, 184, 0.85)'
-const CHART_GRID = 'rgba(148, 163, 184, 0.18)'
-const CHART_TIP_BG = 'rgba(15, 23, 42, 0.92)'
+// Helpers que leem tokens do design system para manter os charts coerentes
+// com os temas light/dark.
+function cssVar(name: string, fallback = ''): string {
+  if (typeof document === 'undefined') return fallback
+  const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim()
+  return v || fallback
+}
+const CHART_TEXT = () => cssVar('--color-text-muted', '#6B7280')
+const CHART_GRID = () => `color-mix(in srgb, ${cssVar('--color-text-muted', '#6B7280')} 22%, transparent)`
+const CHART_TIP_BG = () => cssVar('--color-text-primary', '#0f172a')
+const CHART_ON_TIP = () => cssVar('--color-background', '#fff')
 
 const planChartHasData = computed(() => stats.proCount + stats.plusCount > 0)
 const planDistOption = computed(() => {
@@ -352,26 +387,29 @@ const planDistOption = computed(() => {
   return {
     tooltip: {
       trigger: 'item',
-      backgroundColor: CHART_TIP_BG, borderWidth: 0,
-      textStyle: { color: '#fff', fontSize: 11 },
+      backgroundColor: CHART_TIP_BG(), borderWidth: 0,
+      textStyle: { color: CHART_ON_TIP(), fontSize: 11 },
       formatter: (p: any) => `${p.name}<br/>R$ ${formatMoney(p.value)} ({d}%)`,
     },
     legend: {
       orient: 'vertical', right: 8, top: 'center',
       icon: 'circle', itemWidth: 8, itemHeight: 8,
-      textStyle: { color: CHART_TEXT, fontSize: 11 },
+      textStyle: { color: CHART_TEXT(), fontSize: 11 },
     },
     series: [{
       type: 'pie',
       radius: ['58%', '82%'],
       center: ['30%', '50%'],
       avoidLabelOverlap: true,
-      itemStyle: { borderColor: 'var(--color-surface, #0f172a)', borderWidth: 2 },
+      itemStyle: { borderColor: cssVar('--color-surface', '#FAFBFC'), borderWidth: 2 },
       label: { show: false },
       labelLine: { show: false },
+      // Cores derivadas da identidade Sonnar (azul → ciano → roxo).
+      // Pro = azul (primário); Plus = roxo (premium). Mesma família visual,
+      // sem amarelo/dourado fora do contexto de warning.
       data: [
-        { name: `Pro (${stats.proCount})`,  value: proMrr,  itemStyle: { color: '#2563eb' } },
-        { name: `Plus (${stats.plusCount})`, value: plusMrr, itemStyle: { color: '#8b5cf6' } },
+        { name: `Pro (${stats.proCount})`,  value: proMrr,  itemStyle: { color: cssVar('--chart-1', '#2563EB') } },
+        { name: `Plus (${stats.plusCount})`, value: plusMrr, itemStyle: { color: cssVar('--chart-3', '#7C3AED') } },
       ].filter(d => d.value > 0),
       animationDuration: 700,
       animationEasing: 'cubicOut',
@@ -406,8 +444,8 @@ const newSubsOption = computed(() => {
     grid: { left: 8, right: 16, top: 16, bottom: 28, containLabel: true },
     tooltip: {
       trigger: 'axis', axisPointer: { type: 'shadow' },
-      backgroundColor: CHART_TIP_BG, borderWidth: 0,
-      textStyle: { color: '#fff', fontSize: 11 },
+      backgroundColor: CHART_TIP_BG(), borderWidth: 0,
+      textStyle: { color: CHART_ON_TIP(), fontSize: 11 },
       formatter: (params: any) => {
         const p = params[0]
         return `${p.name}<br/>${p.value} novo${p.value === 1 ? '' : 's'}`
@@ -416,17 +454,17 @@ const newSubsOption = computed(() => {
     xAxis: {
       type: 'category',
       data: labels,
-      axisLine: { lineStyle: { color: CHART_GRID } },
+      axisLine: { lineStyle: { color: CHART_GRID() } },
       axisTick: { show: false },
-      axisLabel: { color: CHART_TEXT, fontSize: 10 },
+      axisLabel: { color: CHART_TEXT(), fontSize: 10 },
     },
     yAxis: {
       type: 'value',
       minInterval: 1,
       axisLine: { show: false },
       axisTick: { show: false },
-      splitLine: { lineStyle: { color: CHART_GRID } },
-      axisLabel: { color: CHART_TEXT, fontSize: 10 },
+      splitLine: { lineStyle: { color: CHART_GRID() } },
+      axisLabel: { color: CHART_TEXT(), fontSize: 10 },
     },
     series: [{
       type: 'bar',
@@ -435,8 +473,8 @@ const newSubsOption = computed(() => {
         color: {
           type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
           colorStops: [
-            { offset: 0, color: '#16a34a' },
-            { offset: 1, color: 'rgba(22, 163, 74, 0.3)' },
+            { offset: 0, color: cssVar('--color-success', '#059669') },
+            { offset: 1, color: `color-mix(in srgb, ${cssVar('--color-success', '#059669')} 30%, transparent)` },
           ],
         },
         borderRadius: [6, 6, 0, 0],
@@ -451,7 +489,9 @@ const newSubsOption = computed(() => {
 
 <style scoped>
 .admin-dashboard {
-  max-width: 1280px;
+  /* Sem max-width: o AdminLayout já cobre o cap em 1600px e centraliza.
+     Permitir que o dashboard preencha esse espaço evita "buracos" laterais. */
+  width: 100%;
   display: flex;
   flex-direction: column;
   gap: var(--space-6);
@@ -534,6 +574,8 @@ const newSubsOption = computed(() => {
   padding: 0.25rem;
 }
 
+/* Toggle de período — não é um botão de ação normal, é uma "pill" exclusiva
+   de seleção. Mantemos visual próprio mas com tokens consistentes. */
 .period-btn {
   appearance: none;
   background: transparent;
@@ -541,10 +583,10 @@ const newSubsOption = computed(() => {
   color: var(--color-text-muted);
   font-size: var(--text-sm);
   font-weight: var(--font-semibold);
-  padding: 0.4rem 0.85rem;
-  border-radius: var(--radius-full, 999px);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-full);
   cursor: pointer;
-  transition: all var(--transition-fast);
+  transition: color var(--transition-fast), background var(--transition-fast);
 }
 
 .period-btn:hover { color: var(--color-text-primary); }
@@ -552,14 +594,16 @@ const newSubsOption = computed(() => {
 .period-btn.active {
   background: var(--color-accent);
   color: var(--color-on-accent);
-  box-shadow: 0 4px 12px var(--color-primary-glow);
 }
 
-/* Hero subcards */
+/* Hero subcards — sempre 2 colunas, exceto em mobile (full-width) */
 .hero-subcards {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  grid-template-columns: repeat(2, 1fr);
   gap: var(--space-4);
+}
+@media (max-width: 560px) {
+  .hero-subcards { grid-template-columns: 1fr; }
 }
 
 .hero-subcard {
@@ -605,12 +649,17 @@ const newSubsOption = computed(() => {
   color: var(--color-text-primary);
 }
 
-/* ===== KPI Grid ===== */
+/* ===== KPI Grid =====
+   6 cards: 6 colunas em telas grandes, 3 em médias, 2 em tablets, 1 em mobile.
+   Colunas explícitas evitam o "auto-fit-leaves-empty-column" do grid anterior. */
 .kpi-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  grid-template-columns: repeat(6, 1fr);
   gap: var(--space-4);
 }
+@media (max-width: 1280px) { .kpi-grid { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 768px)  { .kpi-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 480px)  { .kpi-grid { grid-template-columns: 1fr; } }
 
 .kpi-card {
   background: var(--color-background);
@@ -625,9 +674,9 @@ const newSubsOption = computed(() => {
   transition: all var(--transition-fast);
 }
 
+/* Hover discreto — apenas a borda muda de tom. Nada se move. */
 .kpi-card:hover {
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-lg);
+  border-color: color-mix(in srgb, var(--color-text-muted) 35%, var(--color-border));
 }
 
 .kpi-label {
