@@ -547,6 +547,11 @@ async def get_dice_jobs(on_job=None) -> list:
                         link = link_elem.get('href', '')
                         if not link:
                             continue
+                        # /apply-redirect?... são links externos (Apply Pass / Apple Jack)
+                        # — não tem estrutura de vaga e enchem a base com lixo.
+                        # URLs canônicas são /job-detail/<uuid>.
+                        if '/apply-redirect' in link or '/job-detail/' not in link:
+                            continue
                         if link in seen_links:
                             continue
                         seen_links.add(link)
