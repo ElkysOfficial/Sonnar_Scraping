@@ -34,7 +34,33 @@ from src.utils.job_fallbacks import apply_description_fallbacks  # noqa: E402
 from src.utils.text_utils import extract_skills  # noqa: E402
 
 
-PARSER_VERSION = "dice-2026.05.07"
+PARSER_VERSION = "dice-2026.05.08"
+
+
+_MIN_USEFUL_DESCRIPTION = 200
+
+
+def is_partial(job_data: dict) -> bool:
+    """Decide se uma vaga Dice deve ficar em ``partial``.
+
+    A Dice traz description via JSON-LD ou via fallback DOM (ver
+    ``_fetch_job_detail``). Quando esse texto chega com tamanho razoavel,
+    a vaga esta completa para o que a fonte oferece. Campos opcionais que
+    NAO disparam reenrichment:
+
+    * ``salary`` vazio - muitas vagas Dice (EUA) nao publicam ``baseSalary``
+      no JSON-LD. Refetch nao melhora.
+    * ``skills`` vazio - quando nao vem em ``skills``/``occupationalCategory``
+      no JSON-LD, caimos em mineracao da descricao. Se ainda assim sair
+      vazia, e que o texto nao mencionou skills reconheciveis.
+    * ``state_code`` ausente - vagas com ``jobLocationType=TELECOMMUTE`` ou
+      ``applicantLocationRequirements`` nao tem ``addressRegion`` fixo.
+
+    Sinal real: ``description`` ausente ou trivial (< 200 chars) - significa
+    que JSON-LD e DOM falharam (pagina servida sem o bloco esperado).
+    """
+    description = (job_data.get("description") or "").strip()
+    return len(description) < _MIN_USEFUL_DESCRIPTION
 
 
 # --- Sessão ---------------------------------------------------------------
