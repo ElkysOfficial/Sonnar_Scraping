@@ -81,6 +81,26 @@
       </article>
     </section>
 
+    <!-- Gráficos -->
+    <section class="charts-grid animate-fade-in-up stagger-6">
+      <TabChartCard
+        eyebrow="Receita"
+        title="Distribuição do MRR por plano"
+        tone="info"
+        :option="planDistOption"
+        :has-data="planChartHasData"
+        empty-label="Nenhum assinante ativo ainda."
+      />
+      <TabChartCard
+        eyebrow="Crescimento"
+        title="Novos assinantes por mês"
+        tone="success"
+        :option="newSubsOption"
+        :has-data="newSubsHasData"
+        empty-label="Sem assinantes registrados nos últimos meses."
+      />
+    </section>
+
     <!-- Assinantes Recentes -->
     <section class="recent-section animate-fade-in-up stagger-6">
       <div class="section-header">
@@ -179,6 +199,7 @@ import { supabase } from '@/integrations/supabase/client'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import EmptyDetection from '@/components/EmptyDetection.vue'
+import TabChartCard from '@/components/scraper/TabChartCard.vue'
 
 interface Subscriber {
   id: string
@@ -201,6 +222,7 @@ const stats = reactive({
 })
 
 const recentSubscribers = ref<Subscriber[]>([])
+const allActiveSubs = ref<Array<{ plan: string | null; created_at: string | null }>>([])
 
 const periodOptions = [
   { label: '1M', value: 1 },
@@ -221,20 +243,40 @@ const currentDate = computed(() => {
   return formatted.charAt(0).toUpperCase() + formatted.slice(1)
 })
 
+const adminUserIds = ref<Set<string>>(new Set())
+
 onMounted(async () => {
+  await fetchAdmins()
   await Promise.all([fetchStats(), fetchRecentSubscribers()])
 })
+
+async function fetchAdmins() {
+  try {
+    const { data, error } = await supabase
+      .from('user_roles')
+      .select('user_id')
+      .in('role', ['owner', 'admin'])
+    if (error) throw error
+    adminUserIds.value = new Set((data ?? []).map((r: any) => r.user_id))
+  } catch (err) {
+    console.error('Falha ao carregar admins:', err)
+  }
+}
 
 async function fetchStats() {
   try {
     const { data: subs, error } = await supabase
       .from('subscribers')
-      .select('plan, status, created_at')
+      .select('user_id, plan, status, created_at')
 
     if (error) throw error
 
-    const active = (subs ?? []).filter(s => s.status === 'active')
+    // Remove admins/owners das estatísticas — eles não devem contar como assinantes.
+    const nonAdmins = (subs ?? []).filter((s: any) => !adminUserIds.value.has(s.user_id))
+
+    const active = nonAdmins.filter(s => s.status === 'active')
     stats.activeSubscribers = active.length
+    allActiveSubs.value = active.map(s => ({ plan: s.plan, created_at: s.created_at }))
 
     stats.proCount = active.filter(s => s.plan === 'pro').length
     stats.plusCount = active.filter(s => s.plan === 'plus').length
@@ -242,7 +284,7 @@ async function fetchStats() {
     stats.mrr = stats.proCount * 5 + stats.plusCount * 10
     stats.monthly = stats.mrr
     stats.accumulated = stats.mrr * 6
-    stats.trialSubscribers = (subs ?? []).filter(s => s.status === 'pending').length
+    stats.trialSubscribers = nonAdmins.filter(s => s.status === 'pending').length
 
     const startOfMonth = new Date()
     startOfMonth.setDate(1)
@@ -257,12 +299,15 @@ async function fetchRecentSubscribers() {
   try {
     const { data, error } = await supabase
       .from('subscribers')
-      .select('id, name, email, plan, status, created_at')
+      .select('id, user_id, name, email, plan, status, created_at')
       .order('created_at', { ascending: false })
-      .limit(5)
+      .limit(20)
 
     if (error) throw error
-    recentSubscribers.value = (data ?? []).map(s => ({
+    recentSubscribers.value = (data ?? [])
+      .filter((s: any) => !adminUserIds.value.has(s.user_id))
+      .slice(0, 5)
+      .map(s => ({
       id: s.id,
       user_name: s.name,
       email: s.email,
@@ -292,6 +337,116 @@ function formatDate(dateStr: string | null): string {
 function formatMoney(value: number): string {
   return value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
+
+// =====================================================================
+// Gráficos
+// =====================================================================
+const CHART_TEXT = 'rgba(148, 163, 184, 0.85)'
+const CHART_GRID = 'rgba(148, 163, 184, 0.18)'
+const CHART_TIP_BG = 'rgba(15, 23, 42, 0.92)'
+
+const planChartHasData = computed(() => stats.proCount + stats.plusCount > 0)
+const planDistOption = computed(() => {
+  const proMrr = stats.proCount * 5
+  const plusMrr = stats.plusCount * 10
+  return {
+    tooltip: {
+      trigger: 'item',
+      backgroundColor: CHART_TIP_BG, borderWidth: 0,
+      textStyle: { color: '#fff', fontSize: 11 },
+      formatter: (p: any) => `${p.name}<br/>R$ ${formatMoney(p.value)} ({d}%)`,
+    },
+    legend: {
+      orient: 'vertical', right: 8, top: 'center',
+      icon: 'circle', itemWidth: 8, itemHeight: 8,
+      textStyle: { color: CHART_TEXT, fontSize: 11 },
+    },
+    series: [{
+      type: 'pie',
+      radius: ['58%', '82%'],
+      center: ['30%', '50%'],
+      avoidLabelOverlap: true,
+      itemStyle: { borderColor: 'var(--color-surface, #0f172a)', borderWidth: 2 },
+      label: { show: false },
+      labelLine: { show: false },
+      data: [
+        { name: `Pro (${stats.proCount})`,  value: proMrr,  itemStyle: { color: '#2563eb' } },
+        { name: `Plus (${stats.plusCount})`, value: plusMrr, itemStyle: { color: '#8b5cf6' } },
+      ].filter(d => d.value > 0),
+      animationDuration: 700,
+      animationEasing: 'cubicOut',
+    }],
+  }
+})
+
+const monthlyBuckets = computed(() => {
+  const months = selectedPeriod.value
+  const now = new Date()
+  const labels: string[] = []
+  const counts: number[] = []
+  for (let i = months - 1; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+    const label = format(d, "MMM/yy", { locale: ptBR })
+    const c = allActiveSubs.value.filter(s => {
+      if (!s.created_at) return false
+      const sd = new Date(s.created_at)
+      return `${sd.getFullYear()}-${String(sd.getMonth() + 1).padStart(2, '0')}` === key
+    }).length
+    labels.push(label.charAt(0).toUpperCase() + label.slice(1))
+    counts.push(c)
+  }
+  return { labels, counts }
+})
+
+const newSubsHasData = computed(() => monthlyBuckets.value.counts.some(c => c > 0))
+const newSubsOption = computed(() => {
+  const { labels, counts } = monthlyBuckets.value
+  return {
+    grid: { left: 8, right: 16, top: 16, bottom: 28, containLabel: true },
+    tooltip: {
+      trigger: 'axis', axisPointer: { type: 'shadow' },
+      backgroundColor: CHART_TIP_BG, borderWidth: 0,
+      textStyle: { color: '#fff', fontSize: 11 },
+      formatter: (params: any) => {
+        const p = params[0]
+        return `${p.name}<br/>${p.value} novo${p.value === 1 ? '' : 's'}`
+      },
+    },
+    xAxis: {
+      type: 'category',
+      data: labels,
+      axisLine: { lineStyle: { color: CHART_GRID } },
+      axisTick: { show: false },
+      axisLabel: { color: CHART_TEXT, fontSize: 10 },
+    },
+    yAxis: {
+      type: 'value',
+      minInterval: 1,
+      axisLine: { show: false },
+      axisTick: { show: false },
+      splitLine: { lineStyle: { color: CHART_GRID } },
+      axisLabel: { color: CHART_TEXT, fontSize: 10 },
+    },
+    series: [{
+      type: 'bar',
+      data: counts,
+      itemStyle: {
+        color: {
+          type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
+          colorStops: [
+            { offset: 0, color: '#16a34a' },
+            { offset: 1, color: 'rgba(22, 163, 74, 0.3)' },
+          ],
+        },
+        borderRadius: [6, 6, 0, 0],
+      },
+      barMaxWidth: 36,
+      animationDuration: 700,
+      animationEasing: 'cubicOut',
+    }],
+  }
+})
 </script>
 
 <style scoped>
@@ -300,6 +455,18 @@ function formatMoney(value: number): string {
   display: flex;
   flex-direction: column;
   gap: var(--space-6);
+}
+
+/* ===== Grid de gráficos ===== */
+.charts-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--space-4);
+}
+.charts-grid > * { margin-bottom: 0; }
+
+@media (max-width: 768px) {
+  .charts-grid { grid-template-columns: 1fr; }
 }
 
 /* ===== Page meta (apenas data - título e subtítulo vêm da topbar) ===== */
