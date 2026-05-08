@@ -405,7 +405,13 @@ class ExtractionTracker:
                     if r.status_code >= 400:
                         self._warn_throttled("dlq_remove", r.status_code, r.text)
         except Exception as exc:
-            logger.warning("Falha ao conectar com Supabase para flush do tracker: %s", exc)
+            # Erros de rede (ConnectError, ReadTimeout) podem vir com __str__
+            # vazio. Mostra também o tipo para ficar diagnosticável.
+            msg = str(exc) or 'sem mensagem'
+            logger.warning(
+                "Falha ao conectar com Supabase para flush do tracker: %s (%s)",
+                msg, type(exc).__name__,
+            )
 
     def _should_flush(self) -> bool:
         if len(self._pending) >= FLUSH_THRESHOLD:
