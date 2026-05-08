@@ -129,25 +129,6 @@
       />
     </section>
 
-    <!-- Como ler esta página (caixa explicativa) -->
-    <details class="info-box">
-      <summary>Como ler esta página?</summary>
-      <div class="info-content">
-        <p>
-          O sistema visita 17 sites de vagas (LinkedIn, Indeed, Gupy, etc.) a cada 2 horas e
-          salva o que encontra. Esta página mostra o que está acontecendo agora.
-        </p>
-        <ul>
-          <li><strong>Acessos aos sites</strong> - quantas vezes pedimos uma página a algum site no período.</li>
-          <li><strong>Vagas salvas</strong> - vagas extraídas e gravadas no banco/JSON com sucesso.</li>
-          <li><strong>Avisos de excesso</strong> - quando um site responde "está vindo rápido demais" (HTTP 429). O sistema reduz a velocidade automaticamente.</li>
-          <li><strong>Erros do site</strong> - quando o servidor do site responde com erro (HTTP 500/502/503/504). Geralmente passageiro.</li>
-          <li><strong>Sites em pausa de proteção</strong> - quando um site está dando muito erro, paramos por 15 min a 2 h para não sermos banidos.</li>
-          <li><strong>Tentativas extras</strong> - requisições que precisaram ser refeitas por erro temporário (timeout, 5xx, 429).</li>
-        </ul>
-      </div>
-    </details>
-
     <!-- Resumo por site -->
     <section class="card">
       <h2>Por site</h2>
@@ -159,14 +140,54 @@
           <thead>
             <tr>
               <th>Site</th>
-              <th class="num" title="Total de páginas pedidas ao site no período">Acessos</th>
-              <th class="num" title="Páginas que responderam com sucesso (status 2xx)">Sucesso</th>
-              <th class="num" title="Avisos do site para reduzir o ritmo (HTTP 429)">Excesso</th>
-              <th class="num" title="Erros do servidor do site (HTTP 5xx)">Erros do site</th>
-              <th class="num" title="Requisições que precisaram ser refeitas">Refeitas</th>
-              <th class="num" title="Mediana do tempo de resposta (ms)">Tempo médio</th>
-              <th class="num" title="P95 do tempo de resposta - 95% das requests respondem em até esse tempo (ms)">Tempo pior caso</th>
-              <th class="num" title="Velocidade atual aplicada - em requisições por segundo">Ritmo atual</th>
+              <th class="num">
+                <span class="th-with-help">
+                  Acessos
+                  <HelpTooltip text="Quantas páginas pedimos a esse site na janela escolhida. Cada página é uma requisição." />
+                </span>
+              </th>
+              <th class="num">
+                <span class="th-with-help">
+                  Sucesso
+                  <HelpTooltip text="Quantas dessas páginas o site respondeu sem erro (status 200/201/204 — chamado 2xx). Quanto mais perto do total de Acessos, melhor." />
+                </span>
+              </th>
+              <th class="num">
+                <span class="th-with-help">
+                  Excesso
+                  <HelpTooltip text="O site avisou que estamos pedindo rápido demais (HTTP 429). Quando isso acontece, automaticamente diminuímos o ritmo para não sermos bloqueados." />
+                </span>
+              </th>
+              <th class="num">
+                <span class="th-with-help">
+                  Erros do site
+                  <HelpTooltip text="O servidor do próprio site falhou (HTTP 500/502/503/504). Geralmente é problema temporário do lado deles, não nosso." />
+                </span>
+              </th>
+              <th class="num">
+                <span class="th-with-help">
+                  Refeitas
+                  <HelpTooltip text="Requisições que precisaram ser tentadas de novo por causa de erro passageiro (timeout, 5xx ou 429). É normal ter algumas; só vira problema se cresce muito." />
+                </span>
+              </th>
+              <th class="num">
+                <span class="th-with-help">
+                  Tempo médio
+                  <HelpTooltip text="Tempo típico que o site leva para responder (mediana). Metade das páginas chega antes desse tempo, metade depois. Em milissegundos." />
+                </span>
+              </th>
+              <th class="num">
+                <span class="th-with-help">
+                  Tempo pior caso
+                  <HelpTooltip text="P95 — 95% das requisições respondem em até esse tempo; só as 5% mais lentas demoram mais. Em milissegundos. Útil para detectar lentidões." />
+                </span>
+              </th>
+              <th class="num">
+                <span class="th-with-help">
+                  Ritmo atual
+                  <HelpTooltip text="Quantas requisições por segundo estamos enviando para esse site agora. Cai automaticamente quando aparecem avisos de excesso." />
+                </span>
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -200,6 +221,15 @@
 
     <!-- =========== Aba: Proteção =========== -->
     <template v-if="activeTab === 'protection'">
+
+    <TabChartCard
+      eyebrow="Proteção"
+      title="Erros vs sucessos por site (últimos 5 minutos)"
+      tone="info"
+      :option="protectionChartOption"
+      :has-data="protectionHasData"
+      empty-label="Nenhum site monitorado ainda — comece o scraper para ver dados aqui."
+    />
 
     <!-- Estado de proteção dos sites -->
     <section class="card">
@@ -245,6 +275,15 @@
 
     <!-- =========== Aba: Fila =========== -->
     <template v-if="activeTab === 'queue'">
+
+    <TabChartCard
+      eyebrow="Fila"
+      title="Distribuição das vagas por etapa"
+      tone="info"
+      :option="queueChartOption"
+      :has-data="queueHasData"
+      empty-label="Nenhuma vaga em processamento ainda."
+    />
 
     <!-- Fila de vagas -->
     <section class="card">
@@ -318,6 +357,15 @@
 
     <!-- =========== Aba: DLQ & Operações =========== -->
     <template v-if="activeTab === 'dlq'">
+
+    <TabChartCard
+      eyebrow="DLQ"
+      title="Falhas por tipo de erro"
+      tone="danger"
+      :option="dlqChartOption"
+      :has-data="dlqHasData"
+      empty-label="Nenhuma vaga problemática no período — tudo limpo!"
+    />
 
     <!-- Vagas que precisam de análise manual (DLQ) -->
     <section class="card">
@@ -416,6 +464,15 @@
     <!-- =========== Aba: Manutenção =========== -->
     <template v-if="activeTab === 'maintenance'">
 
+    <TabChartCard
+      eyebrow="Manutenção"
+      title="Vagas por idade (dias até purga)"
+      tone="warn"
+      :option="maintenanceChartOption"
+      :has-data="maintenanceHasData"
+      empty-label="Nenhuma vaga na faixa de idade selecionada."
+    />
+
     <!-- Vagas próximas dos 90 dias -->
     <section class="card">
       <h2>Vagas próximas dos 90 dias</h2>
@@ -503,6 +560,8 @@ import { useRoute, useRouter } from 'vue-router'
 import { supabase } from '@/integrations/supabase/client'
 import HealthHero from '@/components/scraper/HealthHero.vue'
 import MetricCard from '@/components/scraper/MetricCard.vue'
+import TabChartCard from '@/components/scraper/TabChartCard.vue'
+import HelpTooltip from '@/components/common/HelpTooltip.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -856,6 +915,244 @@ const queueAggregated = computed(() => {
   return totals
 })
 
+// =====================================================================
+// Gráficos por aba (Proteção, Fila, DLQ, Manutenção)
+// =====================================================================
+
+const CHART_TEXT_COLOR = 'rgba(148, 163, 184, 0.85)'
+const CHART_GRID_COLOR = 'rgba(148, 163, 184, 0.18)'
+const CHART_TOOLTIP_BG = 'rgba(15, 23, 42, 0.92)'
+
+// --- Proteção: erros vs sucessos por site (5 min) ---
+const protectionChartData = computed(() => {
+  const rows = (circuitsFiltered.value || []).slice(0, 12)
+  return rows.map(r => ({
+    domain: friendlyDomain(r.domain),
+    failures: Number(r.failures_5m) || 0,
+    successes: Number(r.successes_5m) || 0,
+    errorRate: Number(r.error_rate) || 0,
+  }))
+})
+const protectionChartOption = computed(() => {
+  const data = protectionChartData.value
+  return {
+    grid: { left: 8, right: 16, top: 28, bottom: 8, containLabel: true },
+    legend: {
+      top: 0, right: 0,
+      icon: 'circle', itemWidth: 8, itemHeight: 8,
+      textStyle: { color: CHART_TEXT_COLOR, fontSize: 11 },
+    },
+    tooltip: {
+      trigger: 'axis', axisPointer: { type: 'shadow' },
+      backgroundColor: CHART_TOOLTIP_BG, borderWidth: 0,
+      textStyle: { color: '#fff', fontSize: 11 },
+    },
+    xAxis: {
+      type: 'value',
+      axisLine: { show: false }, axisTick: { show: false },
+      splitLine: { lineStyle: { color: CHART_GRID_COLOR } },
+      axisLabel: { color: CHART_TEXT_COLOR, fontSize: 10 },
+    },
+    yAxis: {
+      type: 'category',
+      data: data.map(d => d.domain),
+      axisLine: { show: false }, axisTick: { show: false },
+      axisLabel: { color: CHART_TEXT_COLOR, fontSize: 11 },
+    },
+    series: [
+      {
+        name: 'Sucessos',
+        type: 'bar', stack: 'total',
+        itemStyle: { color: '#16a34a', borderRadius: [0, 0, 0, 0] },
+        emphasis: { focus: 'series' },
+        data: data.map(d => d.successes),
+      },
+      {
+        name: 'Erros',
+        type: 'bar', stack: 'total',
+        itemStyle: { color: '#dc2626', borderRadius: [0, 4, 4, 0] },
+        emphasis: { focus: 'series' },
+        data: data.map(d => d.failures),
+      },
+    ],
+    animationDuration: 700,
+    animationEasing: 'cubicOut',
+  }
+})
+
+// --- Fila: distribuição por estado (donut) ---
+const QUEUE_STATE_LABELS = {
+  discovered: 'Aguardando coleta',
+  running: 'Coletando agora',
+  partial: 'Parciais',
+  completed: 'Concluídas',
+  failed: 'Falharam (retentativa)',
+  blocked: 'Aguardando site',
+  dlq_total: 'Sem solução automática',
+}
+const QUEUE_STATE_COLORS = {
+  discovered: '#2563eb',
+  running: '#0ea5e9',
+  partial: '#d97706',
+  completed: '#16a34a',
+  failed: '#f59e0b',
+  blocked: '#a855f7',
+  dlq_total: '#dc2626',
+}
+const queueChartData = computed(() => {
+  const q = queueAggregated.value || {}
+  return Object.keys(QUEUE_STATE_LABELS)
+    .map(k => ({
+      name: QUEUE_STATE_LABELS[k],
+      value: Number(q[k]) || 0,
+      itemStyle: { color: QUEUE_STATE_COLORS[k] },
+    }))
+    .filter(d => d.value > 0)
+})
+const queueChartOption = computed(() => ({
+  tooltip: {
+    trigger: 'item',
+    backgroundColor: CHART_TOOLTIP_BG, borderWidth: 0,
+    textStyle: { color: '#fff', fontSize: 11 },
+    formatter: '{b}<br/>{c} ({d}%)',
+  },
+  legend: {
+    orient: 'vertical', right: 8, top: 'center',
+    icon: 'circle', itemWidth: 8, itemHeight: 8,
+    textStyle: { color: CHART_TEXT_COLOR, fontSize: 11 },
+  },
+  series: [{
+    type: 'pie',
+    radius: ['55%', '80%'],
+    center: ['28%', '50%'],
+    avoidLabelOverlap: true,
+    itemStyle: { borderColor: 'var(--color-surface, #0f172a)', borderWidth: 2 },
+    label: { show: false },
+    labelLine: { show: false },
+    data: queueChartData.value,
+    animationDuration: 700,
+    animationEasing: 'cubicOut',
+  }],
+}))
+
+// --- DLQ: contagem por tipo de erro ---
+const dlqChartData = computed(() => {
+  const counts = new Map()
+  for (const row of (dlqFiltered.value || [])) {
+    const key = row.last_error_type || 'desconhecido'
+    counts.set(key, (counts.get(key) || 0) + 1)
+  }
+  return [...counts.entries()]
+    .map(([type, value]) => ({ type, label: friendlyError(type), value }))
+    .sort((a, b) => b.value - a.value)
+    .slice(0, 8)
+})
+const dlqChartOption = computed(() => {
+  const data = dlqChartData.value
+  return {
+    grid: { left: 8, right: 16, top: 16, bottom: 8, containLabel: true },
+    tooltip: {
+      trigger: 'axis', axisPointer: { type: 'shadow' },
+      backgroundColor: CHART_TOOLTIP_BG, borderWidth: 0,
+      textStyle: { color: '#fff', fontSize: 11 },
+    },
+    xAxis: {
+      type: 'value',
+      axisLine: { show: false }, axisTick: { show: false },
+      splitLine: { lineStyle: { color: CHART_GRID_COLOR } },
+      axisLabel: { color: CHART_TEXT_COLOR, fontSize: 10 },
+    },
+    yAxis: {
+      type: 'category',
+      data: data.map(d => d.label),
+      axisLine: { show: false }, axisTick: { show: false },
+      axisLabel: { color: CHART_TEXT_COLOR, fontSize: 11 },
+    },
+    series: [{
+      type: 'bar',
+      itemStyle: {
+        color: {
+          type: 'linear', x: 0, y: 0, x2: 1, y2: 0,
+          colorStops: [
+            { offset: 0, color: '#dc2626' },
+            { offset: 1, color: '#f97316' },
+          ],
+        },
+        borderRadius: [0, 6, 6, 0],
+      },
+      label: {
+        show: true, position: 'right',
+        color: CHART_TEXT_COLOR, fontSize: 11, fontWeight: 600,
+      },
+      data: data.map(d => d.value),
+      animationDuration: 700,
+      animationEasing: 'cubicOut',
+    }],
+  }
+})
+
+// --- Manutenção: distribuição por idade (dias) ---
+const maintenanceChartData = computed(() => {
+  const buckets = new Map()
+  for (const row of (nearPurgeJobs.value || [])) {
+    const days = Number(row.age_days) || 0
+    buckets.set(days, (buckets.get(days) || 0) + 1)
+  }
+  return [...buckets.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([days, value]) => ({ days, value }))
+})
+const maintenanceChartOption = computed(() => {
+  const data = maintenanceChartData.value
+  return {
+    grid: { left: 8, right: 16, top: 16, bottom: 28, containLabel: true },
+    tooltip: {
+      trigger: 'axis', axisPointer: { type: 'shadow' },
+      backgroundColor: CHART_TOOLTIP_BG, borderWidth: 0,
+      textStyle: { color: '#fff', fontSize: 11 },
+      formatter: (params) => {
+        const p = params[0]
+        return `${p.name} dias<br/>${p.value} vagas`
+      },
+    },
+    xAxis: {
+      type: 'category',
+      data: data.map(d => d.days),
+      name: 'idade (dias)', nameLocation: 'middle', nameGap: 22,
+      nameTextStyle: { color: CHART_TEXT_COLOR, fontSize: 10 },
+      axisLine: { lineStyle: { color: CHART_GRID_COLOR } },
+      axisTick: { show: false },
+      axisLabel: { color: CHART_TEXT_COLOR, fontSize: 10 },
+    },
+    yAxis: {
+      type: 'value',
+      axisLine: { show: false }, axisTick: { show: false },
+      splitLine: { lineStyle: { color: CHART_GRID_COLOR } },
+      axisLabel: { color: CHART_TEXT_COLOR, fontSize: 10 },
+    },
+    series: [{
+      type: 'bar',
+      itemStyle: {
+        color: (params) => {
+          const days = Number(data[params.dataIndex]?.days) || 0
+          if (days >= 88) return '#dc2626'
+          if (days >= 85) return '#f59e0b'
+          return '#d97706'
+        },
+        borderRadius: [4, 4, 0, 0],
+      },
+      data: data.map(d => d.value),
+      animationDuration: 700,
+      animationEasing: 'cubicOut',
+    }],
+  }
+})
+
+const protectionHasData = computed(() => protectionChartData.value.length > 0)
+const queueHasData      = computed(() => queueChartData.value.length > 0)
+const dlqHasData        = computed(() => dlqChartData.value.length > 0)
+const maintenanceHasData = computed(() => maintenanceChartData.value.length > 0)
+
 function friendlyEngine (name) { return ENGINE_LABELS[name] || name }
 function stateLabel    (s)    { return STATE_LABELS[s] || s }
 function circuitLabel  (s)    { return CIRCUIT_LABELS[s] || s }
@@ -1141,6 +1438,14 @@ watch([nearPurgeMinDays, nearPurgeMaxDays], loadNearPurge)
 .health-text { display: flex; flex-direction: column; gap: 2px; }
 .health-text strong { font-size: 14px; color: var(--color-text-primary); }
 .health-text span   { font-size: 13px; color: var(--color-text-secondary); }
+
+/* Header de tabela com ícone de ajuda inline */
+.th-with-help {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  justify-content: flex-end;
+}
 
 /* Caixa "Como ler esta página" */
 .info-box {

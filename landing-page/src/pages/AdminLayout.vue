@@ -645,16 +645,26 @@ onUnmounted(() => {
   .dl-content { padding: var(--space-4); }
 }
 
+/* Scrollbars internos: ciano da marca, encostados na lateral */
+.dl-nav,
+.dl-content {
+  scrollbar-width: thin;
+  scrollbar-color: #06b6d4 transparent;
+}
 .dl-nav::-webkit-scrollbar,
-.dl-content::-webkit-scrollbar { width: 8px; height: 8px; }
+.dl-content::-webkit-scrollbar { width: 12px; height: 12px; }
 .dl-nav::-webkit-scrollbar-thumb,
 .dl-content::-webkit-scrollbar-thumb {
-  background: var(--color-border);
-  border-radius: 4px;
+  background: #06b6d4;
+  border-radius: 999px;
+  border: 3px solid transparent;
+  background-clip: padding-box;
 }
 .dl-nav::-webkit-scrollbar-thumb:hover,
 .dl-content::-webkit-scrollbar-thumb:hover {
-  background: var(--color-text-muted);
+  background: #0891b2;
+  background-clip: padding-box;
+  border: 3px solid transparent;
 }
 .dl-nav::-webkit-scrollbar-track,
 .dl-content::-webkit-scrollbar-track { background: transparent; }

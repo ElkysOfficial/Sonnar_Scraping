@@ -2364,34 +2364,39 @@ ol {
 }
 
 /* ==========================================================================
-   Scrollbar — ciano da marca (todos os scrolls do app)
+   Scrollbar — ciano da marca, encostado na lateral (posição nativa do SO).
    Webkit (Chrome, Safari, Edge) + Firefox (scrollbar-color)
    ========================================================================== */
 
-/* Firefox e novos navegadores */
-* {
+/* Firefox */
+html {
   scrollbar-width: thin;
-  scrollbar-color: var(--color-accent) transparent;
+  scrollbar-color: #06b6d4 transparent;
 }
 
 /* Webkit */
-*::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+html::-webkit-scrollbar,
+body::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
 }
-*::-webkit-scrollbar-track {
+html::-webkit-scrollbar-track,
+body::-webkit-scrollbar-track {
   background: transparent;
 }
-*::-webkit-scrollbar-thumb {
-  background: color-mix(in srgb, var(--color-accent) 70%, transparent);
+html::-webkit-scrollbar-thumb,
+body::-webkit-scrollbar-thumb {
+  background: #06b6d4;
   border-radius: 999px;
-  border: 2px solid transparent;
+  border: 3px solid transparent;
   background-clip: padding-box;
 }
-*::-webkit-scrollbar-thumb:hover {
-  background: var(--color-accent);
+html::-webkit-scrollbar-thumb:hover,
+body::-webkit-scrollbar-thumb:hover {
+  background: #0891b2;
   background-clip: padding-box;
-  border: 2px solid transparent;
+  border: 3px solid transparent;
 }
-*::-webkit-scrollbar-corner { background: transparent; }
+html::-webkit-scrollbar-corner,
+body::-webkit-scrollbar-corner { background: transparent; }
 

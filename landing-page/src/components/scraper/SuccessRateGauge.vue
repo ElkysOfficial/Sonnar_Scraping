@@ -14,6 +14,10 @@
     <!-- Caption central (fica DENTRO do gauge, sobreposta) -->
     <div class="gauge-center" aria-live="polite">
       <span class="gauge-suffix">{{ centerCaption }}</span>
+      <span class="gauge-sla" :title="`Meta de SLA: ${threshold}%`">
+        <span class="gauge-sla-dot" aria-hidden="true"></span>
+        Meta SLA · {{ threshold }}%
+      </span>
     </div>
 
     <!-- Breakdown row (chips por status) -->
@@ -78,7 +82,8 @@ const gaugeOption = computed(() => ({
     // Background ring (faixas coloridas — orientação visual)
     {
       type: 'gauge',
-      radius: '94%',
+      radius: '92%',
+      center: ['50%', '55%'],
       startAngle: 220,
       endAngle: -40,
       min: 0,
@@ -104,14 +109,15 @@ const gaugeOption = computed(() => ({
     // Arco de progresso (a estrela)
     {
       type: 'gauge',
-      radius: '88%',
+      radius: '85%',
+      center: ['50%', '55%'],
       startAngle: 220,
       endAngle: -40,
       min: 0,
       max: 100,
       progress: {
         show: true,
-        width: 14,
+        width: 16,
         roundCap: true,
         itemStyle: {
           color: progressColor.value,
@@ -123,53 +129,62 @@ const gaugeOption = computed(() => ({
       anchor: { show: false },
       axisLine: {
         lineStyle: {
-          width: 14,
+          width: 16,
           color: [[1, 'rgba(148, 163, 184, 0.14)']],
         },
       },
-      axisTick: {
-        show: true,
-        distance: -22,
-        length: 6,
-        splitNumber: 5,
-        lineStyle: { color: 'rgba(148, 163, 184, 0.5)', width: 1 },
-      },
-      splitLine: {
-        show: true,
-        distance: -24,
-        length: 10,
-        lineStyle: { color: 'rgba(148, 163, 184, 0.7)', width: 1.5 },
-      },
-      axisLabel: {
-        show: true,
-        distance: -42,
-        fontSize: 10,
-        color: 'rgba(148, 163, 184, 0.85)',
-        formatter: (v) => {
-          if (v === 0 || v === 100) return v + '%'
-          if (v === 50) return '50'
-          return ''
-        },
-      },
+      axisTick: { show: false },
+      splitLine: { show: false },
+      axisLabel: { show: false },
       title: { show: false },
       detail: {
         valueAnimation: true,
-        offsetCenter: [0, '-12%'],
+        offsetCenter: [0, '-6%'],
         formatter: (v) => `${v.toFixed(1)}%`,
-        fontSize: 36,
+        fontSize: 34,
         fontWeight: 700,
         color: progressColor.value,
-        // ECharts permite letterspacing via rich
         rich: {},
       },
       data: [{ value: Number(props.rate) || 0 }],
       animationDuration: 1100,
       animationEasing: 'cubicOut',
     },
-    // Marcador de SLA (linha pequena no threshold)
+    // Zona SLA — faixa amber sutil de threshold→100% (no perímetro externo)
     {
       type: 'gauge',
-      radius: '88%',
+      radius: '95%',
+      center: ['50%', '55%'],
+      startAngle: 220,
+      endAngle: -40,
+      min: 0,
+      max: 100,
+      progress: { show: false },
+      pointer: { show: false },
+      anchor: { show: false },
+      axisLine: {
+        lineStyle: {
+          width: 3,
+          color: [
+            [props.threshold / 100, 'rgba(0,0,0,0)'],
+            [1.0, 'rgba(251, 191, 36, 0.55)'],
+          ],
+        },
+      },
+      axisTick: { show: false },
+      splitLine: { show: false },
+      axisLabel: { show: false },
+      title: { show: false },
+      detail: { show: false },
+      data: [{ value: 0 }],
+      silent: true,
+      animation: false,
+    },
+    // Marcador de SLA — dot luminoso amber sentado sobre o arco no threshold
+    {
+      type: 'gauge',
+      radius: '85%',
+      center: ['50%', '55%'],
       startAngle: 220,
       endAngle: -40,
       min: 0,
@@ -178,12 +193,52 @@ const gaugeOption = computed(() => ({
       pointer: {
         show: true,
         showAbove: true,
-        length: '100%',
-        width: 2,
-        offsetCenter: [0, '-78%'],
-        itemStyle: { color: progressColor.value, shadowBlur: 4, shadowColor: progressColor.value + 'aa' },
+        icon: 'circle',
+        length: 12,
+        width: 12,
+        offsetCenter: [0, '-87%'],
+        itemStyle: {
+          color: '#fbbf24',
+          borderColor: '#0f172a',
+          borderWidth: 2,
+          shadowBlur: 12,
+          shadowColor: 'rgba(251, 191, 36, 0.85)',
+        },
       },
-      // Renderiza só uma linha curta no exato ponto do threshold
+      axisLine: { show: false },
+      axisTick: { show: false },
+      splitLine: { show: false },
+      axisLabel: { show: false },
+      anchor: { show: false },
+      title: { show: false },
+      detail: { show: false },
+      data: [{ value: props.threshold }],
+      silent: true,
+      animation: false,
+    },
+    // Halo externo do dot (anel concêntrico amber suave)
+    {
+      type: 'gauge',
+      radius: '85%',
+      center: ['50%', '55%'],
+      startAngle: 220,
+      endAngle: -40,
+      min: 0,
+      max: 100,
+      progress: { show: false },
+      pointer: {
+        show: true,
+        showAbove: false,
+        icon: 'circle',
+        length: 22,
+        width: 22,
+        offsetCenter: [0, '-87%'],
+        itemStyle: {
+          color: 'transparent',
+          borderColor: 'rgba(251, 191, 36, 0.35)',
+          borderWidth: 1.5,
+        },
+      },
       axisLine: { show: false },
       axisTick: { show: false },
       splitLine: { show: false },
@@ -260,17 +315,22 @@ function formatInt(n) {
 /* Gauge */
 .gauge-chart {
   width: 100%;
-  height: 200px;
+  height: 240px;
+  max-width: 280px;
+  aspect-ratio: 1 / 1;
+  margin: 0 auto;
   position: relative;
   z-index: 1;
 }
 
-/* Caption central (sob o número grande do ECharts) */
+/* Caption logo abaixo do gauge — não invade o arco */
 .gauge-center {
-  position: absolute;
-  top: 56%;
-  left: 50%;
-  transform: translateX(-50%);
+  position: relative;
+  margin-top: -8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
   text-align: center;
   pointer-events: none;
   z-index: 2;
@@ -282,6 +342,30 @@ function formatInt(n) {
   text-transform: uppercase;
   letter-spacing: 0.06em;
   font-variant-numeric: tabular-nums;
+}
+.gauge-sla {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: rgba(251, 191, 36, 0.1);
+  border: 1px solid rgba(251, 191, 36, 0.35);
+  color: #fbbf24;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-variant-numeric: tabular-nums;
+  pointer-events: auto;
+  cursor: help;
+}
+.gauge-sla-dot {
+  width: 6px; height: 6px;
+  border-radius: 2px;
+  background: #fbbf24;
+  box-shadow: 0 0 6px rgba(251, 191, 36, 0.7);
 }
 
 /* Breakdown row */
