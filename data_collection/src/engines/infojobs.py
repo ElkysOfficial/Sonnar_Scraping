@@ -286,6 +286,14 @@ async def get_infojobs_links() -> list[str]:
                 href = cell.get("data-href")
                 if not href:
                     continue
+                # InfoJobs entrega URLs no formato vaga-de-{titulo}-em-{cidade}__{id}.
+                # Quando a cidade vem vazia, a URL fica vaga-de-X-em-__id.aspx;
+                # essas paginas existem (HTTP 200) mas o site nao serve JSON-LD
+                # nelas (versao degradada). Sem JSON-LD o parser nao consegue
+                # extrair nada e a URL vira refetch_empty no proximo passe.
+                # Descartar no listing economiza requests + tira ruido do tracker.
+                if "-em-__" in href or "_em-__" in href:
+                    continue
                 full = f"https://www.infojobs.com.br{href}"
                 if full not in seen:
                     seen.add(full)
