@@ -136,6 +136,11 @@ def _build_engine_registry() -> dict:
         registry[name] = {
             "parser_version": getattr(mod, "PARSER_VERSION", None),
             "refetch_one": getattr(mod, "refetch_one", None),
+            # Override opcional: cada engine pode definir seu próprio mínimo
+            # de descrição esperado. Útil para fontes onde resumos curtos
+            # são normais (ex.: anúncios curtos do RemoteOK não devem ser
+            # marcados como "incompletos").
+            "min_description_len": getattr(mod, "MIN_DESCRIPTION_LEN", None),
         }
     return registry
 
@@ -146,6 +151,31 @@ _ENGINE_REGISTRY = _build_engine_registry()
 def _parser_version(engine: str) -> str | None:
     info = _ENGINE_REGISTRY.get(engine) or {}
     return info.get("parser_version")
+
+
+def _has_refetch(engine: str) -> bool:
+    """True se a engine tem refetch_one (i.e., é capaz de re-coletar detalhe).
+
+    Engines listing-only (gupy, jooble, remoteok, remotive, weworkremotely,
+    ziprecruiter, geekhunter) NÃO têm refetch_one — a descrição é o que
+    veio no listing. Marcar partial nelas só polui o tracker, porque o
+    reenrichment não tem o que fazer.
+    """
+    info = _ENGINE_REGISTRY.get(engine) or {}
+    return callable(info.get("refetch_one"))
+
+
+# Limite mínimo de descrição para considerar uma vaga "completa".
+# Vale apenas para engines que têm refetch_one (i.e., podem reenriquecer).
+# Engines podem sobrescrever via constante MIN_DESCRIPTION_LEN no módulo.
+DEFAULT_MIN_DESCRIPTION_LEN = int(os.getenv("MIN_DESCRIPTION_LEN", "200"))
+
+
+def _min_desc_len(engine: str) -> int:
+    """Limite por engine (override via constante MIN_DESCRIPTION_LEN no módulo)."""
+    info = _ENGINE_REGISTRY.get(engine) or {}
+    val = info.get("min_description_len")
+    return int(val) if val is not None else DEFAULT_MIN_DESCRIPTION_LEN
 
 
 # ---------------------------------------------------------------------------
@@ -247,9 +277,18 @@ async def _process_one_job(
 
     if persisted:
         metrics.incr("persist.ok", domain=_engine_domain(engine))
-        # Heurística: descrição < 200 chars = enriquecimento incompleto.
-        # Marca como partial pra o reenrichment retentar quando o parser_version mudar.
-        if description_len < 200 and parser_version:
+        # Marca como partial APENAS se as 3 condições forem verdadeiras:
+        # 1. A engine tem refetch_one (é capaz de reenriquecer)
+        # 2. A engine declarou um mínimo de descrição esperado
+        # 3. A descrição veio abaixo desse mínimo
+        # Caso contrário, descrição curta é o esperado pra essa fonte e
+        # marcar partial só polui o dashboard sem ganho operacional.
+        is_partial = (
+            _has_refetch(engine)
+            and parser_version
+            and description_len < _min_desc_len(engine)
+        )
+        if is_partial:
             tracker.mark_partial(job_url, engine=engine, parser_version=parser_version)
         else:
             tracker.mark_completed(job_url, engine=engine, parser_version=parser_version)
