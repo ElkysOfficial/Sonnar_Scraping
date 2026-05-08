@@ -46,7 +46,31 @@ from src.utils.job_fallbacks import apply_description_fallbacks  # noqa: E402
 from src.utils.text_utils import extract_skills  # noqa: E402
 
 
-PARSER_VERSION = "catho-2026.05.07"
+PARSER_VERSION = "catho-2026.05.08"
+
+
+_MIN_USEFUL_DESCRIPTION = 200
+
+
+def is_partial(job_data: dict) -> bool:
+    """Decide se uma vaga Catho deve ficar em ``partial``.
+
+    A Catho enriquece o listing com a pagina de detalhe quando
+    ``CATHO_FETCH_DETAIL=1``. Quando o detail responde, description e skills
+    chegam preenchidos. Campos que NAO disparam reenrichment porque sao
+    intrinsicamente opcionais na fonte:
+
+    * ``salary`` vazio - apenas ~10% das vagas Catho trazem faixa salarial;
+      a maioria fica como "a combinar". Refetch nao melhora.
+    * ``hiring_regime`` ausente - cai no fallback derivado da descricao
+      quando ``regimeContrato`` nao vem.
+
+    Sinal real de incompleto: ``description`` ausente ou trivial (< 200
+    chars). Indica falha no detail-fetch ou que o site so devolveu o card
+    do listing.
+    """
+    description = (job_data.get("description") or "").strip()
+    return len(description) < _MIN_USEFUL_DESCRIPTION
 
 
 # --- Sessão ---------------------------------------------------------------
