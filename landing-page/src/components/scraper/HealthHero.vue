@@ -11,16 +11,19 @@
       </div>
     </div>
 
-    <!-- Gauge de saúde (taxa de sucesso) -->
+    <!-- Gauge de saúde (taxa de sucesso) — peça central do hero -->
     <div class="hero-gauge">
-      <VChart
-        ref="gaugeRef"
-        class="echart"
-        :option="gaugeOption"
-        :init-options="{ renderer: 'svg' }"
-        autoresize
+      <h3 class="hero-gauge-title">Taxa de sucesso</h3>
+      <SuccessRateGauge
+        :rate="successRate"
+        :total-requests="totalRequests"
+        :total-ok="totalOk"
+        :total-429="total429"
+        :total4xx="total4xx"
+        :total5xx="total5xx"
+        :tone="tone"
+        :threshold="95"
       />
-      <p class="hero-gauge-caption">Taxa de sucesso (período)</p>
     </div>
 
     <!-- Mini area chart de tráfego -->
@@ -41,22 +44,27 @@
 </template>
 
 <script setup>
-import { computed, ref, onMounted, onBeforeUnmount, watch } from 'vue'
+import { computed } from 'vue'
 import VChart from 'vue-echarts'
 import { use } from 'echarts/core'
-import { GaugeChart, LineChart } from 'echarts/charts'
-import { GridComponent, TooltipComponent, TitleComponent } from 'echarts/components'
+import { LineChart } from 'echarts/charts'
+import { GridComponent, TooltipComponent } from 'echarts/components'
 import { SVGRenderer } from 'echarts/renderers'
+import SuccessRateGauge from './SuccessRateGauge.vue'
 
-use([GaugeChart, LineChart, GridComponent, TooltipComponent, TitleComponent, SVGRenderer])
+use([LineChart, GridComponent, TooltipComponent, SVGRenderer])
 
 const props = defineProps({
-  tone:           { type: String,  default: 'success' },     // success | warn | danger | idle
+  tone:           { type: String,  default: 'success' },
   headline:       { type: String,  required: true },
   subline:        { type: String,  default: '' },
-  successRate:    { type: Number,  default: 100 },           // 0..100
+  successRate:    { type: Number,  default: 100 },
   totalRequests:  { type: Number,  default: 0 },
-  trafficSeries:  { type: Array,   default: () => [] },      // [{ts, value}]
+  totalOk:        { type: Number,  default: 0 },
+  total429:       { type: Number,  default: 0 },
+  total4xx:       { type: Number,  default: 0 },
+  total5xx:       { type: Number,  default: 0 },
+  trafficSeries:  { type: Array,   default: () => [] },
 })
 
 const TONE_COLOR = {
@@ -67,45 +75,6 @@ const TONE_COLOR = {
 }
 
 const accentColor = computed(() => TONE_COLOR[props.tone] || TONE_COLOR.success)
-
-const gaugeOption = computed(() => ({
-  series: [{
-    type: 'gauge',
-    startAngle: 220,
-    endAngle: -40,
-    min: 0,
-    max: 100,
-    radius: '92%',
-    progress: {
-      show: true,
-      width: 12,
-      roundCap: true,
-      itemStyle: { color: accentColor.value },
-    },
-    pointer: { show: false },
-    axisLine: {
-      lineStyle: {
-        width: 12,
-        color: [[1, 'rgba(148, 163, 184, 0.18)']],
-      },
-    },
-    axisTick: { show: false },
-    splitLine: { show: false },
-    axisLabel: { show: false },
-    title: { show: false },
-    detail: {
-      valueAnimation: true,
-      fontSize: 32,
-      fontWeight: 700,
-      color: accentColor.value,
-      formatter: (v) => `${Math.round(v)}%`,
-      offsetCenter: [0, '5%'],
-    },
-    data: [{ value: Number(props.successRate) || 0 }],
-    animationDuration: 900,
-    animationEasing: 'cubicOut',
-  }],
-}))
 
 const areaOption = computed(() => {
   const data = (props.trafficSeries || []).map((p) => [p.ts, Number(p.value) || 0])
@@ -163,7 +132,7 @@ function formatInt(n) {
 <style scoped>
 .hero {
   display: grid;
-  grid-template-columns: minmax(0, 1.4fr) minmax(140px, 0.6fr) minmax(0, 1.4fr);
+  grid-template-columns: minmax(0, 1.1fr) minmax(280px, 1fr) minmax(0, 1.1fr);
   gap: 24px;
   padding: 24px 28px;
   background: var(--color-surface);
@@ -229,18 +198,18 @@ function formatInt(n) {
   line-height: 1.4;
 }
 
-/* Gauge */
+/* Gauge — peça central */
 .hero-gauge {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   min-width: 0;
   text-align: center;
+  gap: 4px;
 }
-.hero-gauge .echart { width: 100%; height: 110px; }
-.hero-gauge-caption {
-  margin: 4px 0 0;
+.hero-gauge-title {
+  margin: 0;
   font-size: 11px;
   font-weight: 600;
   color: var(--color-text-muted);
