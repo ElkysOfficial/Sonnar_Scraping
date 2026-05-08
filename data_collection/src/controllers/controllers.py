@@ -64,24 +64,31 @@ JobCallback = Callable[[list, str], Awaitable[None]]
 # da engine como fallback (compat com engines novas).
 # ---------------------------------------------------------------------------
 
+# IMPORTANTE: o valor aqui deve bater EXATAMENTE com o hostname que
+# urlparse(url).hostname devolve para as requests reais da engine. Se
+# o engine acessa "https://www.dice.com/...", o hostname é "www.dice.com" —
+# e é com isso que o rate_limiter/http_session emitem suas métricas
+# (latency, status, etc.). Se este map usar uma forma diferente
+# ("dice.com"), o dashboard mostra DUAS linhas por engine: uma com as
+# métricas do controller (persist.ok), outra com as do HTTP layer.
 ENGINE_PRIMARY_DOMAIN = {
     "linkedin":       "br.linkedin.com",
     "indeed":         "br.indeed.com",
     "gupy":           "portal.api.gupy.io",
     "jooble":         "br.jooble.org",
-    "catho":          "catho.com.br",
-    "careerjet":      "careerjet.com.br",
-    "geekhunter":     "geekhunter.com.br",
-    "michaelpage":    "michaelpage.com.br",
+    "catho":          "www.catho.com.br",
+    "careerjet":      "www.careerjet.com.br",
+    "geekhunter":     "www.geekhunter.com.br",
+    "michaelpage":    "www.michaelpage.com.br",
     "programathor":   "programathor.com.br",
     "remoteok":       "remoteok.com",
     "remotive":       "remotive.com",
     "weworkremotely": "weworkremotely.com",
-    "ziprecruiter":   "ziprecruiter.com",
-    "simplyhired":    "simplyhired.com.br",
-    "bne":            "bne.com.br",
-    "dice":           "dice.com",
-    "infojobs":       "infojobs.com.br",
+    "ziprecruiter":   "www.ziprecruiter.co.uk",
+    "simplyhired":    "www.simplyhired.com.br",
+    "bne":            "www.bne.com.br",
+    "dice":           "www.dice.com",
+    "infojobs":       "www.infojobs.com.br",
 }
 
 
