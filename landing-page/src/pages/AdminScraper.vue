@@ -65,57 +65,64 @@
     <!-- =========== Aba: Visão geral =========== -->
     <template v-if="activeTab === 'overview'">
 
-    <!-- Banner de saúde geral -->
-    <section class="health-banner" :class="health.healthClass">
-      <div class="health-icon" aria-hidden="true">{{ health.healthIcon }}</div>
-      <div class="health-text">
-        <strong>{{ health.headline }}</strong>
-        <span>{{ health.subline }}</span>
-      </div>
-    </section>
+    <!-- Hero de saúde (Apple-style com gauge + área chart) -->
+    <HealthHero
+      :tone="health.healthClass"
+      :headline="health.headline"
+      :subline="health.subline"
+      :success-rate="successRatePct"
+      :total-requests="health.total_requests || 0"
+      :traffic-series="trafficSeries"
+    />
 
-    <!-- KPIs principais com linguagem humana -->
+    <!-- KPIs principais com sparklines -->
     <section class="kpi-grid">
-      <article class="kpi" :class="health.healthClass" :title="kpiHelp.requests">
-        <span class="kpi-label">Acessos aos sites</span>
-        <span class="kpi-value">{{ formatInt(health.total_requests) }}</span>
-        <span class="kpi-hint">{{ health.error_rate_pct }}% deram erro</span>
-      </article>
-
-      <article class="kpi success" :title="kpiHelp.persisted">
-        <span class="kpi-label">Vagas salvas</span>
-        <span class="kpi-value">{{ formatInt(health.jobs_persisted_ok) }}</span>
-        <span class="kpi-hint">
-          <template v-if="(health.jobs_persisted_error || 0) > 0">
-            {{ formatInt(health.jobs_persisted_error) }} falharam ao salvar
-          </template>
-          <template v-else>nenhuma falha ao salvar</template>
-        </span>
-      </article>
-
-      <article class="kpi" :class="{ warn: (health.total_429 || 0) > 0 }" :title="kpiHelp.rateLimit">
-        <span class="kpi-label">Avisos de excesso</span>
-        <span class="kpi-value">{{ formatInt(health.total_429) }}</span>
-        <span class="kpi-hint">o site pediu pra ir mais devagar</span>
-      </article>
-
-      <article class="kpi" :class="{ warn: (health.total_5xx || 0) > 0 }" :title="kpiHelp.serverError">
-        <span class="kpi-label">Erros do site</span>
-        <span class="kpi-value">{{ formatInt(health.total_5xx) }}</span>
-        <span class="kpi-hint">o site falhou em responder</span>
-      </article>
-
-      <article class="kpi" :class="{ danger: (health.open_circuits || 0) > 0 }" :title="kpiHelp.circuits">
-        <span class="kpi-label">Sites em pausa de proteção</span>
-        <span class="kpi-value">{{ health.open_circuits || 0 }}</span>
-        <span class="kpi-hint">descansando para não ser bloqueado</span>
-      </article>
-
-      <article class="kpi" :title="kpiHelp.retries">
-        <span class="kpi-label">Tentativas extras</span>
-        <span class="kpi-value">{{ formatInt(health.total_retries) }}</span>
-        <span class="kpi-hint">requests refeitas após erro temporário</span>
-      </article>
+      <MetricCard
+        label="Acessos aos sites"
+        :value="health.total_requests || 0"
+        :hint="(health.error_rate_pct || 0) + '% deram erro'"
+        :series="kpiSeries.requests"
+        :tone="health.error_rate > 0.15 ? 'danger' : (health.error_rate > 0.05 ? 'warn' : 'neutral')"
+        :trend="kpiTrends.requests"
+      />
+      <MetricCard
+        label="Vagas salvas"
+        :value="health.jobs_persisted_ok || 0"
+        :hint="(health.jobs_persisted_error || 0) > 0 ? formatInt(health.jobs_persisted_error) + ' falharam' : 'nenhuma falha ao salvar'"
+        :series="kpiSeries.persisted"
+        tone="success"
+        :trend="kpiTrends.persisted"
+      />
+      <MetricCard
+        label="Avisos de excesso"
+        :value="health.total_429 || 0"
+        hint="o site pediu pra ir mais devagar"
+        :series="kpiSeries.rate429"
+        :tone="(health.total_429 || 0) > 0 ? 'warn' : 'neutral'"
+      />
+      <MetricCard
+        label="Erros do site"
+        :value="health.total_5xx || 0"
+        hint="o site falhou em responder"
+        :series="kpiSeries.error5xx"
+        :tone="(health.total_5xx || 0) > 0 ? 'warn' : 'neutral'"
+      />
+      <MetricCard
+        label="Sites em pausa"
+        :value="health.open_circuits || 0"
+        hint="descansando para não ser bloqueado"
+        :tone="(health.open_circuits || 0) > 0 ? 'danger' : 'neutral'"
+        :alert="(health.open_circuits || 0) > 0"
+        clickable
+        @click="activeTab = 'protection'"
+      />
+      <MetricCard
+        label="Tentativas extras"
+        :value="health.total_retries || 0"
+        hint="requests refeitas após erro temporário"
+        :series="kpiSeries.retries"
+        tone="neutral"
+      />
     </section>
 
     <!-- Como ler esta página (caixa explicativa) -->
@@ -490,6 +497,8 @@
 import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { supabase } from '@/integrations/supabase/client'
+import HealthHero from '@/components/scraper/HealthHero.vue'
+import MetricCard from '@/components/scraper/MetricCard.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -533,6 +542,9 @@ const nearPurgeJobs = ref([])
 const nearPurgeMinDays = ref(80)
 const nearPurgeMaxDays = ref(90)
 const nearPurgeLoading = ref(false)
+
+// Série temporal (alimenta sparklines e área chart do hero)
+const timeseries = ref([])  // [{bucket_ts, domain, metric_key, value}]
 
 const health = computed(() => {
   const h = healthRow.value || {}
@@ -723,6 +735,66 @@ const dlqFiltered = computed(() =>
     ? dlq.value.filter(r => r.engine === selectedEngine.value)
     : dlq.value
 )
+// Bucket dinâmico conforme janela escolhida
+function bucketForWindow (mins) {
+  if (mins <= 30) return 1
+  if (mins <= 120) return 5
+  if (mins <= 720) return 15
+  return 60
+}
+
+// Agrupa timeseries por metric_key, somando todos os domains.
+function aggregateSeries (metricKey) {
+  const buckets = new Map()  // bucket_ts -> sum
+  for (const row of timeseries.value) {
+    if (row.metric_key !== metricKey) continue
+    const t = row.bucket_ts
+    buckets.set(t, (buckets.get(t) || 0) + Number(row.value || 0))
+  }
+  return [...buckets.entries()]
+    .sort((a, b) => new Date(a[0]) - new Date(b[0]))
+    .map(([ts, value]) => ({ ts, value }))
+}
+
+// Sparklines: arrays simples [n, n, n] derivados da timeseries.
+const kpiSeries = computed(() => {
+  const toArr = (key) => aggregateSeries(key).map(p => p.value)
+  return {
+    requests:  toArr('req.total'),
+    persisted: toArr('persist.ok'),
+    rate429:   toArr('status.429'),
+    error5xx:  toArr('status.5xx'),
+    retries:   toArr('retry.attempt'),
+  }
+})
+
+// Área chart do hero (req.total como [{ts, value}])
+const trafficSeries = computed(() => aggregateSeries('req.total'))
+
+// Tendência (% diferença entre primeira metade e segunda metade da janela)
+const kpiTrends = computed(() => {
+  const calc = (arr) => {
+    if (arr.length < 4) return null
+    const half = Math.floor(arr.length / 2)
+    const first = arr.slice(0, half).reduce((s, n) => s + n, 0)
+    const second = arr.slice(half).reduce((s, n) => s + n, 0)
+    if (first === 0) return second > 0 ? 100 : 0
+    return ((second - first) / first) * 100
+  }
+  return {
+    requests:  calc(kpiSeries.value.requests),
+    persisted: calc(kpiSeries.value.persisted),
+  }
+})
+
+// Taxa de sucesso global (para o gauge do hero)
+const successRatePct = computed(() => {
+  const total = healthRow.value?.total_requests || 0
+  const errs = (healthRow.value?.total_429 || 0) + (healthRow.value?.total_5xx || 0)
+  if (total === 0) return 0
+  return Math.max(0, Math.min(100, ((total - errs) / total) * 100))
+})
+
 // Lista de abas com badges contextuais
 const tabs = computed(() => {
   const openCircuits = (circuits.value || []).filter(c => c.state !== 'closed').length
@@ -806,7 +878,8 @@ async function loadAll () {
   loading.value = true
   errorMsg.value = ''
   try {
-    const [s, c, e, h, qs, q, d] = await Promise.all([
+    const bucketMin = bucketForWindow(windowMinutes.value)
+    const [s, c, e, h, qs, q, d, ts] = await Promise.all([
       supabase.rpc('get_scraper_summary',          { window_minutes: windowMinutes.value }),
       supabase.rpc('get_scraper_circuits'),
       supabase.rpc('get_scraper_events',           { window_minutes: windowMinutes.value, max_rows: 200 }),
@@ -814,8 +887,9 @@ async function loadAll () {
       supabase.rpc('get_extraction_queue_stats'),
       supabase.rpc('get_extraction_queue_summary'),
       supabase.rpc('get_extraction_dlq',           { window_minutes: windowMinutes.value, max_rows: 100 }),
+      supabase.rpc('get_scraper_timeseries',       { window_minutes: windowMinutes.value, bucket_minutes: bucketMin }),
     ])
-    for (const r of [s, c, e, h, qs, q, d]) if (r.error) throw r.error
+    for (const r of [s, c, e, h, qs, q, d, ts]) if (r.error) throw r.error
     summary.value = s.data || []
     circuits.value = c.data || []
     events.value = e.data || []
@@ -823,6 +897,7 @@ async function loadAll () {
     queueStats.value = qs.data || []
     queue.value = (q.data && q.data[0]) || {}
     dlq.value = d.data || []
+    timeseries.value = ts.data || []
     // Atualiza near-purge sem bloquear loadAll
     loadNearPurge().catch(() => { /* já trata erro internamente */ })
   } catch (err) {
