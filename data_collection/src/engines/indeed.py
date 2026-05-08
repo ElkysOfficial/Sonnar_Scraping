@@ -35,7 +35,33 @@ from src.utils.job_fallbacks import apply_description_fallbacks  # noqa: E402
 from src.utils.text_utils import extract_skills, strip_html  # noqa: E402
 
 
-PARSER_VERSION = "indeed-2026.05.07"
+PARSER_VERSION = "indeed-2026.05.08"
+
+
+_MIN_USEFUL_DESCRIPTION = 200
+
+
+def is_partial(job_data: dict) -> bool:
+    """Decide se uma vaga Indeed deve ficar em ``partial``.
+
+    A Indeed fornece description sempre via JSON-LD da pagina de detalhe;
+    quando ela chega com tamanho razoavel a coleta esta no estado mais
+    completo possivel. Campos opcionais que NAO devem disparar reenrichment:
+
+    * ``salary`` vazio - apenas ~10% das vagas Indeed BR trazem ``baseSalary``
+      (recrutadores raramente publicam faixa). Refetch nao melhora.
+    * ``hiring_regime`` ausente - quando ``employmentType`` nao vem no
+      JSON-LD, a engine cai em fallbacks por descricao; se ainda assim
+      ficar vazio, e que o texto nao deu sinal forte (refetch nao ajuda).
+    * ``skills`` vazio - mineradas da descricao; pode ficar curto quando
+      o anuncio nao usa termos canonicos.
+
+    Sinal real: ``description`` ausente/trivial (< 200 chars) - significa
+    que JSON-LD e fallbacks DOM falharam. Ai sim refetch (incluindo o
+    Playwright) pode salvar a coleta.
+    """
+    description = (job_data.get("description") or "").strip()
+    return len(description) < _MIN_USEFUL_DESCRIPTION
 
 
 # --- Sessão ---------------------------------------------------------------
