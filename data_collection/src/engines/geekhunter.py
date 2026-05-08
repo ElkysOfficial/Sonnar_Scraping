@@ -20,7 +20,23 @@ from src.utils.http_session import HttpSession, fetch  # noqa: E402
 from src.utils.rate_limiter import request_with_policy  # noqa: E402
 
 
-PARSER_VERSION = "geekhunter-2026.05.07"
+PARSER_VERSION = "geekhunter-2026.05.08"
+
+
+def is_partial(job_data: dict) -> bool:
+    """GeekHunter nunca fica em ``partial``.
+
+    Toda a coleta vem de uma chamada GraphQL ``findShowcaseJobs`` (ate 1000
+    vagas) com fallback HTML para regime/skills/modalidade/cidade. Nao existe
+    "segunda passada" possivel: refetch nao traria nada novo. A engine nao
+    declara ``refetch_one`` justamente por isso.
+
+    Mantemos o hook para deixar explicito: se uma vaga GeekHunter chegou,
+    ela ja esta no estado mais completo possivel para o que a fonte oferece.
+    Campos vazios (salary, regime, skills) sao naturais quando a vaga nao
+    publica.
+    """
+    return False
 from src.utils.job_fallbacks import apply_description_fallbacks  # noqa: E402
 from src.utils.text_utils import extract_skills, strip_html  # noqa: E402
 
