@@ -229,30 +229,40 @@ class JobsRepository:
         """Conjunto de job_urls ja persistidos (do JSON local). Usado em dedup."""
         return self.local.known_urls()
 
+    # Resultados possíveis de save_with_reason()
+    SAVE_OK         = 'ok'
+    SAVE_NO_URL     = 'no_url'           # payload sem job_url
+    SAVE_TOO_OLD    = 'too_old'          # publication_date < cutoff (90d)
+    SAVE_ALL_FAILED = 'all_sinks_failed' # nenhum dos 3 sinks aceitou
+
     async def save(self, job_data: dict, source: Optional[str] = None) -> bool:
+        """Wrapper boolean: True se persistiu em pelo menos 1 sink, False caso contrário.
+
+        Para distinguir "vaga muito velha" (filtro intencional) de "todos os sinks
+        falharam" (erro real), use ``save_with_reason``.
+        """
+        return (await self.save_with_reason(job_data, source)) == self.SAVE_OK
+
+    async def save_with_reason(self, job_data: dict, source: Optional[str] = None) -> str:
         """
         Normaliza ``job_data`` e persiste nos três sinks (JSON, CSV, Supabase).
 
-        Cada sink é independente - uma falha não bloqueia os outros. A função
-        retorna True se **ao menos um** sink confirmou, garantindo que o job
-        não some completamente em caso de falha parcial.
-
-        Args:
-            job_data: dict bruto vindo do `normalize_job_result` do controller.
-            source:   nome da engine que extraiu (ex.: ``'linkedin'``).
-
         Returns:
-            True se ao menos um sink aceitou; False só se todos falharem.
+            - ``SAVE_OK``         persistiu em pelo menos 1 sink.
+            - ``SAVE_NO_URL``     job_url ausente — vaga inválida.
+            - ``SAVE_TOO_OLD``    publication_date < cutoff (filtro intencional,
+                                  NÃO é erro; o controller deve marcar completed).
+            - ``SAVE_ALL_FAILED`` falha real: nenhum dos 3 sinks aceitou.
         """
         payload = build_job_payload(job_data, source=source)
         if not payload.get('job_url'):
-            return False
+            return self.SAVE_NO_URL
 
         # Vagas com publication_date anterior ao cutoff sao ignoradas.
         # Sem publication_date passa direto (nao da pra julgar idade).
         pub = payload.get('publication_date')
         if pub and pub < _cutoff_iso():
-            return False
+            return self.SAVE_TOO_OLD
 
         # 1) JSON local - fonte de verdade pro bot de envio de mensagens
         local_ok = True
@@ -269,8 +279,8 @@ class JobsRepository:
         supa_ok = await self.supabase.upsert_job(payload)
 
         if not (local_ok or csv_ok or supa_ok):
-            return False
+            return self.SAVE_ALL_FAILED
 
         if not supa_ok and self.supabase.enabled:
             logger.warning('Job persistido localmente mas falhou no Supabase: %s', payload['job_url'])
-        return True
+        return self.SAVE_OK
