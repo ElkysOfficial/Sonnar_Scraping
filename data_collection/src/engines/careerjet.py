@@ -30,7 +30,36 @@ from src.utils.job_fallbacks import apply_description_fallbacks  # noqa: E402
 from src.utils.text_utils import extract_skills, strip_html  # noqa: E402
 
 
-PARSER_VERSION = "careerjet-2026.05.07"
+PARSER_VERSION = "careerjet-2026.05.08"
+
+
+# Tamanho minimo de descricao para considerar a vaga *coletada por completo*.
+# Careerjet entrega description direto do JSON-LD (sempre 1500-3500 chars na
+# amostra). Abaixo de 200 chars o JSON-LD provavelmente veio truncado/erro.
+_MIN_USEFUL_DESCRIPTION = 200
+
+
+def is_partial(job_data: dict) -> bool:
+    """Decide se uma vaga Careerjet deve ficar em ``partial``.
+
+    O Careerjet entrega description sempre via JSON-LD - quando ela vem, e
+    o que o site tem. Campos que NAO disparam reenrichment porque sao
+    intrinsicamente opcionais na fonte:
+
+    * ``salary`` vazio - apenas ~10% das vagas Careerjet trazem ``baseSalary``
+      no JSON-LD (anuncios brasileiros raramente publicam faixa). Refetch
+      nao traz salario que o site nao publicou.
+    * ``state_code`` ausente quando ``location_raw='Brasil'`` - quando a
+      vaga foi cadastrada com cidade=Brasil sem regiao especifica, o
+      ``addressRegion`` simplesmente nao existe no JSON-LD. Esperado.
+    * ``company`` vazio - raro mas acontece quando ``hiringOrganization.name``
+      nao foi preenchido pelo recrutador.
+
+    Sinal real de incompleto: ``description`` ausente ou trivial - indica
+    falha no parsing do JSON-LD ou pagina servida sem o bloco.
+    """
+    description = (job_data.get("description") or "").strip()
+    return len(description) < _MIN_USEFUL_DESCRIPTION
 
 
 # --- Sessão ---------------------------------------------------------------
