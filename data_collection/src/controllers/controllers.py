@@ -264,7 +264,7 @@ async def _process_one_job(
     parser_version = _parser_version(engine)
 
     try:
-        persisted = await repo.save(job_data, source=engine)
+        result = await repo.save_with_reason(job_data, source=engine)
     except Exception as exc:
         logger.error("persist_failed", extra={
             "engine": engine, "url": job_url, "errorMessage": str(exc),
@@ -275,14 +275,14 @@ async def _process_one_job(
         sent_jobs.discard(job_url)
         return
 
-    if persisted:
-        metrics.incr("persist.ok", domain=_engine_domain(engine))
+    domain = _engine_domain(engine)
+
+    if result == JobsRepository.SAVE_OK:
+        metrics.incr("persist.ok", domain=domain)
         # Marca como partial APENAS se as 3 condições forem verdadeiras:
         # 1. A engine tem refetch_one (é capaz de reenriquecer)
-        # 2. A engine declarou um mínimo de descrição esperado
-        # 3. A descrição veio abaixo desse mínimo
-        # Caso contrário, descrição curta é o esperado pra essa fonte e
-        # marcar partial só polui o dashboard sem ganho operacional.
+        # 2. A engine declarou um parser_version
+        # 3. A descrição veio abaixo do mínimo desse engine
         is_partial = (
             _has_refetch(engine)
             and parser_version
@@ -292,12 +292,25 @@ async def _process_one_job(
             tracker.mark_partial(job_url, engine=engine, parser_version=parser_version)
         else:
             tracker.mark_completed(job_url, engine=engine, parser_version=parser_version)
-    else:
-        metrics.incr("persist.skipped", domain=_engine_domain(engine))
+
+    elif result == JobsRepository.SAVE_TOO_OLD:
+        # Vaga publicada há mais de 90 dias — filtro intencional, NÃO é erro.
+        # Marcamos completed para que não seja retentada no próximo ciclo
+        # (caso a URL volte a aparecer no listing por engano).
+        metrics.incr("persist.too_old", domain=domain)
+        tracker.mark_completed(job_url, engine=engine, parser_version=parser_version)
+
+    elif result == JobsRepository.SAVE_NO_URL:
+        # Defensivo — _process_one_job já valida job_url antes. Só registra.
+        metrics.incr("persist.invalid", domain=domain)
+        sent_jobs.discard(job_url)
+
+    else:  # SAVE_ALL_FAILED — falha real
+        metrics.incr("persist.skipped", domain=domain)
         sent_jobs.discard(job_url)
         tracker.mark_failed(job_url, engine=engine,
-                            error_type="persist_skipped",
-                            error_msg="repo.save retornou False")
+                            error_type="all_sinks_failed",
+                            error_msg="JSON/CSV/Supabase recusaram a vaga")
 
 
 # ---------------------------------------------------------------------------
