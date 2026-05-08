@@ -24,7 +24,30 @@ from src.persistence.extraction_tracker import tracker  # noqa: E402
 from src.utils.http_session import HttpSession, fetch  # noqa: E402
 
 
-PARSER_VERSION = "infojobs-2026.05.07"
+PARSER_VERSION = "infojobs-2026.05.08"
+
+
+_MIN_USEFUL_DESCRIPTION = 200
+
+
+def is_partial(job_data: dict) -> bool:
+    """Decide se uma vaga InfoJobs deve ficar em ``partial``.
+
+    A InfoJobs entrega description sempre via JSON-LD da pagina de detalhe.
+    Quando o texto chega com tamanho razoavel a vaga esta no estado mais
+    completo possivel para o que a fonte oferece. Campos opcionais que NAO
+    devem disparar reenrichment:
+
+    * ``salary`` vazio - cerca de metade das vagas InfoJobs nao publica
+      ``baseSalary`` no JSON-LD (o anunciante pode marcar "a combinar"
+      no formulario). Refetch nao melhora porque o site nao tem o dado.
+
+    Sinal real: ``description`` ausente/trivial (< 200 chars). Refetch
+    pode resolver quando a primeira passada bateu numa pagina servida
+    sem JSON-LD ou com erro.
+    """
+    description = (job_data.get("description") or "").strip()
+    return len(description) < _MIN_USEFUL_DESCRIPTION
 from src.utils.job_fallbacks import apply_description_fallbacks  # noqa: E402
 from src.utils.text_utils import extract_skills, strip_html  # noqa: E402
 
