@@ -2,9 +2,6 @@
   <section class="hero" :class="`hero--${tone}`">
     <!-- Status -->
     <div class="hero-status">
-      <div class="hero-dot" aria-hidden="true">
-        <span class="hero-dot-pulse"></span>
-      </div>
       <div class="hero-text">
         <h2 class="hero-headline">{{ headline }}</h2>
         <p class="hero-sub">{{ subline }}</p>
@@ -33,12 +30,16 @@
         <span class="hero-area-value">{{ formatInt(totalRequests) }}</span>
       </div>
       <VChart
+        v-if="hasTrafficData"
         ref="areaRef"
         class="echart"
         :option="areaOption"
         :init-options="{ renderer: 'svg' }"
         autoresize
       />
+      <div v-else class="hero-area-empty">
+        <span>Sem dados suficientes para o gráfico nessa janela.</span>
+      </div>
     </div>
   </section>
 </template>
@@ -75,6 +76,8 @@ const TONE_COLOR = {
 }
 
 const accentColor = computed(() => TONE_COLOR[props.tone] || TONE_COLOR.success)
+
+const hasTrafficData = computed(() => (props.trafficSeries || []).length >= 2)
 
 const areaOption = computed(() => {
   const data = (props.trafficSeries || []).map((p) => [p.ts, Number(p.value) || 0])
@@ -245,6 +248,21 @@ function formatInt(n) {
   letter-spacing: -0.02em;
 }
 .hero-area .echart { flex: 1; min-height: 80px; }
+.hero-area-empty {
+  flex: 1;
+  min-height: 80px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed var(--color-border);
+  border-radius: 10px;
+  color: var(--color-text-muted);
+  font-size: 11px;
+  font-style: italic;
+  padding: 8px 12px;
+  text-align: center;
+  background: linear-gradient(180deg, transparent, color-mix(in srgb, var(--accent, #16a34a) 4%, transparent));
+}
 
 /* Responsivo */
 @media (max-width: 1024px) {
