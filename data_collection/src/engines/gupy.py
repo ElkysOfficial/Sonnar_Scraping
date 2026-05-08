@@ -23,7 +23,21 @@ from src.utils.job_fallbacks import apply_description_fallbacks  # noqa: E402
 from src.utils.text_utils import extract_skills, strip_html  # noqa: E402
 
 
-PARSER_VERSION = "gupy-2026.05.07"
+PARSER_VERSION = "gupy-2026.05.08"
+
+
+def is_partial(job_data: dict) -> bool:
+    """Gupy nunca fica em ``partial``.
+
+    Toda a coleta vem da API publica ``portal.api.gupy.io/api/v1/jobs`` em
+    uma chamada por stack. Nao existe pagina de detalhe a refetchar - o
+    payload da API e o estado mais completo possivel da vaga. Por isso a
+    engine nao expoe ``refetch_one``.
+
+    Campos vazios (salary, skills) sao naturais quando a vaga Gupy nao
+    publica - refetch nao traria nada.
+    """
+    return False
 
 
 # --- Sessão (padrão httpx compartilhado) ---------------------------------
