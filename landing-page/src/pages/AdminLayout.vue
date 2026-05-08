@@ -273,25 +273,27 @@ onUnmounted(() => {
 /* Admin Layout — espelho do DashboardLayout (cliente) com grupos de nav. */
 
 .dl {
-  height: 100dvh;
+  min-height: 100dvh;
   background: var(--color-background);
   color: var(--color-text-primary);
-  display: grid;
-  grid-template-columns: 248px 1fr;
-  overflow: hidden;
   font-family: var(--font-family);
+  padding-left: 248px;
+  transition: padding-left var(--transition-base) cubic-bezier(0.32, 0.72, 0, 1);
 }
 
 .dl:has(.dl-side--collapsed) {
-  grid-template-columns: 64px 1fr;
+  padding-left: 64px;
 }
 
 @media (max-width: 767px) {
-  .dl { grid-template-columns: 1fr; }
+  .dl { padding-left: 0; }
 }
 
 .dl-side {
-  position: relative;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 248px;
   background: var(--color-surface);
   border-right: 1px solid var(--color-border);
   display: flex;
@@ -562,8 +564,6 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   min-width: 0;
-  height: 100dvh;
-  overflow: hidden;
 }
 
 .dl-topbar {
@@ -573,6 +573,8 @@ onUnmounted(() => {
   padding: 0 var(--space-6);
   border-bottom: 1px solid var(--color-border);
   background: var(--color-background);
+  position: sticky;
+  top: 0;
   z-index: var(--z-sticky);
   height: 56px;
   flex-shrink: 0;
@@ -630,14 +632,10 @@ onUnmounted(() => {
 }
 
 .dl-content {
-  flex: 1;
-  min-height: 0;
   padding: var(--space-5) var(--space-6);
   width: 100%;
   max-width: 1600px;
   margin: 0 auto;
-  overflow-y: auto;
-  overflow-x: hidden;
 }
 
 @media (max-width: 767px) {
@@ -645,29 +643,24 @@ onUnmounted(() => {
   .dl-content { padding: var(--space-4); }
 }
 
-/* Scrollbars internos: ciano da marca, encostados na lateral */
-.dl-nav,
-.dl-content {
+/* Scrollbar interno da sidebar (quando muitos itens de menu) — discreto */
+.dl-nav {
   scrollbar-width: thin;
   scrollbar-color: #06b6d4 transparent;
 }
-.dl-nav::-webkit-scrollbar,
-.dl-content::-webkit-scrollbar { width: 12px; height: 12px; }
-.dl-nav::-webkit-scrollbar-thumb,
-.dl-content::-webkit-scrollbar-thumb {
+.dl-nav::-webkit-scrollbar { width: 8px; height: 8px; }
+.dl-nav::-webkit-scrollbar-thumb {
   background: #06b6d4;
   border-radius: 999px;
-  border: 3px solid transparent;
+  border: 2px solid transparent;
   background-clip: padding-box;
 }
-.dl-nav::-webkit-scrollbar-thumb:hover,
-.dl-content::-webkit-scrollbar-thumb:hover {
+.dl-nav::-webkit-scrollbar-thumb:hover {
   background: #0891b2;
   background-clip: padding-box;
-  border: 3px solid transparent;
+  border: 2px solid transparent;
 }
-.dl-nav::-webkit-scrollbar-track,
-.dl-content::-webkit-scrollbar-track { background: transparent; }
+.dl-nav::-webkit-scrollbar-track { background: transparent; }
 
 .dl-fade-enter-active,
 .dl-fade-leave-active {

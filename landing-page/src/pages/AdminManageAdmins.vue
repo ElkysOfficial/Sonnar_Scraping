@@ -1,38 +1,76 @@
 <template>
   <div class="admin-admins">
     <div class="page-header animate-fade-in-up">
-      <h1 class="page-title">Gerenciar Administradores</h1>
-      <button @click="openAddModal" class="btn btn-primary">
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="btn-icon">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-        </svg>
+      <div>
+        <h1 class="page-title">Gerenciar Administradores</h1>
+        <p class="page-subtitle">
+          Administradores visualizam assinantes e cadastram clientes. Não podem cancelar assinaturas nem promover outros admins.
+        </p>
+      </div>
+      <button @click="openAddModal" class="btn-add-admin">
         Adicionar Admin
       </button>
     </div>
 
-    <p class="page-description animate-fade-in-up stagger-1">
-      Administradores podem visualizar assinantes e cadastrar novos clientes, mas não podem cancelar assinaturas nem adicionar outros administradores.
-    </p>
+    <!-- Stats compactos -->
+    <div class="admin-stats animate-fade-in-up stagger-1">
+      <div class="stat-pill">
+        <span class="stat-pill__label">Total</span>
+        <span class="stat-pill__value">{{ admins.length }}</span>
+      </div>
+      <div class="stat-pill stat-pill--owner">
+        <span class="stat-pill__label">Owners</span>
+        <span class="stat-pill__value">{{ ownersCount }}</span>
+      </div>
+      <div class="stat-pill stat-pill--admin">
+        <span class="stat-pill__label">Admins</span>
+        <span class="stat-pill__value">{{ adminsCount }}</span>
+      </div>
+    </div>
 
     <!-- Admins List -->
     <div class="admins-list animate-fade-in-up stagger-2">
-      <div v-for="(admin, index) in admins" :key="admin.id" class="admin-card" :style="{ animationDelay: `${index * 50}ms` }">
+      <div
+        v-for="(admin, index) in admins"
+        :key="admin.id"
+        class="admin-card"
+        :class="{ 'admin-card--owner': admin.role === 'owner' }"
+        :style="{ animationDelay: `${index * 50}ms` }"
+      >
         <div class="admin-info">
-          <div class="admin-avatar">{{ getInitials(admin.email) }}</div>
+          <div class="admin-avatar" :class="{ 'admin-avatar--owner': admin.role === 'owner' }">
+            <span>{{ getInitials(admin.email) }}</span>
+            <span v-if="admin.role === 'owner'" class="admin-avatar__crown" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor">
+                <path d="M3 18l2-9 4 5 3-7 3 7 4-5 2 9H3zm0 2h18v2H3v-2z" />
+              </svg>
+            </span>
+          </div>
           <div class="admin-details">
             <span class="admin-email">{{ admin.email }}</span>
-            <span class="admin-role">{{ admin.role === 'owner' ? 'Owner' : 'Administrador' }}</span>
+            <span class="admin-role-badge" :class="`admin-role-badge--${admin.role}`">
+              {{ admin.role === 'owner' ? 'Owner' : 'Administrador' }}
+            </span>
           </div>
         </div>
         <div class="admin-actions">
-          <span class="admin-date">Desde {{ formatDate(admin.created_at) }}</span>
-          <button 
+          <span class="admin-date">
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <rect x="3" y="4" width="18" height="18" rx="2" />
+              <line x1="16" y1="2" x2="16" y2="6" />
+              <line x1="8" y1="2" x2="8" y2="6" />
+              <line x1="3" y1="10" x2="21" y2="10" />
+            </svg>
+            Desde {{ formatDate(admin.created_at) }}
+          </span>
+          <button
             v-if="admin.role !== 'owner'"
-            @click="confirmRemove(admin)" 
+            @click="confirmRemove(admin)"
             class="btn-remove"
             :disabled="removingId === admin.id"
+            :aria-label="`Remover ${admin.email}`"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.6" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
             </svg>
           </button>
@@ -164,7 +202,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { supabase } from '@/integrations/supabase/client'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
@@ -182,6 +220,9 @@ interface Admin {
 
 const admins = ref<Admin[]>([])
 const isLoading = ref(true)
+
+const ownersCount = computed(() => admins.value.filter(a => a.role === 'owner').length)
+const adminsCount = computed(() => admins.value.filter(a => a.role === 'admin').length)
 
 const showAddModal = ref(false)
 const addModalRef = ref<HTMLElement | null>(null)
@@ -322,9 +363,9 @@ async function executeRemove() {
 
 .page-header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
-  margin-bottom: var(--space-3);
+  margin-bottom: var(--space-4);
   flex-wrap: wrap;
   gap: var(--space-4);
 }
@@ -333,20 +374,86 @@ async function executeRemove() {
   font-size: var(--text-2xl);
   font-weight: var(--font-bold);
   color: var(--color-text-primary);
+  margin: 0;
+  letter-spacing: var(--ls-tight);
 }
 
-.btn-icon {
-  width: 1rem;
-  height: 1rem;
-  margin-right: var(--space-1);
-}
-
-.page-description {
+.page-subtitle {
+  margin: 6px 0 0;
   font-size: var(--text-sm);
-  color: var(--color-text-secondary);
-  margin-bottom: var(--space-6);
+  color: var(--color-text-muted);
+  max-width: 580px;
+  line-height: 1.5;
 }
 
+.btn-icon { width: 1rem; height: 1rem; margin: 0; }
+
+/* Botão Adicionar Admin — mesmo design do "Atualizar agora" */
+.btn-add-admin {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 36px;
+  min-height: 36px;
+  min-width: 140px;
+  padding: 0 14px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: var(--color-accent);
+  color: var(--color-text-inverse, #fff);
+  font-size: 13px;
+  font-weight: var(--font-normal);
+  font-family: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: opacity var(--transition-fast);
+}
+.btn-add-admin:hover { opacity: 0.9; }
+.btn-add-admin:disabled { opacity: 0.6; cursor: progress; }
+
+/* Stats compactos */
+.admin-stats {
+  display: flex;
+  gap: var(--space-3);
+  margin-bottom: var(--space-5);
+  flex-wrap: wrap;
+}
+.stat-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  transition: border-color var(--transition-fast);
+}
+.stat-pill:hover { border-color: color-mix(in srgb, var(--color-text-muted) 30%, var(--color-border)); }
+.stat-pill__label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-muted);
+}
+.stat-pill__value {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  font-variant-numeric: tabular-nums;
+}
+.stat-pill--owner {
+  background: color-mix(in srgb, #fbbf24 8%, var(--color-surface));
+  border-color: rgba(251, 191, 36, 0.35);
+}
+.stat-pill--owner .stat-pill__value { color: #fbbf24; }
+.stat-pill--admin {
+  background: color-mix(in srgb, #2563eb 8%, var(--color-surface));
+  border-color: rgba(37, 99, 235, 0.35);
+}
+.stat-pill--admin .stat-pill__value { color: #4d8eff; }
+
+/* Lista */
 .admins-list {
   display: flex;
   flex-direction: column;
@@ -357,105 +464,175 @@ async function executeRemove() {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--space-4);
-  background: var(--color-background);
+  padding: 16px 20px;
+  background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
+  border-radius: 14px;
   gap: var(--space-4);
-  transition: all var(--transition-fast);
+  transition: transform 220ms cubic-bezier(0.32, 0.72, 0, 1),
+              box-shadow 220ms ease,
+              border-color 220ms ease;
   animation: fadeInUp 0.4s ease forwards;
   opacity: 0;
+  position: relative;
+  overflow: hidden;
 }
-
+.admin-card::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--accent-line, #2563eb), transparent);
+  opacity: 0;
+  transition: opacity 220ms ease;
+}
 .admin-card:hover {
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-md);
-  border-color: var(--color-accent-muted);
+  transform: translateY(-1px);
+  box-shadow: 0 8px 24px -12px rgba(0, 0, 0, 0.4);
+  border-color: color-mix(in srgb, var(--color-text-muted) 40%, var(--color-border));
+}
+.admin-card:hover::before { opacity: 0.6; }
+
+.admin-card--owner {
+  --accent-line: #fbbf24;
+  border-color: rgba(251, 191, 36, 0.3);
+  background: linear-gradient(135deg,
+    color-mix(in srgb, #fbbf24 5%, var(--color-surface)) 0%,
+    var(--color-surface) 60%);
+}
+.admin-card--owner:hover {
+  border-color: rgba(251, 191, 36, 0.55);
+  box-shadow: 0 8px 24px -12px rgba(251, 191, 36, 0.35);
 }
 
 @keyframes fadeInUp {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
 .admin-info {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
+  gap: 14px;
+  min-width: 0;
 }
 
 .admin-avatar {
-  width: 2.5rem;
-  height: 2.5rem;
+  position: relative;
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
-  background: var(--color-accent);
+  background: linear-gradient(135deg, #2563eb 0%, #4d8eff 100%);
   color: white;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: var(--text-sm);
-  font-weight: var(--font-semibold);
+  font-size: 14px;
+  font-weight: 700;
   flex-shrink: 0;
+  box-shadow: 0 4px 12px -4px rgba(37, 99, 235, 0.5);
+  letter-spacing: 0.02em;
+}
+.admin-avatar--owner {
+  background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%);
+  box-shadow: 0 4px 12px -4px rgba(251, 191, 36, 0.6);
+}
+.admin-avatar__crown {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fbbf24;
+  color: #78350f;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--color-surface);
+  box-shadow: 0 2px 6px rgba(251, 191, 36, 0.6);
 }
 
 .admin-details {
   display: flex;
   flex-direction: column;
+  gap: 4px;
+  min-width: 0;
 }
 
 .admin-email {
   font-size: var(--text-sm);
-  font-weight: var(--font-medium);
+  font-weight: 600;
   color: var(--color-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 320px;
 }
 
-.admin-role {
-  font-size: var(--text-xs);
-  color: var(--color-text-muted);
+.admin-role-badge {
+  display: inline-flex;
+  align-items: center;
+  width: max-content;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.admin-role-badge--admin {
+  background: rgba(37, 99, 235, 0.12);
+  color: #4d8eff;
+  border: 1px solid rgba(37, 99, 235, 0.3);
+}
+.admin-role-badge--owner {
+  background: rgba(251, 191, 36, 0.12);
+  color: #fbbf24;
+  border: 1px solid rgba(251, 191, 36, 0.4);
 }
 
 .admin-actions {
   display: flex;
   align-items: center;
-  gap: var(--space-4);
+  gap: var(--space-3);
 }
 
 .admin-date {
-  font-size: var(--text-xs);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
   color: var(--color-text-muted);
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
+.admin-date svg { color: var(--color-text-muted); }
 
 .btn-remove {
-  padding: var(--space-2);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
   color: var(--color-text-muted);
-  background: none;
-  border: none;
-  border-radius: var(--radius-md);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
   cursor: pointer;
-  transition: all var(--transition-fast);
+  transition: color var(--transition-fast),
+              background var(--transition-fast),
+              border-color var(--transition-fast);
 }
-
-.btn-remove svg {
-  width: 1.25rem;
-  height: 1.25rem;
-}
-
+.btn-remove svg { width: 18px; height: 18px; }
 .btn-remove:hover {
-  color: var(--color-error);
-  background: var(--color-error-soft);
-  transform: scale(1.1);
+  color: var(--color-error, #dc2626);
+  background: color-mix(in srgb, var(--color-error, #dc2626) 12%, transparent);
+  border-color: color-mix(in srgb, var(--color-error, #dc2626) 30%, transparent);
 }
-
-.btn-remove:active {
-  transform: scale(0.95);
-}
+.btn-remove:active { background: color-mix(in srgb, var(--color-error, #dc2626) 18%, transparent); }
+.btn-remove:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .empty-state {
   text-align: center;
@@ -623,11 +800,14 @@ async function executeRemove() {
   .admin-card {
     flex-direction: column;
     align-items: flex-start;
+    padding: 14px 16px;
   }
-
   .admin-actions {
     width: 100%;
     justify-content: space-between;
   }
+  .admin-email { max-width: 100%; }
+  .page-header { flex-direction: column; }
+  .btn-add-admin { width: 100%; }
 }
 </style>

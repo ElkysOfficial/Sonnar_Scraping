@@ -7,9 +7,6 @@
         <p class="page-subtitle">{{ counters.total }} pessoa(s) na base — admins não aparecem aqui.</p>
       </div>
       <router-link to="/admin/new-client" class="btn btn-primary">
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.6" stroke="currentColor" class="btn-icon">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-        </svg>
         Novo Cliente
       </router-link>
     </div>
@@ -445,53 +442,163 @@ async function executeCancel() {
 }
 .btn-icon { width: 1rem; height: 1rem; margin-right: var(--space-1); }
 
+/* === Novo Cliente — mesmo design do "Atualizar agora" === */
+.page-header .btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  height: 36px;
+  min-height: 36px;
+  min-width: 140px;
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: var(--color-accent);
+  color: var(--color-text-inverse, #fff);
+  font-size: 13px;
+  font-weight: var(--font-normal);
+  font-family: inherit;
+  letter-spacing: normal;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  box-shadow: none;
+  transform: none;
+  transition: opacity var(--transition-fast);
+}
+.page-header .btn-primary:hover {
+  opacity: 0.9;
+  background: var(--color-accent);
+  box-shadow: none;
+  transform: none;
+}
+.page-header .btn-primary:active {
+  background: var(--color-accent);
+  transform: none;
+}
+.page-header .btn-primary:disabled { opacity: 0.6; cursor: progress; }
+.page-header .btn-primary .btn-icon { width: 1rem; height: 1rem; margin: 0; }
+
 /* Filters row */
 .filters-row {
   display: grid;
-  grid-template-columns: 1fr 200px;
+  grid-template-columns: 1fr 220px;
   gap: var(--space-3);
   align-items: center;
 }
+
+/* === Search input — premium === */
 .filter-search {
   position: relative;
   display: flex;
   align-items: center;
 }
+.filter-search::before {
+  /* halo de foco animado */
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #06b6d4, #2563eb, #8b5cf6);
+  opacity: 0;
+  filter: blur(8px);
+  transition: opacity 220ms ease;
+  pointer-events: none;
+  z-index: 0;
+}
+.filter-search:focus-within::before { opacity: 0.55; }
+
 .filter-search input {
+  position: relative;
+  z-index: 1;
   width: 100%;
-  height: 40px;
-  padding: 0 12px 0 38px;
-  border-radius: var(--radius-md);
+  height: 44px;
+  padding: 0 44px 0 42px;
+  border-radius: 12px;
   border: 1px solid var(--color-border);
   background: var(--color-surface);
   color: var(--color-text-primary);
   font-size: var(--text-sm);
   font-family: inherit;
-  transition: border-color var(--transition-fast);
+  transition: border-color 180ms ease, background 180ms ease, box-shadow 180ms ease;
+}
+.filter-search input::placeholder {
+  color: var(--color-text-muted);
+  font-weight: 400;
+}
+.filter-search input:hover {
+  border-color: color-mix(in srgb, var(--color-text-muted) 35%, var(--color-border));
 }
 .filter-search input:focus {
   outline: none;
-  border-color: var(--color-accent);
-  box-shadow: 0 0 0 3px var(--color-accent-soft);
+  border-color: #06b6d4;
+  background: color-mix(in srgb, #06b6d4 4%, var(--color-surface));
+  box-shadow: 0 0 0 3px rgba(6, 182, 212, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
+
 .search-icon {
   position: absolute;
-  left: 12px;
-  width: 16px;
-  height: 16px;
+  left: 14px;
+  z-index: 2;
+  width: 18px;
+  height: 18px;
   color: var(--color-text-muted);
   pointer-events: none;
+  transition: color 180ms ease, transform 180ms ease;
 }
+.filter-search:focus-within .search-icon {
+  color: #06b6d4;
+  transform: scale(1.08);
+}
+
+/* shortcut badge "/" — visual leve no canto direito */
+.filter-search::after {
+  content: '/';
+  position: absolute;
+  right: 12px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  border: 1px solid var(--color-border);
+  background: color-mix(in srgb, var(--color-text-muted) 8%, transparent);
+  color: var(--color-text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  font-family: ui-monospace, 'JetBrains Mono', Consolas, monospace;
+  pointer-events: none;
+  transition: opacity 180ms ease;
+}
+.filter-search:focus-within::after { opacity: 0; }
+
+/* === Filter select — alinhado === */
 .filter-select {
-  height: 40px;
-  padding: 0 12px;
-  border-radius: var(--radius-md);
+  height: 44px;
+  padding: 0 36px 0 14px;
+  border-radius: 12px;
   border: 1px solid var(--color-border);
   background: var(--color-surface);
   color: var(--color-text-primary);
   font-size: var(--text-sm);
   font-family: inherit;
   cursor: pointer;
+  appearance: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 14px center;
+  transition: border-color 180ms ease, box-shadow 180ms ease;
+}
+.filter-select:hover {
+  border-color: color-mix(in srgb, var(--color-text-muted) 35%, var(--color-border));
+}
+.filter-select:focus {
+  outline: none;
+  border-color: #06b6d4;
+  box-shadow: 0 0 0 3px rgba(6, 182, 212, 0.18);
 }
 
 /* Tab strip */
