@@ -1,11 +1,23 @@
 <template>
   <div class="scraper-page">
+    <TopProgressBar :active="refreshing" />
+
+    <AdminPageSkeleton
+      v-if="initialLoading"
+      variant="dashboard"
+      :show-header="false"
+      :kpi-count="4"
+      :rows="6"
+      :columns="5"
+    />
+
+    <template v-else>
     <!-- Controles (título e subtítulo vêm da topbar) -->
     <div class="page-controls">
       <div class="page-controls__filters">
         <label class="filter-group">
           <span>Período</span>
-          <select v-model.number="windowMinutes" class="select" aria-label="Janela de tempo">
+          <select v-model.number="windowMinutes" class="form-select form-select--sm" aria-label="Janela de tempo">
             <option :value="15">Últimos 15 minutos</option>
             <option :value="60">Última hora</option>
             <option :value="360">Últimas 6 horas</option>
@@ -14,7 +26,7 @@
         </label>
         <label class="filter-group">
           <span>Site</span>
-          <select v-model="selectedEngine" class="select" aria-label="Filtrar por site">
+          <select v-model="selectedEngine" class="form-select form-select--sm" aria-label="Filtrar por site">
             <option value="">Todos os sites</option>
             <option v-for="opt in engineOptions" :key="opt.value" :value="opt.value">
               {{ opt.label }}
@@ -22,7 +34,7 @@
           </select>
         </label>
       </div>
-      <button class="btn-refresh" @click="loadAll" :disabled="loading">
+      <button class="btn btn-secondary btn-sm" @click="loadAll" :disabled="loading">
         {{ loading ? 'Atualizando…' : 'Atualizar agora' }}
       </button>
     </div>
@@ -329,7 +341,7 @@
           Reprocessar marca todas as URLs desta engine como "aguardando coleta" - útil quando o leitor (parser) foi atualizado.
         </span>
         <button
-          class="btn-action btn-action--primary"
+          class="btn btn-primary btn-sm"
           :disabled="actionBusy"
           @click="onReenrichEngine(selectedEngine)"
         >
@@ -379,7 +391,7 @@
         <span class="action-toolbar__title">Limpar DLQ por filtro</span>
         <label class="filter-group filter-group--inline">
           <span>Site</span>
-          <select v-model="bulkClearEngine" class="select select--sm">
+          <select v-model="bulkClearEngine" class="form-input form-input--sm select-sm">
             <option value="">Qualquer site</option>
             <option v-for="opt in engineOptions" :key="opt.value" :value="opt.value">
               {{ opt.label }}
@@ -388,7 +400,7 @@
         </label>
         <label class="filter-group filter-group--inline">
           <span>Tipo de erro</span>
-          <select v-model="bulkClearErrorType" class="select select--sm">
+          <select v-model="bulkClearErrorType" class="form-input form-input--sm select-sm">
             <option value="">Qualquer erro</option>
             <option v-for="t in dlqErrorTypeOptions" :key="t" :value="t">
               {{ friendlyError(t) }}
@@ -396,7 +408,7 @@
           </select>
         </label>
         <button
-          class="btn-action btn-action--danger"
+          class="btn btn-danger btn-sm"
           :disabled="actionBusy"
           @click="onClearDlq"
         >
@@ -432,7 +444,7 @@
               </td>
               <td class="action-cell">
                 <button
-                  class="btn-action btn-action--xs btn-action--primary"
+                  class="btn btn-primary btn-sm btn-xs"
                   :disabled="actionBusy"
                   title="Recoloca a URL na fila de coleta com 0 tentativas"
                   @click="onRetryDlq(row.job_url)"
@@ -440,7 +452,7 @@
                   Tentar de novo
                 </button>
                 <button
-                  class="btn-action btn-action--xs btn-action--ghost"
+                  class="btn btn-ghost btn-sm btn-xs"
                   :disabled="actionBusy"
                   title="Apaga esta entrada da DLQ permanentemente"
                   @click="onDeleteDlq(row.job_url)"
@@ -484,14 +496,14 @@
       <div class="action-toolbar action-toolbar--bulk">
         <label class="filter-group filter-group--inline">
           <span>Idade mínima (dias)</span>
-          <input v-model.number="nearPurgeMinDays" type="number" min="0" max="365" class="select select--sm" />
+          <input v-model.number="nearPurgeMinDays" type="number" min="0" max="365" class="form-input form-input--sm select-sm" />
         </label>
         <label class="filter-group filter-group--inline">
           <span>Idade máxima (dias)</span>
-          <input v-model.number="nearPurgeMaxDays" type="number" min="0" max="365" class="select select--sm" />
+          <input v-model.number="nearPurgeMaxDays" type="number" min="0" max="365" class="form-input form-input--sm select-sm" />
         </label>
         <button
-          class="btn-action btn-action--ghost"
+          class="btn btn-ghost btn-sm"
           :disabled="nearPurgeLoading"
           @click="loadNearPurge"
         >
@@ -551,6 +563,7 @@
     </template>
 
     <p v-if="errorMsg" class="error-msg">{{ errorMsg }}</p>
+    </template><!-- /v-else (initialLoading) -->
   </div>
 </template>
 
@@ -562,6 +575,8 @@ import HealthHero from '@/components/scraper/HealthHero.vue'
 import MetricCard from '@/components/scraper/MetricCard.vue'
 import TabChartCard from '@/components/scraper/TabChartCard.vue'
 import HelpTooltip from '@/components/common/HelpTooltip.vue'
+import AdminPageSkeleton from '@/components/admin/AdminPageSkeleton.vue'
+import TopProgressBar from '@/components/admin/TopProgressBar.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -583,7 +598,12 @@ watch(() => route.query.tab, (newTab) => {
 })
 
 const windowMinutes = ref(60)
+// `loading` (legado) é o flag genérico usado pelo botão "Atualizar agora".
+// `initialLoading` controla o skeleton no boot inicial; `refreshing` aciona
+// a barra fina de progresso no topo durante recargas.
 const loading = ref(false)
+const initialLoading = ref(true)
+const refreshing = ref(false)
 const errorMsg = ref('')
 
 const summary = ref([])
@@ -919,9 +939,17 @@ const queueAggregated = computed(() => {
 // Gráficos por aba (Proteção, Fila, DLQ, Manutenção)
 // =====================================================================
 
-const CHART_TEXT_COLOR = 'rgba(148, 163, 184, 0.85)'
-const CHART_GRID_COLOR = 'rgba(148, 163, 184, 0.18)'
-const CHART_TOOLTIP_BG = 'rgba(15, 23, 42, 0.92)'
+// Helper: read a CSS variable from :root (with fallback). Charts use design
+// tokens to stay coerentes com os temas light/dark do design system.
+function cssVar(name, fallback = '') {
+  if (typeof document === 'undefined') return fallback
+  const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim()
+  return v || fallback
+}
+const CHART_TEXT_COLOR = () => cssVar('--color-text-muted', '#6B7280')
+const CHART_GRID_COLOR = () => `color-mix(in srgb, ${cssVar('--color-text-muted', '#6B7280')} 22%, transparent)`
+const CHART_TOOLTIP_BG = () => cssVar('--color-text-primary', '#0f172a')
+const CHART_ON_TOOLTIP = () => cssVar('--color-background', '#fff')
 
 // --- Proteção: erros vs sucessos por site (5 min) ---
 const protectionChartData = computed(() => {
@@ -940,37 +968,37 @@ const protectionChartOption = computed(() => {
     legend: {
       top: 0, right: 0,
       icon: 'circle', itemWidth: 8, itemHeight: 8,
-      textStyle: { color: CHART_TEXT_COLOR, fontSize: 11 },
+      textStyle: { color: CHART_TEXT_COLOR(), fontSize: 11 },
     },
     tooltip: {
       trigger: 'axis', axisPointer: { type: 'shadow' },
-      backgroundColor: CHART_TOOLTIP_BG, borderWidth: 0,
-      textStyle: { color: '#fff', fontSize: 11 },
+      backgroundColor: CHART_TOOLTIP_BG(), borderWidth: 0,
+      textStyle: { color: CHART_ON_TOOLTIP(), fontSize: 11 },
     },
     xAxis: {
       type: 'value',
       axisLine: { show: false }, axisTick: { show: false },
-      splitLine: { lineStyle: { color: CHART_GRID_COLOR } },
-      axisLabel: { color: CHART_TEXT_COLOR, fontSize: 10 },
+      splitLine: { lineStyle: { color: CHART_GRID_COLOR() } },
+      axisLabel: { color: CHART_TEXT_COLOR(), fontSize: 10 },
     },
     yAxis: {
       type: 'category',
       data: data.map(d => d.domain),
       axisLine: { show: false }, axisTick: { show: false },
-      axisLabel: { color: CHART_TEXT_COLOR, fontSize: 11 },
+      axisLabel: { color: CHART_TEXT_COLOR(), fontSize: 11 },
     },
     series: [
       {
         name: 'Sucessos',
         type: 'bar', stack: 'total',
-        itemStyle: { color: '#16a34a', borderRadius: [0, 0, 0, 0] },
+        itemStyle: { color: cssVar('--color-success', '#059669'), borderRadius: [0, 0, 0, 0] },
         emphasis: { focus: 'series' },
         data: data.map(d => d.successes),
       },
       {
         name: 'Erros',
         type: 'bar', stack: 'total',
-        itemStyle: { color: '#dc2626', borderRadius: [0, 4, 4, 0] },
+        itemStyle: { color: cssVar('--color-error', '#DC2626'), borderRadius: [0, 4, 4, 0] },
         emphasis: { focus: 'series' },
         data: data.map(d => d.failures),
       },
@@ -990,43 +1018,47 @@ const QUEUE_STATE_LABELS = {
   blocked: 'Aguardando site',
   dlq_total: 'Sem solução automática',
 }
-const QUEUE_STATE_COLORS = {
-  discovered: '#2563eb',
-  running: '#0ea5e9',
-  partial: '#d97706',
-  completed: '#16a34a',
-  failed: '#f59e0b',
-  blocked: '#a855f7',
-  dlq_total: '#dc2626',
-}
+// Paleta do donut da fila — 7 estados, cada um com hue distinto.
+// `failed` antes usava o mesmo amber do `partial`; agora vai para pink (chart-7)
+// para que cada fatia seja imediatamente distinguível no gráfico.
+const QUEUE_STATE_COLORS = () => ({
+  discovered: cssVar('--chart-1', '#2563EB'),  // azul — aguardando coleta
+  running:    cssVar('--chart-8', '#0EA5E9'),  // ciano — coletando
+  partial:    cssVar('--chart-5', '#D97706'),  // âmbar — parcial
+  completed:  cssVar('--color-success', '#059669'),  // verde — ok
+  failed:     cssVar('--chart-7', '#DB2777'),  // rosa — falhou (retry)
+  blocked:    cssVar('--chart-3', '#7C3AED'),  // roxo — aguarda site
+  dlq_total:  cssVar('--color-error', '#DC2626'),  // vermelho — sem solução
+})
 const queueChartData = computed(() => {
   const q = queueAggregated.value || {}
+  const colors = QUEUE_STATE_COLORS()
   return Object.keys(QUEUE_STATE_LABELS)
     .map(k => ({
       name: QUEUE_STATE_LABELS[k],
       value: Number(q[k]) || 0,
-      itemStyle: { color: QUEUE_STATE_COLORS[k] },
+      itemStyle: { color: colors[k] },
     }))
     .filter(d => d.value > 0)
 })
 const queueChartOption = computed(() => ({
   tooltip: {
     trigger: 'item',
-    backgroundColor: CHART_TOOLTIP_BG, borderWidth: 0,
-    textStyle: { color: '#fff', fontSize: 11 },
+    backgroundColor: CHART_TOOLTIP_BG(), borderWidth: 0,
+    textStyle: { color: CHART_ON_TOOLTIP(), fontSize: 11 },
     formatter: '{b}<br/>{c} ({d}%)',
   },
   legend: {
     orient: 'vertical', right: 8, top: 'center',
     icon: 'circle', itemWidth: 8, itemHeight: 8,
-    textStyle: { color: CHART_TEXT_COLOR, fontSize: 11 },
+    textStyle: { color: CHART_TEXT_COLOR(), fontSize: 11 },
   },
   series: [{
     type: 'pie',
     radius: ['55%', '80%'],
     center: ['28%', '50%'],
     avoidLabelOverlap: true,
-    itemStyle: { borderColor: 'var(--color-surface, #0f172a)', borderWidth: 2 },
+    itemStyle: { borderColor: cssVar('--color-surface', '#FAFBFC'), borderWidth: 2 },
     label: { show: false },
     labelLine: { show: false },
     data: queueChartData.value,
@@ -1053,20 +1085,20 @@ const dlqChartOption = computed(() => {
     grid: { left: 8, right: 16, top: 16, bottom: 8, containLabel: true },
     tooltip: {
       trigger: 'axis', axisPointer: { type: 'shadow' },
-      backgroundColor: CHART_TOOLTIP_BG, borderWidth: 0,
-      textStyle: { color: '#fff', fontSize: 11 },
+      backgroundColor: CHART_TOOLTIP_BG(), borderWidth: 0,
+      textStyle: { color: CHART_ON_TOOLTIP(), fontSize: 11 },
     },
     xAxis: {
       type: 'value',
       axisLine: { show: false }, axisTick: { show: false },
-      splitLine: { lineStyle: { color: CHART_GRID_COLOR } },
-      axisLabel: { color: CHART_TEXT_COLOR, fontSize: 10 },
+      splitLine: { lineStyle: { color: CHART_GRID_COLOR() } },
+      axisLabel: { color: CHART_TEXT_COLOR(), fontSize: 10 },
     },
     yAxis: {
       type: 'category',
       data: data.map(d => d.label),
       axisLine: { show: false }, axisTick: { show: false },
-      axisLabel: { color: CHART_TEXT_COLOR, fontSize: 11 },
+      axisLabel: { color: CHART_TEXT_COLOR(), fontSize: 11 },
     },
     series: [{
       type: 'bar',
@@ -1074,15 +1106,15 @@ const dlqChartOption = computed(() => {
         color: {
           type: 'linear', x: 0, y: 0, x2: 1, y2: 0,
           colorStops: [
-            { offset: 0, color: '#dc2626' },
-            { offset: 1, color: '#f97316' },
+            { offset: 0, color: cssVar('--color-error', '#DC2626') },
+            { offset: 1, color: cssVar('--chart-5', '#D97706') },
           ],
         },
         borderRadius: [0, 6, 6, 0],
       },
       label: {
         show: true, position: 'right',
-        color: CHART_TEXT_COLOR, fontSize: 11, fontWeight: 600,
+        color: CHART_TEXT_COLOR(), fontSize: 11, fontWeight: 600,
       },
       data: data.map(d => d.value),
       animationDuration: 700,
@@ -1108,8 +1140,8 @@ const maintenanceChartOption = computed(() => {
     grid: { left: 8, right: 16, top: 16, bottom: 28, containLabel: true },
     tooltip: {
       trigger: 'axis', axisPointer: { type: 'shadow' },
-      backgroundColor: CHART_TOOLTIP_BG, borderWidth: 0,
-      textStyle: { color: '#fff', fontSize: 11 },
+      backgroundColor: CHART_TOOLTIP_BG(), borderWidth: 0,
+      textStyle: { color: CHART_ON_TOOLTIP(), fontSize: 11 },
       formatter: (params) => {
         const p = params[0]
         return `${p.name} dias<br/>${p.value} vagas`
@@ -1119,25 +1151,25 @@ const maintenanceChartOption = computed(() => {
       type: 'category',
       data: data.map(d => d.days),
       name: 'idade (dias)', nameLocation: 'middle', nameGap: 22,
-      nameTextStyle: { color: CHART_TEXT_COLOR, fontSize: 10 },
-      axisLine: { lineStyle: { color: CHART_GRID_COLOR } },
+      nameTextStyle: { color: CHART_TEXT_COLOR(), fontSize: 10 },
+      axisLine: { lineStyle: { color: CHART_GRID_COLOR() } },
       axisTick: { show: false },
-      axisLabel: { color: CHART_TEXT_COLOR, fontSize: 10 },
+      axisLabel: { color: CHART_TEXT_COLOR(), fontSize: 10 },
     },
     yAxis: {
       type: 'value',
       axisLine: { show: false }, axisTick: { show: false },
-      splitLine: { lineStyle: { color: CHART_GRID_COLOR } },
-      axisLabel: { color: CHART_TEXT_COLOR, fontSize: 10 },
+      splitLine: { lineStyle: { color: CHART_GRID_COLOR() } },
+      axisLabel: { color: CHART_TEXT_COLOR(), fontSize: 10 },
     },
     series: [{
       type: 'bar',
       itemStyle: {
         color: (params) => {
           const days = Number(data[params.dataIndex]?.days) || 0
-          if (days >= 88) return '#dc2626'
-          if (days >= 85) return '#f59e0b'
-          return '#d97706'
+          if (days >= 88) return cssVar('--color-error', '#DC2626')
+          if (days >= 85) return cssVar('--chart-5', '#D97706')
+          return cssVar('--color-warning', '#D97706')
         },
         borderRadius: [4, 4, 0, 0],
       },
@@ -1191,8 +1223,10 @@ function formatMs (ms) {
   return (n / 1000).toFixed(1) + ' s'
 }
 
-async function loadAll () {
+async function loadAll (opts = {}) {
+  const silent = opts.silent === true
   loading.value = true
+  if (!silent) refreshing.value = true
   errorMsg.value = ''
   try {
     const bucketMin = bucketForWindow(windowMinutes.value)
@@ -1221,6 +1255,7 @@ async function loadAll () {
     errorMsg.value = err.message || 'Falha ao carregar métricas.'
   } finally {
     loading.value = false
+    refreshing.value = false
   }
 }
 
@@ -1353,21 +1388,29 @@ async function loadNearPurge () {
 }
 
 let timer = null
-onMounted(() => {
-  loadAll()
-  timer = setInterval(loadAll, 30_000)
+onMounted(async () => {
+  // Boot inicial: mostra skeleton enquanto carrega. Polling a cada 30s
+  // é silencioso (apenas a barra fina aparece, dados ficam visíveis).
+  try {
+    await loadAll({ silent: true })
+  } finally {
+    initialLoading.value = false
+  }
+  timer = setInterval(() => loadAll(), 30_000)
 })
 onBeforeUnmount(() => { if (timer) clearInterval(timer) })
-watch(windowMinutes, loadAll)
+watch(windowMinutes, () => loadAll())
 watch(selectedEngine, loadNearPurge)
 watch([nearPurgeMinDays, nearPurgeMaxDays], loadNearPurge)
 </script>
 
 <style scoped>
 .scraper-page {
+  /* Sem max-width — AdminLayout cuida do cap em 1600px e da centralização. */
+  width: 100%;
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: var(--space-5);
 }
 
 .page-controls {
@@ -1383,17 +1426,14 @@ watch([nearPurgeMinDays, nearPurgeMaxDays], loadNearPurge)
   font-size: 11px; color: var(--color-text-muted);
   text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600;
 }
-.select, .btn-refresh {
-  height: 36px; padding: 0 12px; border-radius: 8px;
-  border: 1px solid var(--color-border); background: var(--color-surface);
-  color: var(--color-text-primary); font-size: 13px; cursor: pointer;
-  font-family: inherit; min-width: 180px;
+/* selects herdam .form-select/.form-input dos globals; só ajustamos a
+   largura mínima para alinhar visualmente com os filtros adjacentes. */
+.form-select {
+  min-width: 11.25rem;
 }
-.btn-refresh {
-  background: var(--color-accent); color: var(--color-text-inverse, #fff);
-  border-color: transparent; min-width: 140px; align-self: end;
+.select-sm {                    /* input numérico inline */
+  min-width: 8.75rem;
 }
-.btn-refresh:disabled { opacity: 0.6; cursor: progress; }
 
 .filter-pill {
   display: flex; align-items: center; justify-content: space-between;
@@ -1411,29 +1451,30 @@ watch([nearPurgeMinDays, nearPurgeMaxDays], loadNearPurge)
 
 .row-clickable { cursor: pointer; transition: background-color 120ms ease; }
 .row-clickable:hover { background: var(--color-glass-bg, rgba(0,0,0,0.03)); }
-.row-active { background: var(--color-accent-soft) !important; }
+tr.row-active,
+tr.row-active:hover { background: var(--color-accent-soft); }
 .row-active td:first-child { font-weight: 600; }
 
 /* Banner de saúde geral - semáforo visual */
 .health-banner {
-  display: flex; align-items: center; gap: 14px;
-  padding: 14px 18px; border-radius: 12px;
+  display: flex; align-items: center; gap: var(--space-4);
+  padding: var(--space-4) var(--space-5); border-radius: var(--radius-lg);
   border: 1px solid var(--color-border);
   background: var(--color-surface);
 }
-.health-banner.success { background: rgba(22,163,74,0.06);  border-color: rgba(22,163,74,0.25);  }
-.health-banner.warn    { background: rgba(217,119,6,0.06);  border-color: rgba(217,119,6,0.25);  }
-.health-banner.danger  { background: rgba(220,38,38,0.06);  border-color: rgba(220,38,38,0.25);  }
+.health-banner.success { background: color-mix(in srgb, var(--color-success) 6%, transparent); border-color: color-mix(in srgb, var(--color-success) 25%, transparent); }
+.health-banner.warn    { background: color-mix(in srgb, var(--color-warning) 6%, transparent); border-color: color-mix(in srgb, var(--color-warning) 25%, transparent); }
+.health-banner.danger  { background: color-mix(in srgb, var(--color-error) 6%, transparent);   border-color: color-mix(in srgb, var(--color-error) 25%, transparent); }
 .health-banner.idle    { background: var(--color-glass-bg); }
 .health-icon {
-  width: 36px; height: 36px; flex-shrink: 0;
-  border-radius: 10px; display: grid; place-items: center;
-  font-size: 18px; font-weight: 700;
+  width: var(--space-9); height: var(--space-9); flex-shrink: 0;
+  border-radius: var(--radius-md); display: grid; place-items: center;
+  font-size: var(--text-lg); font-weight: var(--font-bold);
   background: var(--color-surface); border: 1px solid var(--color-border);
 }
-.health-banner.success .health-icon { color: #16a34a; border-color: rgba(22,163,74,0.4); }
-.health-banner.warn    .health-icon { color: #d97706; border-color: rgba(217,119,6,0.4); }
-.health-banner.danger  .health-icon { color: #dc2626; border-color: rgba(220,38,38,0.4); }
+.health-banner.success .health-icon { color: var(--color-success); border-color: color-mix(in srgb, var(--color-success) 40%, transparent); }
+.health-banner.warn    .health-icon { color: var(--color-warning); border-color: color-mix(in srgb, var(--color-warning) 40%, transparent); }
+.health-banner.danger  .health-icon { color: var(--color-error);   border-color: color-mix(in srgb, var(--color-error) 40%, transparent); }
 .health-banner.idle    .health-icon { color: var(--color-text-muted); }
 .health-text { display: flex; flex-direction: column; gap: 2px; }
 .health-text strong { font-size: 14px; color: var(--color-text-primary); }
@@ -1476,45 +1517,51 @@ watch([nearPurgeMinDays, nearPurgeMaxDays], loadNearPurge)
   margin: -4px 0 14px; font-size: 12px;
   color: var(--color-text-secondary); line-height: 1.5;
 }
-.success-msg { color: #16a34a !important; font-weight: 500; }
+.success-msg { color: var(--color-success); font-weight: var(--font-medium); }
 
+/* KPI grid — colunas explícitas para evitar célula vazia em telas largas. */
 .kpi-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--space-3);
 }
+@media (max-width: 1280px) { .kpi-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 560px)  { .kpi-grid { grid-template-columns: 1fr; } }
 .kpi {
-  background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 12px;
-  padding: 14px 16px; display: flex; flex-direction: column; gap: 4px;
+  background: var(--color-surface); border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5); display: flex; flex-direction: column; gap: var(--space-2);
 }
-.kpi-label { font-size: 12px; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
-.kpi-value { font-size: 22px; font-weight: 700; color: var(--color-text-primary); }
-.kpi-hint  { font-size: 12px; color: var(--color-text-secondary); }
-.kpi.success .kpi-value { color: var(--color-success, #16a34a); }
-.kpi.warn    .kpi-value { color: var(--color-warning, #d97706); }
-.kpi.danger  .kpi-value { color: var(--color-error,   #dc2626); }
+.kpi-label { font-size: var(--text-xs); color: var(--color-text-muted); text-transform: uppercase; letter-spacing: var(--ls-wide); }
+.kpi-value { font-size: var(--text-2xl); font-weight: var(--font-bold); color: var(--color-text-primary); line-height: 1.1; }
+.kpi-hint  { font-size: var(--text-xs); color: var(--color-text-secondary); }
+.kpi.success .kpi-value { color: var(--color-success); }
+.kpi.warn    .kpi-value { color: var(--color-warning); }
+.kpi.danger  .kpi-value { color: var(--color-error); }
 
 .card {
   background: var(--color-surface); border: 1px solid var(--color-border);
-  border-radius: 12px; padding: 16px 18px;
+  border-radius: var(--radius-card);
+  /* Padding folgado p/ que o conteúdo respire dentro do card. */
+  padding: var(--space-5) var(--space-6);
 }
-.card h2 { margin: 0 0 12px; font-size: 15px; font-weight: 600; color: var(--color-text-primary); }
+.card h2 { margin: 0 0 var(--space-3); font-size: var(--text-base); font-weight: var(--font-semibold); color: var(--color-text-primary); letter-spacing: var(--ls-tight); }
 .table-wrap { overflow-x: auto; }
-.table { width: 100%; border-collapse: collapse; font-size: 13px; }
-.table th, .table td { padding: 8px 10px; border-bottom: 1px solid var(--color-border); text-align: left; }
-.table th { font-weight: 600; color: var(--color-text-muted); text-transform: uppercase; font-size: 11px; letter-spacing: 0.04em; }
+.table { width: 100%; border-collapse: collapse; font-size: var(--text-sm); }
+.table th, .table td { padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--color-border); text-align: left; }
+.table th { font-weight: var(--font-semibold); color: var(--color-text-muted); text-transform: uppercase; font-size: var(--text-xs); letter-spacing: var(--ls-wide); }
 .table td.num, .table th.num { text-align: right; font-variant-numeric: tabular-nums; }
-.table td.danger { color: var(--color-error, #dc2626); font-weight: 600; }
-.table td.warn   { color: var(--color-warning, #d97706); font-weight: 600; }
+.table td.danger { color: var(--color-error); font-weight: var(--font-semibold); }
+.table td.warn   { color: var(--color-warning); font-weight: var(--font-semibold); }
 .table .empty { text-align: center; color: var(--color-text-muted); padding: 18px; }
 
 .pill {
-  display: inline-block; padding: 2px 10px; border-radius: 999px;
-  font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;
+  display: inline-block; padding: 2px var(--space-3); border-radius: var(--radius-full);
+  font-size: var(--text-xs); font-weight: var(--font-semibold); text-transform: uppercase; letter-spacing: var(--ls-wide);
 }
-.pill-ok     { background: rgba(22,163,74,0.12); color: #16a34a; }
-.pill-warn   { background: rgba(217,119,6,0.12); color: #d97706; }
-.pill-danger { background: rgba(220,38,38,0.12); color: #dc2626; }
+.pill-ok     { background: color-mix(in srgb, var(--color-success) 12%, transparent); color: var(--color-success); }
+.pill-warn   { background: color-mix(in srgb, var(--color-warning) 12%, transparent); color: var(--color-warning); }
+.pill-danger { background: color-mix(in srgb, var(--color-error) 12%, transparent);   color: var(--color-error); }
 
 .event-list { list-style: none; padding: 0; margin: 0; max-height: 360px; overflow-y: auto; }
 .event-list li {
@@ -1527,27 +1574,30 @@ watch([nearPurgeMinDays, nearPurgeMaxDays], loadNearPurge)
 .ev-kind   { color: var(--color-text-primary); font-weight: 600; }
 .ev-domain { color: var(--color-text-secondary); }
 .ev-data   { color: var(--color-text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.ev-warn   .ev-kind { color: #d97706; }
-.ev-danger .ev-kind { color: #dc2626; }
+.ev-warn   .ev-kind { color: var(--color-warning); }
+.ev-danger .ev-kind { color: var(--color-error); }
 
 .queue-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-  gap: 10px;
-  margin-bottom: 16px;
+  /* 7 estados → 7 colunas em telas largas, 4 em médias, 2 em pequenas. */
+  grid-template-columns: repeat(7, 1fr);
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
 }
+@media (max-width: 1280px) { .queue-grid { grid-template-columns: repeat(4, 1fr); } }
+@media (max-width: 640px)  { .queue-grid { grid-template-columns: repeat(2, 1fr); } }
 .q-card {
   background: var(--color-glass-bg, rgba(0,0,0,0.02));
   border: 1px solid var(--color-border);
-  border-radius: 10px;
-  padding: 10px 12px;
-  display: flex; flex-direction: column; gap: 2px;
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  display: flex; flex-direction: column; gap: var(--space-1);
 }
-.q-label { font-size: 11px; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
-.q-value { font-size: 18px; font-weight: 700; color: var(--color-text-primary); }
-.q-card.success .q-value { color: var(--color-success, #16a34a); }
-.q-card.warn    .q-value { color: var(--color-warning, #d97706); }
-.q-card.danger  .q-value { color: var(--color-error, #dc2626); }
+.q-label { font-size: var(--text-xs); color: var(--color-text-muted); text-transform: uppercase; letter-spacing: var(--ls-wide); }
+.q-value { font-size: var(--text-xl); font-weight: var(--font-bold); color: var(--color-text-primary); line-height: 1.2; }
+.q-card.success .q-value { color: var(--color-success); }
+.q-card.warn    .q-value { color: var(--color-warning); }
+.q-card.danger  .q-value { color: var(--color-error); }
 .subhead { font-size: 12px; font-weight: 600; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 0.04em; margin: 16px 0 8px; }
 .url-cell a {
   color: var(--color-accent); text-decoration: none;
@@ -1558,11 +1608,11 @@ watch([nearPurgeMinDays, nearPurgeMaxDays], loadNearPurge)
 .table small { display: block; color: var(--color-text-muted); font-size: 11px; margin-top: 2px; }
 
 .error-msg {
-  color: var(--color-error, #dc2626);
-  background: rgba(220,38,38,0.08);
-  border: 1px solid rgba(220,38,38,0.25);
-  padding: 10px 14px; border-radius: 8px;
-  font-size: 13px;
+  color: var(--color-error);
+  background: color-mix(in srgb, var(--color-error) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-error) 25%, transparent);
+  padding: var(--space-3) var(--space-4); border-radius: var(--radius-md);
+  font-size: var(--text-sm);
 }
 
 /* Painel de controle (Fase 3) */
@@ -1596,36 +1646,13 @@ watch([nearPurgeMinDays, nearPurgeMaxDays], loadNearPurge)
 .filter-group--inline { flex-direction: column; gap: 4px; }
 .select--sm { height: 32px; min-width: 140px; font-size: 12px; padding: 0 10px; }
 
-.btn-action {
-  height: 32px;
-  padding: 0 14px;
-  border-radius: 8px;
-  border: 1px solid var(--color-border);
-  background: var(--color-surface);
-  color: var(--color-text-primary);
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: filter 120ms ease, opacity 120ms ease;
-  font-family: inherit;
-  white-space: nowrap;
+/* Modificador "extra small" para botões em linha (DLQ ações por linha de tabela).
+   Use junto com .btn .btn-sm: .btn .btn-primary .btn-sm .btn-xs */
+.btn-xs {
+  min-height: 1.625rem;          /* 26px */
+  padding: 0 var(--space-3);
+  font-size: var(--text-xs);
 }
-.btn-action:hover:not(:disabled) { filter: brightness(1.05); }
-.btn-action:disabled { opacity: 0.55; cursor: progress; }
-.btn-action--primary {
-  background: var(--color-accent);
-  color: var(--color-text-inverse, #fff);
-  border-color: transparent;
-}
-.btn-action--danger {
-  background: rgba(220,38,38,0.1);
-  color: #dc2626;
-  border-color: rgba(220,38,38,0.3);
-}
-.btn-action--ghost {
-  background: transparent;
-}
-.btn-action--xs { height: 26px; padding: 0 10px; font-size: 11px; }
 
 .action-cell {
   display: flex;
@@ -1647,17 +1674,17 @@ watch([nearPurgeMinDays, nearPurgeMaxDays], loadNearPurge)
 .tab-btn {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 14px;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);   /* 12px 16px */
   background: transparent;
   border: none;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   color: var(--color-text-secondary);
-  font-size: 13px;
-  font-weight: 600;
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
   cursor: pointer;
   white-space: nowrap;
-  transition: background-color 120ms ease, color 120ms ease;
+  transition: background-color var(--transition-fast), color var(--transition-fast);
   font-family: inherit;
 }
 .tab-btn:hover {
@@ -1667,7 +1694,7 @@ watch([nearPurgeMinDays, nearPurgeMaxDays], loadNearPurge)
 .tab-btn--active {
   background: var(--color-surface);
   color: var(--color-accent);
-  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  box-shadow: var(--shadow-sm);
 }
 .tab-btn__badge {
   display: inline-flex;
@@ -1683,8 +1710,8 @@ watch([nearPurgeMinDays, nearPurgeMaxDays], loadNearPurge)
   font-variant-numeric: tabular-nums;
 }
 .tab-btn--active .tab-btn__badge { background: var(--color-accent-soft); color: var(--color-accent); }
-.tab-btn__badge--danger { background: rgba(220,38,38,0.12); color: #dc2626; }
-.tab-btn__badge--warn   { background: rgba(217,119,6,0.12); color: #d97706; }
+.tab-btn__badge--danger { background: color-mix(in srgb, var(--color-error) 12%, transparent); color: var(--color-error); }
+.tab-btn__badge--warn   { background: color-mix(in srgb, var(--color-warning) 12%, transparent); color: var(--color-warning); }
 
 @media (max-width: 640px) {
   .tab-btn { padding: 8px 10px; font-size: 12px; }

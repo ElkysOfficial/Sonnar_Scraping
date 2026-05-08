@@ -480,7 +480,7 @@ export default {
 .drawer-scrim {
   position: absolute;
   inset: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: color-mix(in srgb, #000 50%, transparent);
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
 }
@@ -492,7 +492,7 @@ export default {
   background: var(--color-background);
   display: flex;
   flex-direction: column;
-  box-shadow: -24px 0 60px -12px rgba(0, 0, 0, 0.45);
+  box-shadow: var(--shadow-xl);
   outline: none;
   /* Safe area iOS notch */
   padding-top: env(safe-area-inset-top);
@@ -617,7 +617,7 @@ export default {
   padding: var(--space-2) var(--space-3);
   background: transparent;
   border: 1px solid var(--color-border);
-  border-radius: 999px;
+  border-radius: var(--radius-full);
   color: var(--color-text-secondary);
   font-size: 0.8125rem;
   font-weight: var(--font-medium);

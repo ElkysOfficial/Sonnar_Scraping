@@ -1,5 +1,18 @@
 <template>
   <div class="admin-subscribers">
+    <TopProgressBar :active="refreshing" />
+
+    <!-- Skeleton no boot inicial; depois disso, dados ficam visíveis e
+         a barra fina indica refresh. -->
+    <AdminPageSkeleton
+      v-if="initialLoading"
+      variant="table"
+      :show-action="true"
+      :rows="8"
+      :columns="6"
+    />
+
+    <template v-else>
     <!-- Page header -->
     <div class="page-header">
       <div>
@@ -13,19 +26,21 @@
 
     <!-- Filtros (busca + status) — globais entre abas -->
     <div class="filters-row">
-      <div class="filter-search">
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.6" stroke="currentColor" class="search-icon">
+      <div class="form-search">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.6" stroke="currentColor" class="form-search__icon">
           <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
         </svg>
         <input
           v-model="searchQuery"
           type="text"
+          class="form-input has-shortcut"
           placeholder="Buscar por nome, email ou telefone…"
           aria-label="Buscar assinantes"
         />
+        <kbd class="form-search__shortcut" aria-hidden="true">/</kbd>
       </div>
 
-      <select v-model="statusFilter" class="filter-select" aria-label="Filtrar por status">
+      <select v-model="statusFilter" class="form-select" aria-label="Filtrar por status">
         <option value="">Todos os status</option>
         <option value="active">Ativos</option>
         <option value="inactive">Inativos</option>
@@ -51,35 +66,29 @@
       </button>
     </nav>
 
-    <!-- Loading -->
-    <div v-if="isLoading" class="loading-state">
-      <SonnarLoader size="md" text="Detectando assinantes…" />
-    </div>
+    <!-- Conteúdo principal — sempre visível pós-boot, refresh via TopProgressBar -->
+    <section class="panel">
+      <SubscribersTable
+        :subscribers="paginated"
+        :is-owner="isOwner"
+        :show-promote="activeTab === 'community'"
+        @cancel="confirmCancel"
+        @promote="openPromoteModal"
+      />
 
-    <!-- Content -->
-    <template v-else>
-      <section class="panel">
-        <SubscribersTable
-          :subscribers="paginated"
-          :is-owner="isOwner"
-          :show-promote="activeTab === 'community'"
-          @cancel="confirmCancel"
-          @promote="openPromoteModal"
-        />
+      <EmptyDetection
+        v-if="filteredOnTab.length === 0"
+        icon="users"
+        :title="emptyState.title"
+        :subtitle="emptyState.subtitle"
+      />
 
-        <EmptyDetection
-          v-if="filteredOnTab.length === 0"
-          icon="users"
-          :title="emptyState.title"
-          :subtitle="emptyState.subtitle"
-        />
-
-        <div v-if="totalPages > 1" class="pagination">
-          <button class="pagination-btn" :disabled="page === 1" @click="page--">Anterior</button>
-          <span class="pagination-info">Página {{ page }} de {{ totalPages }}</span>
-          <button class="pagination-btn" :disabled="page === totalPages" @click="page++">Próxima</button>
-        </div>
-      </section>
+      <div v-if="totalPages > 1" class="pagination">
+        <button class="pagination-btn" :disabled="page === 1" @click="page--">Anterior</button>
+        <span class="pagination-info">Página {{ page }} de {{ totalPages }}</span>
+        <button class="pagination-btn" :disabled="page === totalPages" @click="page++">Próxima</button>
+      </div>
+    </section>
     </template>
 
     <!-- Cancel modal -->
@@ -170,7 +179,8 @@ import { useRoute, useRouter } from 'vue-router'
 import { supabase } from '@/integrations/supabase/client'
 import { useAuth } from '@/composables/useAuth'
 import SubscribersTable from '@/components/SubscribersTable.vue'
-import SonnarLoader from '@/components/SonnarLoader.vue'
+import AdminPageSkeleton from '@/components/admin/AdminPageSkeleton.vue'
+import TopProgressBar from '@/components/admin/TopProgressBar.vue'
 import EmptyDetection from '@/components/EmptyDetection.vue'
 import { useModalFocus } from '@/composables/useModalFocus'
 
@@ -202,7 +212,10 @@ const VALID_TABS: TabId[] = ['plus', 'pro', 'community']
 
 const subscribers = ref<Subscriber[]>([])
 const adminUserIds = ref<Set<string>>(new Set())
-const isLoading = ref(true)
+// `initialLoading` controla o skeleton de página inteira no boot.
+// `refreshing` é usado em recargas sob demanda → mostra apenas a barra fina.
+const initialLoading = ref(true)
+const refreshing = ref(false)
 const searchQuery = ref('')
 const statusFilter = ref('')
 
@@ -320,7 +333,11 @@ const emptyState = computed(() => {
 })
 
 onMounted(async () => {
-  await Promise.all([fetchAdmins(), fetchSubscribers()])
+  try {
+    await Promise.all([fetchAdmins(), fetchSubscribers({ silent: true })])
+  } finally {
+    initialLoading.value = false
+  }
 })
 
 async function fetchAdmins() {
@@ -336,8 +353,10 @@ async function fetchAdmins() {
   }
 }
 
-async function fetchSubscribers() {
-  isLoading.value = true
+async function fetchSubscribers(opts: { silent?: boolean } = {}) {
+  // `silent` (boot) não toca em refreshing — quem cuida é o initialLoading.
+  // Recargas posteriores ativam a barra fina no topo, mantendo dados visíveis.
+  if (!opts.silent) refreshing.value = true
   try {
     const { data, error } = await supabase
       .from('subscribers')
@@ -365,7 +384,7 @@ async function fetchSubscribers() {
   } catch (err) {
     console.error('Erro ao carregar assinantes:', err)
   } finally {
-    isLoading.value = false
+    refreshing.value = false
   }
 }
 
@@ -415,7 +434,8 @@ async function executeCancel() {
 
 <style scoped>
 .admin-subscribers {
-  max-width: 1400px;
+  /* Sem max-width — AdminLayout já cobre o cap em 1600px. */
+  width: 100%;
   display: flex;
   flex-direction: column;
   gap: var(--space-5);
@@ -440,45 +460,7 @@ async function executeCancel() {
   font-size: var(--text-sm);
   color: var(--color-text-muted);
 }
-.btn-icon { width: 1rem; height: 1rem; margin-right: var(--space-1); }
-
-/* === Novo Cliente — mesmo design do "Atualizar agora" === */
-.page-header .btn-primary {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-1);
-  height: 36px;
-  min-height: 36px;
-  min-width: 140px;
-  padding: 0 12px;
-  border: 1px solid transparent;
-  border-radius: 8px;
-  background: var(--color-accent);
-  color: var(--color-text-inverse, #fff);
-  font-size: 13px;
-  font-weight: var(--font-normal);
-  font-family: inherit;
-  letter-spacing: normal;
-  text-decoration: none;
-  white-space: nowrap;
-  cursor: pointer;
-  box-shadow: none;
-  transform: none;
-  transition: opacity var(--transition-fast);
-}
-.page-header .btn-primary:hover {
-  opacity: 0.9;
-  background: var(--color-accent);
-  box-shadow: none;
-  transform: none;
-}
-.page-header .btn-primary:active {
-  background: var(--color-accent);
-  transform: none;
-}
-.page-header .btn-primary:disabled { opacity: 0.6; cursor: progress; }
-.page-header .btn-primary .btn-icon { width: 1rem; height: 1rem; margin: 0; }
+/* O botão "Novo Cliente" usa o .btn .btn-primary global — sem overrides locais. */
 
 /* Filters row */
 .filters-row {
@@ -488,118 +470,24 @@ async function executeCancel() {
   align-items: center;
 }
 
-/* === Search input — premium === */
-.filter-search {
-  position: relative;
-  display: flex;
-  align-items: center;
-}
-.filter-search::before {
-  /* halo de foco animado */
+/* Busca usa .form-search + .form-input dos globals; aqui só o "halo" colorido
+   por trás do input — toque visual exclusivo desta página. */
+.form-search::before {
   content: '';
   position: absolute;
   inset: -1px;
-  border-radius: 12px;
-  background: linear-gradient(135deg, #06b6d4, #2563eb, #8b5cf6);
+  border-radius: var(--radius-lg);
+  background: linear-gradient(135deg, var(--color-secondary), var(--color-accent), var(--chart-3));
   opacity: 0;
   filter: blur(8px);
-  transition: opacity 220ms ease;
+  transition: opacity var(--transition-base);
   pointer-events: none;
   z-index: 0;
 }
-.filter-search:focus-within::before { opacity: 0.55; }
-
-.filter-search input {
-  position: relative;
-  z-index: 1;
-  width: 100%;
-  height: 44px;
-  padding: 0 44px 0 42px;
-  border-radius: 12px;
-  border: 1px solid var(--color-border);
-  background: var(--color-surface);
-  color: var(--color-text-primary);
-  font-size: var(--text-sm);
-  font-family: inherit;
-  transition: border-color 180ms ease, background 180ms ease, box-shadow 180ms ease;
-}
-.filter-search input::placeholder {
-  color: var(--color-text-muted);
-  font-weight: 400;
-}
-.filter-search input:hover {
-  border-color: color-mix(in srgb, var(--color-text-muted) 35%, var(--color-border));
-}
-.filter-search input:focus {
-  outline: none;
-  border-color: #06b6d4;
-  background: color-mix(in srgb, #06b6d4 4%, var(--color-surface));
-  box-shadow: 0 0 0 3px rgba(6, 182, 212, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.04);
-}
-
-.search-icon {
-  position: absolute;
-  left: 14px;
-  z-index: 2;
-  width: 18px;
-  height: 18px;
-  color: var(--color-text-muted);
-  pointer-events: none;
-  transition: color 180ms ease, transform 180ms ease;
-}
-.filter-search:focus-within .search-icon {
-  color: #06b6d4;
-  transform: scale(1.08);
-}
-
-/* shortcut badge "/" — visual leve no canto direito */
-.filter-search::after {
-  content: '/';
-  position: absolute;
-  right: 12px;
-  z-index: 2;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  border-radius: 6px;
-  border: 1px solid var(--color-border);
-  background: color-mix(in srgb, var(--color-text-muted) 8%, transparent);
-  color: var(--color-text-muted);
-  font-size: 11px;
-  font-weight: 700;
-  font-family: ui-monospace, 'JetBrains Mono', Consolas, monospace;
-  pointer-events: none;
-  transition: opacity 180ms ease;
-}
-.filter-search:focus-within::after { opacity: 0; }
-
-/* === Filter select — alinhado === */
-.filter-select {
-  height: 44px;
-  padding: 0 36px 0 14px;
-  border-radius: 12px;
-  border: 1px solid var(--color-border);
-  background: var(--color-surface);
-  color: var(--color-text-primary);
-  font-size: var(--text-sm);
-  font-family: inherit;
-  cursor: pointer;
-  appearance: none;
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>");
-  background-repeat: no-repeat;
-  background-position: right 14px center;
-  transition: border-color 180ms ease, box-shadow 180ms ease;
-}
-.filter-select:hover {
-  border-color: color-mix(in srgb, var(--color-text-muted) 35%, var(--color-border));
-}
-.filter-select:focus {
-  outline: none;
-  border-color: #06b6d4;
-  box-shadow: 0 0 0 3px rgba(6, 182, 212, 0.18);
-}
+.form-search:focus-within::before { opacity: 0.55; }
+.form-search > .form-input { position: relative; z-index: 1; }
+.form-search > .form-search__shortcut { z-index: 2; }
+.form-search > .form-search__icon { z-index: 2; }
 
 /* Tab strip */
 .tab-strip {
@@ -614,8 +502,8 @@ async function executeCancel() {
 .tab-btn {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 10px 16px;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-5);   /* 12px 20px — mais respiro */
   background: transparent;
   border: none;
   border-radius: var(--radius-md);
@@ -631,7 +519,7 @@ async function executeCancel() {
 .tab-btn--active {
   background: var(--color-surface);
   color: var(--color-text-primary);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+  box-shadow: var(--shadow-sm);
 }
 .tab-btn__dot {
   display: inline-block;
@@ -639,9 +527,9 @@ async function executeCancel() {
   border-radius: 50%;
   background: var(--color-text-muted);
 }
-.tab-btn--plus      .tab-btn__dot { background: #8b5cf6; }
-.tab-btn--pro       .tab-btn__dot { background: #2563eb; }
-.tab-btn--community .tab-btn__dot { background: #16a34a; }
+.tab-btn--plus      .tab-btn__dot { background: var(--chart-3); }
+.tab-btn--pro       .tab-btn__dot { background: var(--chart-1); }
+.tab-btn--community .tab-btn__dot { background: var(--color-success); }
 .tab-btn__count {
   display: inline-flex;
   align-items: center;

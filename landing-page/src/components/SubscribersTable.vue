@@ -273,55 +273,55 @@ function getOriginLabel(origin: string): string {
 .subscribers-table {
   width: 100%;
   border-collapse: collapse;
-  min-width: 800px;
+  min-width: 50rem;
 }
 
 .subscribers-table th,
 .subscribers-table td {
-  padding: 12px 16px;
+  padding: var(--space-3) var(--space-4);
   text-align: left;
 }
 
 .subscribers-table th {
-  font-size: 11px;
-  font-weight: 600;
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
   color: var(--color-text-muted);
   text-transform: uppercase;
-  letter-spacing: 0.5px;
-  background: rgba(255, 255, 255, 0.03);
+  letter-spacing: var(--ls-wide);
+  background: var(--color-surface);
   white-space: nowrap;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid var(--color-border);
 }
 
 .subscribers-table td {
-  font-size: 14px;
+  font-size: var(--text-sm);
   color: var(--color-text-primary);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+  border-bottom: 1px solid var(--color-border-subtle);
   vertical-align: middle;
 }
 
 .subscribers-table tbody tr:hover {
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--color-surface);
 }
 
 /* User Cell */
 .user-cell {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--space-3);
 }
 
 .user-avatar {
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: var(--radius-full);
   background: var(--color-accent);
-  color: white;
+  color: var(--color-on-accent);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 12px;
-  font-weight: 600;
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
   flex-shrink: 0;
 }
 
@@ -332,20 +332,20 @@ function getOriginLabel(origin: string): string {
 }
 
 .user-name {
-  font-weight: 500;
+  font-weight: var(--font-medium);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 180px;
+  max-width: 11.25rem;
 }
 
 .user-email {
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--color-text-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 180px;
+  max-width: 11.25rem;
 }
 
 .contact-cell {
@@ -361,7 +361,7 @@ function getOriginLabel(origin: string): string {
 .expiration-cell.expired,
 .subscriber-card-value.expired {
   color: var(--color-error);
-  font-weight: 500;
+  font-weight: var(--font-medium);
 }
 
 .actions-cell {

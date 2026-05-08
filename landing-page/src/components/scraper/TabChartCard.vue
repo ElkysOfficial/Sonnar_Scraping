@@ -62,14 +62,14 @@ defineProps({
   position: absolute;
   inset: 0 0 auto 0;
   height: 1px;
-  background: linear-gradient(90deg, transparent, var(--accent, #2563eb), transparent);
+  background: linear-gradient(90deg, transparent, var(--accent, var(--color-accent)), transparent);
   opacity: 0.4;
 }
-.tab-chart-card--success { --accent: #16a34a; }
-.tab-chart-card--warn    { --accent: #d97706; }
-.tab-chart-card--danger  { --accent: #dc2626; }
-.tab-chart-card--info    { --accent: #2563eb; }
-.tab-chart-card--neutral { --accent: #94a3b8; }
+.tab-chart-card--success { --accent: var(--color-success); }
+.tab-chart-card--warn    { --accent: var(--color-warning); }
+.tab-chart-card--danger  { --accent: var(--color-error); }
+.tab-chart-card--info    { --accent: var(--color-accent); }
+.tab-chart-card--neutral { --accent: var(--color-text-muted); }
 
 .tab-chart-card__head {
   display: flex;

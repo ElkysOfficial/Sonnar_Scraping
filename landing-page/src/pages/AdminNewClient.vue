@@ -266,7 +266,8 @@ async function copyLink() {
 
 <style scoped>
 .admin-new-client {
-  max-width: 1280px;
+  /* Sem max-width: AdminLayout cobre o cap de container. Form ocupa espaço total. */
+  width: 100%;
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
@@ -433,8 +434,8 @@ async function copyLink() {
   font-weight: var(--font-bold);
   letter-spacing: 0.06em;
 }
-.plan-badge--pro  { background: rgba(37, 99, 235, 0.12);  color: #2563eb; }
-.plan-badge--plus { background: rgba(139, 92, 246, 0.12); color: #8b5cf6; }
+.plan-badge--pro  { background: color-mix(in srgb, var(--chart-1) 12%, transparent); color: var(--chart-1); }
+.plan-badge--plus { background: color-mix(in srgb, var(--chart-3) 12%, transparent); color: var(--chart-3); }
 .plan-price { font-size: var(--text-base); font-weight: var(--font-bold); color: var(--color-text-primary); }
 .plan-price span { font-size: var(--text-xs); font-weight: var(--font-normal); color: var(--color-text-muted); }
 .plan-desc { margin: 0; font-size: var(--text-xs); color: var(--color-text-secondary); }

@@ -158,21 +158,21 @@ function buildPath(fillBelow) {
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 16px 18px 10px;
+  gap: var(--space-2);
+  padding: var(--space-4) var(--space-5) var(--space-3);
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: 14px;
+  border-radius: var(--radius-lg);
   overflow: hidden;
-  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
-  min-height: 138px;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast), transform var(--transition-fast);
+  min-height: 8.625rem;
   /* Tone color via var */
   --tone: var(--color-text-primary);
 }
-.metric--success { --tone: #16a34a; }
-.metric--warn    { --tone: #d97706; }
-.metric--danger  { --tone: #dc2626; }
-.metric--accent  { --tone: var(--color-accent); }
+.metric--success { --tone: var(--metric-tone-success); }
+.metric--warn    { --tone: var(--metric-tone-warning); }
+.metric--danger  { --tone: var(--metric-tone-danger); }
+.metric--accent  { --tone: var(--metric-tone-accent); }
 
 .metric--clickable { cursor: pointer; }
 .metric--clickable:hover {
@@ -187,74 +187,74 @@ function buildPath(fillBelow) {
 .metric--alert::after {
   content: '';
   position: absolute;
-  top: 14px; right: 14px;
+  top: var(--space-3); right: var(--space-3);
   width: 6px; height: 6px;
-  background: #dc2626;
-  border-radius: 50%;
-  box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.5);
+  background: var(--color-error);
+  border-radius: var(--radius-full);
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-error) 50%, transparent);
   animation: pulse 1.6s ease-out infinite;
 }
 @keyframes pulse {
-  0%   { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.5); }
-  100% { box-shadow: 0 0 0 8px rgba(220, 38, 38, 0); }
+  0%   { box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-error) 50%, transparent); }
+  100% { box-shadow: 0 0 0 8px color-mix(in srgb, var(--color-error) 0%, transparent); }
 }
 
 .metric-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--space-2);
 }
 .metric-label {
-  font-size: 11px;
-  font-weight: 600;
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
   color: var(--color-text-muted);
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: var(--ls-wide);
 }
 
 .metric-trend {
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  font-size: 11px;
-  font-weight: 600;
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
   color: var(--color-text-muted);
   font-variant-numeric: tabular-nums;
 }
-.metric-trend--up   { color: #16a34a; }
-.metric-trend--down { color: #dc2626; }
+.metric-trend--up   { color: var(--color-success); }
+.metric-trend--down { color: var(--color-error); }
 .metric-trend--flat { color: var(--color-text-muted); }
 
 .metric-value-row {
   display: flex;
   align-items: baseline;
-  gap: 4px;
+  gap: var(--space-1);
   margin-top: 2px;
 }
 .metric-value {
   font-size: clamp(1.5rem, 2.6vw, 2rem);
-  font-weight: 700;
+  font-weight: var(--font-bold);
   color: var(--tone);
   line-height: 1.05;
-  letter-spacing: -0.02em;
+  letter-spacing: var(--ls-tight);
   font-variant-numeric: tabular-nums;
 }
 .metric-suffix {
-  font-size: 0.875rem;
-  font-weight: 500;
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
   color: var(--color-text-muted);
 }
 .metric-hint {
   margin: 0;
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--color-text-muted);
   line-height: 1.35;
 }
 
 /* Sparkline */
 .metric-spark {
-  margin-top: 6px;
+  margin-top: var(--space-2);
   height: 36px;
   color: var(--tone);
 }
@@ -267,8 +267,8 @@ function buildPath(fillBelow) {
 @keyframes drawLine { to { stroke-dashoffset: 0; } }
 
 @media (max-width: 480px) {
-  .metric { padding: 14px 14px 10px; min-height: 120px; }
-  .metric-value { font-size: 1.5rem; }
+  .metric { padding: var(--space-3) var(--space-3) var(--space-2); min-height: 7.5rem; }
+  .metric-value { font-size: var(--text-2xl); }
   .metric-spark { height: 28px; }
 }
 

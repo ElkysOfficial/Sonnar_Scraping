@@ -52,29 +52,36 @@ const props = defineProps({
   tone:           { type: String, default: 'success' },   // success | warn | danger | idle
 })
 
-// Cor do arco principal: gradiente do vermelho (0%) ao verde (100%)
-// Usa color stops de gauge ECharts (axisLine.lineStyle.color como array)
-const ARC_COLORS = [
-  [0.5,  '#dc2626'],  // 0..50 vermelho
-  [0.75, '#f59e0b'],  // 50..75 âmbar
-  [0.9,  '#facc15'],  // 75..90 amarelo
-  [1.0,  '#16a34a'],  // 90..100 verde
-]
+// Helper para ler tokens do design system em runtime (charts ECharts).
+function cssVar(name, fallback = '') {
+  if (typeof document === 'undefined') return fallback
+  const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim()
+  return v || fallback
+}
 
-const TONE_COLOR = {
-  success: '#16a34a',
-  warn:    '#d97706',
-  danger:  '#dc2626',
-  idle:    '#94a3b8',
+// Stops do gauge derivados de tokens semânticos (error → warning → chart-5 → success)
+const ARC_STOPS = [
+  [0.5,  '--color-error',   '#DC2626'],
+  [0.75, '--color-warning', '#D97706'],
+  [0.9,  '--chart-5',       '#D97706'],
+  [1.0,  '--color-success', '#059669'],
+]
+const arcColors = () => ARC_STOPS.map(([stop, token, fb]) => [stop, cssVar(token, fb)])
+
+const TONE_TOKEN = {
+  success: ['--color-success', '#059669'],
+  warn:    ['--color-warning', '#D97706'],
+  danger:  ['--color-error',   '#DC2626'],
+  idle:    ['--color-text-muted', '#94a3b8'],
 }
 
 // Cor do ponteiro/progresso baseada no valor real
 const progressColor = computed(() => {
   const v = props.rate / 100
-  for (const [stop, color] of ARC_COLORS) {
-    if (v <= stop) return color
+  for (const [stop, token, fb] of ARC_STOPS) {
+    if (v <= stop) return cssVar(token, fb)
   }
-  return '#16a34a'
+  return cssVar('--color-success', '#059669')
 })
 
 const gaugeOption = computed(() => ({
@@ -94,7 +101,7 @@ const gaugeOption = computed(() => ({
       axisLine: {
         lineStyle: {
           width: 6,
-          color: ARC_COLORS.map(([s, c]) => [s, c + '22']),  // versão muito sutil
+          color: arcColors().map(([s, c]) => [s, `color-mix(in srgb, ${c} 13%, transparent)`]),
         },
       },
       axisTick: { show: false },
@@ -130,7 +137,7 @@ const gaugeOption = computed(() => ({
       axisLine: {
         lineStyle: {
           width: 16,
-          color: [[1, 'rgba(148, 163, 184, 0.14)']],
+          color: [[1, `color-mix(in srgb, ${cssVar('--color-text-muted', '#94a3b8')} 14%, transparent)`]],
         },
       },
       axisTick: { show: false },
@@ -150,37 +157,12 @@ const gaugeOption = computed(() => ({
       animationDuration: 1100,
       animationEasing: 'cubicOut',
     },
-    // Zona SLA — faixa amber sutil de threshold→100% (no perímetro externo)
-    {
-      type: 'gauge',
-      radius: '95%',
-      center: ['50%', '55%'],
-      startAngle: 220,
-      endAngle: -40,
-      min: 0,
-      max: 100,
-      progress: { show: false },
-      pointer: { show: false },
-      anchor: { show: false },
-      axisLine: {
-        lineStyle: {
-          width: 3,
-          color: [
-            [props.threshold / 100, 'rgba(0,0,0,0)'],
-            [1.0, 'rgba(251, 191, 36, 0.55)'],
-          ],
-        },
-      },
-      axisTick: { show: false },
-      splitLine: { show: false },
-      axisLabel: { show: false },
-      title: { show: false },
-      detail: { show: false },
-      data: [{ value: 0 }],
-      silent: true,
-      animation: false,
-    },
-    // Marcador de SLA — dot luminoso amber sentado sobre o arco no threshold
+    // Marcador de SLA — tick radial fino na posição do threshold.
+    // Convenção de gauges profissionais (Datadog, Grafana): uma barra estreita
+    // perpendicular ao arco indica claramente "aqui está a meta".
+    // Substitui o arco amber + dot + halo da versão anterior, que poluíam
+    // visualmente sem agregar leitura. O texto "SLA 95%" abaixo do gauge dá
+    // o contexto numérico.
     {
       type: 'gauge',
       radius: '85%',
@@ -193,50 +175,17 @@ const gaugeOption = computed(() => ({
       pointer: {
         show: true,
         showAbove: true,
-        icon: 'circle',
-        length: 12,
-        width: 12,
+        // ECharts usa o icon como caminho SVG; um retângulo fino dá o tick.
+        icon: 'path://M-1,-9 L1,-9 L1,9 L-1,9 Z',
+        length: 18,
+        width: 4,
         offsetCenter: [0, '-87%'],
         itemStyle: {
-          color: '#fbbf24',
-          borderColor: '#0f172a',
-          borderWidth: 2,
-          shadowBlur: 12,
-          shadowColor: 'rgba(251, 191, 36, 0.85)',
-        },
-      },
-      axisLine: { show: false },
-      axisTick: { show: false },
-      splitLine: { show: false },
-      axisLabel: { show: false },
-      anchor: { show: false },
-      title: { show: false },
-      detail: { show: false },
-      data: [{ value: props.threshold }],
-      silent: true,
-      animation: false,
-    },
-    // Halo externo do dot (anel concêntrico amber suave)
-    {
-      type: 'gauge',
-      radius: '85%',
-      center: ['50%', '55%'],
-      startAngle: 220,
-      endAngle: -40,
-      min: 0,
-      max: 100,
-      progress: { show: false },
-      pointer: {
-        show: true,
-        showAbove: false,
-        icon: 'circle',
-        length: 22,
-        width: 22,
-        offsetCenter: [0, '-87%'],
-        itemStyle: {
-          color: 'transparent',
-          borderColor: 'rgba(251, 191, 36, 0.35)',
-          borderWidth: 1.5,
+          color: cssVar('--color-secondary', '#0891B2'),
+          borderColor: cssVar('--color-background', '#FFFFFF'),
+          borderWidth: 1,
+          shadowBlur: 6,
+          shadowColor: `color-mix(in srgb, ${cssVar('--color-secondary', '#0891B2')} 60%, transparent)`,
         },
       },
       axisLine: { show: false },
@@ -299,10 +248,10 @@ function formatInt(n) {
   pointer-events: none;
   transition: background 320ms ease, opacity 320ms ease;
 }
-.gauge-wrap--success .gauge-halo { background: radial-gradient(circle, #16a34a, transparent 70%); }
-.gauge-wrap--warn    .gauge-halo { background: radial-gradient(circle, #d97706, transparent 70%); }
+.gauge-wrap--success .gauge-halo { background: radial-gradient(circle, var(--color-success), transparent 70%); }
+.gauge-wrap--warn    .gauge-halo { background: radial-gradient(circle, var(--color-warning), transparent 70%); }
 .gauge-wrap--danger  .gauge-halo {
-  background: radial-gradient(circle, #dc2626, transparent 70%);
+  background: radial-gradient(circle, var(--color-error), transparent 70%);
   opacity: 0.28;
   animation: haloPulse 2s ease-in-out infinite;
 }
@@ -350,9 +299,9 @@ function formatInt(n) {
   margin-top: 6px;
   padding: 3px 9px;
   border-radius: 999px;
-  background: rgba(251, 191, 36, 0.1);
-  border: 1px solid rgba(251, 191, 36, 0.35);
-  color: #fbbf24;
+  background: color-mix(in srgb, var(--color-secondary) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-secondary) 35%, transparent);
+  color: var(--color-secondary);
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.04em;
@@ -364,8 +313,8 @@ function formatInt(n) {
 .gauge-sla-dot {
   width: 6px; height: 6px;
   border-radius: 2px;
-  background: #fbbf24;
-  box-shadow: 0 0 6px rgba(251, 191, 36, 0.7);
+  background: var(--color-secondary);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--color-secondary) 70%, transparent);
 }
 
 /* Breakdown row */
@@ -397,9 +346,9 @@ function formatInt(n) {
   border-radius: 50%;
   flex-shrink: 0;
 }
-.bk--success .bk-dot { background: #16a34a; }
-.bk--warn    .bk-dot { background: #d97706; }
-.bk--danger  .bk-dot { background: #dc2626; }
+.bk--success .bk-dot { background: var(--color-success); }
+.bk--warn    .bk-dot { background: var(--color-warning); }
+.bk--danger  .bk-dot { background: var(--color-error); }
 .bk-label {
   color: var(--color-text-muted);
   font-size: 10px;

@@ -277,12 +277,12 @@ onUnmounted(() => {
   background: var(--color-background);
   color: var(--color-text-primary);
   font-family: var(--font-family);
-  padding-left: 248px;
+  padding-left: var(--sidebar-width);
   transition: padding-left var(--transition-base) cubic-bezier(0.32, 0.72, 0, 1);
 }
 
 .dl:has(.dl-side--collapsed) {
-  padding-left: 64px;
+  padding-left: var(--sidebar-collapsed);
 }
 
 @media (max-width: 767px) {
@@ -293,7 +293,7 @@ onUnmounted(() => {
   position: fixed;
   top: 0;
   left: 0;
-  width: 248px;
+  width: var(--sidebar-width);
   background: var(--color-surface);
   border-right: 1px solid var(--color-border);
   display: flex;
@@ -303,7 +303,7 @@ onUnmounted(() => {
   z-index: var(--z-fixed);
 }
 
-.dl-side--collapsed { width: 64px; }
+.dl-side--collapsed { width: var(--sidebar-collapsed); }
 .dl-side--collapsed .dl-nav__label,
 .dl-side--collapsed .dl-brand__text,
 .dl-side--collapsed .dl-userchip__meta,
@@ -335,7 +335,7 @@ onUnmounted(() => {
   padding: 0 var(--space-4);
   border-bottom: 1px solid var(--color-border);
   flex-shrink: 0;
-  height: 56px;
+  height: var(--header-height);
   box-sizing: border-box;
 }
 
@@ -576,7 +576,7 @@ onUnmounted(() => {
   position: sticky;
   top: 0;
   z-index: var(--z-sticky);
-  height: 56px;
+  height: var(--header-height);
   flex-shrink: 0;
   box-sizing: border-box;
 }
@@ -604,7 +604,7 @@ onUnmounted(() => {
   font-size: var(--text-xs);
   font-weight: var(--font-normal);
   color: var(--color-text-muted);
-  margin: 1px 0 0;
+  margin: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -646,12 +646,12 @@ onUnmounted(() => {
 /* Scrollbar interno da sidebar (quando muitos itens de menu) — discreto */
 .dl-nav {
   scrollbar-width: thin;
-  scrollbar-color: #06b6d4 transparent;
+  scrollbar-color: var(--color-secondary) transparent;
 }
 .dl-nav::-webkit-scrollbar { width: 8px; height: 8px; }
 .dl-nav::-webkit-scrollbar-thumb {
-  background: #06b6d4;
-  border-radius: 999px;
+  background: var(--color-secondary);
+  border-radius: var(--radius-full);
   border: 2px solid transparent;
   background-clip: padding-box;
 }
