@@ -148,6 +148,15 @@ def _build_engine_registry() -> dict:
             # são normais (ex.: anúncios curtos do RemoteOK não devem ser
             # marcados como "incompletos").
             "min_description_len": getattr(mod, "MIN_DESCRIPTION_LEN", None),
+            # Override opcional: a engine define quando uma vaga é partial.
+            # Assinatura: ``is_partial(job_data: dict) -> bool``. Recebe o
+            # dict canônico (saída de ``normalize_job_result``). Permite
+            # ignorar campos que o site simplesmente não publica (ex.:
+            # ``salary_min/max`` no BNE/Catho, ``state_code`` no Careerjet
+            # quando ``location='Brasil'``) — esses casos são *completed*,
+            # não partial. Sem o hook, cai no critério padrão (descrição
+            # abaixo de ``MIN_DESCRIPTION_LEN``).
+            "is_partial": getattr(mod, "is_partial", None),
         }
     return registry
 
@@ -183,6 +192,27 @@ def _min_desc_len(engine: str) -> int:
     info = _ENGINE_REGISTRY.get(engine) or {}
     val = info.get("min_description_len")
     return int(val) if val is not None else DEFAULT_MIN_DESCRIPTION_LEN
+
+
+def _engine_is_partial(engine: str, job_data: dict, description_len: int) -> bool:
+    """Decide se a vaga deve ficar em ``partial`` (e voltar pelo reenrichment).
+
+    Se a engine expõe ``is_partial(job_data)``, delega — assim cada fonte
+    decide o que é "incompleto" sem misturar com campos que o site não
+    publica. Caso contrário, mantém o critério legado: descrição abaixo
+    do mínimo da engine.
+    """
+    info = _ENGINE_REGISTRY.get(engine) or {}
+    fn = info.get("is_partial")
+    if callable(fn):
+        try:
+            return bool(fn(job_data))
+        except Exception as exc:
+            logger.warning("is_partial_failed", extra={
+                "engine": engine, "errorMessage": str(exc),
+            })
+            return description_len < _min_desc_len(engine)
+    return description_len < _min_desc_len(engine)
 
 
 # ---------------------------------------------------------------------------
@@ -289,11 +319,13 @@ async def _process_one_job(
         # Marca como partial APENAS se as 3 condições forem verdadeiras:
         # 1. A engine tem refetch_one (é capaz de reenriquecer)
         # 2. A engine declarou um parser_version
-        # 3. A descrição veio abaixo do mínimo desse engine
+        # 3. O critério da engine indica vaga incompleta
+        #    (engines podem expor ``is_partial(job_data)`` — quem não expõe
+        #    cai no critério padrão de descrição abaixo do mínimo).
         is_partial = (
             _has_refetch(engine)
             and parser_version
-            and description_len < _min_desc_len(engine)
+            and _engine_is_partial(engine, job_data, description_len)
         )
         if is_partial:
             tracker.mark_partial(job_url, engine=engine, parser_version=parser_version)
