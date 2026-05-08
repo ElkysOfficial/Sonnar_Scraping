@@ -37,7 +37,22 @@ from src.utils.job_fallbacks import apply_description_fallbacks  # noqa: E402
 from src.utils.text_utils import extract_skills, strip_html  # noqa: E402
 
 
-PARSER_VERSION = "jooble-2026.05.07"
+PARSER_VERSION = "jooble-2026.05.08"
+
+
+def is_partial(job_data: dict) -> bool:
+    """Jooble nunca fica em ``partial``.
+
+    O Jooble e agregador: cada item ja vem completo no ``__INITIAL_STATE__``
+    do listing. Nao expomos ``refetch_one`` porque nao existe pagina de
+    detalhe canonica - o link real e um redirect ``/away/`` para o site
+    de origem (que cada um tem seu proprio formato). Reenrichment nao
+    teria como melhorar a vaga.
+
+    Campos vazios (salary ~80%, hiring_regime ~30%, skills ~10%) sao
+    naturais quando o agregador nao recebeu o dado da fonte original.
+    """
+    return False
 
 
 # --- Configuração --------------------------------------------------------
