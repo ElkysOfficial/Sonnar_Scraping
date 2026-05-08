@@ -72,6 +72,10 @@
       :subline="health.subline"
       :success-rate="successRatePct"
       :total-requests="health.total_requests || 0"
+      :total-ok="totalsByStatus.ok"
+      :total429="health.total_429 || 0"
+      :total4xx="totalsByStatus.x4"
+      :total5xx="health.total_5xx || 0"
       :traffic-series="trafficSeries"
     />
 
@@ -787,12 +791,28 @@ const kpiTrends = computed(() => {
   }
 })
 
+// Totais por status (somam o que summary['status.X'] devolve por domínio)
+const totalsByStatus = computed(() => {
+  let ok = 0, x4 = 0
+  for (const row of summary.value || []) {
+    ok += Number(row.status_2xx || 0)
+    // status_4xx não vem direto da RPC atual — calcula como total - 2xx - 429 - 5xx (fallback)
+    const total = Number(row.req_total || 0)
+    const r429 = Number(row.status_429 || 0)
+    const r5xx = Number(row.status_5xx || 0)
+    const r2xx = Number(row.status_2xx || 0)
+    const other4xx = Math.max(0, total - r2xx - r429 - r5xx)
+    x4 += other4xx
+  }
+  return { ok, x4 }
+})
+
 // Taxa de sucesso global (para o gauge do hero)
 const successRatePct = computed(() => {
   const total = healthRow.value?.total_requests || 0
-  const errs = (healthRow.value?.total_429 || 0) + (healthRow.value?.total_5xx || 0)
   if (total === 0) return 0
-  return Math.max(0, Math.min(100, ((total - errs) / total) * 100))
+  const ok = totalsByStatus.value.ok
+  return Math.max(0, Math.min(100, (ok / total) * 100))
 })
 
 // Lista de abas com badges contextuais
