@@ -243,9 +243,16 @@ class JobsRepository:
         """
         return (await self.save_with_reason(job_data, source)) == self.SAVE_OK
 
-    async def save_with_reason(self, job_data: dict, source: Optional[str] = None) -> str:
+    async def save_with_reason(self, job_data: dict, source: Optional[str] = None,
+                               skip_age_filter: bool = False) -> str:
         """
         Normaliza ``job_data`` e persiste nos três sinks (JSON, CSV, Supabase).
+
+        Args:
+            skip_age_filter: quando ``True``, ignora o cutoff de ``MAX_AGE_DAYS``.
+                Use para engines cuja fonte ja filtra apenas vagas ativas no
+                listing (ex.: Gupy, GeekHunter), onde ``publication_date`` e a
+                data de criacao original e nao reflete se a vaga ainda esta aberta.
 
         Returns:
             - ``SAVE_OK``         persistiu em pelo menos 1 sink.
@@ -260,9 +267,11 @@ class JobsRepository:
 
         # Vagas com publication_date anterior ao cutoff sao ignoradas.
         # Sem publication_date passa direto (nao da pra julgar idade).
-        pub = payload.get('publication_date')
-        if pub and pub < _cutoff_iso():
-            return self.SAVE_TOO_OLD
+        # Engines com skip_age_filter (TRUST_LISTING_ACTIVE) bypassam o filtro.
+        if not skip_age_filter:
+            pub = payload.get('publication_date')
+            if pub and pub < _cutoff_iso():
+                return self.SAVE_TOO_OLD
 
         # 1) JSON local - fonte de verdade pro bot de envio de mensagens
         local_ok = True

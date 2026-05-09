@@ -157,6 +157,11 @@ def _build_engine_registry() -> dict:
             # não partial. Sem o hook, cai no critério padrão (descrição
             # abaixo de ``MIN_DESCRIPTION_LEN``).
             "is_partial": getattr(mod, "is_partial", None),
+            # Override opcional: engines cuja fonte ja filtra "vagas ativas" no
+            # listing devem ignorar o filtro MAX_AGE_DAYS — a publication_date
+            # devolvida e a data original e nao reflete recencia. Hoje: gupy,
+            # geekhunter (ver TRUST_LISTING_ACTIVE no modulo da engine).
+            "trust_listing_active": bool(getattr(mod, "TRUST_LISTING_ACTIVE", False)),
         }
     return registry
 
@@ -299,9 +304,13 @@ async def _process_one_job(
 
     description_len = len(job_data.get("description") or "")
     parser_version = _parser_version(engine)
+    info = _ENGINE_REGISTRY.get(engine) or {}
+    skip_age_filter = bool(info.get("trust_listing_active"))
 
     try:
-        result = await repo.save_with_reason(job_data, source=engine)
+        result = await repo.save_with_reason(
+            job_data, source=engine, skip_age_filter=skip_age_filter,
+        )
     except Exception as exc:
         logger.error("persist_failed", extra={
             "engine": engine, "url": job_url, "errorMessage": str(exc),
@@ -478,6 +487,9 @@ async def scrape_jobs() -> None:
                             "engine": engine_name, "parser_version": pv, "requeued": n,
                         })
 
+            # Recupera URLs órfãs em state=running (interrupção/race do flush).
+            await tracker.requeue_stale_running()
+
             logger.info("scraper_init", extra={
                 "local_known": len(local_known),
                 "tracker_known": len(tracker_known),
@@ -501,6 +513,10 @@ async def scrape_jobs() -> None:
                             "category": category, "errorMessage": str(exc),
                         })
                         metrics.event("batch.error", domain="", category=category)
+
+                    # Recupera zumbis em running antes do passe de reenrichment
+                    # (caso o batch atual tenha deixado URLs órfãs por race/erro).
+                    await tracker.requeue_stale_running()
 
                     # Reenrichment pass: pega URLs em state=discovered (vindas
                     # de auto-reenrich ou listings anteriores) e chama refetch_one.

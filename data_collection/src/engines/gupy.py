@@ -25,6 +25,11 @@ from src.utils.text_utils import extract_skills, strip_html  # noqa: E402
 
 PARSER_VERSION = "gupy-2026.05.08"
 
+# A API do Gupy lista apenas vagas com applicationDeadline futuro (status ativo),
+# mas devolve publishedDate como a data de criacao original — frequentemente
+# >90 dias. Sem este bypass, o filtro MAX_AGE_DAYS descartaria vagas validas.
+TRUST_LISTING_ACTIVE = True
+
 
 def is_partial(job_data: dict) -> bool:
     """Gupy nunca fica em ``partial``.
