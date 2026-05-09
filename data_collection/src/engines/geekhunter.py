@@ -22,6 +22,11 @@ from src.utils.rate_limiter import request_with_policy  # noqa: E402
 
 PARSER_VERSION = "geekhunter-2026.05.08"
 
+# GeekHunter lista apenas vagas ativas, mas o campo createdAt da API reflete a
+# data original da publicacao (frequentemente >90 dias). Sem bypass, ~49% das
+# vagas validas eram descartadas pelo filtro MAX_AGE_DAYS.
+TRUST_LISTING_ACTIVE = True
+
 
 def is_partial(job_data: dict) -> bool:
     """GeekHunter nunca fica em ``partial``.

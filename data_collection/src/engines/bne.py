@@ -355,7 +355,9 @@ async def _fetch_job_detail(job_id, semaphore: asyncio.Semaphore) -> list | None
         Lista canônica de 8 campos, ou ``None`` se faltar JSON-LD/título.
     """
     async with semaphore:
-        await asyncio.sleep(random.uniform(0.5, 1.5))
+        # Jitter alto para diluir o padrão de requests — BNE detecta soft-block
+        # quando vê rajada e devolve HTML sem JSON-LD (refetch_empty).
+        await asyncio.sleep(random.uniform(1.5, 3.5))
 
         scraper = get_scraper()
         link = f"https://www.bne.com.br/vagas-de-emprego/{job_id}"
@@ -485,7 +487,7 @@ async def get_bne_jobs(on_job=None) -> list:
     """
     jobs = []
     job_ids = await get_bne_job_ids()
-    semaphore = asyncio.Semaphore(10)
+    semaphore = asyncio.Semaphore(6)
 
     async def _fetch_and_emit(job_id):
         """Resolve uma vaga e emite via callback (se configurado)."""

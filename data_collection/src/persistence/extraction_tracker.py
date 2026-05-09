@@ -235,6 +235,49 @@ class ExtractionTracker:
             logger.warning("requeue_stale_partial erro: %s", exc)
             return 0
 
+    async def requeue_stale_running(self, stale_minutes: int = 15) -> int:
+        """Reseta URLs presas em ``state=running`` há mais de ``stale_minutes``.
+
+        Zumbis surgem quando o processo é interrompido entre ``mark_running`` e
+        a transição final, ou em races de buffer/flush. Como ``pick_pending``
+        só puxa ``discovered``, sem este reset elas nunca voltam ao pipeline.
+        Chamado no startup e entre batches.
+        """
+        if not self.enabled:
+            return 0
+        try:
+            from datetime import timedelta
+            cutoff = (datetime.now(timezone.utc) - timedelta(minutes=stale_minutes)).isoformat()
+            async with self._client() as cli:
+                r = await cli.patch(
+                    "/extraction_jobs",
+                    params={"state": "eq.running", "last_attempt_at": f"lt.{cutoff}"},
+                    json={
+                        "state": "discovered",
+                        "last_attempt_at": None,
+                        "attempts": 0,
+                        "last_error_type": None,
+                        "last_error_msg": None,
+                    },
+                    headers={"Prefer": "return=representation"},
+                )
+                if r.status_code >= 400:
+                    self._warn_throttled("requeue_stale_running", r.status_code, r.text)
+                    return 0
+                rows = r.json() or []
+                count = len(rows)
+                if count:
+                    from collections import Counter
+                    by_engine = Counter(row.get("engine") for row in rows)
+                    logger.info("requeue_stale_running", extra={
+                        "count": count, "stale_minutes": stale_minutes,
+                        "by_engine": dict(by_engine),
+                    })
+                return count
+        except Exception as exc:
+            logger.warning("requeue_stale_running erro: %s", exc)
+            return 0
+
     async def pick_pending(self, engine: str, limit: int = 100) -> List[str]:
         """URLs em state=discovered para reprocessar (passe de reenrichment)."""
         if not self.enabled:
