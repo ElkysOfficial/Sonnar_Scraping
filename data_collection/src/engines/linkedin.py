@@ -44,19 +44,69 @@ from src.utils.text_utils import extract_skills, strip_html  # noqa: E402
 logger = logging.getLogger("scraper.engine.linkedin")
 
 # Versão do parser - bump quando mudar selectors. Permite reenrichment futuro.
-PARSER_VERSION = "linkedin-2026.05.07"
+PARSER_VERSION = "linkedin-2026.05.10"
 
 
 # --- Sessao (httpx compartilhado) ----------------------------------------
 
-_SESSION = HttpSession()
+# Headers completos de navegador real. LinkedIn faz fingerprinting de headers:
+# faltar 'sec-ch-ua' / 'sec-fetch-*' eleva a taxa de 429 mesmo com User-Agent ok.
+# Combinado com warm-up (_warmup_session) que pega cookies de tracking anonimo
+# (bcookie, lidc), reduz drasticamente os bloqueios.
+_LINKEDIN_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/130.0.0.0 Safari/537.36"
+    ),
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+    "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Cache-Control": "no-cache",
+    "Pragma": "no-cache",
+    "sec-ch-ua": '"Chromium";v="130", "Google Chrome";v="130", "Not?A_Brand";v="99"',
+    "sec-ch-ua-mobile": "?0",
+    "sec-ch-ua-platform": '"Windows"',
+    "Sec-Fetch-Dest": "document",
+    "Sec-Fetch-Mode": "navigate",
+    "Sec-Fetch-Site": "none",
+    "Sec-Fetch-User": "?1",
+    "Upgrade-Insecure-Requests": "1",
+}
+
+_SESSION = HttpSession(headers=_LINKEDIN_HEADERS)
+_warmed_up = False
+_warmup_lock = asyncio.Lock()
 
 
 async def get_session():
     return await _SESSION.get_client()
 
 
+async def _warmup_session() -> None:
+    """Acessa a home/jobs do LinkedIn para coletar cookies anonimos.
+
+    LinkedIn marca IPs cujo primeiro hit e a API. Visitar paginas HTML
+    publicas (/, /jobs) primeiro popula bcookie/lidc no jar do httpx; nas
+    requests seguintes a sessao parece um browser normal, e nao um bot
+    indo direto para um endpoint /jobs/api/.
+    """
+    global _warmed_up
+    async with _warmup_lock:
+        if _warmed_up:
+            return
+        client = await get_session()
+        for url in ("https://br.linkedin.com/", "https://br.linkedin.com/jobs"):
+            try:
+                await client.get(url, timeout=10.0)
+            except Exception:
+                pass
+        _warmed_up = True
+
+
 def reset_session() -> None:
+    global _warmed_up
+    _warmed_up = False
     _SESSION.reset()
 
 
@@ -190,15 +240,29 @@ async def get_linkedin_links() -> list[dict]:
     seeds: list[dict] = []
     seen: set[str] = set()
     client = await get_session()
+    await _warmup_session()
 
-    for stack in get_active_stacks():
+    stacks_list = list(get_active_stacks())
+    for stack_idx, stack in enumerate(stacks_list):
         encoded = urllib.parse.quote(stack)
+        # Referer plausivel: pagina de busca por keyword (o que um humano teria
+        # antes de scrollar e disparar seeMoreJobPostings).
+        referer = (
+            f"https://br.linkedin.com/jobs/search?"
+            f"keywords={encoded}&location=Brasil&geoId=106057199"
+        )
         for start in range(0, 100, 10):
             url = (
                 "https://br.linkedin.com/jobs/api/seeMoreJobPostings/search"
                 f"?keywords={encoded}&location=Brasil&geoId=106057199&start={start}"
             )
-            response = await fetch(client, url)
+            response = await fetch(client, url, headers={
+                "Referer": referer,
+                "Sec-Fetch-Site": "same-origin",
+                "Sec-Fetch-Mode": "cors",
+                "Sec-Fetch-Dest": "empty",
+                "X-Requested-With": "XMLHttpRequest",
+            })
             if response is None:
                 metrics.event("listing.aborted", domain="br.linkedin.com",
                               stack=stack, start=start)
@@ -226,6 +290,11 @@ async def get_linkedin_links() -> list[dict]:
 
             if new_in_page == 0:
                 break
+
+        # Respiro entre stacks: evita rajada continua de 11+ paginas
+        # disparando 429 sustentado. Pulamos se for a ultima.
+        if stack_idx < len(stacks_list) - 1:
+            await asyncio.sleep(3.0)
 
     metrics.set_gauge("listing.seeds", len(seeds), domain="br.linkedin.com")
     return seeds
@@ -340,6 +409,8 @@ async def _fetch_detail(seed: dict, sem: asyncio.Semaphore, client) -> dict:
     que enriquecimento eh best-effort.
     """
     out = {
+        "title": "",
+        "company": "",
         "description": "",
         "skills": [],
         "salary": "",
@@ -369,6 +440,18 @@ async def _fetch_detail(seed: dict, sem: asyncio.Semaphore, client) -> dict:
                        and x.get("@type") == "JobPosting"), None)
             if not jp:
                 continue
+
+            # Title e company: o JSON-LD do LinkedIn SEMPRE traz; antes
+            # so usavamos do seed do listing, perdiamos quando refetch_one
+            # reprocessava a vaga (seed vazio).
+            title = (jp.get("title") or "").strip()
+            if title:
+                out["title"] = title
+            ho = jp.get("hiringOrganization") or {}
+            if isinstance(ho, dict):
+                cname = (ho.get("name") or "").strip()
+                if cname:
+                    out["company"] = cname
 
             description = strip_html(jp.get("description", "") or "")
             if description:
@@ -420,8 +503,10 @@ def _merge_detail_over_seed(seed: dict, detail: dict) -> list:
     """Monta a lista canonica de 10 campos preferindo detail sobre seed."""
     return [
         seed["link"],
-        seed["title"],
-        seed["company"],
+        # Title e company: detail-first agora. Seed pode estar vazio quando
+        # vem de refetch_one (reenrich), e o JSON-LD do LinkedIn sempre traz.
+        detail.get("title") or seed["title"],
+        detail.get("company") or seed["company"],
         detail.get("location") or seed["location"],
         seed["work_type"],
         detail.get("hiring_regime") or seed["hiring_regime"],
