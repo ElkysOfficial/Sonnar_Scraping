@@ -62,6 +62,39 @@ def _by_engine_summary(d) -> str:
     return " (" + ", ".join(parts) + ")"
 
 
+# Domains -> nome amigavel do site (sem subdomain "br.").
+def _site_label(domain) -> str:
+    if not domain:
+        return "site"
+    d = str(domain).lower()
+    if d.startswith("br."):
+        d = d[3:]
+    if d.startswith("www."):
+        d = d[4:]
+    # nome do site = primeira parte antes do TLD (ex: linkedin.com -> linkedin)
+    parts = d.split(".")
+    return parts[0] if parts and parts[0] else d
+
+
+# Causas tecnicas -> motivo em PT-BR. Usado pelo handler de "retry".
+def _retry_reason(status, err) -> str:
+    if status == 429:
+        return "limite de requisicoes atingido"
+    if status in (502, 503, 504):
+        return "servidor sobrecarregado"
+    if isinstance(status, int) and 500 <= status < 600:
+        return f"erro do servidor (HTTP {status})"
+    if err in ("ReadTimeout", "ConnectTimeout", "TimeoutException", "PoolTimeout"):
+        return "demorou demais para responder"
+    if err in ("ConnectError", "RemoteProtocolError", "NetworkError"):
+        return "falha de conexao"
+    if err:
+        return f"erro de rede ({err})"
+    if status:
+        return f"resposta inesperada (HTTP {status})"
+    return "falha desconhecida"
+
+
 _HUMAN_MESSAGES = {
     # Startup
     "tracker_loaded":
@@ -98,6 +131,18 @@ _HUMAN_MESSAGES = {
         lambda e: f"Falha ao carregar lista de vagas processadas: {e.get('errorMessage','?')[:80]}",
     "detail_parser_error":
         lambda e: f"Erro ao interpretar pagina de vaga: {e.get('errorMessage','?')[:80]}",
+    # Rede / rate-limit
+    "retry":
+        lambda e: (
+            f"Tentativa {e.get('attempt','?')} no site {_site_label(e.get('domain'))} "
+            f"falhou ({_retry_reason(e.get('status'), e.get('err'))}). "
+            f"Vai esperar {e.get('delay','?')}s e tentar de novo."
+        ),
+    "circuit_open":
+        lambda e: (
+            f"Site {_site_label(e.get('domain'))} com muitas falhas seguidas - "
+            f"pausando requisicoes por {e.get('wait','?')}s para o site se recuperar."
+        ),
 }
 
 
