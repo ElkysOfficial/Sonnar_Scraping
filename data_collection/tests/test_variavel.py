@@ -34,9 +34,9 @@ class TestStackCatalog:
 class TestIterBatches:
     def test_default_batch_size(self):
         batches = list(iter_batches())
-        # batch_size padrão = 10; cada lote tem no máximo 10 itens
+        # batch_size padrão = 5; cada lote tem no máximo 5 itens
         for cat, batch in batches:
-            assert 1 <= len(batch) <= 10
+            assert 1 <= len(batch) <= 5
 
     def test_respects_category_boundaries(self):
         """Nenhum lote deve misturar stacks de categorias diferentes."""

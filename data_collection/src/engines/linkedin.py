@@ -44,7 +44,7 @@ from src.utils.text_utils import extract_skills, strip_html  # noqa: E402
 logger = logging.getLogger("scraper.engine.linkedin")
 
 # Versão do parser - bump quando mudar selectors. Permite reenrichment futuro.
-PARSER_VERSION = "linkedin-2026.05.10"
+PARSER_VERSION = "linkedin-2026.05.10.1"
 
 
 # --- Sessao (httpx compartilhado) ----------------------------------------
@@ -117,6 +117,34 @@ def reset_session() -> None:
 # (todas vão ser serializadas pelo limitador, mas evitamos overhead de
 # scheduling). Baixo = fluxo previsível, sem flooding inicial.
 _DETAIL_CONCURRENCY = int(os.getenv("LINKEDIN_DETAIL_CONCURRENCY", "4"))
+
+# Paginacao do listing. LinkedIn pagina em 25, e aceita ate ~start=1000.
+# Se a stack esgotar antes (zero novos numa pagina), o loop quebra.
+_LISTING_MAX_START = int(os.getenv("LINKEDIN_LISTING_MAX_START", "500"))
+_LISTING_STEP = int(os.getenv("LINKEDIN_LISTING_STEP", "25"))
+
+# Regioes a varrer alem do filtro nacional. Pegamos vagas indexadas por
+# estado/cidade que nao aparecem no geoId nacional. ``geo_id=None`` faz
+# o LinkedIn auto-resolver pela string ``location``.
+_LISTING_REGIONS: list[tuple[str, str | None]] = [
+    ("Brasil", "106057199"),                     # nacional (alvo principal)
+    ("São Paulo, Brasil", None),                 # estado SP
+    ("Rio de Janeiro, Brasil", None),
+    ("Minas Gerais, Brasil", None),
+    ("Rio Grande do Sul, Brasil", None),
+    ("Paraná, Brasil", None),
+    ("Santa Catarina, Brasil", None),
+    ("Distrito Federal, Brasil", None),
+    ("Bahia, Brasil", None),
+    ("Pernambuco, Brasil", None),
+]
+
+# Ordenacoes a rodar por (stack, regiao). LinkedIn nao retorna o mesmo set
+# por relevancia e por data: vagas recem-postadas que ainda nao ranquearam
+# so aparecem em sortBy=DD.
+#   None = relevance (default)
+#   'DD' = date desc
+_LISTING_SORTS: list[str | None] = [None, "DD"]
 
 # Mapeamento employmentType (schema.org) -> vocabulario interno canonico.
 # Compativel com job_fallbacks.refine_hiring_regime().
@@ -230,12 +258,95 @@ def _parse_listing_card(cell) -> dict | None:
     }
 
 
+def _build_listing_url(stack_encoded: str, location: str, geo_id: str | None,
+                       start: int, sort: str | None) -> str:
+    """Monta a URL do endpoint ``seeMoreJobPostings/search``."""
+    loc_enc = urllib.parse.quote(location)
+    parts = [
+        f"keywords={stack_encoded}",
+        f"location={loc_enc}",
+        f"start={start}",
+    ]
+    if geo_id:
+        parts.append(f"geoId={geo_id}")
+    if sort:
+        parts.append(f"sortBy={sort}")
+    return "https://br.linkedin.com/jobs/api/seeMoreJobPostings/search?" + "&".join(parts)
+
+
+def _build_referer(stack_encoded: str, location: str, geo_id: str | None) -> str:
+    loc_enc = urllib.parse.quote(location)
+    base = f"https://br.linkedin.com/jobs/search?keywords={stack_encoded}&location={loc_enc}"
+    return base + (f"&geoId={geo_id}" if geo_id else "")
+
+
+async def _scan_listing(client, stack: str, location: str, geo_id: str | None,
+                        sort: str | None, seen: set[str], seeds: list[dict]) -> int:
+    """Pagina o listing para uma combinacao (stack, regiao, ordenacao).
+
+    Retorna o numero de novos seeds adicionados nesta passada. Quebra cedo
+    quando uma pagina inteira so traz duplicatas (sinal de que LinkedIn
+    esgotou o conjunto sob esse filtro).
+    """
+    encoded = urllib.parse.quote(stack)
+    referer = _build_referer(encoded, location, geo_id)
+    headers = {
+        "Referer": referer,
+        "Sec-Fetch-Site": "same-origin",
+        "Sec-Fetch-Mode": "cors",
+        "Sec-Fetch-Dest": "empty",
+        "X-Requested-With": "XMLHttpRequest",
+    }
+    added = 0
+    for start in range(0, _LISTING_MAX_START, _LISTING_STEP):
+        url = _build_listing_url(encoded, location, geo_id, start, sort)
+        response = await fetch(client, url, headers=headers)
+        if response is None:
+            metrics.event("listing.aborted", domain="br.linkedin.com",
+                          stack=stack, location=location, sort=sort or "rel",
+                          start=start)
+            break
+        if response.status_code != 200:
+            metrics.incr("listing.non_200", domain="br.linkedin.com")
+            break
+
+        soup = BeautifulSoup(response.content, "html.parser")
+        cells = soup.find_all("div", class_="base-card")
+        if not cells:
+            break
+
+        new_in_page = 0
+        for cell in cells:
+            seed = _parse_listing_card(cell)
+            if not seed:
+                continue
+            if seed["link"] in seen:
+                continue
+            seen.add(seed["link"])
+            seeds.append(seed)
+            tracker.discover(seed["link"], engine="linkedin")
+            new_in_page += 1
+            added += 1
+
+        if new_in_page == 0:
+            # Pagina sem novidade: stack esgotada sob esse (regiao, sort).
+            break
+    return added
+
+
 async def get_linkedin_links() -> list[dict]:
     """Coleta seeds (link + dados parciais) de todas as stacks ativas.
 
-    Usa ``fetch`` (policy wrapper) pra cada pagina: rate-limit por host,
-    retry/backoff em 429/5xx/timeout e circuit breaker. Sem isso o listing
-    disparava ~100 reqs/stack sem throttle - principal vetor de bloqueio.
+    Cobertura ampliada por 3 eixos:
+      A. Paginacao profunda (ate ``_LISTING_MAX_START``, step 25),
+         com cutoff adaptativo quando a stack esgota.
+      B. Multi-ordenacao: relevance + date (``sortBy=DD``).
+      C. Multi-regiao: filtro nacional + estados grandes - vagas indexadas
+         regionalmente nem sempre aparecem no geoId nacional.
+
+    Dedup por URL canonica via ``seen``: combinacoes posteriores so somam
+    vagas inéditas. ``fetch`` (policy wrapper) cuida de rate-limit, retry
+    e circuit breaker - sem isso o volume de requests dispararia 429.
     """
     seeds: list[dict] = []
     seen: set[str] = set()
@@ -244,57 +355,20 @@ async def get_linkedin_links() -> list[dict]:
 
     stacks_list = list(get_active_stacks())
     for stack_idx, stack in enumerate(stacks_list):
-        encoded = urllib.parse.quote(stack)
-        # Referer plausivel: pagina de busca por keyword (o que um humano teria
-        # antes de scrollar e disparar seeMoreJobPostings).
-        referer = (
-            f"https://br.linkedin.com/jobs/search?"
-            f"keywords={encoded}&location=Brasil&geoId=106057199"
-        )
-        for start in range(0, 100, 10):
-            url = (
-                "https://br.linkedin.com/jobs/api/seeMoreJobPostings/search"
-                f"?keywords={encoded}&location=Brasil&geoId=106057199&start={start}"
-            )
-            response = await fetch(client, url, headers={
-                "Referer": referer,
-                "Sec-Fetch-Site": "same-origin",
-                "Sec-Fetch-Mode": "cors",
-                "Sec-Fetch-Dest": "empty",
-                "X-Requested-With": "XMLHttpRequest",
-            })
-            if response is None:
-                metrics.event("listing.aborted", domain="br.linkedin.com",
-                              stack=stack, start=start)
-                break
-            if response.status_code != 200:
-                metrics.incr("listing.non_200", domain="br.linkedin.com")
-                break
+        for region_label, geo_id in _LISTING_REGIONS:
+            for sort in _LISTING_SORTS:
+                added = await _scan_listing(
+                    client, stack, region_label, geo_id, sort, seen, seeds,
+                )
+                # Respiro entre combinacoes pra nao saturar o rate limiter
+                if added > 0:
+                    await asyncio.sleep(2.0)
 
-            soup = BeautifulSoup(response.content, "html.parser")
-            cells = soup.find_all("div", class_="base-card")
-            if not cells:
-                break
-
-            new_in_page = 0
-            for cell in cells:
-                seed = _parse_listing_card(cell)
-                if not seed:
-                    continue
-                if seed["link"] in seen:
-                    continue
-                seen.add(seed["link"])
-                seeds.append(seed)
-                tracker.discover(seed["link"], engine="linkedin")
-                new_in_page += 1
-
-            if new_in_page == 0:
-                break
-
-        # Respiro entre stacks: evita rajada continua de 11+ paginas
-        # disparando 429 sustentado. Pulamos se for a ultima.
+        # Respiro maior entre stacks: o multiplicador (regions x sorts)
+        # ja eleva o volume; sustentar 10s evita 429 cascateado quando o
+        # LinkedIn impoe limite por sessao (nao apenas por taxa).
         if stack_idx < len(stacks_list) - 1:
-            await asyncio.sleep(3.0)
+            await asyncio.sleep(10.0)
 
     metrics.set_gauge("listing.seeds", len(seeds), domain="br.linkedin.com")
     return seeds
@@ -314,12 +388,20 @@ def _normalize_employment_type(value) -> str:
     return ""
 
 
+_COUNTRY_NAME_BY_ISO = {
+    "BR": "Brasil", "US": "Estados Unidos", "PT": "Portugal", "GB": "Reino Unido",
+    "ES": "Espanha", "FR": "França", "DE": "Alemanha", "IT": "Itália",
+    "AR": "Argentina", "CA": "Canadá", "MX": "México",
+}
+
+
 def _format_jsonld_location(jp: dict) -> list:
     """Compoe ``[cidade, UF]`` a partir do ``jobLocation`` do JSON-LD.
 
     LinkedIn em vagas BR: ``addressCountry='BR'`` + ``addressLocality='Sao Paulo'``;
-    ``addressRegion`` frequentemente vem null. Devolvemos ``[locality]`` ou
-    ``[locality, region]``.
+    ``addressRegion`` frequentemente vem null. Devolvemos ``[locality]``,
+    ``[locality, region]``, ou ``[locality, country_name]`` quando a UF nao
+    veio mas o pais sim - garante que o normalizer tenha pelo menos country.
     """
     loc = jp.get("jobLocation") or {}
     if isinstance(loc, list):
@@ -331,11 +413,70 @@ def _format_jsonld_location(jp: dict) -> list:
         return []
     locality = (addr.get("addressLocality") or "").strip()
     region = (addr.get("addressRegion") or "").strip()
+    country_iso = (addr.get("addressCountry") or "").strip().upper()
     if locality and region:
         return [locality, region]
     if locality:
+        # Sem UF: anexa nome do pais para que normalize_location detecte cc.
+        # Cobre macro-regioes ("Porto Alegre e Regiao") onde o LinkedIn nao
+        # da UF mas da addressCountry='BR'.
+        country_name = _COUNTRY_NAME_BY_ISO.get(country_iso)
+        if country_name:
+            return [locality, country_name]
         return [locality]
     return []
+
+
+_BR_UF_SET = {
+    "AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO", "MA", "MT", "MS",
+    "MG", "PA", "PB", "PR", "PE", "PI", "RJ", "RN", "RS", "RO", "RR", "SC",
+    "SP", "SE", "TO",
+}
+
+
+def _split_topcard_location(text: str) -> list:
+    """Converte ``'Florianopolis, SC'`` em ``['Florianopolis', 'SC']``.
+
+    Aceita ``'Brasil'``, ``'Sao Paulo, SP'``, ``'Sao Paulo, SP, Brasil'``.
+    """
+    parts = [p.strip() for p in text.split(",") if p.strip()]
+    if not parts:
+        return []
+    # Se o ultimo token for sigla UF, mantem ['cidade', 'UF']
+    if len(parts) >= 2 and parts[1].upper() in _BR_UF_SET:
+        return [parts[0], parts[1].upper()]
+    return [parts[0]]
+
+
+def _format_topcard_location(soup) -> str:
+    """Le a string de localizacao do topcard HTML do detail.
+
+    LinkedIn coloca em dois lugares (redundantes):
+      - ``span.topcard__flavor--bullet``
+      - ``h4.top-card-layout__second-subline > span`` (segundo span, depois
+        do nome da empresa).
+
+    Vagas Brasil-wide remoto trazem ``'Brasil'``; vagas locais trazem
+    ``'Cidade, UF'`` mesmo quando o JSON-LD omite ``addressRegion``.
+    """
+    el = soup.find("span", class_="topcard__flavor--bullet")
+    if el:
+        text = el.get_text(strip=True)
+        if text:
+            return text
+    spans = soup.select("h4.top-card-layout__second-subline span")
+    for s in spans:
+        text = s.get_text(strip=True)
+        if not text:
+            continue
+        # Pula timestamps ("Há 4 dias") e contadores ("33 candidaturas")
+        low = text.lower()
+        if low.startswith("há ") or "candidatur" in low or "applicant" in low:
+            continue
+        if re.search(r"\d", text):
+            continue
+        return text
+    return ""
 
 
 def _format_jsonld_date(jp: dict) -> str:
@@ -474,6 +615,29 @@ async def _fetch_detail(seed: dict, sem: asyncio.Semaphore, client) -> dict:
             if regime:
                 out["hiring_regime"] = regime
             break
+
+        # Camada 1.5: topcard HTML location.
+        # JSON-LD do LinkedIn frequentemente vem com addressRegion=null
+        # (perdemos a UF) ou sem jobLocation algum (vagas remotas Brasil-wide).
+        # O topcard HTML traz "Cidade, UF" ou "Brasil" - mais confiavel.
+        topcard_text = _format_topcard_location(soup)
+        if topcard_text:
+            tc_loc = _split_topcard_location(topcard_text)
+            cur = out["location"]
+            if not cur:
+                # JSON-LD nao trouxe nada (caso remoto): usa topcard
+                out["location"] = tc_loc
+            else:
+                # JSON-LD nao trouxe UF real (segundo elem ausente ou eh
+                # nome de pais como "Brasil"). Se o topcard tem UF, prefere.
+                second = cur[1].upper() if len(cur) >= 2 else ""
+                cur_has_uf = second in _BR_UF_SET
+                tc_has_uf = (
+                    len(tc_loc) >= 2 and tc_loc[1].upper() in _BR_UF_SET
+                    and tc_loc[0].lower() == cur[0].lower()
+                )
+                if not cur_has_uf and tc_has_uf:
+                    out["location"] = tc_loc
 
         # Camada 2: criteria items HTML (overrides regime se mais especifico)
         criteria = _parse_html_criteria(soup)

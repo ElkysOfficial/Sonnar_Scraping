@@ -135,6 +135,63 @@ COUNTRY_NAMES = {
     'hong kong': 'HK',
 }
 
+# Macro-regioes metropolitanas BR -> UF.
+# LinkedIn frequentemente devolve essas strings como ``addressLocality``
+# com ``addressRegion=null``. Tambem usado para tokens "Cidade e Regiao"
+# de capitais/grandes cidades.
+BR_METRO_REGIONS = {
+    'sao paulo e regiao': 'SP',
+    'grande sao paulo': 'SP',
+    'regiao metropolitana de sao paulo': 'SP',
+    'rio de janeiro e regiao': 'RJ',
+    'grande rio': 'RJ',
+    'regiao metropolitana do rio de janeiro': 'RJ',
+    'belo horizonte e regiao': 'MG',
+    'grande belo horizonte': 'MG',
+    'regiao metropolitana de belo horizonte': 'MG',
+    'porto alegre e regiao': 'RS',
+    'grande porto alegre': 'RS',
+    'regiao metropolitana de porto alegre': 'RS',
+    'curitiba e regiao': 'PR',
+    'grande curitiba': 'PR',
+    'regiao metropolitana de curitiba': 'PR',
+    'salvador e regiao': 'BA',
+    'grande salvador': 'BA',
+    'recife e regiao': 'PE',
+    'grande recife': 'PE',
+    'fortaleza e regiao': 'CE',
+    'grande fortaleza': 'CE',
+    'brasilia e regiao': 'DF',
+    'grande brasilia': 'DF',
+    'distrito federal e regiao': 'DF',
+    'manaus e regiao': 'AM',
+    'belem e regiao': 'PA',
+    'goiania e regiao': 'GO',
+    'grande goiania': 'GO',
+    'florianopolis e regiao': 'SC',
+    'grande florianopolis': 'SC',
+    'vitoria e regiao': 'ES',
+    'grande vitoria': 'ES',
+    'natal e regiao': 'RN',
+    'joao pessoa e regiao': 'PB',
+    'maceio e regiao': 'AL',
+    'aracaju e regiao': 'SE',
+    'teresina e regiao': 'PI',
+    'sao luis e regiao': 'MA',
+    'cuiaba e regiao': 'MT',
+    'campo grande e regiao': 'MS',
+    'palmas e regiao': 'TO',
+    'rio branco e regiao': 'AC',
+    'porto velho e regiao': 'RO',
+    'boa vista e regiao': 'RR',
+    'macapa e regiao': 'AP',
+    'campinas e regiao': 'SP',
+    'santos e regiao': 'SP',
+    'sao jose dos campos e regiao': 'SP',
+    'ribeirao preto e regiao': 'SP',
+    'sorocaba e regiao': 'SP',
+}
+
 # Tokens que indicam vaga remota global (sem localidade fisica)
 REMOTE_TOKENS = {'remote', 'remoto', 'remotamente', 'home office', 'anywhere', 'worldwide'}
 
@@ -194,6 +251,11 @@ def _detect_uf(raw: str) -> Optional[str]:
     for name in sorted(BR_STATE_NAMES.keys(), key=len, reverse=True):
         if re.search(rf'(?:^|[^a-z]){re.escape(name)}(?:[^a-z]|$)', normalized):
             return BR_STATE_NAMES[name]
+
+    # 5) Macro-regiao metropolitana ("Porto Alegre e Regiao", "Grande SP", ...)
+    for name in sorted(BR_METRO_REGIONS.keys(), key=len, reverse=True):
+        if re.search(rf'(?:^|[^a-z]){re.escape(name)}(?:[^a-z]|$)', normalized):
+            return BR_METRO_REGIONS[name]
 
     return None
 
