@@ -232,7 +232,7 @@ class CircuitBreaker:
         st.open_until = now + wait
         st.state = "open"
         metrics.event("circuit.open", domain=domain, wait_s=int(wait))
-        logger.warning("circuit OPEN domain=%s wait=%ds", domain, int(wait))
+        logger.warning("circuit_open", extra={"domain": domain, "wait": int(wait)})
         return True
 
     def _gc_window(self, st: _CircuitState, now: float) -> None:
@@ -391,11 +391,11 @@ async def request_with_policy(
         )
         delay = _backoff_delay(attempts, cfg.base_backoff_s, cfg.max_backoff_s, retry_after)
         metrics.incr("retry.attempt", domain=dom)
-        logger.info(
-            "retry domain=%s url=%s status=%s err=%s attempt=%d delay=%.1fs",
-            dom, url, status, type(err).__name__ if err else None,
-            attempts + 1, delay,
-        )
+        logger.info("retry", extra={
+            "domain": dom, "url": url, "status": status,
+            "err": type(err).__name__ if err else None,
+            "attempt": attempts + 1, "delay": round(delay, 1),
+        })
         await asyncio.sleep(delay)
         attempts += 1
         last_resp = resp
@@ -492,11 +492,11 @@ async def apply_policy(domain: str, do_request, *, max_retries: Optional[int] = 
         delay = _backoff_delay(attempts, cfg.base_backoff_s, cfg.max_backoff_s,
                                _parse_retry_after(retry_after_hdr))
         metrics.incr("retry.attempt", domain=domain)
-        logger.info(
-            "retry domain=%s status=%s err=%s attempt=%d delay=%.1fs",
-            domain, status, type(err).__name__ if err else None,
-            attempts + 1, delay,
-        )
+        logger.info("retry", extra={
+            "domain": domain, "status": status,
+            "err": type(err).__name__ if err else None,
+            "attempt": attempts + 1, "delay": round(delay, 1),
+        })
         await asyncio.sleep(delay)
         attempts += 1
 
