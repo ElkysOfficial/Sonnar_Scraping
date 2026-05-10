@@ -23,7 +23,7 @@ from src.persistence.extraction_tracker import tracker  # noqa: E402
 from src.utils.http_session import HttpSession, fetch  # noqa: E402
 
 
-PARSER_VERSION = "michaelpage-2026.05.07"
+PARSER_VERSION = "michaelpage-2026.05.10"
 from src.utils.job_fallbacks import apply_description_fallbacks  # noqa: E402
 from src.utils.text_utils import extract_skills, strip_html  # noqa: E402
 

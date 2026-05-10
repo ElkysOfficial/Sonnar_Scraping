@@ -192,6 +192,118 @@ BR_METRO_REGIONS = {
     'sorocaba e regiao': 'SP',
 }
 
+# Cidades e bairros BR mais frequentes em job postings -> UF.
+# Engines como Michael Page entregam ``addressLocality`` sem ``addressRegion``,
+# resultando em strings tipo "Curitiba, Brazil, BR" - sem UF nenhuma. Sem este
+# mapa, ficamos com state_code=None mesmo tendo a cidade exata.
+# Inclui capitais, regioes metropolitanas, polos industriais e bairros de
+# capitais que aparecem como ``addressLocality`` em vagas reais.
+BR_CITY_TO_UF = {
+    # SP
+    'sao paulo': 'SP', 'campinas': 'SP', 'sao bernardo do campo': 'SP',
+    'sao caetano do sul': 'SP', 'santo andre': 'SP', 'diadema': 'SP',
+    'maua': 'SP', 'guarulhos': 'SP', 'osasco': 'SP', 'barueri': 'SP',
+    'cotia': 'SP', 'embu das artes': 'SP', 'taboao da serra': 'SP',
+    'sorocaba': 'SP', 'jundiai': 'SP', 'indaiatuba': 'SP', 'piracicaba': 'SP',
+    'cabreuva': 'SP', 'sao jose dos campos': 'SP', 'taubate': 'SP',
+    'jacarei': 'SP', 'caraguatatuba': 'SP', 'sao jose do rio preto': 'SP',
+    'ribeirao preto': 'SP', 'araraquara': 'SP', 'sao carlos': 'SP',
+    'limeira': 'SP', 'americana': 'SP', 'bauru': 'SP', 'franca': 'SP',
+    'mogi das cruzes': 'SP', 'mogi guacu': 'SP', 'santos': 'SP',
+    'sao vicente': 'SP', 'guaruja': 'SP', 'praia grande': 'SP',
+    'presidente prudente': 'SP', 'aracatuba': 'SP', 'marilia': 'SP',
+    'itu': 'SP', 'salto': 'SP', 'valinhos': 'SP', 'vinhedo': 'SP',
+    'paulinia': 'SP', 'hortolandia': 'SP', 'sumare': 'SP',
+    # RJ (cidades + bairros frequentes em postings)
+    'rio de janeiro': 'RJ', 'niteroi': 'RJ', 'duque de caxias': 'RJ',
+    'sao goncalo': 'RJ', 'nova iguacu': 'RJ', 'petropolis': 'RJ',
+    'volta redonda': 'RJ', 'macae': 'RJ', 'cabo frio': 'RJ',
+    'campos dos goytacazes': 'RJ', 'nova friburgo': 'RJ', 'angra dos reis': 'RJ',
+    'botafogo': 'RJ', 'copacabana': 'RJ', 'ipanema': 'RJ', 'leblon': 'RJ',
+    'barra da tijuca': 'RJ', 'centro do rio de janeiro': 'RJ',
+    # MG
+    'belo horizonte': 'MG', 'contagem': 'MG', 'uberlandia': 'MG',
+    'juiz de fora': 'MG', 'betim': 'MG', 'montes claros': 'MG',
+    'ribeirao das neves': 'MG', 'uberaba': 'MG', 'governador valadares': 'MG',
+    'ipatinga': 'MG', 'sete lagoas': 'MG', 'divinopolis': 'MG',
+    'pocos de caldas': 'MG', 'patos de minas': 'MG', 'nova lima': 'MG',
+    # RS
+    'porto alegre': 'RS', 'caxias do sul': 'RS', 'pelotas': 'RS',
+    'canoas': 'RS', 'santa maria': 'RS', 'gravatai': 'RS',
+    'novo hamburgo': 'RS', 'sao leopoldo': 'RS', 'rio grande': 'RS',
+    'passo fundo': 'RS', 'viamao': 'RS', 'alvorada': 'RS', 'sapucaia do sul': 'RS',
+    # PR
+    'curitiba': 'PR', 'londrina': 'PR', 'maringa': 'PR',
+    'ponta grossa': 'PR', 'cascavel': 'PR', 'sao jose dos pinhais': 'PR',
+    'foz do iguacu': 'PR', 'colombo': 'PR', 'guarapuava': 'PR',
+    'paranagua': 'PR', 'araucaria': 'PR', 'pinhais': 'PR',
+    # SC (sao jose pode ser ambiguo - cobertura por chave longa primeiro)
+    'florianopolis': 'SC', 'joinville': 'SC', 'blumenau': 'SC',
+    'sao jose': 'SC', 'criciuma': 'SC', 'chapeco': 'SC', 'itajai': 'SC',
+    'lages': 'SC', 'palhoca': 'SC', 'balneario camboriu': 'SC',
+    'jaragua do sul': 'SC', 'tubarao': 'SC',
+    # BA
+    'salvador': 'BA', 'feira de santana': 'BA', 'vitoria da conquista': 'BA',
+    'camacari': 'BA', 'itabuna': 'BA', 'juazeiro': 'BA', 'lauro de freitas': 'BA',
+    'ilheus': 'BA', 'jequie': 'BA',
+    # PE
+    'recife': 'PE', 'jaboatao dos guararapes': 'PE', 'olinda': 'PE',
+    'caruaru': 'PE', 'paulista': 'PE', 'petrolina': 'PE', 'cabo de santo agostinho': 'PE',
+    # CE
+    'fortaleza': 'CE', 'caucaia': 'CE', 'juazeiro do norte': 'CE',
+    'sobral': 'CE', 'maracanau': 'CE',
+    # GO
+    'goiania': 'GO', 'aparecida de goiania': 'GO', 'anapolis': 'GO',
+    'rio verde': 'GO', 'luziania': 'GO',
+    # DF
+    'brasilia': 'DF', 'ceilandia': 'DF', 'taguatinga': 'DF',
+    # PA
+    'belem': 'PA', 'ananindeua': 'PA', 'santarem': 'PA', 'maraba': 'PA',
+    # AM
+    'manaus': 'AM', 'parintins': 'AM',
+    # ES
+    'vitoria': 'ES', 'vila velha': 'ES', 'serra': 'ES', 'cariacica': 'ES',
+    'cachoeiro de itapemirim': 'ES',
+    # MA
+    'sao luis': 'MA', 'imperatriz': 'MA',
+    # RN
+    'natal': 'RN', 'mossoro': 'RN', 'parnamirim': 'RN',
+    # PB
+    'joao pessoa': 'PB', 'campina grande': 'PB',
+    # AL
+    'maceio': 'AL', 'arapiraca': 'AL',
+    # SE
+    'aracaju': 'SE',
+    # PI
+    'teresina': 'PI', 'parnaiba': 'PI',
+    # MT
+    'cuiaba': 'MT', 'varzea grande': 'MT', 'rondonopolis': 'MT', 'sinop': 'MT',
+    # MS
+    'campo grande': 'MS', 'dourados': 'MS', 'tres lagoas': 'MS',
+    # RO
+    'porto velho': 'RO', 'ji-parana': 'RO',
+    # AC
+    'rio branco': 'AC',
+    # AP
+    'macapa': 'AP',
+    # RR
+    'boa vista': 'RR',
+    # TO
+    'palmas': 'TO',
+}
+
+# Codigos ISO-3166 alpha-2 dos paises mais frequentes em postings.
+# Usado para fallback quando a string termina em ", BR" / ", US" / etc.
+# (caso comum: Michael Page entrega "Cidade, Region, BR").
+ISO_COUNTRY_CODES = {
+    'BR', 'US', 'GB', 'PT', 'ES', 'FR', 'DE', 'IT', 'AR', 'CA', 'MX',
+    'CL', 'CO', 'UY', 'PY', 'PE', 'VE', 'NL', 'IE', 'AU', 'NZ', 'IN',
+    'JP', 'CN', 'KR', 'IL', 'SG', 'AE', 'SA', 'ZA', 'BE', 'CH', 'SE',
+    'NO', 'DK', 'FI', 'PL', 'AT', 'GR', 'TR', 'RU', 'UA', 'CZ', 'HU',
+    'BG', 'HR', 'RS', 'BO', 'EC', 'CR', 'GT', 'CU', 'JM', 'EG', 'NG',
+    'KE', 'TH', 'VN', 'PH', 'ID', 'MY', 'TW', 'HK',
+}
+
 # Tokens que indicam vaga remota global (sem localidade fisica)
 REMOTE_TOKENS = {'remote', 'remoto', 'remotamente', 'home office', 'anywhere', 'worldwide'}
 
@@ -256,6 +368,13 @@ def _detect_uf(raw: str) -> Optional[str]:
     for name in sorted(BR_METRO_REGIONS.keys(), key=len, reverse=True):
         if re.search(rf'(?:^|[^a-z]){re.escape(name)}(?:[^a-z]|$)', normalized):
             return BR_METRO_REGIONS[name]
+
+    # 6) Cidade conhecida sem UF explicita ("Curitiba, Brazil, BR" -> PR).
+    # Ordena do nome mais longo pro mais curto: "sao jose dos campos" tem
+    # que casar antes de "sao jose" (ambiguidade SP vs SC).
+    for name in sorted(BR_CITY_TO_UF.keys(), key=len, reverse=True):
+        if re.search(rf'(?:^|[^a-z]){re.escape(name)}(?:[^a-z]|$)', normalized):
+            return BR_CITY_TO_UF[name]
 
     return None
 
@@ -332,6 +451,14 @@ def normalize_location(raw_location: str) -> Tuple[Optional[str], Optional[str]]
 
     if country:
         return None, country
+
+    # Fallback: ISO alpha-2 explicito no fim da string (", BR", ", US").
+    # Cobre engines que serializam JSON-LD como "Cidade, Region, BR" sem
+    # nome do pais por extenso. Aplicado por ultimo pra nao colidir com
+    # UFs brasileiras (BR nao eh UF, US/GB/etc. tampouco).
+    iso_match = re.search(r',\s*([A-Z]{2})\s*$', raw)
+    if iso_match and iso_match.group(1) in ISO_COUNTRY_CODES:
+        return None, iso_match.group(1)
 
     # Vaga remota sem indicador de país: nao da pra atribuir
     return None, None
