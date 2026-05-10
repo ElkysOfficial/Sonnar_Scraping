@@ -2,7 +2,7 @@
 Lista mestre de stacks (palavras-chave) usadas pelas engines de scraping.
 
 A lista é organizada em **categorias** (linguagens, front-end, back-end, etc.).
-O scraper processa as stacks em **lotes de 10** (batches), respeitando as
+O scraper processa as stacks em **lotes de 5** (batches), respeitando as
 fronteiras de categoria - um lote nunca mistura stacks de categorias diferentes.
 
 API pública
@@ -18,8 +18,9 @@ Por que existe lote?
 --------------------
 Mais de 200 stacks × N páginas/site = milhares de requests sequenciais por
 ciclo. Sites detectam o padrão e começam a banir IP/sessão. Dividir em lotes
-de 10, com 2h de descanso entre lotes, contorna esse problema mantendo a
-cobertura completa ao longo do tempo.
+de 5, com 2h de descanso entre lotes, contorna esse problema mantendo a
+cobertura completa ao longo do tempo. Lotes menores priorizam qualidade
+(menos pressao por host) sobre velocidade de varrer todas as stacks.
 
 Cada engine que itera stacks deve usar ``get_active_stacks()`` em vez de
 ``stacks``. Quando rodada isoladamente (sem controller), a função devolve o
@@ -142,7 +143,7 @@ stacks: Set[str] = {s for items in STACK_CATEGORIES.values() for s in items}
 # Iteração em lotes
 # ---------------------------------------------------------------------------
 
-def iter_batches(batch_size: int = 10) -> Iterator[Tuple[str, List[str]]]:
+def iter_batches(batch_size: int = 5) -> Iterator[Tuple[str, List[str]]]:
     """
     Itera sobre as stacks em lotes que **não cruzam fronteiras de categoria**.
 

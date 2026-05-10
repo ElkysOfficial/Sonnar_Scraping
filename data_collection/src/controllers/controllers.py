@@ -15,7 +15,7 @@ Estratégia em duas camadas:
    ciclo, todas as vagas já extraídas estão salvas (JSON + CSV + Supabase).
 
 Tunáveis (env vars):
-    BATCH_SIZE              tamanho do lote      (default 10)
+    BATCH_SIZE              tamanho do lote      (default 5)
     BATCH_INTERVAL_SECONDS  pausa entre lotes    (default 7200 = 2h)
     MAX_CONCURRENT_ENGINES  engines em paralelo  (default 3)
 """
@@ -44,7 +44,7 @@ logger = logging.getLogger("scraper.controller")
 # Configuração (lê do ambiente, com defaults sensatos)
 # ---------------------------------------------------------------------------
 
-BATCH_SIZE = int(os.getenv("BATCH_SIZE", "10"))
+BATCH_SIZE = int(os.getenv("BATCH_SIZE", "5"))
 BATCH_INTERVAL_SECONDS = int(os.getenv("BATCH_INTERVAL_SECONDS", "7200"))  # 2h
 # 2 vCPUs => 2 engines paralelas. Atual default era 3 e levava à contenção.
 MAX_CONCURRENT_ENGINES = int(os.getenv("MAX_CONCURRENT_ENGINES", "2"))

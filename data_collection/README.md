@@ -55,8 +55,9 @@ data_collection/
 (linguagens, front-end, back-end, mobile, BD, cloud, data, ML/AI,
 arquitetura, segurança, QA, cargos PT, cargos EN, níveis).
 
-`iter_batches(10)` produz tuplas `(categoria, lote)` com até 10 stacks por
-vez, **sem cruzar fronteiras de categoria**. Total: ~26 lotes.
+`iter_batches(5)` produz tuplas `(categoria, lote)` com até 5 stacks por
+vez, **sem cruzar fronteiras de categoria**. Lotes menores priorizam
+qualidade (menos pressao por host) sobre velocidade.
 
 A cada ciclo o controller:
 
@@ -107,7 +108,9 @@ outros. Retorna `True` se ao menos um confirmou.
 
 | Variável | Default | Descrição |
 |----------|---------|-----------|
-| `BATCH_SIZE` | `10` | Tamanho do lote de stacks |
+| `BATCH_SIZE` | `5` | Tamanho do lote de stacks |
+| `LINKEDIN_LISTING_MAX_START` | `500` | Limite de paginação no listing LinkedIn |
+| `LINKEDIN_LISTING_STEP` | `25` | Step de paginação LinkedIn |
 | `BATCH_INTERVAL_SECONDS` | `7200` | Pausa entre lotes (2h) |
 | `MAX_CONCURRENT_ENGINES` | `3` | Engines em paralelo |
 | `SUPABASE_URL` | — | Sem isso, sink Supabase fica desligado |
