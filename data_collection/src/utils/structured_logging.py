@@ -39,8 +39,108 @@ _RESET = "\x1b[0m"
 _DIM = "\x1b[2m"
 
 
+# Tradutor de event_names tecnicos para mensagens em PT-BR humanas.
+# Cada handler recebe o dict de extras do LogRecord e devolve uma string.
+# Mantemos apenas para o stdout (PrettyFormatter); o JSON do arquivo
+# preserva os event_names originais para parsing.
+
+def _fmt_minutes(seconds) -> str:
+    try:
+        m = int(seconds) // 60
+    except Exception:
+        return f"{seconds}s"
+    if m < 60:
+        return f"{m} min"
+    h = m // 60
+    return f"{h}h {m % 60}min" if m % 60 else f"{h}h"
+
+
+def _by_engine_summary(d) -> str:
+    if not isinstance(d, dict) or not d:
+        return ""
+    parts = [f"{k} {v}" for k, v in d.items()]
+    return " (" + ", ".join(parts) + ")"
+
+
+_HUMAN_MESSAGES = {
+    # Startup
+    "tracker_loaded":
+        lambda e: f"Carregadas {e.get('completed', '?')} vagas que ja foram coletadas em ciclos anteriores",
+    "scraper_init":
+        lambda e: f"Inicializado: {e.get('local_known','?')} vagas no disco, {e.get('tracker_known','?')} registradas no banco",
+    "auto_reenrich":
+        lambda e: f"Releitura automatica ({e.get('engine','?')}): {e.get('requeued','?')} vagas voltam a fila por melhoria do parser",
+    "reenrich_requeued":
+        lambda e: f"Reagendadas {e.get('count','?')} vagas do {e.get('engine','?')} para nova coleta",
+    "requeue_stale_running":
+        lambda e: f"Recuperadas {e.get('count','?')} vagas que travaram durante a coleta (sem resposta ha mais de {e.get('stale_minutes','?')} min){_by_engine_summary(e.get('by_engine'))}",
+    # Batch
+    "batch_start":
+        lambda e: f"Iniciando lote {e.get('batch_idx','?')}/{e.get('batch_total','?')} - categoria \"{e.get('category','?')}\" - stacks: {', '.join(e.get('stacks') or [])}",
+    "batch_sleep":
+        lambda e: f"Lote concluido. Pausando {_fmt_minutes(e.get('seconds',0))} antes do proximo",
+    "batch_error":
+        lambda e: f"Erro no lote da categoria {e.get('category','?')}: {e.get('errorMessage','?')}",
+    # Engine
+    "engine_start":
+        lambda e: f"Coletando vagas do site {e.get('engine','?')}",
+    "engine_error":
+        lambda e: f"Falha ao coletar do site {e.get('engine','?')}",
+    "reenrich_pass_start":
+        lambda e: f"Reprocessando {e.get('count','?')} vagas pendentes do {e.get('engine','?')}",
+    # Persist
+    "persist_failed":
+        lambda e: f"Falha ao salvar vaga do {e.get('engine','?')}: {e.get('errorMessage','?')[:80]}",
+    "salary_failed":
+        lambda e: f"Nao consegui interpretar o salario da vaga ({e.get('engine','?')})",
+    # Tracker / DB
+    "tracker_load_failed":
+        lambda e: f"Falha ao carregar lista de vagas processadas: {e.get('errorMessage','?')[:80]}",
+    "detail_parser_error":
+        lambda e: f"Erro ao interpretar pagina de vaga: {e.get('errorMessage','?')[:80]}",
+}
+
+
+# Logger names tecnicos -> rotulos curtos amigaveis
+_LOGGER_LABELS = {
+    "scraper":             "scraper",
+    "scraper.controller":  "scraper",
+    "scraper.tracker":     "scraper",
+    "scraper.http":        "rede",
+    "scraper.metrics":     "metricas",
+}
+
+
+def _human_message(record: logging.LogRecord) -> str | None:
+    handler = _HUMAN_MESSAGES.get(record.msg)
+    if handler is None:
+        return None
+    extras = {
+        k: v for k, v in record.__dict__.items()
+        if k not in _RESERVED and not k.startswith("_")
+    }
+    try:
+        return handler(extras)
+    except Exception:
+        return None
+
+
+def _short_logger_name(name: str) -> str:
+    # mapping direto, ou pega o ultimo segmento (ex: "scraper.engine.linkedin" -> "linkedin")
+    if name in _LOGGER_LABELS:
+        return _LOGGER_LABELS[name]
+    if "." in name:
+        return name.rsplit(".", 1)[-1]
+    return name
+
+
 class PrettyFormatter(logging.Formatter):
-    """Formato humano para stdout em dev: HH:MM:SS  LEVEL  logger  msg  k=v..."""
+    """Formato humano para stdout: HH:MM:SS  LEVEL  area  mensagem-em-portugues.
+
+    Para event_names mapeados em ``_HUMAN_MESSAGES``, traduz a mensagem
+    completa para PT-BR sem termos tecnicos. Eventos nao mapeados caem no
+    formato padrao (msg + extras k=v) para nao perder informacao.
+    """
 
     def __init__(self, *, color: bool = True):
         super().__init__()
@@ -51,21 +151,27 @@ class PrettyFormatter(logging.Formatter):
         level = record.levelname.ljust(7)
         if self.color:
             level = f"{_LEVEL_COLORS.get(record.levelname,'')}{level}{_RESET}"
-        logger_name = record.name
-        msg = record.getMessage()
+        logger_name = _short_logger_name(record.name)
 
-        extras = []
-        for k, v in record.__dict__.items():
-            if k in _RESERVED or k.startswith("_"):
-                continue
-            try:
-                json.dumps(v)
-            except (TypeError, ValueError):
-                v = repr(v)
-            if isinstance(v, str) and len(v) > 200:
-                v = v[:197] + "…"
-            extras.append(f"{k}={v}")
-        extras_str = (" " + " ".join(extras)) if extras else ""
+        human = _human_message(record)
+        if human is not None:
+            msg = human
+            extras_str = ""
+        else:
+            msg = record.getMessage()
+            extras = []
+            for k, v in record.__dict__.items():
+                if k in _RESERVED or k.startswith("_"):
+                    continue
+                try:
+                    json.dumps(v)
+                except (TypeError, ValueError):
+                    v = repr(v)
+                if isinstance(v, str) and len(v) > 200:
+                    v = v[:197] + "…"
+                extras.append(f"{k}={v}")
+            extras_str = (" " + " ".join(extras)) if extras else ""
+
         if self.color:
             extras_str = f"{_DIM}{extras_str}{_RESET}" if extras_str else ""
             logger_name = f"{_DIM}{logger_name}{_RESET}"
