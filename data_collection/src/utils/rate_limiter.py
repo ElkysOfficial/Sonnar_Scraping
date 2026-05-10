@@ -47,8 +47,13 @@ class DomainConfig:
 _DEFAULT_DOMAIN_CONFIG = DomainConfig()
 
 _DOMAIN_CONFIGS: Dict[str, DomainConfig] = {
-    "linkedin.com":   DomainConfig(rate_per_sec=0.5, burst=2, concurrency=2),
-    "br.linkedin.com": DomainConfig(rate_per_sec=0.5, burst=2, concurrency=2),
+    # LinkedIn: backoff maior (8s base, 300s teto) — IP marcado por 429
+    # demora minutos para esfriar. Backoff de 2s do default reentra ainda
+    # marcado, gera novo 429 imediato.
+    "linkedin.com":   DomainConfig(rate_per_sec=0.4, burst=2, concurrency=2,
+                                   base_backoff_s=8.0, max_backoff_s=300.0),
+    "br.linkedin.com": DomainConfig(rate_per_sec=0.4, burst=2, concurrency=2,
+                                    base_backoff_s=8.0, max_backoff_s=300.0),
     "indeed.com":     DomainConfig(rate_per_sec=0.4, burst=2, concurrency=2),
     "br.indeed.com":  DomainConfig(rate_per_sec=0.4, burst=2, concurrency=2),
     "jooble.org":     DomainConfig(rate_per_sec=0.5, burst=2, concurrency=3),
