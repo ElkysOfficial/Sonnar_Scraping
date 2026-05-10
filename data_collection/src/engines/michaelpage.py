@@ -23,7 +23,7 @@ from src.persistence.extraction_tracker import tracker  # noqa: E402
 from src.utils.http_session import HttpSession, fetch  # noqa: E402
 
 
-PARSER_VERSION = "michaelpage-2026.05.10"
+PARSER_VERSION = "michaelpage-2026.05.10.1"
 from src.utils.job_fallbacks import apply_description_fallbacks  # noqa: E402
 from src.utils.text_utils import extract_skills, strip_html  # noqa: E402
 
@@ -50,15 +50,11 @@ def reset_session() -> None:
 # --- Configuração ---------------------------------------------------------
 
 # Categorias válidas do Michael Page Brasil (slugs pré-definidos).
+# Restrito a ti-tecnologia: outras categorias trazem vagas non-dev (gerente
+# de PCP, contador, plant manager, executivo de vendas) que poluiam o
+# pipeline e tinham skills=[] sob o vocabulario tech atual.
 MICHAELPAGE_CATEGORIES = [
     "ti-tecnologia",
-    "engenharia",
-    "financas-contabilidade",
-    "vendas",
-    "marketing",
-    "recursos-humanos",
-    "supply-chain",
-    "juridico",
 ]
 
 MP_FETCH_DETAIL = os.getenv("MICHAELPAGE_FETCH_DETAIL", "1") == "1"
@@ -146,6 +142,24 @@ def _format_jsonld_date(jp: dict) -> str:
     return ""
 
 
+def _detect_work_type(jp: dict, location_str: str, title: str) -> str:
+    """Heuristica de modalidade.
+
+    MP entrega ``jobLocationType='TELECOMMUTE'`` quando remoto. Caso
+    contrario, busca pistas ('home office', 'remoto', 'híbrido') no
+    texto da localidade e do titulo.
+    """
+    jlt = (jp.get("jobLocationType") or "").upper()
+    if jlt == "TELECOMMUTE":
+        return "Remoto"
+    blob = (location_str + " " + title).lower()
+    if "home office" in blob or "remoto" in blob or "remote" in blob:
+        return "Remoto"
+    if "híbrido" in blob or "hibrido" in blob or "hybrid" in blob:
+        return "Híbrido"
+    return "Presencial"
+
+
 async def _fetch_job_detail(link: str, client, semaphore: asyncio.Semaphore) -> dict:
     """Busca detalhe e devolve enriquecimentos. Vazio se falhar."""
     async with semaphore:
@@ -157,12 +171,21 @@ async def _fetch_job_detail(link: str, client, semaphore: asyncio.Semaphore) -> 
             if not jp:
                 return {}
             description = strip_html(jp.get("description", ""))
+            location_str = _format_jsonld_location(jp)
+            title = (jp.get("title") or "").strip()
+            ho = jp.get("hiringOrganization") or {}
+            company = ""
+            if isinstance(ho, dict):
+                company = (ho.get("name") or "").strip()
             return {
+                "title": title,
+                "company": company,
                 "description": description,
                 "skills": extract_skills(description) if description else [],
                 "publication_date": _format_jsonld_date(jp),
-                "location_str": _format_jsonld_location(jp),
+                "location_str": location_str,
                 "hiring_regime": _parse_employment_type(jp),
+                "work_type": _detect_work_type(jp, location_str, title),
             }
         except Exception:
             return {}
@@ -289,8 +312,16 @@ async def get_michaelpage_jobs(on_job=None) -> list:
                     except Exception:
                         pass
                 return
+            # Title/company: detail-first quando JSON-LD trouxer (sempre traz
+            # em vagas reais). Fallback para o que veio do listing card.
+            if extra.get("title"):
+                job[1] = extra["title"]
+            if extra.get("company"):
+                job[2] = extra["company"]
             if extra.get("location_str"):
                 job[3] = extra["location_str"]
+            if extra.get("work_type"):
+                job[4] = extra["work_type"]
             if extra.get("hiring_regime"):
                 job[5] = extra["hiring_regime"]
             if extra.get("publication_date"):
@@ -322,7 +353,12 @@ async def get_michaelpage_jobs(on_job=None) -> list:
 
 
 async def refetch_one(url: str) -> list | None:
-    """Reprocessa uma URL específica do Michael Page (passe de reenrichment)."""
+    """Reprocessa uma URL específica do Michael Page (passe de reenrichment).
+
+    Popula title/company/work_type direto do JSON-LD - antes o reenrichment
+    sobrescrevia o jobs.json com esses campos vazios, zerando vagas que ja
+    tinham sido extraidas corretamente no listing.
+    """
     client = await get_session()
     sem = asyncio.Semaphore(1)
     detail = await _fetch_job_detail(url, client, sem)
@@ -330,10 +366,14 @@ async def refetch_one(url: str) -> list | None:
         return None
     location_str = detail.get("location_str", "")
     parsed = [
-        url, "", "",
+        url,
+        detail.get("title", ""),
+        detail.get("company", ""),
         [location_str] if location_str else [],
-        "", detail.get("hiring_regime", ""),
-        "", detail.get("publication_date", ""),
+        detail.get("work_type", ""),
+        detail.get("hiring_regime", ""),
+        "",
+        detail.get("publication_date", ""),
         detail.get("skills", []),
         detail.get("description", ""),
     ]
