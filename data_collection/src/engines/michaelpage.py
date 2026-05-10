@@ -23,7 +23,7 @@ from src.persistence.extraction_tracker import tracker  # noqa: E402
 from src.utils.http_session import HttpSession, fetch  # noqa: E402
 
 
-PARSER_VERSION = "michaelpage-2026.05.10.1"
+PARSER_VERSION = "michaelpage-2026.05.10.2"
 from src.utils.job_fallbacks import apply_description_fallbacks  # noqa: E402
 from src.utils.text_utils import extract_skills, strip_html  # noqa: E402
 
@@ -49,13 +49,85 @@ def reset_session() -> None:
 
 # --- Configuração ---------------------------------------------------------
 
-# Categorias válidas do Michael Page Brasil (slugs pré-definidos).
-# Restrito a ti-tecnologia: outras categorias trazem vagas non-dev (gerente
-# de PCP, contador, plant manager, executivo de vendas) que poluiam o
-# pipeline e tinham skills=[] sob o vocabulario tech atual.
+# Categorias do Michael Page focadas em TI. Combinamos as duas slugs que
+# o proprio site mantem (PT e EN) - elas tem listas parcialmente diferentes
+# e o dedup por URL garante que vagas em ambas nao sao contadas duas vezes.
+# Outras categorias (engenharia/financas/vendas/marketing/RH/supply/juridico)
+# trazem ~90% de ruido non-dev e sao excluidas.
+# 'information-technology' tende a ser mais limpa (sem "Gerente de Vendas"
+# nem "Gerente de Produtos" que ti-tecnologia inclui); 'ti-tecnologia'
+# pega vagas em portugues que IT pode nao indexar.
 MICHAELPAGE_CATEGORIES = [
     "ti-tecnologia",
+    "information-technology",
 ]
+
+# Padroes em titulo que indicam vaga non-tech mesmo quando o MP a coloca
+# numa categoria de TI. Aplicado como filtro defensivo - se bater, a vaga
+# eh descartada antes de persistir. Ex.: "Gerente de Vendas - Canal Indireto"
+# aparece em /jobs/ti-tecnologia mas e vaga de comercial.
+_NON_TECH_TITLE_PATTERNS = re.compile(
+    r"(?<![\w])("
+    # Vendas / Comercial
+    r"vendedor(?:a)?|executivo(?:a)?\s+de\s+(?:vendas|neg[óo]cios)|"
+    r"gerente\s+(?:de\s+)?vendas|gerente\s+comercial|"
+    r"gerente\s+de\s+produtos?|gerente\s+de\s+contas|"
+    r"key\s+account\s+manager|sales\s+representative|"
+    r"representante\s+de\s+vendas|consultor\s+de\s+vendas|"
+    r"assistente\s+comercial|coordenador\s+comercial|"
+    r"analista\s+(?:de\s+)?performance\s+comercial|"
+    r"coordenador\s+de\s+opera[çc][õo]es\s+comerciais|"
+    r"analista\s+de\s+ouvidoria|"
+    # Finanças / Contabilidade
+    r"gerente\s+(?:de\s+)?(?:contabil|cont[áa]bil|contabilidade|tribut[áa]rio|fiscal|"
+    r"controladoria|financeir[ao]|adm(?:inistrativo)?|tesouraria|loja|"
+    r"agr[íi]cola|manuten[çc][ãa]o|pcp|opera[çc][õo]es\s+industri|"
+    r"departamento\s+pessoal)|"
+    r"plant\s+manager|finance\s+manager(?:\s+pj|\s+accountant)?|"
+    r"controller\s+financeiro|head\s+de\s+finan[çc]as|"
+    r"contador|contabilista|especialista\s+cont[áa]bil|"
+    r"analista\s+(?:cont[áa]bil|fiscal|de\s+fp&?a|tribut[áa]rio|de\s+fluxo)|"
+    r"fx[\s-]+specialist|forex|trade\s+finance|po[\s-]+trade|fp&?a|pricing|"
+    r"especialista\s+de\s+pricing|page\s+interim\s+especialista\s+de\s+contas?|"
+    # Engenharia (não-software)
+    r"engenheiro(?:a)?\s+(?:mec[âa]nico|agr[íi]cola|civil|el[ée]trico|"
+    r"eletrico|qu[íi]mico|industrial|de\s+aplica|de\s+implementos|"
+    r"de\s+manuten|calculista|de\s+gest[ãa]o\s+de\s+ativos|"
+    r"de\s+instala[çc][ãa]o)|"
+    r"supervisor\s+de\s+manuten[çc][ãa]o|gerente\s+de\s+manuten[çc][ãa]o|"
+    r"comissionamento|"
+    r"autodesk\s+bim|coordena[çc][ãa]o\s+de\s+modelo\s+bim|"
+    r"or[çc]amentista\s+bim|"
+    # Marketing / Comunicação / Branding / Design
+    r"gerente\s+(?:de\s+)?(?:marketing|comunica[çc][ãa]o|trade\s+marketing|marca)|"
+    r"analista\s+(?:de\s+)?(?:marketing|comunica[çc][ãa]o|trade\s+marketing)|"
+    r"especialista\s+(?:de\s+)?marketing|"
+    r"brand\s+(?:embassador|ambassador)|paid\s+media|"
+    # RH / Talents
+    r"recursos\s+humanos|tech\s+recruiter|talent\s+acquisition|"
+    r"coordenador\s+de\s+gest[ãa]o\s+de\s+talentos|"
+    r"analista\s+s[êe]nior\s+de\s+hris|hris|total\s+rewards|"
+    # Outros non-tech
+    r"coordenador\s+jur[íi]dico|coord(?:enador)?\s+de\s+facilities|"
+    r"bdr\b|business\s+development\s+representative|"
+    r"agency\s+development\s+manager|"
+    r"analista\s+de\s+conv[êe]nios|"
+    r"head\s+business\s+development|head\s+comercial|"
+    r"pesquisador\s+em\s+biologia|biologia\s+sint[ée]tica|"
+    r"engenharia\s+gen[ée]tica|bioenergy|energy\s+transition|"
+    r"coordenador\s+de\s+cart[ãa]o\s+de\s+benef[íi]cios|"
+    r"coordenador\s+de\s+m[íi]dia|"
+    r"coordenador\s+de\s+estrat[ée]gia\s+de\s+desenvolvimento\s+de\s+neg[óo]cio"
+    r")(?![\w])",
+    re.IGNORECASE,
+)
+
+
+def _is_non_tech_title(title: str) -> bool:
+    """True se o titulo bater com padroes non-tech conhecidos."""
+    if not title:
+        return False
+    return bool(_NON_TECH_TITLE_PATTERNS.search(title))
 
 MP_FETCH_DETAIL = os.getenv("MICHAELPAGE_FETCH_DETAIL", "1") == "1"
 MP_DETAIL_CONCURRENCY = int(os.getenv("MICHAELPAGE_DETAIL_CONCURRENCY", "5"))
@@ -312,6 +384,13 @@ async def get_michaelpage_jobs(on_job=None) -> list:
                     except Exception:
                         pass
                 return
+            # Filtro defensivo: titulo non-tech mesmo na categoria TI. Cobre
+            # casos como "Gerente de Vendas - Canal Indireto" que aparecem em
+            # /jobs/ti-tecnologia. Apos esse return, a vaga nem chega a
+            # persistencia - on_job nao e chamado.
+            extracted_title = extra.get("title") or job[1]
+            if _is_non_tech_title(extracted_title):
+                return
             # Title/company: detail-first quando JSON-LD trouxer (sempre traz
             # em vagas reais). Fallback para o que veio do listing card.
             if extra.get("title"):
@@ -363,6 +442,10 @@ async def refetch_one(url: str) -> list | None:
     sem = asyncio.Semaphore(1)
     detail = await _fetch_job_detail(url, client, sem)
     if not detail or not detail.get("description"):
+        return None
+    # Filtro defensivo: titulo non-tech bloqueia reenrichment. Devolve None
+    # para o tracker marcar como descartada e nao reaparecer no jobs.json.
+    if _is_non_tech_title(detail.get("title", "")):
         return None
     location_str = detail.get("location_str", "")
     parsed = [
