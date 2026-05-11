@@ -14,7 +14,7 @@ database/
 ├── lib/
 │   ├── supabase.js       # Client Node.js
 │   └── supabase_client.py # Client Python
-├── scripts/
+├── migrations/scripts/
 │   └── migrate-json-to-db.js     # Migração de dados JSON
 ├── package.json
 ├── .env.example
@@ -57,7 +57,7 @@ No dashboard do Supabase:
 ```bash
 cd database
 npm install
-node scripts/migrate-json-to-db.js
+node migrations/scripts/migrate-json-to-db.js
 ```
 
 ## Tabelas

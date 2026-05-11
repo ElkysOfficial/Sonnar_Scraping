@@ -9,7 +9,7 @@
   },
   "scripts": {
     "migrate": "node scripts/run-migrations.js",
-    "seed": "node scripts/migrate-json-to-db.js",
+    "seed": "node migrations/scripts/migrate-json-to-db.js",
     "supabase:link": "supabase link --project-ref bjlxmqpxnsmswbfbkivq",
     "supabase:db:push": "supabase db push",
     "supabase:db:reset": "supabase db reset",
