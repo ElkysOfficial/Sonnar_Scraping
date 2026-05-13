@@ -37,8 +37,21 @@ _DEFAULT_HEADERS = {
         "AppleWebKit/537.36 (KHTML, like Gecko) "
         "Chrome/130.0.0.0 Safari/537.36"
     ),
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     "Accept-Language": "pt-BR,pt;q=0.9,en;q=0.8",
+    "Accept-Encoding": "gzip, deflate",
 }
+
+
+def _h2_available() -> bool:
+    try:
+        import h2  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
+_HTTP2_AVAILABLE = _h2_available()
 
 
 class HttpSession:
@@ -59,6 +72,13 @@ class HttpSession:
         self.headers = {**_DEFAULT_HEADERS, **(headers or {})}
         self.follow_redirects = follow_redirects
         self.max_redirects = max_redirects
+        # h2 e opcional: se o pacote nao esta instalado, downgrada para HTTP/1.1
+        # silenciosamente. Antes, http2=True com h2 ausente quebrava no request
+        # (ImportError nao capturado pelo httpx.HTTPError do rate_limiter) e o
+        # servidor frequentemente respondia 500 a tentativas de ALPN h2.
+        if http2 and not _HTTP2_AVAILABLE:
+            logger.info("http2_disabled_h2_missing")
+            http2 = False
         self.http2 = http2
         self._clients: Dict[int, httpx.AsyncClient] = {}
         self._lock = asyncio.Lock()
@@ -70,24 +90,14 @@ class HttpSession:
         async with self._lock:
             if loop_id in self._clients:
                 return self._clients[loop_id]
-            try:
-                client = httpx.AsyncClient(
-                    timeout=self.timeout,
-                    limits=self.limits,
-                    headers=self.headers,
-                    follow_redirects=self.follow_redirects,
-                    max_redirects=self.max_redirects,
-                    http2=self.http2,
-                )
-            except ImportError:
-                # h2 opcional; cai para http/1.1
-                client = httpx.AsyncClient(
-                    timeout=self.timeout,
-                    limits=self.limits,
-                    headers=self.headers,
-                    follow_redirects=self.follow_redirects,
-                    max_redirects=self.max_redirects,
-                )
+            client = httpx.AsyncClient(
+                timeout=self.timeout,
+                limits=self.limits,
+                headers=self.headers,
+                follow_redirects=self.follow_redirects,
+                max_redirects=self.max_redirects,
+                http2=self.http2,
+            )
             self._clients[loop_id] = client
             return client
 
