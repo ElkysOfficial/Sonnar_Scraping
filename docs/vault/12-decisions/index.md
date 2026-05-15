@@ -12,6 +12,7 @@ Padrão: cada ADR contém **Contexto → Decisão → Alternativas → Consequê
 | [[ADR-001-auth-hardening]]                       | Auth hardening (guard global meta-driven, intended route, inactivity)   | Aceito   | v1.8.0                 |
 | [[ADR-002-jwt-storage-csp-hardening]]            | JWT em localStorage com CSP estrita (defesa em profundidade)            | Aceito   | v1.9.0                 |
 | [[ADR-003-indeed-listing-json-extraction]]       | Indeed engine via listing JSON (substitui detail-fetch por vaga)        | Aceito   | data_collection v2026.05 |
+| [[ADR-004-monorepo-restructure]]                 | Reestruturação para monorepo apps/packages/supabase/docs                | Aceito   | 2026-05-15             |
 
 ## Como adicionar um ADR novo
 

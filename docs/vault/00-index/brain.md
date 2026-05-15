@@ -8,23 +8,28 @@ cssclasses: [brain-index]
 # 🧠 Sonnar Second Brain
 
 > Mapa central do conhecimento operacional do Sonnar.
-> Versão atual: **v1.9.3** · Repositório: `D:\Elkys\WebSite_Sonnar` · Stack: Vue 3 + Vite 7 + Supabase Cloud
+> Repositório: `C:\Users\lcvsilva\Desktop\Sonnar_Scraping` · Monorepo `apps/packages/supabase/docs` (ver [[../12-decisions/ADR-004-monorepo-restructure]])
 
 ---
 
 ## Visão geral em uma frase
 
-Plataforma Vue 3 SPA que entrega vagas de tecnologia personalizadas via WhatsApp, com **landing pública**, **dashboard do cliente** (vagas, assinatura, configurações) e **portal admin** (gestão de subscribers e admins), monetizada por planos Stripe (free / pro / plus) e servida com backend serverless no **Supabase Cloud** (Postgres + Auth + Edge Functions).
+Sonnar é um agregador de vagas de tecnologia: o **scraper Python** (`apps/scraper`) coleta e normaliza vagas de múltiplos engines, persiste no **Supabase Cloud** (Postgres + Auth + Edge Functions), e a distribuição acontece por três frontes — **bot Discord** (`apps/discord/{sender,formatter}`), **bot WhatsApp** (`apps/whatsapp/{sender,formatter}`) e **frontend Vue 3 + Vite** (`apps/web`) com landing pública, dashboard do cliente e portal admin, monetizado por planos Stripe.
 
 ```
-Browser SPA  ──HTTPS──▶  Supabase Cloud (Postgres+RLS · Auth PKCE · Edge Functions)
-   │                          │
-   ├── Landing pública        ├── Edge Functions (Stripe checkout/webhook)
-   ├── /dashboard (cliente)   └── Trigger handle_new_user → subscribers
-   └── /admin (staff)
+                 apps/scraper (Python)
+                       │
+                       ▼
+              Supabase Cloud (Postgres+RLS · Auth PKCE · Edge Functions)
+              ▲           ▲                                       ▲
+              │           │                                       │
+   apps/web (Vue)   apps/discord/sender              apps/whatsapp/sender
+   - Landing        ↑                                  ↑
+   - /dashboard     apps/discord/formatter             apps/whatsapp/formatter
+   - /admin                                            (+ packages/message-formatting-core)
 ```
 
-Mais profundo em [[../01-architecture/system-overview]].
+Mais profundo em [[../01-architecture/system-overview]] e em [[../12-decisions/ADR-004-monorepo-restructure]] para o layout do repositório.
 
 ---
 
