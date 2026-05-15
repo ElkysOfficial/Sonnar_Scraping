@@ -126,7 +126,7 @@ export const VIP_ENABLE_DIAGNOSTICS = readBoolean(process.env.VIP_ENABLE_DIAGNOS
 export const VIP_DIAGNOSTIC_LOG_LIMIT = readNumber(process.env.VIP_DIAGNOSTIC_LOG_LIMIT, 8)
 
 // Caminho do arquivo de vagas (embeds.json)
-export const EMBEDS_FILE_PATH = path.resolve(__dirname, "..", "..", "..", "message_formatting", "discord", "src", "data", "embeds.json")
+export const EMBEDS_FILE_PATH = path.resolve(__dirname, "..", "..", "..", "discord", "formatter", "src", "data", "embeds.json")
 
 // ======= CONFIGURAÇÕES DA ELKYS =======
 // Número da Elkys (formato: numero@s.whatsapp.net ou numero@lid)
