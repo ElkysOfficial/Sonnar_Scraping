@@ -1,0 +1,23 @@
+{
+  "name": "Feature branch naming",
+  "target": "branch",
+  "enforcement": "active",
+  "conditions": {
+    "ref_name": {
+      "include": ["refs/heads/**/*"],
+      "exclude": ["refs/heads/main", "refs/heads/develop"]
+    }
+  },
+  "rules": [
+    {
+      "type": "branch_name_pattern",
+      "parameters": {
+        "operator": "regex",
+        "pattern": "^(feature|release|hotfix|bugfix|support|chore|docs)\\/[a-z0-9._-]+$",
+        "name": "Branch naming convention",
+        "negate": false
+      }
+    }
+  ],
+  "bypass_actors": []
+}

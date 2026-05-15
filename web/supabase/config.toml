@@ -1,0 +1,49 @@
+project_id = "cqiaiwpjrxqxvhvmcgfs"
+
+# create-checkout-session: chamada por usuário autenticado; nossa função
+# valida o JWT via authorize() helper.
+[functions.create-checkout-session]
+verify_jwt = true
+
+[functions.create-portal-session]
+verify_jwt = true
+
+[functions.cancel-own-subscription]
+verify_jwt = true
+
+# stripe-webhook: chamado pelo Stripe, valida via assinatura, não JWT.
+[functions.stripe-webhook]
+verify_jwt = false
+
+# Funções admin: exigem auth. authorize() checa o role.
+[functions.admin-cancel-subscription]
+verify_jwt = true
+
+[functions.admin-create-client]
+verify_jwt = true
+
+[functions.add-admin]
+verify_jwt = true
+
+[functions.list-admins]
+verify_jwt = true
+
+# create-owner-account: bootstrap - sem JWT (rodar uma vez via curl admin).
+[functions.create-owner-account]
+verify_jwt = false
+
+# send-auth-email: chamada pelo Supabase Auth como Send Email Hook.
+# Autenticada via assinatura Standard Webhooks (SEND_EMAIL_HOOK_SECRET).
+[functions.send-auth-email]
+verify_jwt = false
+
+# Fluxo de confirmação de email por OTP de 8 dígitos (custom).
+# Chamadas pelo frontend durante o cadastro, antes da sessão existir.
+[functions.signup-with-otp]
+verify_jwt = false
+
+[functions.verify-signup-otp]
+verify_jwt = false
+
+[functions.resend-signup-otp]
+verify_jwt = false

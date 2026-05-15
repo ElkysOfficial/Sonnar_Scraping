@@ -1,0 +1,14 @@
+{
+  "graph:open": [
+    {
+      "modifiers": ["Mod"],
+      "key": "G"
+    }
+  ],
+  "graph:open-local": [
+    {
+      "modifiers": ["Mod", "Shift"],
+      "key": "G"
+    }
+  ]
+}

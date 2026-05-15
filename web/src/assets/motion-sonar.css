@@ -1,0 +1,299 @@
+/* ==========================================================================
+   Sonnar Sonar Interaction Layer
+   Purpose: connect interactions to the brand metaphor (sonar/aquatic radar).
+            Touch becomes a ping; arrival becomes a detection.
+
+   Constraints:
+   - GPU-only (transform + opacity), no layout properties.
+   - Reuses keyframes already defined in styles.css (sonarWave, signalGlow,
+     detectionPulse, scanLine, sonarWaveSlow).
+   - Functional, not decorative: every animation confirms an action or a
+     change of state. Reduced motion disables the brand layer entirely.
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   Press ping: every actionable surface emits a sonar wave from itself when
+   pressed. Confirms the touch landed and ties the interaction to the brand.
+
+   The pseudo-element sits centered behind the button content. It scales
+   from 0 to ~1.6 with fading opacity and a faint accent ring color.
+   The button's existing background and content are not touched.
+   -------------------------------------------------------------------------- */
+
+.btn,
+.signup__btn,
+.btn-action,
+.pricing-card__cta .ant-btn,
+.ant-btn,
+.motion-pressable {
+  position: relative;
+}
+
+/* The ping sits on top of the button background and below its text
+   content (default pseudo paint order). It extends past the button
+   bounds to read as a sonar wave; this requires overflow: visible,
+   which is the default for these buttons. */
+.btn::before,
+.signup__btn::before,
+.btn-action::before,
+.pricing-card__cta .ant-btn::before,
+.ant-btn::before,
+.motion-pressable::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 140%;
+  aspect-ratio: 1 / 1;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--color-accent) 45%, transparent) 0%,
+    color-mix(in srgb, var(--color-accent) 22%, transparent) 35%,
+    transparent 70%
+  );
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, -50%) scale(0);
+  will-change: transform, opacity;
+  mix-blend-mode: multiply;
+}
+
+[data-theme="dark"] .btn::before,
+[data-theme="dark"] .signup__btn::before,
+[data-theme="dark"] .btn-action::before,
+[data-theme="dark"] .pricing-card__cta .ant-btn::before,
+[data-theme="dark"] .ant-btn::before,
+[data-theme="dark"] .motion-pressable::before {
+  mix-blend-mode: screen;
+}
+
+/* Primary buttons emit a brighter ping (white-tinted) because their
+   background is already accent-colored. */
+.btn-primary::before,
+.btn-whatsapp::before,
+.btn-danger::before,
+.signup__btn::before {
+  background: radial-gradient(
+    circle,
+    rgba(255, 255, 255, 0.42) 0%,
+    rgba(255, 255, 255, 0.22) 35%,
+    transparent 70%
+  );
+}
+
+.btn:active:not(:disabled):not(.is-disabled)::before,
+.signup__btn:active:not(:disabled)::before,
+.btn-action:active:not(:disabled)::before,
+.pricing-card__cta .ant-btn:active:not(:disabled)::before,
+.ant-btn:active:not(:disabled)::before,
+.motion-pressable:active:not(:disabled)::before {
+  animation: sonar-press-ping 520ms cubic-bezier(0, 0, 0.2, 1) forwards;
+}
+
+@keyframes sonar-press-ping {
+  0% {
+    opacity: 0.85;
+    transform: translate(-50%, -50%) scale(0);
+  }
+  60% {
+    opacity: 0.4;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Hover halo: a soft accent ring breathes once when the cursor lands on a
+   primary CTA. The ring fades in fast, holds, then fades out. Not a pulse -
+   a single "detection" gesture. Skipped on touch devices.
+   -------------------------------------------------------------------------- */
+
+@media (hover: hover) and (pointer: fine) {
+  .btn-primary,
+  .btn-whatsapp,
+  .signup__btn--primary,
+  .signup__btn {
+    --sonar-halo-color: color-mix(in srgb, var(--color-accent) 35%, transparent);
+  }
+
+  .btn-primary:hover:not(:disabled),
+  .btn-whatsapp:hover:not(:disabled),
+  .signup__btn:hover:not(:disabled) {
+    box-shadow:
+      var(--shadow-md),
+      0 0 0 0 var(--sonar-halo-color);
+    animation: sonar-hover-halo 900ms ease-out;
+  }
+}
+
+@keyframes sonar-hover-halo {
+  0% {
+    box-shadow:
+      var(--shadow-md),
+      0 0 0 0 color-mix(in srgb, var(--color-accent) 35%, transparent);
+  }
+  60% {
+    box-shadow:
+      var(--shadow-md),
+      0 0 0 8px rgba(37, 99, 235, 0);
+  }
+  100% {
+    box-shadow:
+      var(--shadow-md),
+      0 0 0 0 rgba(37, 99, 235, 0);
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Detection arrival: modals and key alerts arrive with a brief sonar ring
+   that expands once around them. This is the brand's "we found this for
+   you" signal - applied only on entry, never on persistent state.
+   -------------------------------------------------------------------------- */
+
+.motion-modal.motion-modal::after,
+.motion-sonar-detect::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  border-radius: inherit;
+  border: 1px solid color-mix(in srgb, var(--color-accent) 45%, transparent);
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, -50%) scale(0.4);
+  will-change: transform, opacity;
+}
+
+.motion-modal-enter-active .motion-modal::after,
+.motion-sonar-detect.motion-sonar-detect-fire::after {
+  animation: sonar-arrival 760ms cubic-bezier(0, 0, 0.2, 1) forwards;
+}
+
+@keyframes sonar-arrival {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.4);
+  }
+  20% {
+    opacity: 0.55;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(1.6);
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Active route ping: when a nav item becomes active, fire a single sonar
+   ring from it so the user sees "you arrived here". Triggered via the
+   .nav-link-active class transition.
+   -------------------------------------------------------------------------- */
+
+.nav-link.nav-link-active::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  border-radius: var(--radius-md);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 45%, transparent);
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, -50%) scale(0.7);
+  animation: sonar-route-ping 720ms cubic-bezier(0, 0, 0.2, 1);
+}
+
+@keyframes sonar-route-ping {
+  0% {
+    opacity: 0.7;
+    transform: translate(-50%, -50%) scale(0.7);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(1.6);
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Skeleton sonar sweep: replaces the linear shimmer with a radial sweep
+   that reads as "scanning". Opt-in via .skeleton-sonar to avoid changing
+   existing skeletons globally.
+   -------------------------------------------------------------------------- */
+
+.skeleton.skeleton-sonar::after,
+.skeleton-sonar::after {
+  background:
+    radial-gradient(
+      circle at var(--sonar-sweep-x, 50%) 50%,
+      color-mix(in srgb, var(--color-accent) 22%, transparent) 0%,
+      color-mix(in srgb, var(--color-accent) 8%, transparent) 18%,
+      transparent 36%
+    );
+  animation: sonar-sweep 2.4s linear infinite;
+}
+
+@keyframes sonar-sweep {
+  0% {
+    transform: translateX(-30%);
+  }
+  100% {
+    transform: translateX(130%);
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Input focus ring as detection: the focused field grows a faint accent
+   halo, mimicking the "active sonar lock-on" without shifting layout.
+   -------------------------------------------------------------------------- */
+
+.form-input:focus,
+.form-select:focus,
+.form-textarea:focus,
+.signup__input-wrap:focus-within,
+.auth-token-input:focus,
+.payment-link-input:focus {
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--color-accent) 18%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--color-accent) 55%, transparent) inset;
+}
+
+.form-input.is-error:focus,
+.signup__input-wrap--error:focus-within {
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--color-error) 18%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--color-error) 55%, transparent) inset;
+}
+
+/* --------------------------------------------------------------------------
+   Reduced motion: the brand layer is the most expressive and the most
+   optional. Disable it entirely.
+   -------------------------------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  .btn::before,
+  .signup__btn::before,
+  .btn-action::before,
+  .pricing-card__cta .ant-btn::before,
+  .ant-btn::before,
+  .motion-pressable::before,
+  .motion-modal::after,
+  .motion-sonar-detect::after,
+  .nav-link.nav-link-active::after,
+  .skeleton.skeleton-sonar::after,
+  .skeleton-sonar::after {
+    animation: none !important;
+    opacity: 0 !important;
+  }
+
+  .btn-primary:hover:not(:disabled),
+  .btn-whatsapp:hover:not(:disabled),
+  .signup__btn:hover:not(:disabled) {
+    animation: none !important;
+  }
+}

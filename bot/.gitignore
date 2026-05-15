@@ -1,0 +1,16 @@
+**/node_modules/
+__pycache__/
+.env
+dist/
+package-lock.json
+*.log
+assets/auth/
+assets/temp/
+message_sending/whatsapp_service/assets/auth/
+message_sending/whatsapp_service/assets/temp/
+
+# Configuracao local do Claude Code (contem permissoes especificas da maquina)
+.claude/
+
+# Cache local da Supabase CLI (gerado por `supabase link`/`supabase status`)
+supabase/.temp/

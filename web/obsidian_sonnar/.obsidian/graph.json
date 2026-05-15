@@ -1,0 +1,27 @@
+{
+  "collapse-filter": false,
+  "search": "",
+  "showTags": true,
+  "showAttachments": false,
+  "hideUnresolved": true,
+  "showOrphans": true,
+  "collapse-color-groups": false,
+  "colorGroups": [
+    { "query": "path:00-index", "color": { "a": 1, "rgb": 14048348 } },
+    { "query": "tag:#adr OR path:12-decisions", "color": { "a": 1, "rgb": 5431518 } },
+    { "query": "tag:#issue OR path:13-issues", "color": { "a": 1, "rgb": 14701138 } },
+    { "query": "tag:#flow OR path:04-flows", "color": { "a": 1, "rgb": 5419488 } },
+    { "query": "tag:#security OR path:10-security", "color": { "a": 1, "rgb": 13648151 } }
+  ],
+  "collapse-display": false,
+  "showArrow": true,
+  "textFadeMultiplier": 0,
+  "nodeSizeMultiplier": 1,
+  "lineSizeMultiplier": 1,
+  "collapse-forces": false,
+  "centerStrength": 0.5,
+  "repelStrength": 10,
+  "linkStrength": 1,
+  "linkDistance": 250,
+  "scale": 1
+}

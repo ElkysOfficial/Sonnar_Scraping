@@ -1,0 +1,958 @@
+/* ==========================================================================
+   Auth Pages - Shared Styles
+   Consistent styling for Login, Signup, ChangePassword, EmailVerification
+   Uses Design System tokens from styles.css
+   ========================================================================== */
+
+/* ==========================================================================
+   Page Layout
+   ========================================================================== */
+
+.auth-page {
+  height: 100vh;
+  height: 100dvh;
+  display: grid;
+  grid-template-columns: 1fr;
+  background: var(--color-background);
+  color: var(--color-text-primary);
+  overflow: hidden;
+}
+
+/* iPad portrait & maiores: 50/50 */
+@media (min-width: 1024px) {
+  .auth-page {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+
+/* Desktops largos: hero panel mais estreito, form mais respirado */
+@media (min-width: 1440px) {
+  .auth-page {
+    grid-template-columns: minmax(0, 5fr) minmax(0, 6fr);
+  }
+}
+
+/* ==========================================================================
+   Left Panel - Decorative (radar/água - azul elétrico + ciano)
+   ========================================================================== */
+
+.auth-panel-left {
+  display: none;
+  background: var(--gradient-hero);
+  position: relative;
+  overflow: hidden;
+}
+
+@media (min-width: 1024px) {
+  .auth-panel-left {
+    display: flex;
+    align-items: stretch;
+    justify-content: center;
+    overflow: hidden;
+  }
+}
+
+/* Halo difuso (efeito radar) */
+.auth-panel-left::before {
+  content: '';
+  position: absolute;
+  inset: -10%;
+  background: var(--gradient-radial-glow);
+  filter: blur(40px);
+  animation: auth-pulse-slow 15s ease-in-out infinite;
+  pointer-events: none;
+}
+
+/* Anel sutil de scan */
+.auth-panel-left::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 600px;
+  height: 600px;
+  margin: -300px 0 0 -300px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow:
+    0 0 0 80px rgba(255, 255, 255, 0.04),
+    0 0 0 200px rgba(255, 255, 255, 0.02);
+  pointer-events: none;
+}
+
+@keyframes auth-pulse-slow {
+  0%, 100% { transform: scale(1); opacity: 0.5; }
+  50% { transform: scale(1.1); opacity: 0.3; }
+}
+
+.auth-panel-content {
+  position: relative;
+  z-index: 1;
+  text-align: center;
+  padding: var(--space-8) var(--space-8) 0;
+  color: white;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-4);
+  width: 100%;
+  height: 100%;
+  /* Conteudo ancorado no topo; mockup pode "vazar" pra baixo
+     mascarado por gradient - efeito intencional, sem scroll */
+  justify-content: flex-start;
+  -webkit-mask-image: linear-gradient(
+    180deg,
+    #000 0%,
+    #000 calc(100% - 80px),
+    transparent 100%
+  );
+          mask-image: linear-gradient(
+    180deg,
+    #000 0%,
+    #000 calc(100% - 80px),
+    transparent 100%
+  );
+}
+.auth-panel-content > * { margin-top: 0; margin-bottom: 0; }
+
+/* Mockup ocupa altura restante e e ancorado no topo da sua zona */
+.auth-panel-hero,
+.auth-panel-mockup {
+  flex: 0 1 auto;
+  min-height: 0;
+}
+
+/* Mockup mais enxuto dentro de auth (espaco vertical limitado).
+   Especificidade dupla (.wpm.wpm--compact) para vencer scoped style. */
+.auth-page .wpm.wpm--compact {
+  width: 220px;
+}
+@media (min-width: 1024px) and (max-height: 820px) {
+  .auth-page .wpm.wpm--compact { width: 200px; }
+}
+@media (min-width: 1024px) and (max-height: 720px) {
+  .auth-page .wpm.wpm--compact { width: 180px; }
+}
+
+.auth-panel-logo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-8);
+  text-decoration: none;
+  color: inherit;
+  transition: opacity var(--transition-fast);
+}
+.auth-panel-logo:hover { opacity: 0.85; }
+
+.auth-logo-mark {
+  width: 3rem;
+  height: 3rem;
+  background: rgba(255, 255, 255, 0.2);
+  backdrop-filter: blur(10px);
+  border-radius: var(--radius-lg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--text-xl);
+  font-weight: var(--font-bold);
+}
+
+.auth-logo-text {
+  font-size: var(--text-2xl);
+  font-weight: var(--font-bold);
+}
+
+.auth-panel-icon {
+  width: 120px;
+  height: 120px;
+  margin: 0 auto var(--space-8);
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(20px);
+  border-radius: var(--radius-full);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+}
+
+.auth-panel-icon svg {
+  width: 60px;
+  height: 60px;
+}
+
+.auth-panel-tagline h2 {
+  font-size: clamp(1.25rem, 2.6vw, 1.75rem);
+  font-weight: var(--font-bold);
+  line-height: var(--lh-title);
+  margin: 0;
+}
+
+.auth-panel-description {
+  font-size: var(--text-sm);
+  opacity: 0.9;
+  max-width: 320px;
+  margin: 0 auto;
+  line-height: var(--lh-body);
+}
+
+/* ==========================================================================
+   Right Panel - Form Area
+   ========================================================================== */
+
+.auth-panel-right {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* Padding fluido - folga generosa em todos os tamanhos */
+  padding-block: clamp(var(--space-3), 3vh, var(--space-6));
+  padding-inline: clamp(var(--space-4), 5vw, var(--space-8));
+  background: var(--color-background);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  height: 100%;
+}
+
+/* Mobile pequeno (≤375px) - telas mais espremidas */
+@media (max-width: 375px) {
+  .auth-panel-right {
+    padding-inline: var(--space-4);
+  }
+}
+
+/* Mobile médio/grande (376–639px) */
+@media (min-width: 376px) and (max-width: 639px) {
+  .auth-panel-right {
+    padding-inline: var(--space-5);
+  }
+}
+
+/* Tablet portrait (640–1023px) - form centralizado com max-width */
+@media (min-width: 640px) and (max-width: 1023px) {
+  .auth-panel-right {
+    padding-inline: var(--space-7);
+  }
+}
+
+/* Desktops largos (≥1280px) */
+@media (min-width: 1280px) {
+  .auth-panel-right {
+    padding-inline: var(--space-8);
+  }
+}
+.auth-panel-right::-webkit-scrollbar { width: 6px; }
+.auth-panel-right::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: var(--radius-full);
+}
+
+.auth-form-container {
+  width: 100%;
+  max-width: 400px;
+}
+
+/* Mobile Header */
+.auth-mobile-header {
+  display: flex;
+  justify-content: center;
+  margin-bottom: var(--space-4);
+}
+
+@media (min-width: 1024px) {
+  .auth-mobile-header {
+    display: none;
+  }
+}
+
+.auth-logo-link {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  text-decoration: none;
+}
+
+.auth-logo-mark-sm {
+  width: 2.5rem;
+  height: 2.5rem;
+  background: var(--color-accent);
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-size: var(--text-lg);
+  font-weight: var(--font-bold);
+}
+
+.auth-logo-text-sm {
+  font-size: var(--text-xl);
+  font-weight: var(--font-bold);
+  color: var(--color-text-primary);
+}
+
+/* Form Header */
+.auth-form-header {
+  text-align: center;
+  margin-bottom: var(--space-3);
+}
+
+.auth-form-title {
+  font-size: var(--text-2xl);
+  font-weight: var(--font-bold);
+  color: var(--color-text-primary);
+  margin-bottom: var(--space-1);
+  line-height: var(--lh-title);
+}
+
+.auth-form-subtitle {
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+  line-height: var(--lh-body);
+}
+
+/* ==========================================================================
+   Form Elements - Using Design System Classes
+   ========================================================================== */
+
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+@media (max-height: 800px) {
+  .auth-form { gap: var(--space-2); }
+  .auth-form-header { margin-bottom: var(--space-2); }
+  .auth-mobile-header { margin-bottom: var(--space-2); }
+}
+
+/* ==========================================================================
+   Inputs compactos (padrao Stripe/Linear/Vercel para auth pages)
+   - Mobile: 40px / 16px font (previne zoom iOS)
+   - Desktop: 38px / 14px font (densidade de login profissional)
+   ========================================================================== */
+
+.auth-page .form-group {
+  margin-bottom: 0;
+}
+
+.auth-page .form-label {
+  font-size: 13px;
+  font-weight: var(--font-medium);
+  margin-bottom: 6px;
+  color: var(--color-text-secondary);
+}
+
+.auth-page .form-input,
+.auth-page .form-select,
+.auth-page .form-textarea {
+  min-height: 40px;
+  padding: 10px var(--space-3);
+  font-size: 16px;
+  border-radius: var(--radius-md);
+}
+
+@media (min-width: 1024px) {
+  .auth-page .form-input,
+  .auth-page .form-select,
+  .auth-page .form-textarea {
+    min-height: 38px;
+    padding: 8px var(--space-3);
+    font-size: var(--text-sm);
+  }
+}
+
+/* Input with icon wrapper */
+.auth-input-wrapper {
+  position: relative;
+}
+
+.auth-input-icon {
+  position: absolute;
+  left: var(--space-3);
+  top: 50%;
+  transform: translateY(-50%);
+  width: 1rem;
+  height: 1rem;
+  color: var(--color-text-muted);
+  pointer-events: none;
+}
+
+.auth-input-with-icon {
+  padding-left: 2.25rem !important;
+  padding-right: 2.5rem !important;
+}
+
+.auth-password-toggle {
+  position: absolute;
+  right: var(--space-2);
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  padding: var(--space-1);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition: color var(--transition-fast);
+  display: grid;
+  place-items: center;
+}
+
+.auth-password-toggle svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.auth-password-toggle:hover {
+  color: var(--color-text-primary);
+}
+
+/* Submit button compatibilizado com a escala do input */
+.auth-page .btn.btn-lg {
+  min-height: 44px;
+  font-size: var(--text-sm);
+  padding: var(--space-2) var(--space-5);
+}
+
+@media (min-width: 1024px) {
+  .auth-page .btn.btn-lg {
+    min-height: 40px;
+  }
+}
+
+/* CountryPhoneInput segue a mesma escala dentro de auth pages */
+.auth-page .cpi-trigger,
+.auth-page .cpi-number {
+  min-height: 40px;
+  font-size: 16px;
+}
+.auth-page .cpi-number {
+  padding: 8px var(--space-3);
+}
+
+@media (min-width: 1024px) {
+  .auth-page .cpi-trigger,
+  .auth-page .cpi-number {
+    min-height: 38px;
+    font-size: var(--text-sm);
+  }
+}
+
+/* ==========================================================================
+   Alerts - Using Design System Alert Classes
+   ========================================================================== */
+
+.auth-alert {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border-radius: var(--radius-lg);
+  font-size: var(--text-sm);
+  margin-bottom: var(--space-6);
+}
+
+.auth-alert-error {
+  background: color-mix(in srgb, var(--color-error) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-error) 25%, transparent);
+  color: var(--color-error);
+}
+
+.auth-alert-success {
+  background: var(--color-success-soft);
+  border: 1px solid color-mix(in srgb, var(--color-success) 25%, transparent);
+  color: var(--color-success);
+}
+
+.auth-alert-icon {
+  width: 1.25rem;
+  height: 1.25rem;
+  flex-shrink: 0;
+}
+
+/* ==========================================================================
+   Help Text & Links
+   ========================================================================== */
+
+.auth-help-text {
+  text-align: center;
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+  margin-top: var(--space-6);
+}
+
+.auth-help-link {
+  color: var(--color-accent);
+  font-weight: var(--font-medium);
+  text-decoration: none;
+  transition: all var(--transition-fast);
+}
+
+.auth-help-link:hover {
+  text-decoration: underline;
+}
+
+/* ==========================================================================
+   Password Strength Indicator (Design System Colors)
+   ========================================================================== */
+
+.auth-strength-container {
+  margin-top: var(--space-3);
+}
+
+.auth-strength-bar {
+  height: 6px;
+  background: var(--color-border);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+}
+
+.auth-strength-fill {
+  height: 100%;
+  border-radius: var(--radius-full);
+  transition: width var(--transition-slow), background var(--transition-slow);
+}
+
+/* Strength colors usando semantic tokens - sempre alinhado à paleta */
+.auth-strength-fill.strength-weak {
+  background: var(--color-error);
+}
+
+.auth-strength-fill.strength-fair {
+  background: var(--color-warning);
+}
+
+.auth-strength-fill.strength-good {
+  background: var(--color-accent);
+}
+
+.auth-strength-fill.strength-strong {
+  background: var(--color-secondary);
+}
+
+.auth-strength-fill.strength-excellent {
+  background: linear-gradient(90deg, var(--color-accent), var(--color-secondary));
+}
+
+.auth-strength-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: var(--space-2);
+}
+
+.auth-strength-label {
+  font-size: var(--text-xs);
+  font-weight: var(--font-medium);
+  transition: color var(--transition-slow);
+}
+
+.auth-strength-label.strength-weak { color: var(--color-error); }
+.auth-strength-label.strength-fair { color: var(--color-warning); }
+.auth-strength-label.strength-good { color: var(--color-accent); }
+.auth-strength-label.strength-strong { color: var(--color-secondary); }
+.auth-strength-label.strength-excellent { color: var(--color-secondary); }
+
+.auth-strength-score {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
+/* ==========================================================================
+   Password Requirements List
+   ========================================================================== */
+
+.auth-requirements {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--space-2) var(--space-4);
+}
+
+@media (max-width: 480px) {
+  .auth-requirements {
+    grid-template-columns: 1fr;
+  }
+}
+
+.auth-requirement {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  transition: color var(--transition-fast);
+}
+
+.auth-requirement svg {
+  width: 1rem;
+  height: 1rem;
+  flex-shrink: 0;
+}
+
+.auth-requirement.valid {
+  color: var(--color-success);
+}
+
+/* ==========================================================================
+   Token Input (Email Verification)
+   ========================================================================== */
+
+.auth-token-container {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.auth-token-inputs {
+  display: flex;
+  justify-content: center;
+  gap: var(--space-2);
+}
+
+.auth-token-input {
+  width: 3rem;
+  height: var(--control-height-lg);
+  text-align: center;
+  font-size: var(--text-2xl);
+  font-weight: var(--font-bold);
+  border: 2px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  transition: all var(--transition-fast);
+}
+
+.auth-token-input:focus {
+  outline: none;
+  border-color: var(--color-accent);
+  box-shadow: var(--focus-ring);
+}
+
+.auth-token-input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ==========================================================================
+   Resend Code Section
+   ========================================================================== */
+
+.auth-resend-section {
+  text-align: center;
+  margin-top: var(--space-4);
+}
+
+.auth-resend-cooldown {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+
+.auth-resend-btn {
+  background: none;
+  border: none;
+  color: var(--color-accent);
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.auth-resend-btn:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+.auth-resend-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ==========================================================================
+   Success Badge
+   ========================================================================== */
+
+.auth-success-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  background: var(--color-success-soft);
+  color: var(--color-success);
+  border-radius: var(--radius-full);
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  margin-bottom: var(--space-4);
+}
+
+.auth-success-badge svg {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+/* ==========================================================================
+   Verified State
+   ========================================================================== */
+
+.auth-verified-content {
+  text-align: center;
+  padding: var(--space-8);
+}
+
+.auth-verified-icon {
+  width: 80px;
+  height: 80px;
+  margin: 0 auto var(--space-6);
+  color: var(--color-success);
+}
+
+.auth-verified-icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.auth-verified-title {
+  font-size: var(--text-2xl);
+  font-weight: var(--font-bold);
+  color: var(--color-text-primary);
+  margin-bottom: var(--space-2);
+}
+
+.auth-verified-subtitle {
+  font-size: var(--text-base);
+  color: var(--color-text-secondary);
+  margin-bottom: var(--space-4);
+}
+
+.auth-verified-redirect {
+  font-size: var(--text-sm);
+  color: var(--color-accent);
+  animation: auth-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes auth-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* ==========================================================================
+   Loading States
+   ========================================================================== */
+
+.auth-loading-state {
+  text-align: center;
+  padding: var(--space-8);
+}
+
+.auth-loading-spinner-lg {
+  width: 3rem;
+  height: 3rem;
+  border: 3px solid var(--color-border);
+  border-top-color: var(--color-accent);
+  border-radius: var(--radius-full);
+  animation: auth-spin 0.8s linear infinite;
+  margin: 0 auto var(--space-4);
+}
+
+@keyframes auth-spin {
+  to { transform: rotate(360deg); }
+}
+
+.auth-loading-state p {
+  color: var(--color-text-secondary);
+  font-size: var(--text-base);
+}
+
+/* ==========================================================================
+   Error State
+   ========================================================================== */
+
+.auth-error-state {
+  text-align: center;
+  padding: var(--space-8);
+}
+
+.auth-error-icon {
+  font-size: 3rem;
+  margin-bottom: var(--space-4);
+}
+
+.auth-error-state h2 {
+  font-size: var(--text-xl);
+  font-weight: var(--font-bold);
+  color: var(--color-text-primary);
+  margin-bottom: var(--space-2);
+}
+
+.auth-error-state p {
+  color: var(--color-error);
+  margin-bottom: var(--space-6);
+}
+
+/* ==========================================================================
+   Container do mockup unificado nos paineis de auth
+   ========================================================================== */
+
+.auth-panel-hero,
+.auth-panel-mockup {
+  display: flex;
+  justify-content: center;
+  margin: 0;
+}
+
+/* ==========================================================================
+   RESPONSIVENESS MATRIX - pesquisa de viewports do mercado
+   --------------------------------------------------------------------------
+   Width breakpoints:
+     320  - iPhone SE / Galaxy S5
+     375  - iPhone 12 mini, SE 2nd gen
+     390  - iPhone 14
+     414  - iPhone Plus / Pro Max
+     640  - phablets, tablet portrait pequeno
+     768  - iPad portrait
+     1024 - iPad landscape, MacBook Air 11", Tab S10 FE portrait
+     1280 - laptop standard, Tab S10 FE landscape (1280x800)
+     1366 - laptop comum
+     1440 - MacBook Pro 14", Full HD condensed
+     1920 - Full HD desktop
+     2560 - 2K / iMac 27"
+     3440 - Ultra-wide (21:9)
+     3840 - 4K UHD
+   Height breakpoints:
+     ≤600 - laptop pequeno / tablet em landscape com chrome
+     ≤700 - laptop padrao com browser bar
+     ≤800 - Tab S10 FE landscape (1280x800), MacBook Air
+     ≤900 - laptop comum
+   ========================================================================== */
+
+/* ----- Width: 320–375 (mobile pequeno) ----- */
+@media (max-width: 375px) {
+  .auth-page .form-input,
+  .auth-page .form-select,
+  .auth-page .form-textarea {
+    min-height: 42px;
+    font-size: 16px; /* impede zoom iOS */
+  }
+  .auth-form-title { font-size: var(--text-xl); }
+  .auth-form-subtitle { font-size: var(--text-sm); }
+}
+
+/* ----- Width: 376–639 (mobile padrao) ----- */
+@media (min-width: 376px) and (max-width: 639px) {
+  .auth-form-title { font-size: var(--text-2xl); }
+}
+
+/* ----- Width: 640–1023 (tablets portrait, phablets landscape) ----- */
+@media (min-width: 640px) and (max-width: 1023px) {
+  .auth-panel-right {
+    align-items: center;
+  }
+  .auth-form-container {
+    max-width: 480px;
+  }
+}
+
+/* ----- Width: 1024+ (split panel ativa) ----- */
+/* nada extra aqui - split panel ja definido acima */
+
+/* ----- Width: 1280+ (Tab S10 FE landscape, laptops) ----- */
+@media (min-width: 1280px) {
+  .auth-form-container { max-width: 460px; }
+}
+
+/* ----- Width: 1440+ (MacBook Pro, Full HD) ----- */
+@media (min-width: 1440px) {
+  .auth-form-container { max-width: 480px; }
+  .auth-form-title { font-size: var(--text-3xl); }
+}
+
+/* ----- Width: 1920+ (Full HD desktop) ----- */
+@media (min-width: 1920px) {
+  .auth-form-container { max-width: 520px; }
+}
+
+/* ----- Width: 2560+ (2K / iMac 27") ----- */
+@media (min-width: 2560px) {
+  .auth-form-container { max-width: 560px; }
+  .auth-page { grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); }
+}
+
+/* ----- Width: 3440+ (Ultra-wide 21:9) ----- */
+/* No ultra-wide o conteudo nao deve esticar - limita o painel direito */
+@media (min-width: 3440px) {
+  .auth-page {
+    grid-template-columns: 1fr minmax(0, 720px);
+    justify-content: center;
+  }
+  .auth-panel-right {
+    max-width: 720px;
+  }
+}
+
+/* ----- HEIGHT: ≤700 (laptops compactos, tablets landscape com chrome) ----- */
+@media (max-height: 700px) {
+  .auth-panel-right {
+    padding-block: var(--space-3);
+    align-items: flex-start;
+    padding-top: var(--space-4);
+  }
+  .auth-form-container {
+    gap: var(--space-3);
+  }
+  .auth-form { gap: var(--space-2); }
+  .auth-form-header { margin-bottom: var(--space-2); }
+  .auth-form-title { font-size: var(--text-xl); }
+  .auth-form-subtitle { font-size: var(--text-sm); }
+  .signup-eyebrow { margin-bottom: 4px; }
+
+  /* Form inputs mais compactos */
+  .auth-page .form-input,
+  .auth-page .form-select,
+  .auth-page .form-textarea {
+    min-height: 36px;
+    padding: 7px var(--space-3);
+  }
+  .auth-page .form-label { font-size: 12px; margin-bottom: 4px; }
+  .auth-page .btn.btn-lg { min-height: 40px; }
+
+  /* Hero panel: encolher mockup */
+  .auth-page .wpm.wpm--compact { width: 160px; }
+  .auth-panel-tagline h2 { font-size: 1.25rem; }
+  .auth-panel-description { font-size: var(--text-xs); }
+}
+
+/* ----- HEIGHT: ≤600 (ultra compacto - tablets retrato landscape extremo) ----- */
+@media (max-height: 600px) {
+  .auth-panel-right { padding-block: var(--space-2); }
+  .auth-form-container { gap: var(--space-2); }
+  .auth-form { gap: 6px; }
+}
+
+/* Em desktops com altura muito baixa, esconde painel hero pra dar
+   o espaco todo ao form (combinacao height baixa + width >= split). */
+@media (max-height: 600px) and (min-width: 1024px) {
+  .auth-panel-left { display: none; }
+  .auth-page { grid-template-columns: 1fr; }
+  .auth-panel-right { padding-inline: clamp(var(--space-4), 6vw, var(--space-8)); }
+}
+
+/* ----- Specific: Tab S10 FE landscape (1280x800) e similares ----- */
+@media (min-width: 1024px) and (max-height: 820px) {
+  .auth-panel-right {
+    padding-block: var(--space-4);
+  }
+  .auth-form-container { gap: var(--space-3); }
+  .auth-form-header { margin-bottom: var(--space-2); }
+}
+
+/* ----- Mobile landscape (largura ≥640 mas altura baixa) ----- */
+@media (max-height: 500px) and (orientation: landscape) {
+  /* Form ocupa tudo, sem decorativo */
+  .auth-panel-left { display: none !important; }
+  .auth-page { grid-template-columns: 1fr; }
+  .auth-panel-right {
+    padding-block: var(--space-2);
+    padding-inline: var(--space-4);
+  }
+  .auth-form-container { max-width: 520px; }
+}
+
