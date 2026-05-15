@@ -1,88 +1,66 @@
-# Bot de Vagas de Emprego 🤖💼
+# Sonnar Scraping
 
-![GitHub](https://img.shields.io/github/license/lucelhosilva/Bot_Vagas_de_Emprego)
-![GitHub stars](https://img.shields.io/github/stars/lucelhosilva/Bot_Vagas_de_Emprego)
-![GitHub forks](https://img.shields.io/github/forks/lucelhosilva/Bot_Vagas_de_Emprego)
-![GitHub issues](https://img.shields.io/github/issues/lucelhosilva/Bot_Vagas_de_Emprego)
+Monorepo do Sonnar: agregador de vagas de tecnologia que coleta, normaliza, publica e distribui ofertas para mensageria (Discord, WhatsApp) e para um frontend web.
 
-O Bot de Vagas de Emprego é uma ferramenta automatizada que traz informações atualizadas sobre vagas de emprego de um site específico diretamente para o seu servidor do Discord.
+## Layout do repositório
 
-## Objetivo do Projeto 🎯
+```
+sonnar-scraping/
+├── apps/                            Aplicações executáveis
+│   ├── scraper/                     Pipeline Python de coleta (engines + persistência)
+│   ├── discord/
+│   │   ├── sender/                  Bot Discord (envio)
+│   │   └── formatter/               Formatação de mensagens Discord
+│   ├── whatsapp/
+│   │   ├── sender/                  Bot WhatsApp (envio)
+│   │   └── formatter/               Formatação de mensagens WhatsApp
+│   └── web/                         Frontend Vue + Vite
+│
+├── packages/
+│   └── message-formatting-core/     Lógica de formatação compartilhada
+│
+├── supabase/                        Source-of-truth do schema
+│   ├── config.toml
+│   ├── functions/                   Edge functions
+│   ├── migrations/                  Migrations canônicas (timestamped)
+│   └── _legacy_migrations/          Migrations históricas para referência
+│
+├── docs/
+│   ├── vault/                       Vault Obsidian canônico (era web/obsidian_sonnar)
+│   └── _archive/                    Vaults antigos a consolidar manualmente
+│
+├── scripts/
+│   └── db_legacy/                   Helpers antigos de banco (lib, scripts, configs)
+│
+├── .github/                         CI/CD e templates
+├── .githooks/
+└── Roadmap.md
+```
 
-O objetivo do projeto é criar um bot que possa ser utilizado em qualquer servidor do Discord, sem a necessidade de instalação ou configuração complexa. O bot deve ser capaz de enviar mensagens com informações sobre as vagas de emprego disponíveis em diversos sites, de forma automatizada e periódica.
+## Aplicações
 
-## Como Contribuir 🤝
+| Caminho                      | Stack            | Função                                            |
+| ---------------------------- | ---------------- | ------------------------------------------------- |
+| `apps/scraper`               | Python           | Coleta vagas de múltiplos engines, persiste em DB |
+| `apps/discord/sender`        | Node + TypeScript | Bot do Discord — envia vagas em canais            |
+| `apps/discord/formatter`     | Node + TypeScript | Formatação de embeds/mensagens Discord            |
+| `apps/whatsapp/sender`       | Node             | Bot WhatsApp — envia vagas a grupos               |
+| `apps/whatsapp/formatter`    | Node             | Formatação de mensagens WhatsApp                  |
+| `apps/web`                   | Vue 3 + Vite     | Frontend público + dashboard                      |
 
-Ficamos felizes que você queira contribuir para o Bot de Vagas de Emprego! Aqui estão os passos para começar:
+## Banco de dados
 
-1. Faça um fork do projeto.
-2. Crie uma nova branch com um nome descritivo:
+Toda a fonte de verdade do schema vive em `supabase/`. Migrations canônicas estão em `supabase/migrations/` (formato `YYYYMMDDHHMMSS_descricao.sql`).
 
-   ```bash
-   git checkout -b sua-feature
-   ```
+Migrations antigas em formatos não padronizados ficam em `supabase/_legacy_migrations/`, separadas por origem (`from_bot_database_root`, `from_bot_database_supabase`). Elas não são aplicadas — servem apenas como referência histórica.
 
-   ***
+## Próximos passos sugeridos
 
-3. Implemente suas alterações e faça commit:
+1. **Vault Obsidian**: revisar `docs/_archive/{data_collection,message_formatting,message_sending}` e mesclar conteúdo único para `docs/vault/`.
+2. **Workspace tooling**: avaliar adoção de pnpm workspaces ou Turborepo para amarrar `apps/*` e `packages/*`.
+3. **Scraper**: migrar `requirements.txt` + `pytest.ini` para `pyproject.toml`.
+4. **CI**: ajustar workflows em `.github/workflows/` para os novos caminhos.
 
-   ```bash
-   git commit -m 'Adiciona funcionalidade X'
-   ```
+## Licença
 
-   ***
-
-4. Envie as alterações para o repositório remoto:
-
-   ```bash
-   git push origin sua-feature
-   ```
-
-   ***
-
-5. Abra um Pull Request descrevendo as alterações feitas..
-
-## Configuração e Uso 🛠️
-
-Para utilizar o Bot de Vagas de Emprego, siga estas etapas:
-
-- Crie um bot no [Discord Developers](https://discord.com/developers/applications) e obtenha o token.
-
-- Convide o bot para o seu servidor.
-
-- No arquivo do bot, adicione o seu token e o ID do canal onde deseja receber as mensagens.
-
-- Execute o arquivo do bot.
-
-## Tecnologias Utilizadas 🚀
-
-O projeto foi desenvolvido utilizando Python e as seguintes bibliotecas:
-
-- [hikari](https://hikari-py.github.io/hikari/): Biblioteca para criação de bots para Discord.
-- [httpx](https://www.python-httpx.org/): Biblioteca para requisições HTTP.
-- [cloudscraper](https://pypi.org/project/cloudscraper/): Biblioteca para requisições HTTP.
-- [asyncio](https://docs.python.org/3/library/asyncio.html): Biblioteca para programação assíncrona.
-- [keyring](https://pypi.org/project/keyring/): Biblioteca para armazenamento de senhas.
-- [beautifulsoup4](https://www.crummy.com/software/BeautifulSoup/bs4/doc/): Biblioteca para parsing HTML.
-- [re](https://docs.python.org/3/library/re.html): Biblioteca para manipulação de expressões regulares.
-
-## Licença 📜
-
-Este projeto está sob a ![GitHub](https://img.shields.io/github/license/lucelhosilva/Bot_Vagas_de_Emprego).
-
-## Contato 📧
-
-Se você tiver alguma dúvida ou sugestão, sinta-se à vontade para entrar em contato:
-
-<p style="background:black">  
-<a href="https://www.linkedin.com/in/lucelho-silva-b17196239/" target="_blank">
-  <img src="https://img.shields.io/badge/-LucelhoSilva-0077B5?style=flat&logo=linkedin" alt="Linkedin"/>
-</a>  
-<a href="https://mail.google.com/mail/u/0/#inbox?compose=CllgCJNvwDlxBSwvBFBBrBfWTRLxMfDbvbBWvZXpmhcfjmmZrZKlKTSLrPkSJlVHpvHkDzCkPFL" target="_blank">
- <img src="https://img.shields.io/badge/-lucelhoSilva-D14836?style=flat&logo=gmail&logoColor=white" 
- alt="Gmail"/>
-</a>  
-<a href="https://contate.me/lucelho" target="_blank">
-  <img src="https://img.shields.io/badge/-LucelhoSilva-25D366??style=for-the-badge&logo=whatsapp&logoColor=white" alt="Whatsapp"/>  
-</a>  
-</p>
+Ver [LICENSE](LICENSE).

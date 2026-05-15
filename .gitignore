@@ -1,13 +1,20 @@
 **/node_modules/
-__pycache__/
-.env
-dist/
-package-lock.json
+**/__pycache__/
+**/.env
+**/dist/
+**/package-lock.json
+**/bun.lockb
 *.log
-assets/auth/
-assets/temp/
-message_sending/whatsapp_service/assets/auth/
-message_sending/whatsapp_service/assets/temp/
+errors.log
+
+# WhatsApp session/auth caches
+apps/whatsapp/**/assets/auth/
+apps/whatsapp/**/assets/temp/
+
+# Python
+*.pyc
+.pytest_cache/
+.venv/
 
 # Configuracao local do Claude Code (contem permissoes especificas da maquina)
 .claude/
