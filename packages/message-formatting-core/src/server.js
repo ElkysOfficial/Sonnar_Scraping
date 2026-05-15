@@ -81,6 +81,23 @@ function sentToToStatuses(sentTo) {
   }
 }
 
+// Normaliza skills para sempre array de strings (aceita string CSV legada).
+function normalizeSkills(raw) {
+  if (!raw) return []
+  if (Array.isArray(raw)) {
+    return raw
+      .map((s) => (s == null ? "" : s.toString().trim()))
+      .filter((s) => s.length > 0)
+  }
+  if (typeof raw === "string") {
+    return raw
+      .split(/[,;|]/)
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0)
+  }
+  return []
+}
+
 // Converte uma entrada do dict jobs.json em job no formato esperado pelos bots.
 function entryToApiJob(entry) {
   const url = entry.job_url || ""
@@ -95,6 +112,8 @@ function entryToApiJob(entry) {
     salary: entry.salary || "",
     publication_date: entry.publication_date || "",
     source: entry.source || "",
+    skills: normalizeSkills(entry.skills),
+    description: entry.description || "",
     created_at: entry.created_at || entry.first_seen_at || "",
     updated_at: entry.updated_at || entry.last_seen_at || "",
     statuses: sentToToStatuses(entry.sent_to)
@@ -137,6 +156,8 @@ function buildIncoming(payload) {
       salary: (payload.salary || "").toString().trim(),
       publication_date: (payload.publication_date || payload.publicationDate || "").toString().trim(),
       source: (payload.source || "").toString().trim(),
+      skills: normalizeSkills(payload.skills),
+      description: (payload.description || "").toString().trim(),
       created_at: payload.created_at || now,
       updated_at: now,
       sent_to: sentTo

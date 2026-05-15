@@ -61,7 +61,11 @@ function jobDataToEmbed(job) {
     url: job.job_url || job.url || "",
     fields,
     timestamp: timestamp.toISOString(),
-    id: job.id || job.job_url || ""
+    id: job.id || job.job_url || "",
+    // Campos extras propagados do payload original — usados pelo cardGenerator
+    // quando vierem da API. O Discord embed real ignora propriedades desconhecidas.
+    skills: Array.isArray(job.skills) ? job.skills : [],
+    description: job.description || ""
   }
 }
 

@@ -478,27 +478,38 @@ export function extractJobDataFromEmbed(embed) {
 
   // Extract tags
   const title = embed.title || "Vaga"
-  const techTags = [
-    "React", "Vue", "Angular", "Node.js", "Python", "Java", "TypeScript",
-    "JavaScript", "AWS", "Docker", "Kubernetes", "DevOps", "Frontend",
-    "Backend", "Full Stack", "Mobile", "iOS", "Android", "Flutter",
-    "PHP", "Laravel", "Django", "Spring", "Go", "Rust", "C#", ".NET",
-    "SQL", "MongoDB", "PostgreSQL", "Redis", "GraphQL", "REST"
-  ]
 
-  const tags = techTags.filter(tag =>
-    title.toLowerCase().includes(tag.toLowerCase())
-  ).slice(0, 4)
+  // Preferência 1: skills vindo da API (array de strings, autoritativo)
+  // Fallback: heurística por regex no título (comportamento legado)
+  let tags = []
+  if (Array.isArray(embed.skills) && embed.skills.length > 0) {
+    tags = embed.skills
+      .map((s) => (s == null ? "" : s.toString().trim()))
+      .filter((s) => s.length > 0)
+      .slice(0, 5)
+  } else {
+    const techTags = [
+      "React", "Vue", "Angular", "Node.js", "Python", "Java", "TypeScript",
+      "JavaScript", "AWS", "Docker", "Kubernetes", "DevOps", "Frontend",
+      "Backend", "Full Stack", "Mobile", "iOS", "Android", "Flutter",
+      "PHP", "Laravel", "Django", "Spring", "Go", "Rust", "C#", ".NET",
+      "SQL", "MongoDB", "PostgreSQL", "Redis", "GraphQL", "REST"
+    ]
 
-  // Add seniority tag if found
-  const titleLower = title.toLowerCase()
-  if (tags.length < 4) {
-    if (titleLower.includes("senior") || titleLower.includes("sênior") || titleLower.includes(" sr")) {
-      tags.push("Senior")
-    } else if (titleLower.includes("pleno")) {
-      tags.push("Pleno")
-    } else if (titleLower.includes("junior") || titleLower.includes("júnior") || titleLower.includes(" jr")) {
-      tags.push("Junior")
+    tags = techTags.filter(tag =>
+      title.toLowerCase().includes(tag.toLowerCase())
+    ).slice(0, 4)
+
+    // Add seniority tag if found
+    const titleLower = title.toLowerCase()
+    if (tags.length < 4) {
+      if (titleLower.includes("senior") || titleLower.includes("sênior") || titleLower.includes(" sr")) {
+        tags.push("Senior")
+      } else if (titleLower.includes("pleno")) {
+        tags.push("Pleno")
+      } else if (titleLower.includes("junior") || titleLower.includes("júnior") || titleLower.includes(" jr")) {
+        tags.push("Junior")
+      }
     }
   }
 
@@ -523,7 +534,9 @@ export function extractJobDataFromEmbed(embed) {
     date,
     time,
     url: embed.url || "",
-    id: embed.id || ""
+    id: embed.id || "",
+    // Propagado para uso futuro (caption, debug, etc.) — não desenhado no card.
+    description: embed.description || ""
   }
 }
 

@@ -25,6 +25,9 @@ export type JobStatuses = Partial<Record<JobChannel, boolean>>
 // Shape completo da vaga conforme retornado pelo message-formatting-core
 export interface JobData extends JobConstructorParams {
     id: string | number
+    source?: string
+    skills?: string[]
+    description?: string
     statuses?: JobStatuses
 }
 
