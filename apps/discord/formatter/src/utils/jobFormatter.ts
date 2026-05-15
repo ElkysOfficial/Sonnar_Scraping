@@ -1,6 +1,7 @@
 import Job from "../models/models"
+import type { JobData } from "../models/models"
 
-export function jobDataToEmbed(jobData) {
+export function jobDataToEmbed(jobData: JobData) {
   const job = new Job({
     job_title: jobData.job_title,
     job_url: jobData.job_url,

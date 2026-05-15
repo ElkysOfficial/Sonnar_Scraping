@@ -5,7 +5,7 @@ import customParseFormat from "dayjs/plugin/customParseFormat"
 dayjs.extend(customParseFormat)
 
 // Interface que define a estrutura dos dados da vaga de emprego
-interface JobConstructorParams {
+export interface JobConstructorParams {
     job_title: string
     job_url: string
     company?: string
@@ -14,6 +14,18 @@ interface JobConstructorParams {
     work_type?: string
     salary?: string
     publication_date?: string
+}
+
+// Canais de distribuição suportados
+export type JobChannel = "discord" | "whatsapp" | "telegram"
+
+// Status de envio por canal (registro persistido junto à vaga)
+export type JobStatuses = Partial<Record<JobChannel, boolean>>
+
+// Shape completo da vaga conforme retornado pelo message-formatting-core
+export interface JobData extends JobConstructorParams {
+    id: string | number
+    statuses?: JobStatuses
 }
 
 // Classe que representa uma vaga de emprego
