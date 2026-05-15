@@ -4,6 +4,7 @@
  * Replaces JSON file storage with proper database persistence
  */
 
+import axios from "axios"
 import dotenv from "dotenv"
 import { createClient } from "@supabase/supabase-js"
 import { fileURLToPath } from "node:url"
@@ -736,26 +737,49 @@ export async function getMutedUsers(groupId) {
 }
 
 // =====================================================
-// JOBS (from core)
+// JOBS (via message-formatting-core / jobs.json)
 // =====================================================
+// Fonte: apps/scraper/src/data/jobs.json, servido pelo core via HTTP.
+// Mantemos a mesma assinatura das funções para não impactar callers;
+// internamente trocamos Supabase por chamadas REST.
 
-// Campos mínimos para listagem (reduz egress ~70%)
-const JOB_LIST_FIELDS = "id, job_title, company, location, work_type, created_at"
+const CORE_BASE_URL = process.env.MESSAGE_FORMATTING_CORE_URL || "http://localhost:3100"
+const coreClient = axios.create({ baseURL: CORE_BASE_URL, timeout: 15000 })
+
+// Converte job API (statuses object) → shape "raw db row" que os callers esperam
+// (status_whatsapp/status_discord/status_telegram booleanos planos).
+function jobApiToDbShape(job) {
+  return {
+    id: job.id,
+    job_title: job.job_title,
+    job_url: job.job_url,
+    company: job.company,
+    location: job.location,
+    work_type: job.work_type,
+    hiring_regime: job.hiring_regime,
+    salary: job.salary,
+    publication_date: job.publication_date,
+    source: job.source,
+    created_at: job.created_at,
+    updated_at: job.updated_at,
+    status_discord: !!job.statuses?.discord,
+    status_whatsapp: !!job.statuses?.whatsapp,
+    status_telegram: !!job.statuses?.telegram
+  }
+}
+
+async function fetchAllJobsFromCore() {
+  const { data } = await coreClient.get("/jobs")
+  return (Array.isArray(data) ? data : []).map(jobApiToDbShape)
+}
 
 /**
  * Get all jobs (for VIP matching/search)
- * OTIMIZADO: Usa keyset pagination em vez de OFFSET
- * @param {Object} options - Opções de busca
- * @param {number} options.limit - Limite de resultados
- * @param {string} options.createdAfter - ISO timestamp para delta fetch
- * @param {string} options.cursorCreatedAt - Cursor para keyset pagination
- * @param {string} options.cursorId - Cursor ID para keyset pagination
+ * Mantém options.limit, options.createdAfter, options.cursorCreatedAt, options.cursorId
+ * mas paginação/filtragem é feita no cliente — o core entrega tudo ordenado por created_at desc.
  */
 export async function getAllJobs(options = {}) {
-  let limit
-  let createdAfter
-  let cursorCreatedAt
-  let cursorId
+  let limit, createdAfter, cursorCreatedAt, cursorId
 
   if (Number.isInteger(options)) {
     limit = options
@@ -766,109 +790,77 @@ export async function getAllJobs(options = {}) {
     cursorId = options.cursorId
   }
 
-  let query = supabase
-    .from("jobs")
-    .select(JOB_SELECT_FIELDS)
-    .order("created_at", { ascending: false })
-    .order("id", { ascending: false })
+  let rows = await fetchAllJobsFromCore()
 
-  // Delta fetch: jobs novos desde timestamp
   if (createdAfter) {
-    query = query.gte("created_at", createdAfter)
+    rows = rows.filter((j) => (j.created_at || "") >= createdAfter)
   }
 
-  // Keyset pagination: mais eficiente que OFFSET
   if (cursorCreatedAt && cursorId) {
-    // WHERE (created_at, id) < (cursor_created_at, cursor_id)
-    query = query.or(`created_at.lt.${cursorCreatedAt},and(created_at.eq.${cursorCreatedAt},id.lt.${cursorId})`)
+    rows = rows.filter((j) => {
+      const ts = j.created_at || ""
+      if (ts < cursorCreatedAt) return true
+      if (ts === cursorCreatedAt && (j.id || "") < cursorId) return true
+      return false
+    })
   }
 
   if (Number.isInteger(limit)) {
-    query = query.limit(limit)
+    rows = rows.slice(0, limit)
   }
-
-  const { data, error } = await query
-
-  if (error) throw error
-  return data
+  return rows
 }
 
 /**
  * Get jobs using keyset pagination (cursor-based)
- * Retorna também o cursor para próxima página
- * @param {Object} options - Opções de busca
- * @returns {{ data: Array, nextCursor: { createdAt: string, id: string } | null }}
  */
 export async function getJobsPage(options = {}) {
   const { limit = 50, cursorCreatedAt, cursorId, statusFilter } = options
+  let rows = await fetchAllJobsFromCore()
 
-  let query = supabase
-    .from("jobs")
-    .select(JOB_LIST_FIELDS)
-    .order("created_at", { ascending: false })
-    .order("id", { ascending: false })
-    .limit(limit + 1) // +1 para saber se há mais páginas
-
-  // Keyset pagination
   if (cursorCreatedAt && cursorId) {
-    query = query.or(`created_at.lt.${cursorCreatedAt},and(created_at.eq.${cursorCreatedAt},id.lt.${cursorId})`)
+    rows = rows.filter((j) => {
+      const ts = j.created_at || ""
+      if (ts < cursorCreatedAt) return true
+      if (ts === cursorCreatedAt && (j.id || "") < cursorId) return true
+      return false
+    })
   }
 
-  // Filtro por status
-  if (statusFilter === 'pending_whatsapp') {
-    query = query.eq("status_whatsapp", false)
-  } else if (statusFilter === 'pending_discord') {
-    query = query.eq("status_discord", false)
-  } else if (statusFilter === 'pending_telegram') {
-    query = query.eq("status_telegram", false)
-  }
+  if (statusFilter === "pending_whatsapp") rows = rows.filter((j) => !j.status_whatsapp)
+  else if (statusFilter === "pending_discord") rows = rows.filter((j) => !j.status_discord)
+  else if (statusFilter === "pending_telegram") rows = rows.filter((j) => !j.status_telegram)
 
-  const { data, error } = await query
+  const hasMore = rows.length > limit
+  const pageData = hasMore ? rows.slice(0, limit) : rows
 
-  if (error) throw error
-
-  const hasMore = data.length > limit
-  const pageData = hasMore ? data.slice(0, limit) : data
-
-  // Cursor para próxima página
   let nextCursor = null
   if (hasMore && pageData.length > 0) {
-    const lastItem = pageData[pageData.length - 1]
-    nextCursor = {
-      createdAt: lastItem.created_at,
-      id: lastItem.id
-    }
+    const last = pageData[pageData.length - 1]
+    nextCursor = { createdAt: last.created_at, id: last.id }
   }
-
   return { data: pageData, nextCursor }
 }
 
 /**
- * Get jobs delta (novos desde última execução)
- * Para uso com sender_state
- * @param {string} senderType - Tipo do sender (vip, whatsapp, discord)
- * @param {number} limit - Limite de jobs
+ * Get jobs delta (novos desde última execução) — usa sender_state como marca d'água.
  */
 export async function getJobsDelta(senderType, limit = 100) {
-  // Busca último estado do sender
   const state = await getSenderState(senderType)
   const lastCreatedAt = state?.last_processed_created_at
 
-  let query = supabase
-    .from("jobs")
-    .select(JOB_SELECT_FIELDS)
-    .order("created_at", { ascending: true }) // ASC para processar em ordem
-    .order("id", { ascending: true })
-    .limit(limit)
+  let rows = await fetchAllJobsFromCore()
+  rows.sort((a, b) => {
+    const ta = a.created_at || ""
+    const tb = b.created_at || ""
+    if (ta !== tb) return ta.localeCompare(tb)
+    return (a.id || "").localeCompare(b.id || "")
+  })
 
   if (lastCreatedAt) {
-    query = query.gt("created_at", lastCreatedAt)
+    rows = rows.filter((j) => (j.created_at || "") > lastCreatedAt)
   }
-
-  const { data, error } = await query
-
-  if (error) throw error
-  return data
+  return rows.slice(0, limit)
 }
 
 /**
@@ -903,44 +895,36 @@ export async function updateSenderStateDelta(senderType, lastJobId, lastCreatedA
  * Get pending jobs for WhatsApp
  */
 export async function getPendingWhatsAppJobs(limit = 100) {
-  const { data, error } = await supabase
-    .from("jobs")
-    .select(JOB_SELECT_FIELDS)
-    .eq("status_whatsapp", false)
-    .order("created_at", { ascending: false })
-    .limit(limit)
-
-  if (error) throw error
-  return data
+  const { data } = await coreClient.get("/jobs/pending", { params: { channel: "whatsapp" } })
+  const rows = (Array.isArray(data) ? data : []).map(jobApiToDbShape)
+  return rows.slice(0, limit)
 }
 
 /**
  * Mark job as sent to WhatsApp
  */
 export async function markJobSentToWhatsApp(jobId) {
-  const { data, error } = await supabase
-    .from("jobs")
-    .update({ status_whatsapp: true })
-    .eq("id", jobId)
-    .select("id, status_whatsapp")
-    .single()
-
-  if (error) throw error
-  return data
+  const { data } = await coreClient.put("/jobs/status", {
+    id: jobId,
+    channel: "whatsapp",
+    status: true
+  })
+  const job = data?.job
+  if (!job) return null
+  return { id: job.id, status_whatsapp: !!job.statuses?.whatsapp }
 }
 
 /**
  * Get job by ID
  */
 export async function getJobById(jobId) {
-  const { data, error } = await supabase
-    .from("jobs")
-    .select(JOB_SELECT_FIELDS)
-    .eq("id", jobId)
-    .maybeSingle()
-
-  if (error) throw error
-  return data
+  try {
+    const { data } = await coreClient.get(`/jobs/${encodeURIComponent(jobId)}`)
+    return data ? jobApiToDbShape(data) : null
+  } catch (err) {
+    if (err.response?.status === 404) return null
+    throw err
+  }
 }
 
 // =====================================================
