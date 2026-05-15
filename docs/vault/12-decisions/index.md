@@ -13,6 +13,7 @@ Padrão: cada ADR contém **Contexto → Decisão → Alternativas → Consequê
 | [[ADR-002-jwt-storage-csp-hardening]]            | JWT em localStorage com CSP estrita (defesa em profundidade)            | Aceito   | v1.9.0                 |
 | [[ADR-003-indeed-listing-json-extraction]]       | Indeed engine via listing JSON (substitui detail-fetch por vaga)        | Aceito   | data_collection v2026.05 |
 | [[ADR-004-monorepo-restructure]]                 | Reestruturação para monorepo apps/packages/supabase/docs                | Aceito   | 2026-05-15             |
+| [[ADR-005-message-formatting-core-jobs-json]]    | message-formatting-core lê jobs.json em vez de Supabase                 | Aceito   | 2026-05-15             |
 
 ## Como adicionar um ADR novo
 

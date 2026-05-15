@@ -7,6 +7,12 @@ tags: [api, edge, moc]
 
 ⚠️ **Stub** - auditar via `supabase/functions/`.
 
+## Serviços HTTP internos (não-Supabase)
+
+| Serviço | Porta | Função | Nota |
+|---------|-------|--------|------|
+| `message-formatting-core` | 3100 | Intermedia acesso dos bots ao catálogo de vagas (jobs.json) | [[message-formatting-core]] |
+
 ## Edge Functions identificadas
 
 | Função                    | Trigger                | Notas a criar              |

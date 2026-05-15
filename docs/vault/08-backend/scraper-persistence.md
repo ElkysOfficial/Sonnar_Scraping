@@ -15,7 +15,7 @@ menos um deles confirmou.
 
 | Sink | Arquivo / Endpoint | Modo | Quem consome |
 |------|--------------------|------|--------------|
-| `LocalJobStore` | `src/data/jobs.json` | upsert atômico (`.tmp + os.replace`) | Bot WhatsApp/Discord (envio de mensagens) |
+| `LocalJobStore` | `src/data/jobs.json` | upsert atômico (`.tmp + os.replace`) | Bot WhatsApp/Discord via [[../06-api/message-formatting-core]] (porta 3100) — desde [[../12-decisions/ADR-005-message-formatting-core-jobs-json]] |
 | `CSVJobStore` | `src/data/job.csv` | append-only com cabeçalho fixo | Analytics offline (Excel, Pandas, BI) |
 | `SupabaseJobsClient` | `public.jobs` (PostgREST) | upsert por `job_url` (UNIQUE) | Landing-page (agregados via RPCs) |
 
@@ -83,7 +83,8 @@ Isso garante que crashes mid-batch não percam dados já extraídos.
 
 ## Referências
 
-- Implementação: [`src/persistence/`](../../../data_collection/src/persistence)
-- Controller: [`src/controllers/controllers.py`](../../../data_collection/src/controllers/controllers.py)
-- Migration Supabase: [`landing-page/supabase/migrations/20260502000000_jobs_schema.sql`](../../supabase/migrations)
+- Implementação: `apps/scraper/src/persistence/` (era `data_collection/src/persistence/` antes de [[../12-decisions/ADR-004-monorepo-restructure]])
+- Controller: `apps/scraper/src/controllers/controllers.py`
+- Migration Supabase: `supabase/migrations/20260502000000_jobs_schema.sql`
 - Fluxo completo: [[scraping-flow]]
+- API consumida pelos bots: [[../06-api/message-formatting-core]]
