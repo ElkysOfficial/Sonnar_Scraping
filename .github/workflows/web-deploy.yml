@@ -1,8 +1,11 @@
-name: Deploy to Production
+name: Web - Deploy to Production
 
 on:
   push:
     branches: [main]
+    paths:
+      - 'apps/web/**'
+      - '.github/workflows/web-deploy.yml'
   workflow_dispatch:
     inputs:
       confirm:
@@ -14,13 +17,17 @@ permissions:
   contents: read
 
 concurrency:
-  group: deploy-${{ github.workflow }}-${{ github.ref }}
+  group: web-deploy-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
 
 env:
   PRODUCT_NAME: "Sonnar Jobs"
   SITE_URL: "https://sonnarjobs.com.br"
   TZ: "America/Sao_Paulo"
+
+defaults:
+  run:
+    working-directory: apps/web
 
 jobs:
   build-and-deploy:
@@ -37,6 +44,7 @@ jobs:
         with:
           node-version: 20
           cache: npm
+          cache-dependency-path: apps/web/package-lock.json
 
       - name: Install
         run: npm ci
@@ -59,7 +67,7 @@ jobs:
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
           port: 21
-          local-dir: ./dist/
+          local-dir: ./apps/web/dist/
           server-dir: /public_html/
           dangerous-clean-slate: false
           exclude: |
@@ -69,6 +77,7 @@ jobs:
 
       - name: Post-deploy smoke check
         shell: bash
+        working-directory: .
         run: |
           set -euo pipefail
           for i in {1..12}; do
@@ -85,6 +94,7 @@ jobs:
 
       - name: Timestamp
         id: timestamp
+        working-directory: .
         run: |
           echo "date=$(date +'%d/%m/%Y')" >> $GITHUB_OUTPUT
           echo "time=$(date +'%H:%M:%S')" >> $GITHUB_OUTPUT
