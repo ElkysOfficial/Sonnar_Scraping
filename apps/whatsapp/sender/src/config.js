@@ -1,8 +1,15 @@
 import path from "node:path"
 import { fileURLToPath } from "node:url"
+import dotenv from "dotenv"
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
+
+// Carrega o .env do bot ANTES de avaliar as constantes abaixo.
+// Sem isso, process.env fica vazio na hora que este modulo eh avaliado
+// (a ordem de import nao garante que o dotenv ja rodou) e variaveis como
+// WEB_FUNCTIONS_URL / WHATSAPP_LINK_SECRET caem no fallback "".
+dotenv.config({ path: path.resolve(__dirname, "..", ".env") })
 
 const readNumber = (value, fallback) => {
   if (value === undefined || value === null || value === "") {

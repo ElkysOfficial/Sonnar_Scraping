@@ -26,7 +26,7 @@
       </div>
       <div class="djobs-banner__body">
         <h2>Vagas filtradas pelo seu perfil</h2>
-        <p>Disponível nos planos Pro e Plus. Você está vendo uma prévia das vagas mais recentes.</p>
+        <p>Disponível nos planos Pro e Plus. Faça upgrade para receber vagas do seu perfil.</p>
       </div>
       <router-link to="/dashboard/assinatura" class="btn btn-primary">Fazer upgrade</router-link>
     </div>
@@ -59,7 +59,7 @@
         </span>
         <div class="djobs-stat__body">
           <span class="djobs-stat__num">{{ filteredJobs.length }}</span>
-          <span class="djobs-stat__label">{{ subscriber?.plan === 'free' ? 'vagas recentes' : 'vagas compatíveis' }}</span>
+          <span class="djobs-stat__label">vagas recebidas</span>
         </div>
       </div>
       <div class="djobs-stat djobs-stat--accent">
@@ -107,8 +107,8 @@
         :key="job.id"
         class="djobs-card"
         :class="[
-          profile ? matchClass(job.score) : '',
-          { 'djobs-card--featured': profile && job.score >= 85 }
+          job.score != null ? matchClass(job.score) : '',
+          { 'djobs-card--featured': job.score != null && job.score >= 85 }
         ]"
       >
         <span class="djobs-card__rail" aria-hidden="true"></span>
@@ -116,7 +116,7 @@
         <!-- Badges absolutos: novo + featured -->
         <div class="djobs-card__badges" aria-hidden="true">
           <span v-if="isFresh(job.posted_at)" class="djobs-badge djobs-badge--new">Novo</span>
-          <span v-if="profile && job.score >= 85" class="djobs-badge djobs-badge--featured">
+          <span v-if="job.score != null && job.score >= 85" class="djobs-badge djobs-badge--featured">
             <svg viewBox="0 0 16 16" width="11" height="11" fill="currentColor" aria-hidden="true">
               <path d="M8 0l2.4 5 5.6.8-4 4 1 5.7L8 12.7l-5 2.7 1-5.7-4-4 5.6-.8z" />
             </svg>
@@ -132,24 +132,24 @@
               <p>{{ job.company }}</p>
             </div>
           </div>
-          <span v-if="profile" class="djobs-match" :class="matchClass(job.score)" :aria-label="`${job.score}% de match`">
+          <span v-if="job.score != null" class="djobs-match" :class="matchClass(job.score)" :aria-label="`${job.score}% de match`">
             <span class="djobs-match__num">{{ job.score }}</span>
             <span class="djobs-match__sym">%</span>
           </span>
         </header>
 
-        <div class="djobs-card__tags">
+        <div v-if="job.tags.length" class="djobs-card__tags">
           <span
-v-for="t in job.tags.slice(0, 4)" :key="t"
+            v-for="t in job.tags.slice(0, 4)" :key="t"
             class="djobs-tag"
-            :class="{ 'djobs-tag--hit': profile && stackLower.has(t.toLowerCase()) }"
+            :class="{ 'djobs-tag--hit': stackLower.has(t.toLowerCase()) }"
           >{{ t }}</span>
           <span v-if="job.tags.length > 4" class="djobs-tag djobs-tag--more">+{{ job.tags.length - 4 }}</span>
         </div>
 
         <div class="djobs-card__salary">
           <span class="djobs-card__salary-label">Faixa</span>
-          <span class="djobs-card__salary-value">{{ formatSalary(job.min_salary, job.max_salary) }}</span>
+          <span class="djobs-card__salary-value">{{ job.salary || '—' }}</span>
         </div>
 
         <div class="djobs-card__metas">
@@ -165,6 +165,7 @@ v-for="t in job.tags.slice(0, 4)" :key="t"
         </div>
 
         <a
+          v-if="job.url"
           :href="job.url"
           target="_blank"
           rel="noopener"
@@ -180,8 +181,10 @@ v-for="t in job.tags.slice(0, 4)" :key="t"
       </li>
     </ul>
 
-    <p v-if="filteredJobs.length === 0" class="djobs-empty">
-      Nenhuma vaga encontrada agora. Volte em breve.
+    <p v-if="loading" class="djobs-empty">Carregando suas vagas…</p>
+    <p v-else-if="filteredJobs.length === 0" class="djobs-empty">
+      Você ainda não recebeu vagas. Assim que o bot enviar vagas do seu perfil no
+      WhatsApp, elas aparecem aqui.
     </p>
   </div>
 </template>
@@ -229,75 +232,75 @@ async function loadWaLinkStatus() {
   waToken.value = row.token ?? null
 }
 
-// ============= MOCK DATA (até existir tabela jobs) =============
-type MockJob = {
+// ============= VAGAS RECEBIDAS =============
+// Vagas que o assinante recebeu no WhatsApp. O bot grava um snapshot da vaga
+// em vip_delivery_history a cada envio; aqui apenas lemos (a RLS filtra pelo
+// wa_lid do próprio usuário). Sem envios ainda => lista vazia.
+type ReceivedJob = {
   id: string
   title: string
   company: string
-  location: string
-  work_model: 'remote' | 'hybrid' | 'onsite'
-  seniority: 'junior' | 'pleno' | 'senior' | 'staff_lead'
-  min_salary: number
-  max_salary: number
   tags: string[]
-  source: string
-  url: string
+  work_model: string | null
+  salary: string | null
+  url: string | null
+  source: string | null
   posted_at: string
+  score: number | null
 }
 
-const MOCK_JOBS: MockJob[] = [
-  { id: '1',  title: 'Senior Frontend Engineer',  company: 'Nubank',         location: 'Remoto',          work_model: 'remote', seniority: 'senior',     min_salary: 18000, max_salary: 24000, tags: ['React', 'TypeScript', 'Next.js'],         source: 'LinkedIn',  url: 'https://linkedin.com', posted_at: hoursAgo(3) },
-  { id: '2',  title: 'Staff Frontend Engineer',   company: 'iFood',          location: 'São Paulo, SP',   work_model: 'hybrid', seniority: 'staff_lead', min_salary: 28000, max_salary: 38000, tags: ['React', 'TypeScript', 'GraphQL'],         source: 'Gupy',      url: 'https://gupy.io',      posted_at: hoursAgo(8) },
-  { id: '3',  title: 'Backend Engineer Pleno',    company: 'Mercado Livre',  location: 'Remoto · LATAM',  work_model: 'remote', seniority: 'pleno',      min_salary: 14000, max_salary: 19000, tags: ['Go', 'Kafka', 'Kubernetes'],              source: 'Glassdoor', url: 'https://glassdoor.com', posted_at: hoursAgo(14) },
-  { id: '4',  title: 'Tech Lead Plataforma',      company: 'PicPay',         location: 'Remoto',          work_model: 'remote', seniority: 'staff_lead', min_salary: 25000, max_salary: 35000, tags: ['Node.js', 'AWS', 'TypeScript'],           source: 'LinkedIn',  url: 'https://linkedin.com', posted_at: hoursAgo(20) },
-  { id: '5',  title: 'React Native Developer',    company: 'C6 Bank',        location: 'Remoto',          work_model: 'remote', seniority: 'pleno',      min_salary: 14000, max_salary: 19000, tags: ['React Native', 'TypeScript'],             source: 'LinkedIn',  url: 'https://linkedin.com', posted_at: hoursAgo(28) },
-  { id: '6',  title: 'DevOps Engineer Sênior',    company: 'Stone',          location: 'Rio de Janeiro',  work_model: 'hybrid', seniority: 'senior',     min_salary: 16000, max_salary: 22000, tags: ['Kubernetes', 'Terraform', 'AWS'],         source: 'Indeed',    url: 'https://indeed.com',    posted_at: hoursAgo(36) },
-  { id: '7',  title: 'Full Stack Engineer',       company: 'Loft',           location: 'Remoto',          work_model: 'remote', seniority: 'pleno',      min_salary: 12000, max_salary: 18000, tags: ['React', 'Node.js', 'PostgreSQL'],         source: 'Gupy',      url: 'https://gupy.io',      posted_at: hoursAgo(42) },
-  { id: '8',  title: 'Senior Backend Engineer',   company: 'QuintoAndar',    location: 'São Paulo, SP',   work_model: 'hybrid', seniority: 'senior',     min_salary: 19000, max_salary: 26000, tags: ['Python', 'Django', 'AWS'],                source: 'Glassdoor', url: 'https://glassdoor.com', posted_at: hoursAgo(48) },
-  { id: '9',  title: 'Mobile Engineer',           company: '99',             location: 'São Paulo, SP',   work_model: 'hybrid', seniority: 'pleno',      min_salary: 16000, max_salary: 21000, tags: ['Flutter', 'Dart', 'Firebase'],            source: 'Glassdoor', url: 'https://glassdoor.com', posted_at: hoursAgo(60) },
-  { id: '10', title: 'Engenheiro de Dados Júnior',company: 'Hotmart',        location: 'Remoto · BR',     work_model: 'remote', seniority: 'junior',     min_salary: 7000,  max_salary: 10000, tags: ['Python', 'SQL', 'Airflow'],               source: 'Gupy',      url: 'https://gupy.io',      posted_at: hoursAgo(72) },
-  { id: '11', title: 'Frontend Pleno Vue',        company: 'Movile',         location: 'Remoto',          work_model: 'remote', seniority: 'pleno',      min_salary: 11000, max_salary: 16000, tags: ['Vue', 'TypeScript', 'Nuxt'],              source: 'LinkedIn',  url: 'https://linkedin.com', posted_at: hoursAgo(84) }
-]
+const jobs = ref<ReceivedJob[]>([])
+const loading = ref(true)
 
-function hoursAgo(h: number) {
-  return new Date(Date.now() - h * 3600 * 1000).toISOString()
+async function fetchReceivedJobs() {
+  loading.value = true
+  // vip_delivery_history não está nos tipos gerados — cast para any.
+  const { data, error } = await (supabase as any)
+    .from('vip_delivery_history')
+    .select('job_id, job_snapshot, match_score, sent_at')
+    .order('sent_at', { ascending: false })
+  loading.value = false
+
+  if (error) {
+    console.error('Falha ao carregar vagas recebidas:', error.message)
+    jobs.value = []
+    return
+  }
+
+  jobs.value = (data || []).map((row: any) => {
+    const s = row.job_snapshot || {}
+    return {
+      id: row.job_id,
+      title: s.title || 'Vaga',
+      company: s.company || '',
+      tags: Array.isArray(s.tags) ? s.tags : [],
+      work_model: s.work_model || null,
+      salary: s.salary || null,
+      url: s.url || null,
+      source: s.source || null,
+      posted_at: row.sent_at,
+      score: row.match_score ?? null
+    }
+  })
 }
 
-// ============= MATCH SCORING =============
+// Já vem ordenada por sent_at desc do banco.
+const filteredJobs = computed(() => jobs.value)
+
 const stackLower = computed(() => {
   const s = new Set<string>()
   ;(profile.value?.stack || []).forEach(t => s.add(t.toLowerCase()))
   return s
 })
 
-function computeScore(job: MockJob) {
-  if (!profile.value) return 0
-  const tags = job.tags.map(t => t.toLowerCase())
-  const overlap = tags.filter(t => stackLower.value.has(t)).length
-  const stackScore = job.tags.length ? (overlap / job.tags.length) * 50 : 0
-  const seniorityScore = profile.value.seniority === job.seniority ? 25 : 0
-  const workScore = (profile.value.work_models || []).includes(job.work_model) ? 25 : 0
-  return Math.round(stackScore + seniorityScore + workScore)
-}
-
-const filteredJobs = computed(() => {
-  if (!profile.value) {
-    // Free: ordena por mais recente, sem score
-    return [...MOCK_JOBS]
-      .sort((a, b) => +new Date(b.posted_at) - +new Date(a.posted_at))
-      .map(j => ({ ...j, score: 0 }))
-  }
-  return MOCK_JOBS
-    .map(j => ({ ...j, score: computeScore(j) }))
-    .filter(j => j.score >= 25)
-    .sort((a, b) => b.score - a.score)
+const topMatch = computed(() => {
+  const scores = jobs.value.map(j => j.score ?? 0)
+  return scores.length ? Math.max(...scores) : 0
 })
-
-const topMatch = computed(() => filteredJobs.value[0]?.score ?? 0)
-const remoteCount = computed(() => filteredJobs.value.filter(j => j.work_model === 'remote').length)
+const remoteCount = computed(() => jobs.value.filter(j => j.work_model === 'remote').length)
 const last24hCount = computed(() => {
   const cutoff = Date.now() - 24 * 3600 * 1000
-  return filteredJobs.value.filter(j => +new Date(j.posted_at) >= cutoff).length
+  return jobs.value.filter(j => +new Date(j.posted_at) >= cutoff).length
 })
 
 function matchClass(score: number) {
@@ -314,13 +317,8 @@ function isFresh(iso: string) {
   return Date.now() - new Date(iso).getTime() < 24 * 3600 * 1000
 }
 
-function workLabel(m: string) {
-  return ({ remote: 'Remoto', hybrid: 'Híbrido', onsite: 'Presencial' } as Record<string, string>)[m] || m
-}
-
-function formatSalary(min: number, max: number) {
-  const fmt = (n: number) => `R$ ${(n / 1000).toFixed(0)}k`
-  return `${fmt(min)} – ${fmt(max)}`
+function workLabel(m: string | null) {
+  return ({ remote: 'Remoto', hybrid: 'Híbrido', onsite: 'Presencial' } as Record<string, string>)[m || ''] || '—'
 }
 
 function formatRelative(iso: string) {
@@ -344,7 +342,7 @@ async function fetchProfile() {
 
 onMounted(async () => {
   await fetchProfile()
-  await loadWaLinkStatus()
+  await Promise.all([loadWaLinkStatus(), fetchReceivedJobs()])
 })
 </script>
 

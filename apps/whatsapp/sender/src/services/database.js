@@ -228,6 +228,9 @@ function jobApiToDbShape(job) {
     salary: job.salary,
     publication_date: job.publication_date,
     source: job.source,
+    // skills/description vem do core e sao usados pelo card e pelo snapshot.
+    skills: Array.isArray(job.skills) ? job.skills : [],
+    description: job.description || "",
     created_at: job.created_at,
     updated_at: job.updated_at,
     status_discord: !!job.statuses?.discord,
@@ -380,6 +383,8 @@ export function transformJobForApi(job) {
     salary: job.salary,
     publication_date: job.publication_date,
     source: job.source,
+    skills: Array.isArray(job.skills) ? job.skills : [],
+    description: job.description || "",
     created_at: job.created_at,
     updated_at: job.updated_at,
     statuses: {

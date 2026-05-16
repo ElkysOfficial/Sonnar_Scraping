@@ -1751,6 +1751,50 @@ function formatJobMessage(job) {
 }
 
 /**
+ * Normaliza a modalidade da vaga para o vocabulario do dashboard.
+ */
+function normalizeWorkModel(raw) {
+  const v = (raw || "").toString().toLowerCase()
+  if (v.includes("remot")) return "remote"
+  if (v.includes("hibri") || v.includes("hybr")) return "hybrid"
+  if (v.includes("presenc") || v.includes("onsite")) return "onsite"
+  return null
+}
+
+/**
+ * Monta um snapshot enxuto da vaga para gravar em vip_delivery_history.
+ * O dashboard do portal le esse snapshot para mostrar o que foi enviado.
+ */
+function buildJobSnapshot(job) {
+  const fields = job.fields || []
+  const norm = (s) =>
+    (s || "").toString().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim()
+  const fieldValue = (keys) => {
+    for (const field of fields) {
+      const name = norm(field?.name)
+      if (!name) continue
+      for (const key of keys) {
+        if (name.includes(key)) return field?.value || null
+      }
+    }
+    return null
+  }
+
+  return {
+    title: job.title || job.job_title || null,
+    company: fieldValue(["empresa", "company"]) || job.author?.name || job.company || null,
+    location: fieldValue(["localidade", "localizacao", "local"]) || job.location || null,
+    salary: fieldValue(["salario", "remuneracao"]) || job.salary || null,
+    work_model: normalizeWorkModel(fieldValue(["modalidade", "tipo"]) || job.work_type),
+    tags: Array.isArray(job.skills) ? job.skills.slice(0, 8) : [],
+    url: job.url || job.job_url || null,
+    source: job.source || null,
+    publication_date:
+      fieldValue(["data de publicacao", "publicacao"]) || job.publication_date || null
+  }
+}
+
+/**
  * Converte LID para JID do WhatsApp
  * @param {string} lid - ID no formato @lid
  * @returns {string} JID no formato @s.whatsapp.net
@@ -1866,8 +1910,8 @@ async function sendJobToSubscriber(lid, job) {
       return { success: false, reason }
     }
 
-    // Registra o envio (persiste em arquivo de histórico)
-    await recordJobSent(lid, jobId)
+    // Registra o envio + snapshot da vaga (consumido pelo dashboard do portal)
+    await recordJobSent(lid, jobId, buildJobSnapshot(job), job.matchScore ?? null)
 
     // NOVO: Marca também no cache JSON
     await markJobSentInCache(lid, jobId)

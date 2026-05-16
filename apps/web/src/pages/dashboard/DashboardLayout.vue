@@ -105,11 +105,13 @@
       </header>
 
       <main class="dl-content">
-        <router-view v-slot="{ Component }">
-          <transition name="dl-fade" mode="out-in">
-            <component :is="Component" />
-          </transition>
-        </router-view>
+        <div class="dl-content__inner">
+          <router-view v-slot="{ Component }">
+            <transition name="dl-fade" mode="out-in">
+              <component :is="Component" />
+            </transition>
+          </router-view>
+        </div>
       </main>
     </div>
   </div>
@@ -552,17 +554,22 @@ onUnmounted(() => {
 .dl-content {
   flex: 1;
   min-height: 0;
-  padding: var(--space-5) var(--space-6);
   width: 100%;
-  max-width: 1600px;
-  margin: 0 auto;
   overflow-y: auto;
   overflow-x: hidden;
 }
 
+.dl-content__inner {
+  width: 100%;
+  max-width: 1600px;
+  margin: 0 auto;
+  padding: var(--space-5) var(--space-6);
+  box-sizing: border-box;
+}
+
 @media (max-width: 767px) {
   .dl-topbar { padding: 0 var(--space-4); }
-  .dl-content { padding: var(--space-4); }
+  .dl-content__inner { padding: var(--space-4); }
 }
 
 /* Scrollbar refinada (estilo Linear) */

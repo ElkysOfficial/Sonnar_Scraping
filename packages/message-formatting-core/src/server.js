@@ -106,16 +106,17 @@ function entryToApiJob(entry) {
     job_title: entry.job_title || "",
     job_url: url,
     company: entry.company || "",
-    location: entry.location || "",
+    // jobs.json (scraper) usa sufixo *_raw; fallback p/ formatos legados.
+    location: entry.location || entry.location_raw || "",
     work_type: entry.work_type || "",
     hiring_regime: entry.hiring_regime || "",
-    salary: entry.salary || "",
+    salary: entry.salary || entry.salary_raw || "",
     publication_date: entry.publication_date || "",
     source: entry.source || "",
     skills: normalizeSkills(entry.skills),
     description: entry.description || "",
-    created_at: entry.created_at || entry.first_seen_at || "",
-    updated_at: entry.updated_at || entry.last_seen_at || "",
+    created_at: entry.created_at || entry.first_seen_at || entry.scraped_at || "",
+    updated_at: entry.updated_at || entry.last_seen_at || entry.scraped_at || "",
     statuses: sentToToStatuses(entry.sent_to)
   }
 }

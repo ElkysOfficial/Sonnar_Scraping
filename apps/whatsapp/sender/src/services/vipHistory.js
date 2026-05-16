@@ -158,14 +158,16 @@ export async function wasJobSentRecently(lid, jobId) {
   }
 }
 
-export async function recordJobSent(lid, jobId) {
+export async function recordJobSent(lid, jobId, jobSnapshot = null, matchScore = null) {
   try {
+    const row = { lid, job_id: jobId, sent_at: new Date().toISOString() }
+    // Snapshot da vaga para o dashboard do portal exibir o que foi enviado.
+    if (jobSnapshot) row.job_snapshot = jobSnapshot
+    if (matchScore != null) row.match_score = Math.round(matchScore)
+
     const { error } = await supabase
       .from("vip_delivery_history")
-      .upsert(
-        { lid, job_id: jobId, sent_at: new Date().toISOString() },
-        { onConflict: "lid,job_id" }
-      )
+      .upsert(row, { onConflict: "lid,job_id" })
 
     if (error) throw error
 

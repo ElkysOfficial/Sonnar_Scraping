@@ -78,21 +78,31 @@ function resolveEmbedPayload(payload) {
   return jobDataToEmbed(candidate)
 }
 
+// Limite defensivo para a descricao na legenda (evita estourar o caption).
+const CAPTION_DESCRIPTION_MAX = 600
+
+function truncateDescription(text) {
+  const clean = (text || "").toString().replace(/\n{3,}/g, "\n\n").trim()
+  if (clean.length <= CAPTION_DESCRIPTION_MAX) return clean
+  return `${clean.slice(0, CAPTION_DESCRIPTION_MAX).trimEnd()}…`
+}
+
 function formatCaption(jobData, shortUrl) {
+  // Legenda enviada junto da imagem: titulo, empresa, descricao (se houver),
+  // modalidade (se houver) e link. Local/salario/regime ficam so no card.
   let caption = `*${jobData.title}*\n`
-  caption += `${jobData.company}\n\n`
-  caption += `${jobData.location}${jobData.uf ? ` - ${jobData.uf}` : ""}\n`
-  caption += `${jobData.mode}\n`
+  caption += `${jobData.company}\n`
 
-  if (jobData.salaryNote) {
-    caption += `${jobData.salaryNote}\n`
+  const description = truncateDescription(jobData.description)
+  if (description) {
+    caption += `\n${description}\n`
   }
 
-  if (jobData.salary && jobData.salary !== "Nao informado") {
-    caption += `${jobData.salary}\n`
+  if (jobData.workType && jobData.workType !== "Nao informado") {
+    caption += `\n${jobData.workType}\n`
   }
 
-  caption += `\nVer mais sobre a vaga:${shortUrl}`
+  caption += `\nVer mais sobre a vaga: ${shortUrl}`
 
   return caption
 }

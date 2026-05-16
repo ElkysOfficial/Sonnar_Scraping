@@ -535,7 +535,9 @@ export function extractJobDataFromEmbed(embed) {
     time,
     url: embed.url || "",
     id: embed.id || "",
-    // Propagado para uso futuro (caption, debug, etc.) — não desenhado no card.
+    // Propagados para a legenda (caption). workType eh o valor cru ("Remoto",
+    // "Hibrido"...); fica "Nao informado" quando a vaga nao trouxe o dado.
+    workType,
     description: embed.description || ""
   }
 }
