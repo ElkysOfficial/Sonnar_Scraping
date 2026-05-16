@@ -144,6 +144,9 @@ export type Database = {
           stack: string[]
           subscriber_id: string
           updated_at: string
+          wa_lid: string | null
+          wa_link_token: string | null
+          wa_linked_at: string | null
           whatsapp: string
           work_models: string[]
         }
@@ -156,6 +159,9 @@ export type Database = {
           stack?: string[]
           subscriber_id: string
           updated_at?: string
+          wa_lid?: string | null
+          wa_link_token?: string | null
+          wa_linked_at?: string | null
           whatsapp: string
           work_models?: string[]
         }
@@ -168,6 +174,9 @@ export type Database = {
           stack?: string[]
           subscriber_id?: string
           updated_at?: string
+          wa_lid?: string | null
+          wa_link_token?: string | null
+          wa_linked_at?: string | null
           whatsapp?: string
           work_models?: string[]
         }
@@ -291,6 +300,14 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      get_or_create_wa_link_token: {
+        Args: never
+        Returns: {
+          token: string | null
+          linked: boolean
+          linked_at: string | null
+        }[]
+      }
       get_jobs_by_country: {
         Args: never
         Returns: {

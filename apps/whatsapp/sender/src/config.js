@@ -183,3 +183,11 @@ export const VIP_CACHE_TTL = 24 * 60 * 60 * 1000
 
 // Quantidade de vagas para envio diário em grupos (30 em 30 min = 48 envios)
 export const GROUP_JOBS_PER_DAY = 48
+
+// ======= PAREAMENTO COM O PORTAL WEB =======
+// URL base das edge functions do Supabase do PORTAL WEB (projeto diferente
+// do Supabase do bot). Ex: https://<project>.supabase.co/functions/v1
+export const WEB_FUNCTIONS_URL = process.env.WEB_FUNCTIONS_URL || ""
+
+// Segredo compartilhado com a edge function link-whatsapp (header x-link-secret).
+export const WHATSAPP_LINK_SECRET = process.env.WHATSAPP_LINK_SECRET || ""

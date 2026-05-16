@@ -27,47 +27,25 @@ export async function menuMessage(groupJid) {
 ▢
 ▢ • ${prefix}exec
 ▢ • ${prefix}get-group-id
-▢ • ${prefix}off
-▢ • ${prefix}on
 ▢ • ${prefix}set-menu-image
-▢ • ${prefix}set-prefix
-▢ • ${prefix}set-spider-api-token
 ▢
 ╰━━─「🌌」─━━
 
 ╭━━⪩ ADMINS ⪨━━
 ▢
 ▢ • ${prefix}abrir
-▢ • ${prefix}add-auto-responder
 ▢ • ${prefix}agendar-mensagem
-▢ • ${prefix}anti-audio (1/0)
-▢ • ${prefix}anti-document (1/0)
-▢ • ${prefix}anti-event (1/0)
-▢ • ${prefix}anti-image (1/0)
-▢ • ${prefix}anti-link (1/0)
-▢ • ${prefix}anti-product (1/0)
-▢ • ${prefix}anti-sticker (1/0)
-▢ • ${prefix}anti-video (1/0)
-▢ • ${prefix}auto-responder (1/0)
-▢ • ${prefix}auto-sticker (1/0)
 ▢ • ${prefix}ban
 ▢ • ${prefix}delete
-▢ • ${prefix}delete-auto-responder
-▢ • ${prefix}exit (1/0)
 ▢ • ${prefix}fechar
 ▢ • ${prefix}hidetag
 ▢ • ${prefix}limpar
 ▢ • ${prefix}link-grupo
-▢ • ${prefix}list-auto-responder
-▢ • ${prefix}mute
-▢ • ${prefix}only-admin (1/0)
 ▢ • ${prefix}promover
 ▢ • ${prefix}rebaixar
 ▢ • ${prefix}revelar
 ▢ • ${prefix}saldo
 ▢ • ${prefix}set-proxy
-▢ • ${prefix}unmute
-▢ • ${prefix}welcome (1/0)
 ▢
 ╰━━─「⭐」─━━
 

@@ -11,6 +11,7 @@ Referência cruzada com [[../06-api/index]].
 
 - [[scraper-persistence]] ✅ Persistência do scraper em 3 sinks (JSON / CSV / Supabase).
 - [[engine-indeed]] ✅ Engine Indeed via listing JSON (mosaic-provider-jobcards) + enrichment opcional.
+- [[whatsapp-sender-bot]] ✅ Bot WhatsApp (Baileys) — comandos por pasta, customMiddleware, services.
 
 ## Notas a criar
 

@@ -31,6 +31,23 @@
       <router-link to="/dashboard/assinatura" class="btn btn-primary">Fazer upgrade</router-link>
     </div>
 
+    <!-- Conectar WhatsApp do bot (Pro/Plus ainda não pareados) -->
+    <div v-if="showWaCard" class="djobs-banner djobs-banner--wa">
+      <div class="djobs-banner__icon">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M21 11.5a8.38 8.38 0 0 1-8.5 8.5 8.5 8.5 0 0 1-4-1L3 21l1.5-5.5a8.5 8.5 0 0 1-1-4A8.38 8.38 0 0 1 12 3a8.5 8.5 0 0 1 9 8.5z" />
+        </svg>
+      </div>
+      <div class="djobs-banner__body">
+        <h2>Conecte seu WhatsApp</h2>
+        <p>
+          Pra receber as vagas do seu perfil direto no WhatsApp, conecte sua conta
+          uma única vez. Seu código: <strong class="djobs-wa-code">{{ waToken }}</strong>
+        </p>
+      </div>
+      <a :href="waDeepLink" target="_blank" rel="noopener" class="btn btn-primary">Conectar no WhatsApp</a>
+    </div>
+
     <!-- Stats -->
     <div class="djobs-stats">
       <div class="djobs-stat">
@@ -180,6 +197,38 @@ type Profile = Database['public']['Tables']['subscriber_profiles']['Row']
 const { subscriber } = useAuth()
 const profile = ref<Profile | null>(null)
 
+// ============= PAREAMENTO DO WHATSAPP =============
+const waToken = ref<string | null>(null)
+const waLinked = ref(false)
+
+// Número do bot (mesmo da landing). Sem dígitos = sem deep-link.
+const botPhone = (import.meta.env.VITE_WHATSAPP_PHONE || '').replace(/\D/g, '')
+
+const showWaCard = computed(() =>
+  subscriber.value?.plan !== 'free' &&
+  !!profile.value &&
+  !waLinked.value &&
+  !!waToken.value &&
+  !!botPhone
+)
+
+const waDeepLink = computed(() =>
+  `https://wa.me/${botPhone}?text=${encodeURIComponent(`parear ${waToken.value || ''}`)}`
+)
+
+async function loadWaLinkStatus() {
+  if (!profile.value || subscriber.value?.plan === 'free') return
+  const { data, error } = await supabase.rpc('get_or_create_wa_link_token')
+  if (error) {
+    console.error('Falha ao obter código de pareamento:', error.message)
+    return
+  }
+  const row = Array.isArray(data) ? data[0] : data
+  if (!row) return
+  waLinked.value = !!row.linked
+  waToken.value = row.token ?? null
+}
+
 // ============= MOCK DATA (até existir tabela jobs) =============
 type MockJob = {
   id: string
@@ -293,7 +342,10 @@ async function fetchProfile() {
   profile.value = data ?? null
 }
 
-onMounted(fetchProfile)
+onMounted(async () => {
+  await fetchProfile()
+  await loadWaLinkStatus()
+})
 </script>
 
 <style scoped>
@@ -328,6 +380,21 @@ onMounted(fetchProfile)
 .djobs-banner--upgrade {
   background: linear-gradient(180deg, var(--color-accent-soft), var(--color-background));
   border-color: var(--color-accent);
+}
+
+.djobs-banner--wa {
+  background: linear-gradient(180deg, rgba(37, 211, 102, 0.10), var(--color-background));
+  border-color: rgba(37, 211, 102, 0.45);
+}
+.djobs-banner--wa .djobs-banner__icon {
+  background: rgba(37, 211, 102, 0.14);
+  color: #1faf55;
+}
+.djobs-wa-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  letter-spacing: 2px;
+  font-weight: var(--font-bold);
+  color: var(--color-text-primary);
 }
 
 .djobs-banner__icon {

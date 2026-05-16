@@ -15,6 +15,10 @@ tags: [infra, moc]
 | Bundle analysis  | `.github/workflows/bundle-analysis.yml` | Análise de bundle    |
 | Security         | `.github/workflows/security.yml`     | ⚠️ Assumido: audit deps |
 
+## Notas
+
+- [[pterodactyl-hosting]] ✅ Hospedagem do bot WhatsApp em Pterodactyl (deploy, startup, scheduler).
+
 ## Notas a criar
 
 - `deployment.md` - destino, gatilho, processo de rollback.

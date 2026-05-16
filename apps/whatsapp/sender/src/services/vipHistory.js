@@ -1,105 +1,79 @@
 /**
- * VIP delivery history stored in Supabase
- * OTIMIZADO: Cache em memória com carregamento em batch para reduzir egress
+ * Historico de entrega de vagas VIP (vip_delivery_history no Supabase).
+ *
+ * Refactor 2026-05-16: a tabela passou a ser chaveada por LID (TEXT), nao mais
+ * por vip_subscriber_id. Assim funciona para os dois fluxos — assinante do
+ * portal (Fluxo A, sem linha em vip_subscribers) e do WhatsApp (Fluxo B).
+ *
+ * Cache em memoria para reduzir egress.
  */
 
 import { supabase } from "./database.js"
 import { errorLog, infoLog } from "../utils/logger.js"
 
-// Minimum interval between VIP sends (7 minutes in ms)
+// Intervalo minimo entre envios VIP (7 minutos)
 const MIN_SEND_INTERVAL = 7 * 60 * 1000
 
-// Cooldown to resend the same job (48 hours in ms)
+// Cooldown para reenviar a mesma vaga (48 horas)
 const JOB_REPOST_COOLDOWN = 48 * 60 * 60 * 1000
 
-// Cache TTL (30 minutos - alinhado com o ciclo de envio)
+// TTL do cache (30 min — alinhado ao ciclo de envio)
 const CACHE_TTL = 30 * 60 * 1000
 
 const DEFAULT_CLEANUP_INTERVAL = 6 * 60 * 60 * 1000
 const CLEANUP_INTERVAL = (() => {
   const parsed = Number(process.env.VIP_HISTORY_CLEANUP_INTERVAL_MS)
-  if (!Number.isFinite(parsed)) {
-    return DEFAULT_CLEANUP_INTERVAL
-  }
+  if (!Number.isFinite(parsed)) return DEFAULT_CLEANUP_INTERVAL
   return parsed > 0 ? parsed : DEFAULT_CLEANUP_INTERVAL
 })()
 
 let lastCleanupAt = 0
 
 // =====================================================
-// CACHES EM MEMÓRIA (reduz queries N+1)
+// CACHES EM MEMORIA (chaveados por LID)
 // =====================================================
 
-// Cache de subscriber_id por LID
-const subscriberIdCache = new Map()
+const lastSentCache = { data: new Map(), loadedAt: 0, isLoaded: false }   // lid -> timestamp
+const sentJobsCache = { data: new Map(), loadedAt: 0, isLoaded: false }   // lid -> Set<job_id>
 
-// Cache de último envio por subscriber_id
-const lastSentCache = {
-  data: new Map(), // subscriber_id -> timestamp
-  loadedAt: 0,
-  isLoaded: false
-}
-
-// Cache de job_ids enviados por subscriber_id
-const sentJobsCache = {
-  data: new Map(), // subscriber_id -> Set<job_id>
-  loadedAt: 0,
-  isLoaded: false
-}
-
-/**
- * Verifica se o cache está válido
- */
 function isCacheValid(cache) {
-  return cache.isLoaded && (Date.now() - cache.loadedAt) < CACHE_TTL
+  return cache.isLoaded && Date.now() - cache.loadedAt < CACHE_TTL
 }
 
-/**
- * Invalida todos os caches (chamado após mudanças)
- */
 export function invalidateCache() {
   lastSentCache.isLoaded = false
   sentJobsCache.isLoaded = false
 }
 
 /**
- * Carrega todos os dados de histórico em batch (1 query em vez de N)
- * Deve ser chamado no início de cada ciclo
+ * Carrega o historico recente em batch (1 query) e popula os caches.
  */
 export async function loadHistoryBatch() {
   try {
     const cutoff = new Date(Date.now() - JOB_REPOST_COOLDOWN).toISOString()
 
-    // Uma única query que retorna todos os dados necessários
     const { data, error } = await supabase
       .from("vip_delivery_history")
-      .select("vip_subscriber_id, job_id, sent_at")
+      .select("lid, job_id, sent_at")
       .gte("sent_at", cutoff)
       .order("sent_at", { ascending: false })
 
     if (error) throw error
 
-    // Processa os dados e popula os caches
     const lastSentMap = new Map()
     const sentJobsMap = new Map()
 
     for (const row of data || []) {
-      const subId = row.vip_subscriber_id
+      const lid = row.lid
       const sentAt = new Date(row.sent_at).getTime()
 
-      // Atualiza lastSentCache (pega apenas o mais recente por subscriber)
-      if (!lastSentMap.has(subId) || sentAt > lastSentMap.get(subId)) {
-        lastSentMap.set(subId, sentAt)
+      if (!lastSentMap.has(lid) || sentAt > lastSentMap.get(lid)) {
+        lastSentMap.set(lid, sentAt)
       }
-
-      // Atualiza sentJobsCache
-      if (!sentJobsMap.has(subId)) {
-        sentJobsMap.set(subId, new Set())
-      }
-      sentJobsMap.get(subId).add(row.job_id)
+      if (!sentJobsMap.has(lid)) sentJobsMap.set(lid, new Set())
+      sentJobsMap.get(lid).add(row.job_id)
     }
 
-    // Atualiza os caches
     lastSentCache.data = lastSentMap
     lastSentCache.loadedAt = Date.now()
     lastSentCache.isLoaded = true
@@ -116,65 +90,20 @@ export async function loadHistoryBatch() {
   }
 }
 
-async function getSubscriberId(lid) {
-  if (subscriberIdCache.has(lid)) {
-    return subscriberIdCache.get(lid)
-  }
-
-  const { data, error } = await supabase
-    .from("vip_subscribers")
-    .select("id")
-    .eq("lid", lid)
-    .maybeSingle()
-
-  if (error) throw error
-
-  const id = data?.id || null
-  if (id) {
-    subscriberIdCache.set(lid, id)
-  }
-  return id
-}
-
 /**
- * Carrega IDs de todos os assinantes ativos em batch
+ * Mantido por compatibilidade — nao ha mais mapa LID->id para carregar.
  */
-export async function loadSubscriberIdsBatch(subscribers) {
-  try {
-    const lidsToLoad = subscribers
-      .map(s => s.lid)
-      .filter(lid => !subscriberIdCache.has(lid))
+export async function loadSubscriberIdsBatch() {}
 
-    if (lidsToLoad.length === 0) return
-
-    const { data, error } = await supabase
-      .from("vip_subscribers")
-      .select("id, lid")
-      .in("lid", lidsToLoad)
-
-    if (error) throw error
-
-    for (const row of data || []) {
-      subscriberIdCache.set(row.lid, row.id)
-    }
-
-    infoLog(`[VIP History] Carregados ${data?.length || 0} subscriber IDs em batch`)
-  } catch (error) {
-    errorLog(`[VIP History] Erro ao carregar subscriber IDs: ${error.message}`)
-  }
-}
-
-async function getLastSentAt(subscriberId) {
-  // Usa o cache se estiver carregado e válido
+async function getLastSentAt(lid) {
   if (isCacheValid(lastSentCache)) {
-    return lastSentCache.data.get(subscriberId) || null
+    return lastSentCache.data.get(lid) || null
   }
 
-  // Fallback para query individual (caso o cache não esteja carregado)
   const { data, error } = await supabase
     .from("vip_delivery_history")
     .select("sent_at")
-    .eq("vip_subscriber_id", subscriberId)
+    .eq("lid", lid)
     .order("sent_at", { ascending: false })
     .limit(1)
     .maybeSingle()
@@ -185,18 +114,9 @@ async function getLastSentAt(subscriberId) {
 
 export async function canSendToSubscriber(lid) {
   try {
-    const subscriberId = await getSubscriberId(lid)
-    if (!subscriberId) {
-      return false
-    }
-
-    const lastSentAt = await getLastSentAt(subscriberId)
-    if (!lastSentAt) {
-      return true
-    }
-
-    const elapsed = Date.now() - lastSentAt
-    return elapsed >= MIN_SEND_INTERVAL
+    const lastSentAt = await getLastSentAt(lid)
+    if (!lastSentAt) return true
+    return Date.now() - lastSentAt >= MIN_SEND_INTERVAL
   } catch (error) {
     errorLog(`[VIP History] Error checking send interval: ${error.message}`)
     return false
@@ -205,18 +125,9 @@ export async function canSendToSubscriber(lid) {
 
 export async function getTimeUntilCanSend(lid) {
   try {
-    const subscriberId = await getSubscriberId(lid)
-    if (!subscriberId) {
-      return 0
-    }
-
-    const lastSentAt = await getLastSentAt(subscriberId)
-    if (!lastSentAt) {
-      return 0
-    }
-
-    const elapsed = Date.now() - lastSentAt
-    const remaining = MIN_SEND_INTERVAL - elapsed
+    const lastSentAt = await getLastSentAt(lid)
+    if (!lastSentAt) return 0
+    const remaining = MIN_SEND_INTERVAL - (Date.now() - lastSentAt)
     return remaining > 0 ? remaining : 0
   } catch (error) {
     errorLog(`[VIP History] Error checking cooldown: ${error.message}`)
@@ -226,32 +137,21 @@ export async function getTimeUntilCanSend(lid) {
 
 export async function wasJobSentRecently(lid, jobId) {
   try {
-    const subscriberId = await getSubscriberId(lid)
-    if (!subscriberId) {
-      return false
-    }
-
-    // Usa o cache se estiver carregado e válido
     if (isCacheValid(sentJobsCache)) {
-      const sentJobs = sentJobsCache.data.get(subscriberId)
+      const sentJobs = sentJobsCache.data.get(lid)
       return sentJobs ? sentJobs.has(jobId) : false
     }
 
-    // Fallback para query individual
     const { data, error } = await supabase
       .from("vip_delivery_history")
       .select("sent_at")
-      .eq("vip_subscriber_id", subscriberId)
+      .eq("lid", lid)
       .eq("job_id", jobId)
       .maybeSingle()
 
     if (error) throw error
-    if (!data?.sent_at) {
-      return false
-    }
-
-    const elapsed = Date.now() - new Date(data.sent_at).getTime()
-    return elapsed < JOB_REPOST_COOLDOWN
+    if (!data?.sent_at) return false
+    return Date.now() - new Date(data.sent_at).getTime() < JOB_REPOST_COOLDOWN
   } catch (error) {
     errorLog(`[VIP History] Error checking recent job: ${error.message}`)
     return false
@@ -260,33 +160,21 @@ export async function wasJobSentRecently(lid, jobId) {
 
 export async function recordJobSent(lid, jobId) {
   try {
-    const subscriberId = await getSubscriberId(lid)
-    if (!subscriberId) {
-      return
-    }
-
     const { error } = await supabase
       .from("vip_delivery_history")
       .upsert(
-        {
-          vip_subscriber_id: subscriberId,
-          job_id: jobId,
-          sent_at: new Date().toISOString()
-        },
-        { onConflict: "vip_subscriber_id,job_id" }
+        { lid, job_id: jobId, sent_at: new Date().toISOString() },
+        { onConflict: "lid,job_id" }
       )
 
     if (error) throw error
 
-    // Atualiza o cache local para evitar query extra
     if (lastSentCache.isLoaded) {
-      lastSentCache.data.set(subscriberId, Date.now())
+      lastSentCache.data.set(lid, Date.now())
     }
     if (sentJobsCache.isLoaded) {
-      if (!sentJobsCache.data.has(subscriberId)) {
-        sentJobsCache.data.set(subscriberId, new Set())
-      }
-      sentJobsCache.data.get(subscriberId).add(jobId)
+      if (!sentJobsCache.data.has(lid)) sentJobsCache.data.set(lid, new Set())
+      sentJobsCache.data.get(lid).add(jobId)
     }
 
     infoLog(`[VIP History] Recorded send for ${lid}: ${jobId}`)
@@ -298,9 +186,7 @@ export async function recordJobSent(lid, jobId) {
 export async function cleanOldEntries(force = false) {
   try {
     const now = Date.now()
-    if (!force && now - lastCleanupAt < CLEANUP_INTERVAL) {
-      return
-    }
+    if (!force && now - lastCleanupAt < CLEANUP_INTERVAL) return
 
     const cutoff = new Date(Date.now() - JOB_REPOST_COOLDOWN).toISOString()
     const { data, error } = await supabase
@@ -310,12 +196,10 @@ export async function cleanOldEntries(force = false) {
       .select("id")
 
     if (error) throw error
-
     lastCleanupAt = now
 
     if (data?.length) {
       infoLog(`[VIP History] Removed ${data.length} old entries`)
-      // Invalida o cache após limpeza
       invalidateCache()
     }
   } catch (error) {
@@ -325,24 +209,14 @@ export async function cleanOldEntries(force = false) {
 
 export async function getSubscriberStats(lid) {
   try {
-    const subscriberId = await getSubscriberId(lid)
-    if (!subscriberId) {
-      return {
-        totalSent: 0,
-        lastSentAt: null,
-        canSendNow: true,
-        timeUntilCanSend: 0
-      }
-    }
-
     const { count, error: countError } = await supabase
       .from("vip_delivery_history")
       .select("id", { count: "exact", head: true })
-      .eq("vip_subscriber_id", subscriberId)
+      .eq("lid", lid)
 
     if (countError) throw countError
 
-    const lastSentAt = await getLastSentAt(subscriberId)
+    const lastSentAt = await getLastSentAt(lid)
     const canSendNow = await canSendToSubscriber(lid)
     const timeUntilCanSend = await getTimeUntilCanSend(lid)
 
@@ -354,33 +228,21 @@ export async function getSubscriberStats(lid) {
     }
   } catch (error) {
     errorLog(`[VIP History] Error reading stats: ${error.message}`)
-    return {
-      totalSent: 0,
-      lastSentAt: null,
-      canSendNow: true,
-      timeUntilCanSend: 0
-    }
+    return { totalSent: 0, lastSentAt: null, canSendNow: true, timeUntilCanSend: 0 }
   }
 }
 
 export async function getSentJobIds(lid) {
   try {
-    const subscriberId = await getSubscriberId(lid)
-    if (!subscriberId) {
-      return new Set()
-    }
-
-    // Usa o cache se estiver carregado e válido
     if (isCacheValid(sentJobsCache)) {
-      return sentJobsCache.data.get(subscriberId) || new Set()
+      return sentJobsCache.data.get(lid) || new Set()
     }
 
-    // Fallback para query individual
     const cutoff = new Date(Date.now() - JOB_REPOST_COOLDOWN).toISOString()
     const { data, error } = await supabase
       .from("vip_delivery_history")
       .select("job_id")
-      .eq("vip_subscriber_id", subscriberId)
+      .eq("lid", lid)
       .gte("sent_at", cutoff)
 
     if (error) throw error

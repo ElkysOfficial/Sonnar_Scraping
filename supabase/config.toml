@@ -47,3 +47,8 @@ verify_jwt = false
 
 [functions.resend-signup-otp]
 verify_jwt = false
+
+# link-whatsapp: chamada pelo microservico do WhatsApp, nao pelo frontend.
+# Autenticada por segredo compartilhado (x-link-secret), nao por JWT.
+[functions.link-whatsapp]
+verify_jwt = false

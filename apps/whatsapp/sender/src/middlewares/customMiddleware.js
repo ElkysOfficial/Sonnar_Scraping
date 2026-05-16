@@ -24,6 +24,8 @@ import {
 } from "../config.js"
 import { extractDataFromMessage, toUserLid } from "../utils/index.js"
 import { errorLog, infoLog } from "../utils/logger.js"
+import { pairSubscriberByToken } from "../services/whatsappLinker.js"
+import { triggerVipSearch } from "../services/vipJobSender.js"
 import {
   addVipPendingSubscriber,
   approveVipSubscriber,
@@ -425,27 +427,135 @@ Digite *menu* para menu principal`
 }
 
 /**
- * Mensagem para coletar filtros VIP
+ * Coleta de filtros VIP — fluxo guiado em 4 passos (Fluxo B, via WhatsApp).
+ * Substitui o antigo formato "copie e cole", que os usuarios achavam dificil.
+ *
+ * Campos coletados: stacks, senioridade, modalidade e localizacao.
+ * Removidos de proposito:
+ *  - roles: nao eh mais criterio (o portal/Fluxo A tambem nao coleta cargo).
+ *  - idioma: nao eh mais filtro.
+ *  - regime de contrato (CLT/PJ/estagio): nao eh mais filtro.
+ * Vagas 100% remotas sao sempre enviadas — "remoto" entra fixo na modalidade.
  */
-function getVipFiltersMessage() {
-  return `*Vagas Personalizadas*
+function getVipStacksMessage() {
+  return `*Vagas Personalizadas — Passo 1 de 4*
 
-> Envie exatamente neste formato (copie e cole):
+Quais *tecnologias / stacks* voce quer nas vagas?
 
-Roles: cientista de dados, engenheiro de dados
-Stacks: data, python, sql
-Senioridade: pleno, senior
-Local: Belo Horizonte/MG, Brasil
-Modalidade: remoto, hibrido
-Contrato: clt, pj
-Idiomas: pt, en
-
-*Obrigatorio:* Roles e Stacks
-*Opcional:* Senioridade, Local, Modalidade, Contrato, Idiomas
+Pode informar varias, separadas por virgula.
+_Ex: react, node, python_
 
 ----------------------------------------
-Se faltar um campo opcional, pode remover a linha.
 _ou digite "voltar" para retornar_`
+}
+
+function getVipSeniorityMessage() {
+  return `*Passo 2 de 4 — Senioridade*
+
+Qual nivel voce procura? Pode escolher mais de um.
+
+*1* - Junior
+*2* - Pleno
+*3* - Senior
+
+_Ex: 2,3 — ou digite 0 para qualquer nivel_
+----------------------------------------
+_ou digite "voltar" para retornar_`
+}
+
+function getVipWorkModeMessage() {
+  return `*Passo 3 de 4 — Modalidade*
+
+Vagas *100% remotas* voce ja recebe automaticamente.
+
+Quer receber TAMBEM vagas:
+*1* - Hibridas
+*2* - Presenciais
+*3* - Nao, somente remotas
+
+_Pode combinar 1 e 2 (ex: 1,2)_
+----------------------------------------
+_ou digite "voltar" para retornar_`
+}
+
+function getVipLocationMessage() {
+  return `*Passo 4 de 4 — Localizacao*
+
+Para as vagas hibridas/presenciais, quais *estados ou paises* te interessam?
+
+Pode informar varios, separados por virgula.
+_Ex: SP, MG, RJ_
+----------------------------------------
+_ou digite "voltar" para retornar_`
+}
+
+// Mapeia a opcao numerica de senioridade para o termo do matchingEngine.
+const SENIORITY_OPTION_MAP = { "1": "junior", "2": "pleno", "3": "senior" }
+
+/** Quebra uma entrada livre em lista (virgula / ponto-e-virgula / quebra de linha). */
+function parseListInput(text) {
+  return (text || "")
+    .split(/[,;\n]/)
+    .map((v) => v.trim().toLowerCase())
+    .filter(Boolean)
+}
+
+/** Interpreta a escolha de senioridade. "0" (ou vazio) = qualquer nivel. */
+function parseSeniorityInput(text) {
+  const tokens = (text || "").split(/[\s,;]+/).map((t) => t.trim()).filter(Boolean)
+  if (tokens.length === 0 || tokens.includes("0")) return []
+  const out = []
+  for (const t of tokens) {
+    if (SENIORITY_OPTION_MAP[t]) out.push(SENIORITY_OPTION_MAP[t])
+  }
+  return [...new Set(out)]
+}
+
+/** Interpreta a escolha de modalidade. */
+function parseWorkModeInput(text) {
+  const tokens = (text || "").split(/[\s,;]+/).map((t) => t.trim()).filter(Boolean)
+  return {
+    hybrid: tokens.includes("1"),
+    onsite: tokens.includes("2"),
+    onlyRemote: tokens.includes("3")
+  }
+}
+
+/**
+ * Monta o objeto de filtros final a partir do rascunho coletado passo a passo.
+ * "remoto" entra sempre — vagas remotas sao enviadas a todos os assinantes plus.
+ */
+function assembleVipFilters(draft) {
+  const workMode = ["remoto"]
+  if (draft.hybrid) workMode.push("hibrido")
+  if (draft.onsite) workMode.push("presencial")
+
+  return {
+    roles: [],
+    stacks: draft.stacks || [],
+    seniority: draft.seniority || [],
+    locations: draft.locations || [],
+    workMode,
+    contract: [],
+    languages: [],
+    weights: {
+      roles: 0,
+      stacks: 45,
+      seniority: 20,
+      locations: 15,
+      workMode: 20,
+      contract: 0,
+      languages: 0
+    },
+    must: {
+      roles: false,
+      stacks: true,
+      workMode: true,
+      contract: false,
+      languages: false
+    },
+    ignoreUnknown: true
+  }
 }
 
 /**
@@ -760,6 +870,14 @@ export async function customMiddleware({ socket, webMessage, type, commonFunctio
     const messageTextRaw = fullMessage?.trim() || ""
     const messageText = messageTextRaw.toLowerCase()
 
+    // Pareamento com o portal web: "parear <token>" (vindo do deep-link wa.me).
+    // Tem prioridade sobre toda a maquina de estados do menu.
+    const pairMatch = messageTextRaw.match(/^parear\s+([a-z0-9]{6})$/i)
+    if (pairMatch) {
+      await handleWhatsAppPairing(socket, remoteJid, userLid, pairMatch[1])
+      return
+    }
+
     // Verifica se há mídia na mensagem (imagem ou documento) - usa função que trata viewOnce, etc.
     const hasMedia = hasMediaContent(webMessage)
 
@@ -864,8 +982,20 @@ export async function customMiddleware({ socket, webMessage, type, commonFunctio
         await handlePlanEmail(socket, remoteJid, messageText, userId)
         break
 
-      case "awaiting_vip_filters":
-        await handleVipFilters(socket, remoteJid, messageText, userId, messageTextRaw)
+      case "awaiting_vip_stacks":
+        await handleVipStacks(socket, remoteJid, messageText, userId, messageTextRaw)
+        break
+
+      case "awaiting_vip_seniority":
+        await handleVipSeniority(socket, remoteJid, messageText, userId, messageTextRaw)
+        break
+
+      case "awaiting_vip_workmode":
+        await handleVipWorkMode(socket, remoteJid, messageText, userId, messageTextRaw)
+        break
+
+      case "awaiting_vip_location":
+        await handleVipLocation(socket, remoteJid, messageText, userId, messageTextRaw)
         break
 
       case "awaiting_payment_group":
@@ -1277,60 +1407,147 @@ async function handlePlanEmail(socket, remoteJid, messageText, userId) {
       return
     }
 
-    // Para VIP, coleta os filtros antes de mostrar pagamento
-    userState.state = "awaiting_vip_filters"
+    // Para VIP (plano Plus), coleta os filtros em fluxo guiado passo a passo.
+    userState.state = "awaiting_vip_stacks"
+    userState.vipDraft = {}
     conversationStates.set(userId, userState)
-    await sendWithDelay(socket, remoteJid, { text: getVipFiltersMessage() })
+    await sendWithDelay(socket, remoteJid, { text: getVipStacksMessage() })
   } catch (error) {
     errorLog(`[HANDLE PLAN EMAIL] Erro: ${error.message}`)
   }
 }
 
 /**
- * Processa os filtros VIP enviados pelo usuário
+ * Passo 1/4 — Stacks (obrigatorio, aceita varias).
  */
-async function handleVipFilters(socket, remoteJid, messageText, userId, rawMessage) {
+async function handleVipStacks(socket, remoteJid, messageText, userId, rawMessage) {
   try {
+    const userState = conversationStates.get(userId)
     if (messageText === "voltar") {
-      const userState = conversationStates.get(userId)
       userState.state = "awaiting_plan_email"
       userState.timestamp = Date.now()
       conversationStates.set(userId, userState)
-
       await sendWithDelay(socket, remoteJid, { text: getLeadEmailMessage(userState.leadData?.name || "") })
       return
     }
 
-    const filters = parseVipFilters(rawMessage || messageText)
-
-    if (!filters) {
+    const stacks = parseListInput(rawMessage || messageText)
+    if (stacks.length === 0) {
       await sendWithDelay(socket, remoteJid, {
-        text: `*Formato invalido*
-
-Os campos *Roles* e *Stacks* são obrigatórios.
-
-Por favor, envie no formato correto:
-
-Roles: desenvolvedor, backend
-Stacks: java, python, node
-
-_ou digite "voltar" para retornar_`
+        text: `*Nao entendi as stacks*\n\nInforme ao menos uma tecnologia.\n_Ex: react, node, python_`
       })
       return
     }
 
+    userState.vipDraft = { ...(userState.vipDraft || {}), stacks }
+    userState.state = "awaiting_vip_seniority"
+    userState.timestamp = Date.now()
+    conversationStates.set(userId, userState)
+    await sendWithDelay(socket, remoteJid, { text: getVipSeniorityMessage() })
+  } catch (error) {
+    errorLog(`[HANDLE VIP STACKS] Erro: ${error.message}`)
+  }
+}
+
+/**
+ * Passo 2/4 — Senioridade (aceita varias; 0 = qualquer nivel).
+ */
+async function handleVipSeniority(socket, remoteJid, messageText, userId, rawMessage) {
+  try {
     const userState = conversationStates.get(userId)
-    userState.vipFilters = filters
+    if (messageText === "voltar") {
+      userState.state = "awaiting_vip_stacks"
+      userState.timestamp = Date.now()
+      conversationStates.set(userId, userState)
+      await sendWithDelay(socket, remoteJid, { text: getVipStacksMessage() })
+      return
+    }
+
+    const seniority = parseSeniorityInput(rawMessage || messageText)
+    userState.vipDraft = { ...(userState.vipDraft || {}), seniority }
+    userState.state = "awaiting_vip_workmode"
+    userState.timestamp = Date.now()
+    conversationStates.set(userId, userState)
+    await sendWithDelay(socket, remoteJid, { text: getVipWorkModeMessage() })
+  } catch (error) {
+    errorLog(`[HANDLE VIP SENIORITY] Erro: ${error.message}`)
+  }
+}
+
+/**
+ * Passo 3/4 — Modalidade. Remoto eh sempre incluido; aqui escolhe-se
+ * hibrido/presencial. Se for so remoto, pula a localizacao.
+ */
+async function handleVipWorkMode(socket, remoteJid, messageText, userId, rawMessage) {
+  try {
+    const userState = conversationStates.get(userId)
+    if (messageText === "voltar") {
+      userState.state = "awaiting_vip_seniority"
+      userState.timestamp = Date.now()
+      conversationStates.set(userId, userState)
+      await sendWithDelay(socket, remoteJid, { text: getVipSeniorityMessage() })
+      return
+    }
+
+    const wm = parseWorkModeInput(rawMessage || messageText)
+    if (!wm.hybrid && !wm.onsite && !wm.onlyRemote) {
+      await sendWithDelay(socket, remoteJid, {
+        text: `*Opcao invalida*\n\nDigite *1* (hibrido), *2* (presencial) ou *3* (so remoto).\n_Pode combinar, ex: 1,2_`
+      })
+      return
+    }
+
+    userState.vipDraft = { ...(userState.vipDraft || {}), hybrid: wm.hybrid, onsite: wm.onsite }
+    userState.timestamp = Date.now()
+
+    if (wm.hybrid || wm.onsite) {
+      userState.state = "awaiting_vip_location"
+      conversationStates.set(userId, userState)
+      await sendWithDelay(socket, remoteJid, { text: getVipLocationMessage() })
+      return
+    }
+
+    // So remoto: nao precisa de localizacao — finaliza os filtros.
+    userState.vipFilters = assembleVipFilters({ ...userState.vipDraft, locations: [] })
+    userState.state = "awaiting_payment_private"
+    conversationStates.set(userId, userState)
+    infoLog(`[HANDLE VIP WORKMODE] Filtros (so remoto) para ${userId}: ${JSON.stringify(userState.vipFilters)}`)
+    await sendWithDelay(socket, remoteJid, { text: getPaymentPrivateMessage() })
+  } catch (error) {
+    errorLog(`[HANDLE VIP WORKMODE] Erro: ${error.message}`)
+  }
+}
+
+/**
+ * Passo 4/4 — Localizacao (estados/paises) para vagas hibridas/presenciais.
+ */
+async function handleVipLocation(socket, remoteJid, messageText, userId, rawMessage) {
+  try {
+    const userState = conversationStates.get(userId)
+    if (messageText === "voltar") {
+      userState.state = "awaiting_vip_workmode"
+      userState.timestamp = Date.now()
+      conversationStates.set(userId, userState)
+      await sendWithDelay(socket, remoteJid, { text: getVipWorkModeMessage() })
+      return
+    }
+
+    const locations = parseListInput(rawMessage || messageText)
+    if (locations.length === 0) {
+      await sendWithDelay(socket, remoteJid, {
+        text: `*Nao entendi a localizacao*\n\nInforme ao menos um estado ou pais.\n_Ex: SP, MG, RJ_`
+      })
+      return
+    }
+
+    userState.vipFilters = assembleVipFilters({ ...userState.vipDraft, locations })
     userState.state = "awaiting_payment_private"
     userState.timestamp = Date.now()
     conversationStates.set(userId, userState)
-
-    infoLog(`[HANDLE VIP FILTERS] Filtros parseados para ${userId}: ${JSON.stringify(filters)}`)
-
+    infoLog(`[HANDLE VIP LOCATION] Filtros para ${userId}: ${JSON.stringify(userState.vipFilters)}`)
     await sendWithDelay(socket, remoteJid, { text: getPaymentPrivateMessage() })
   } catch (error) {
-    errorLog(`[HANDLE VIP FILTERS] Erro: ${error.message}`)
-    errorLog(`[HANDLE VIP FILTERS] Stack: ${error.stack}`)
+    errorLog(`[HANDLE VIP LOCATION] Erro: ${error.message}`)
   }
 }
 
@@ -1372,11 +1589,11 @@ async function handlePaymentPrivate(socket, remoteJid, messageText, userId) {
 
     switch (messageText) {
       case "voltar":
-        // Volta para a coleta de filtros
-        userState.state = "awaiting_vip_filters"
+        // Volta para o ultimo passo da coleta de filtros (modalidade).
+        userState.state = "awaiting_vip_workmode"
         userState.timestamp = Date.now()
         conversationStates.set(userId, userState)
-        await sendWithDelay(socket, remoteJid, { text: getVipFiltersMessage() })
+        await sendWithDelay(socket, remoteJid, { text: getVipWorkModeMessage() })
         break
 
       case "pago": {
@@ -1497,7 +1714,12 @@ async function handlePaymentReceiptPrivate(socket, remoteJid, messageText, userI
 
     if (hasMediaContent(webMessage)) {
       const clientNumber = remoteJid.replace("@s.whatsapp.net", "").replace("@lid", "")
-      const clientLid = `${clientNumber}@lid`
+      // Captura o LID REAL do remetente (Fluxo B). Os digitos do LID nao sao
+      // o telefone, entao montar `${numero}@lid` daria um LID invalido.
+      const { userLid: senderLid } = extractDataFromMessage(webMessage)
+      const clientLid = senderLid && senderLid.includes("@lid")
+        ? senderLid
+        : (remoteJid.includes("@lid") ? remoteJid : `${clientNumber}@lid`)
       const leadData = userState?.leadData || {}
       const clientName = leadData?.name || "Não informado"
       const vipFilters = userState?.vipFilters || null
@@ -1644,10 +1866,11 @@ O cliente agora receberá vagas personalizadas.`
 
         await sendWithDelay(socket, remoteJid, { text: successMsg })
 
-        // Notifica o cliente que foi aprovado
+        // Notifica o cliente que foi aprovado.
+        // Envia direto para o LID: os digitos do LID NAO sao o telefone,
+        // entao converter para @s.whatsapp.net mandaria para o numero errado.
         try {
-          const clientJid = clientLid.replace("@lid", "@s.whatsapp.net")
-          await sendWithDelay(socket, clientJid, {
+          await sendWithDelay(socket, clientLid, {
             text: `*Parabéns! Seu VIP foi ativado!*
 
 Você agora receberá vagas personalizadas de acordo com seu perfil.
@@ -1697,5 +1920,96 @@ Digite *2* para NÃO liberar`
     })
   } catch (error) {
     errorLog(`[HANDLE VIP RELEASE] Erro: ${error.message}`)
+  }
+}
+
+/**
+ * Processa o pareamento de um assinante do portal web.
+ *
+ * O assinante gera um token no dashboard e o envia ao bot ("parear <token>").
+ * Esta mensagem carrega o LID do WhatsApp; o token identifica o assinante.
+ * Validamos o token no portal, gravamos o vinculo e disparamos a busca VIP.
+ */
+async function handleWhatsAppPairing(socket, remoteJid, userLid, token) {
+  try {
+    // Em chat privado o LID vem em remoteJid; userLid cobre o caso de grupo.
+    const identity = userLid || remoteJid || ""
+    const digits = identity.replace("@s.whatsapp.net", "").replace("@lid", "")
+
+    if (!digits) {
+      await sendWithDelay(socket, remoteJid, {
+        text: "*Nao consegui identificar seu WhatsApp.*\n\nTente novamente pelo botao do painel."
+      })
+      return
+    }
+
+    const lid = `${digits}@lid`
+    const normalizedToken = token.toUpperCase()
+
+    await sendWithDelay(socket, remoteJid, {
+      text: "*Conectando...*\n\nValidando seu codigo, um instante."
+    })
+
+    const result = await pairSubscriberByToken({ token: normalizedToken, lid })
+
+    if (!result.ok) {
+      const msg = result.reason === "invalid_or_used_token"
+        ? `*Codigo invalido*
+
+O codigo *${normalizedToken}* nao foi encontrado ou ja foi usado.
+
+Abra o painel em sonnarjobs.com.br, va em Vagas e gere um novo codigo.`
+        : `*Nao foi possivel conectar agora*
+
+Tente novamente em instantes. Se o problema persistir, fale com o suporte.`
+      await sendWithDelay(socket, remoteJid, { text: msg })
+      return
+    }
+
+    // Mensagem e comportamento dependem do plano (free / pro / plus).
+    const plan = (result.plan || "free").toLowerCase()
+
+    if (plan === "plus") {
+      await sendWithDelay(socket, remoteJid, {
+        text: `*WhatsApp conectado!*
+
+Ola, ${result.name}! Seu WhatsApp foi vinculado a sua conta Sonnar (plano Plus).
+
+Voce vai comecar a receber vagas personalizadas do seu perfil aqui. Fique atento as notificacoes!`
+      })
+
+      // Plano Plus: primeira busca de vagas personalizadas em background.
+      triggerVipSearch(lid, result.filters)
+        .then((r) => infoLog(`[PAREAMENTO] Busca inicial para ${lid}: ${r?.jobsSent ?? 0} vagas enviadas`))
+        .catch((err) => errorLog(`[PAREAMENTO] Erro na busca inicial: ${err.message}`))
+    } else if (plan === "pro") {
+      // Plano Pro: recebe vagas pelo grupo, nao no privado.
+      await sendWithDelay(socket, remoteJid, {
+        text: `*WhatsApp conectado!*
+
+Ola, ${result.name}! Seu WhatsApp foi vinculado a sua conta Sonnar (plano Pro).
+
+As vagas chegam pelo grupo exclusivo. Para receber vagas personalizadas no privado, faca upgrade para o plano Plus no painel.`
+      })
+    } else {
+      await sendWithDelay(socket, remoteJid, {
+        text: `*WhatsApp conectado!*
+
+Ola, ${result.name}! Seu WhatsApp foi vinculado a sua conta Sonnar.
+
+Seu plano atual (Free) nao inclui envio de vagas. Conheca os planos Pro e Plus no painel.`
+      })
+    }
+
+    // Reseta o estado da conversa.
+    conversationStates.set(remoteJid, {
+      state: "menu",
+      timestamp: Date.now(),
+      budgetData: {},
+      previousState: ""
+    })
+  } catch (error) {
+    errorLog(`[HANDLE PAIRING] Erro: ${error.message}`)
+    errorLog(`[HANDLE PAIRING] Stack: ${error.stack}`)
   }
 }

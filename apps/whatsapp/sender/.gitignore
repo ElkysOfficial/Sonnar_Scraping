@@ -1,2 +1,8 @@
 assets/auth/baileys
 .vscode
+
+# Variaveis de ambiente / segredos - nunca versionar
+.env
+.env.*
+!.env.example
+node_modules

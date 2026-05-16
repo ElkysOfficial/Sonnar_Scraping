@@ -1,20 +1,23 @@
 /**
- * Supabase-backed data helpers
+ * Helpers de dados do bot.
+ *
+ * Refactor 2026-05-16:
+ *  - Moderacao de grupo (prefixo por grupo, anti-*, welcome/exit, mutes,
+ *    auto-responder, only-admins) foi DESCONTINUADA. As funcoes continuam
+ *    exportadas para nao quebrar comandos/middlewares, mas agora sao no-op
+ *    ou retornam constantes — nao tocam mais o banco.
+ *  - VIP: dois fluxos.
+ *      Fluxo A (portal): assinante pareou via token; o vinculo (wa_lid),
+ *        o plano e o perfil vivem em subscribers/subscriber_profiles. O bot
+ *        NAO mantem copia — le direto. Cancelar no Stripe reflete na hora.
+ *      Fluxo B (fora do portal): captado pelo WhatsApp; vive na tabela
+ *        local vip_subscribers, com status pending/active/rejected.
+ *  - Envio personalizado (privado) so vale para o plano 'plus'. Pro recebe
+ *    no grupo (controle de acesso ao grupo, nao de envio); free nao recebe.
  */
 import { PREFIX, SPIDER_API_TOKEN } from "../config.js"
-import {
-  supabase,
-  isFeatureEnabled,
-  setFeatureEnabled,
-  getAutoResponders,
-  addAutoResponder,
-  removeAutoResponder,
-  removeAutoResponderByMatch,
-  isUserMuted,
-  muteUser,
-  unmuteUser,
-  getMutedUsers
-} from "../services/database.js"
+import { supabase } from "../services/database.js"
+import { buildVipFiltersFromPortal } from "./portalProfile.js"
 import {
   normalizeText,
   normalizeStackInput,
@@ -22,170 +25,36 @@ import {
   normalizeSeniorityInput
 } from "./matchingEngine.js"
 
-const GLOBAL_CONFIG_GROUP_ID = "__global__"
+// =====================================================
+// MODERACAO DESCONTINUADA — funcoes mantidas como no-op
+// =====================================================
 
-const RESTRICTION_FEATURES = [
-  "anti_audio",
-  "anti_document",
-  "anti_image",
-  "anti_video",
-  "anti_product",
-  "anti_event",
-  "anti_sticker"
-]
-
-function normalizeFeature(feature) {
-  return (feature || "").toString().trim().toLowerCase().replace(/-/g, "_")
-}
-
-function denormalizeFeature(feature) {
-  return (feature || "").toString().trim().toLowerCase().replace(/_/g, "-")
-}
-
-async function getFeatureConfig(groupId, feature) {
-  const { data, error } = await supabase
-    .from("group_features")
-    .select("config")
-    .eq("group_id", groupId)
-    .eq("feature", feature)
-    .maybeSingle()
-
-  if (error) throw error
-  return data?.config || null
-}
-
-async function setFeatureConfig(groupId, feature, config) {
-  await setFeatureEnabled(groupId, feature, true, config || {})
-}
-
-// ===== GROUP FEATURES =====
-
-export async function activateExitGroup(groupId) {
-  await setFeatureEnabled(groupId, "exit", true)
-}
-
-export async function deactivateExitGroup(groupId) {
-  await setFeatureEnabled(groupId, "exit", false)
-}
-
-export async function isActiveExitGroup(groupId) {
-  return await isFeatureEnabled(groupId, "exit")
-}
-
-export async function activateWelcomeGroup(groupId) {
-  await setFeatureEnabled(groupId, "welcome", true)
-}
-
-export async function deactivateWelcomeGroup(groupId) {
-  await setFeatureEnabled(groupId, "welcome", false)
-}
-
-export async function isActiveWelcomeGroup(groupId) {
-  return await isFeatureEnabled(groupId, "welcome")
-}
-
-export async function activateGroup(groupId) {
-  await setFeatureEnabled(groupId, "inactive", false)
-}
-
-export async function deactivateGroup(groupId) {
-  await setFeatureEnabled(groupId, "inactive", true)
-}
-
-export async function isActiveGroup(groupId) {
-  const inactive = await isFeatureEnabled(groupId, "inactive")
-  return !inactive
-}
-
-export async function activateAutoResponderGroup(groupId) {
-  await setFeatureEnabled(groupId, "auto_responder", true)
-}
-
-export async function deactivateAutoResponderGroup(groupId) {
-  await setFeatureEnabled(groupId, "auto_responder", false)
-}
-
-export async function isActiveAutoResponderGroup(groupId) {
-  return await isFeatureEnabled(groupId, "auto_responder")
-}
-
-export async function activateAntiLinkGroup(groupId) {
-  await setFeatureEnabled(groupId, "anti_link", true)
-}
-
-export async function deactivateAntiLinkGroup(groupId) {
-  await setFeatureEnabled(groupId, "anti_link", false)
-}
-
-export async function isActiveAntiLinkGroup(groupId) {
-  return await isFeatureEnabled(groupId, "anti_link")
-}
-
-export async function activateAutoStickerGroup(groupId) {
-  await setFeatureEnabled(groupId, "auto_sticker", true)
-}
-
-export async function deactivateAutoStickerGroup(groupId) {
-  await setFeatureEnabled(groupId, "auto_sticker", false)
-}
-
-export async function isActiveAutoStickerGroup(groupId) {
-  return await isFeatureEnabled(groupId, "auto_sticker")
-}
-
-export async function activateOnlyAdmins(groupId) {
-  await setFeatureEnabled(groupId, "only_admins", true)
-}
-
-export async function deactivateOnlyAdmins(groupId) {
-  await setFeatureEnabled(groupId, "only_admins", false)
-}
-
-export async function isActiveOnlyAdmins(groupId) {
-  return await isFeatureEnabled(groupId, "only_admins")
-}
-
-// ===== GROUP RESTRICTIONS =====
-
-export async function readGroupRestrictions() {
-  const { data, error } = await supabase
-    .from("group_features")
-    .select("group_id, feature, enabled")
-    .in("feature", RESTRICTION_FEATURES)
-
-  if (error) throw error
-
-  const restrictions = {}
-  for (const row of data || []) {
-    if (!restrictions[row.group_id]) {
-      restrictions[row.group_id] = {}
-    }
-    restrictions[row.group_id][denormalizeFeature(row.feature)] = !!row.enabled
-  }
-
-  return restrictions
-}
-
-export async function saveGroupRestrictions(restrictions) {
-  const entries = restrictions || {}
-  const tasks = []
-
-  for (const [groupId, rules] of Object.entries(entries)) {
-    for (const [restriction, enabled] of Object.entries(rules || {})) {
-      tasks.push(setFeatureEnabled(groupId, normalizeFeature(restriction), !!enabled))
-    }
-  }
-
-  await Promise.all(tasks)
-}
-
-export async function isActiveGroupRestriction(groupId, restriction) {
-  return await isFeatureEnabled(groupId, normalizeFeature(restriction))
-}
-
-export async function updateIsActiveGroupRestriction(groupId, restriction, isActive) {
-  await setFeatureEnabled(groupId, normalizeFeature(restriction), !!isActive)
-}
+export async function activateExitGroup() {}
+export async function deactivateExitGroup() {}
+export async function isActiveExitGroup() { return false }
+export async function activateWelcomeGroup() {}
+export async function deactivateWelcomeGroup() {}
+export async function isActiveWelcomeGroup() { return false }
+export async function activateGroup() {}
+export async function deactivateGroup() {}
+// Bot sempre ativo: nao ha mais on/off por grupo.
+export async function isActiveGroup() { return true }
+export async function activateAutoResponderGroup() {}
+export async function deactivateAutoResponderGroup() {}
+export async function isActiveAutoResponderGroup() { return false }
+export async function activateAntiLinkGroup() {}
+export async function deactivateAntiLinkGroup() {}
+export async function isActiveAntiLinkGroup() { return false }
+export async function activateAutoStickerGroup() {}
+export async function deactivateAutoStickerGroup() {}
+export async function isActiveAutoStickerGroup() { return false }
+export async function activateOnlyAdmins() {}
+export async function deactivateOnlyAdmins() {}
+export async function isActiveOnlyAdmins() { return false }
+export async function readGroupRestrictions() { return {} }
+export async function saveGroupRestrictions() {}
+export async function isActiveGroupRestriction() { return false }
+export async function updateIsActiveGroupRestriction() {}
 
 export function readRestrictedMessageTypes() {
   return {
@@ -199,181 +68,75 @@ export function readRestrictedMessageTypes() {
   }
 }
 
-// ===== PREFIX =====
+// ===== PREFIXO (fixo do config.js) =====
 
-export async function setPrefix(groupJid, prefix) {
-  await setFeatureConfig(groupJid, "prefix", { prefix })
-}
-
-export async function getPrefix(groupJid) {
-  const groupConfig = await getFeatureConfig(groupJid, "prefix")
-  if (groupConfig?.prefix) {
-    return groupConfig.prefix
-  }
-
-  const globalConfig = await getFeatureConfig(GLOBAL_CONFIG_GROUP_ID, "prefix")
-  if (globalConfig?.prefix) {
-    return globalConfig.prefix
-  }
-
+export async function setPrefix() {}
+export async function getPrefix() {
   return PREFIX
 }
 
-// ===== AUTO RESPONDER =====
+// ===== AUTO RESPONDER (descontinuado) =====
 
-async function listAutoRespondersRaw() {
-  const { data, error } = await supabase
-    .from("auto_responders")
-    .select("id, match_pattern, answer")
-    .is("group_id", null)
-    .order("created_at", { ascending: true })
+export async function getAutoResponderResponse() { return null }
+export async function listAutoResponderItems() { return [] }
+export async function addAutoResponderItem() { return false }
+export async function removeAutoResponderItemByKey() { return false }
 
-  if (error) throw error
-  return data || []
-}
+// ===== SPIDER API TOKEN (fixo do config.js) =====
 
-export async function getAutoResponderResponse(match, groupId = null) {
-  const value = (match || "").toString().trim()
-  if (!value) {
-    return null
-  }
-
-  const normalized = value.toLowerCase()
-  const responders = await getAutoResponders(groupId)
-  const found = responders.find((r) =>
-    (r.match_pattern || "").toLowerCase() === normalized
-  )
-
-  return found ? found.answer : null
-}
-
-export async function listAutoResponderItems() {
-  const responses = await listAutoRespondersRaw()
-
-  return responses.map((item, index) => ({
-    key: index + 1,
-    id: item.id,
-    match: item.match_pattern,
-    answer: item.answer
-  }))
-}
-
-export async function addAutoResponderItem(match, answer) {
-  const matchText = (match || "").toString().trim()
-  const answerText = (answer || "").toString().trim()
-  if (!matchText || !answerText) {
-    return false
-  }
-
-  const existing = await listAutoRespondersRaw()
-  const exists = existing.some(
-    (item) => (item.match_pattern || "").toLowerCase() === matchText.toLowerCase()
-  )
-
-  if (exists) {
-    return false
-  }
-
-  await addAutoResponder(matchText, answerText, null)
-  return true
-}
-
-export async function removeAutoResponderItemByKey(key) {
-  const responses = await listAutoRespondersRaw()
-  const index = key - 1
-
-  if (index < 0 || index >= responses.length) {
-    return false
-  }
-
-  await removeAutoResponder(responses[index].id)
-  return true
-}
-
-// ===== SPIDER API TOKEN =====
-
-export async function setSpiderApiToken(token) {
-  await setFeatureConfig(GLOBAL_CONFIG_GROUP_ID, "spider_api_token", { token })
-}
-
+export async function setSpiderApiToken() {}
 export async function getSpiderApiToken() {
-  const config = await getFeatureConfig(GLOBAL_CONFIG_GROUP_ID, "spider_api_token")
-  return config?.token || SPIDER_API_TOKEN
+  return SPIDER_API_TOKEN
 }
 
-// ===== MUTES =====
+// ===== MUTES (descontinuado) =====
 
-export async function muteMember(groupId, memberId) {
-  await muteUser(groupId, memberId)
-}
+export async function muteMember() {}
+export async function unmuteMember() {}
+export async function checkIfMemberIsMuted() { return false }
+export async function getMutedUsersList() { return [] }
 
-export async function unmuteMember(groupId, memberId) {
-  await unmuteUser(groupId, memberId)
-}
+// =====================================================
+// VIP SUBSCRIBERS
+// =====================================================
 
-export async function checkIfMemberIsMuted(groupId, memberId) {
-  return await isUserMuted(groupId, memberId)
-}
-
-// ===== VIP SUBSCRIBERS =====
-
-// Cache para VIP Subscribers (evita múltiplas queries ao banco)
+// Cache da lista de destinatarios "plus" (Fluxo A + B unidos).
 const vipSubscribersCache = {
   data: null,
   timestamp: 0,
-  ttl: 5 * 60 * 1000 // 5 minutos de TTL
+  ttl: 5 * 60 * 1000
 }
 
-// Campos específicos para VIP Subscribers (evita SELECT *)
-const VIP_SUBSCRIBER_FIELDS = "id, user_name, lid, phone, stacks, filters, active, added_at, updated_at"
+const VIP_LOCAL_FIELDS =
+  "id, lid, user_name, phone, plan, filters, status, added_at, updated_at"
 
-// Campos específicos para VIP Pending Subscribers
-const VIP_PENDING_FIELDS = "id, user_name, lid, phone, stacks, filters, payment_proof, status, requested_at, decided_at, decided_by, payment_received_at, reject_reason"
+const VIP_PENDING_FIELDS =
+  "id, lid, user_name, phone, plan, filters, payment_proof, status, added_at, decided_at, decided_by, reject_reason"
 
-/**
- * Invalida o cache de VIP Subscribers
- * Chamar após adicionar/remover/atualizar subscribers
- */
 export function invalidateVipSubscribersCache() {
   vipSubscribersCache.data = null
   vipSubscribersCache.timestamp = 0
 }
 
-/**
- * Verifica se o cache está válido
- */
 function isVipCacheValid() {
   if (!vipSubscribersCache.data) return false
   return Date.now() - vipSubscribersCache.timestamp < vipSubscribersCache.ttl
 }
 
-function normalizeVipFilters(filtersInput) {
+/**
+ * Normaliza o objeto de filtros VIP para o shape que o matchingEngine espera.
+ */
+export function normalizeVipFilters(filtersInput) {
+  const defaults = {
+    weights: { roles: 20, stacks: 30, seniority: 15, locations: 10, workMode: 10, contract: 10, languages: 5 },
+    must: { roles: true, stacks: true, workMode: false, contract: false, languages: false }
+  }
+
   if (!filtersInput || typeof filtersInput !== "object") {
     return {
-      roles: [],
-      stacks: [],
-      seniority: [],
-      locations: [],
-      workMode: [],
-      contract: [],
-      languages: [],
-      weights: {
-        roles: 20,
-        stacks: 30,
-        seniority: 15,
-        locations: 10,
-        workMode: 10,
-        contract: 10,
-        languages: 5
-      },
-      must: {
-        roles: true,
-        stacks: true,
-        workMode: false,
-        contract: false,
-        languages: false
-      },
-      ignoreUnknown: true
+      roles: [], stacks: [], seniority: [], locations: [],
+      workMode: [], contract: [], languages: [],
+      weights: defaults.weights, must: defaults.must, ignoreUnknown: true
     }
   }
 
@@ -383,9 +146,7 @@ function normalizeVipFilters(filtersInput) {
     for (const value of list) {
       const base = normalizeText(value)
       const normalizedValue = normalizer ? normalizer(base) : base
-      if (normalizedValue) {
-        normalized.push(normalizedValue)
-      }
+      if (normalizedValue) normalized.push(normalizedValue)
     }
     return [...new Set(normalized)]
   }
@@ -398,38 +159,109 @@ function normalizeVipFilters(filtersInput) {
     workMode: normalizeList(filtersInput.workMode, normalizeWorkModeInput),
     contract: normalizeList(filtersInput.contract),
     languages: normalizeList(filtersInput.languages),
-    weights: filtersInput.weights || {
-      roles: 20,
-      stacks: 30,
-      seniority: 15,
-      locations: 10,
-      workMode: 10,
-      contract: 10,
-      languages: 5
-    },
-    must: filtersInput.must || {
-      roles: true,
-      stacks: true,
-      workMode: false,
-      contract: false,
-      languages: false
-    },
+    weights: filtersInput.weights || defaults.weights,
+    must: filtersInput.must || defaults.must,
     ignoreUnknown: filtersInput.ignoreUnknown !== false
   }
 }
 
-function mapVipSubscriber(row) {
-  const filters = row.filters || normalizeVipFilters({ stacks: row.stacks || [] })
+/**
+ * Mapeia uma linha local (vip_subscribers) para o shape consumido pelos senders.
+ */
+function mapLocalVip(row) {
+  const filters = normalizeVipFilters(row.filters)
   return {
-    name: row.user_name || row.name || "",
+    name: row.user_name || "",
     lid: row.lid,
     phone: row.phone || null,
-    stacks: row.stacks || filters.stacks || [],
+    plan: row.plan || "plus",
+    stacks: filters.stacks || [],
     filters,
-    active: row.active ?? true,
+    status: row.status || "pending",
+    active: row.status === "active",
+    source: "local",
     addedAt: row.added_at,
     updatedAt: row.updated_at
   }
+}
+
+/**
+ * Le os assinantes 'plus' ATIVOS direto do portal (Fluxo A).
+ * Cancelamento/expiracao no Stripe (subscribers.status != 'active') some daqui.
+ */
+async function getPortalPlusSubscribers() {
+  const { data, error } = await supabase
+    .from("subscriber_profiles")
+    .select(
+      "wa_lid, stack, seniority, work_models, location, min_salary, subscribers!inner(name, surname, plan, status, phone)"
+    )
+    .not("wa_lid", "is", null)
+    .eq("subscribers.plan", "plus")
+    .eq("subscribers.status", "active")
+
+  if (error) throw error
+
+  return (data || []).map((row) => {
+    const sub = row.subscribers || {}
+    const name = [sub.name, sub.surname].filter(Boolean).join(" ").trim() || sub.name || "Assinante Sonnar"
+    return {
+      name,
+      lid: row.wa_lid,
+      phone: sub.phone || null,
+      plan: "plus",
+      filters: normalizeVipFilters(buildVipFiltersFromPortal(row)),
+      stacks: Array.isArray(row.stack) ? row.stack.map((s) => String(s).toLowerCase()) : [],
+      status: "active",
+      active: true,
+      source: "portal"
+    }
+  })
+}
+
+/**
+ * Lista de destinatarios de vagas PERSONALIZADAS (plano plus).
+ * Une Fluxo A (portal) + Fluxo B (tabela local). Local tem prioridade no dedupe.
+ *
+ * @param {boolean} onlyActive  true = so quem pode receber agora.
+ */
+export async function getVipSubscribers(onlyActive = true) {
+  if (onlyActive && isVipCacheValid()) {
+    return vipSubscribersCache.data
+  }
+
+  // Fluxo B: tabela local (so plano plus).
+  let localQuery = supabase
+    .from("vip_subscribers")
+    .select(VIP_LOCAL_FIELDS)
+    .eq("plan", "plus")
+    .order("added_at", { ascending: true })
+  if (onlyActive) {
+    localQuery = localQuery.eq("status", "active")
+  }
+  const { data: localData, error: localError } = await localQuery
+  if (localError) throw localError
+  const local = (localData || []).map(mapLocalVip)
+
+  // Fluxo A: portal.
+  let portal = []
+  try {
+    portal = await getPortalPlusSubscribers()
+  } catch (err) {
+    // Nao derruba o ciclo se a leitura do portal falhar.
+    portal = []
+  }
+
+  // Une com dedupe por LID — local prevalece.
+  const byLid = new Map()
+  for (const sub of portal) byLid.set(sub.lid, sub)
+  for (const sub of local) byLid.set(sub.lid, sub)
+  const merged = [...byLid.values()]
+
+  if (onlyActive) {
+    vipSubscribersCache.data = merged
+    vipSubscribersCache.timestamp = Date.now()
+  }
+  return merged
 }
 
 export async function getVipSubscribersObject() {
@@ -437,158 +269,104 @@ export async function getVipSubscribersObject() {
   return Object.fromEntries(subscribers.map((s) => [s.name, { ...s }]))
 }
 
-export async function getVipSubscribers(onlyActive = true) {
-  // Usa cache se disponível e válido (apenas para onlyActive=true)
-  if (onlyActive && isVipCacheValid()) {
-    return vipSubscribersCache.data
-  }
+/**
+ * Adiciona/atualiza assinante do Fluxo B como ATIVO (uso: comando /vip ou aprovacao).
+ */
+export async function addVipSubscriber(name, lid, filtersInput, plan = "plus") {
+  if (!name || !name.trim()) throw new Error("Nome e obrigatorio para adicionar VIP")
+  if (!lid) throw new Error("LID e obrigatorio para adicionar VIP")
 
-  let query = supabase.from("vip_subscribers").select(VIP_SUBSCRIBER_FIELDS).order("added_at", { ascending: true })
-  if (onlyActive) {
-    query = query.eq("active", true)
-  }
-
-  const { data, error } = await query
-  if (error) throw error
-
-  const subscribers = (data || []).map(mapVipSubscriber)
-
-  // Atualiza cache apenas para consultas de ativos
-  if (onlyActive) {
-    vipSubscribersCache.data = subscribers
-    vipSubscribersCache.timestamp = Date.now()
-  }
-
-  return subscribers
-}
-
-export async function addVipSubscriber(name, lid, filtersInput) {
-  if (!name || !name.trim()) {
-    throw new Error("Nome e obrigatorio para adicionar VIP")
-  }
-  if (!lid) {
-    throw new Error("LID e obrigatorio para adicionar VIP")
-  }
-
-  const normalizedName = name.trim()
   const filters = normalizeVipFilters(filtersInput)
-  const stacks = filters.stacks || []
   const now = new Date().toISOString()
-
-  const { data: existing, error: existingError } = await supabase
-    .from("vip_subscribers")
-    .select("id")
-    .eq("lid", lid)
-    .maybeSingle()
-
-  if (existingError) throw existingError
-
-  const payload = {
-    user_name: normalizedName,
-    lid,
-    stacks,
-    filters,
-    active: true,
-    updated_at: now
-  }
-
-  if (!existing) {
-    payload.added_at = now
-  }
 
   const { error } = await supabase
     .from("vip_subscribers")
-    .upsert(payload, { onConflict: "lid" })
+    .upsert(
+      {
+        user_name: name.trim(),
+        lid,
+        plan,
+        filters,
+        status: "active",
+        updated_at: now
+      },
+      { onConflict: "lid" }
+    )
 
   if (error) throw error
-
-  // Invalida cache após modificação
   invalidateVipSubscribersCache()
-
-  return !existing
+  return true
 }
 
 export async function setVipActive(lid, active) {
   const { data, error } = await supabase
     .from("vip_subscribers")
-    .update({ active: !!active, updated_at: new Date().toISOString() })
+    .update({ status: active ? "active" : "rejected", updated_at: new Date().toISOString() })
     .eq("lid", lid)
     .select("id")
     .maybeSingle()
 
   if (error) throw error
-
-  // Invalida cache após modificação
   invalidateVipSubscribersCache()
-
   return !!data
 }
 
 export async function setVipActiveByName(name, active) {
   const { data, error } = await supabase
     .from("vip_subscribers")
-    .update({ active: !!active, updated_at: new Date().toISOString() })
+    .update({ status: active ? "active" : "rejected", updated_at: new Date().toISOString() })
     .eq("user_name", name)
     .select("id")
     .maybeSingle()
 
   if (error) throw error
-
-  // Invalida cache após modificação
   invalidateVipSubscribersCache()
-
   return !!data
 }
 
 export async function removeVipSubscriber(lid) {
-  const { error } = await supabase
-    .from("vip_subscribers")
-    .delete()
-    .eq("lid", lid)
-
+  const { error } = await supabase.from("vip_subscribers").delete().eq("lid", lid)
   if (error) throw error
-
-  // Invalida cache após modificação
   invalidateVipSubscribersCache()
-
   return true
 }
 
 export async function removeVipSubscriberByName(name) {
-  const { error } = await supabase
-    .from("vip_subscribers")
-    .delete()
-    .eq("user_name", name)
-
+  const { error } = await supabase.from("vip_subscribers").delete().eq("user_name", name)
   if (error) throw error
-
-  // Invalida cache após modificação
   invalidateVipSubscribersCache()
-
   return true
 }
 
+/**
+ * Busca um assinante ativo por LID — Fluxo B (local) e, se nao achar, Fluxo A (portal).
+ */
 export async function getVipSubscriber(lid) {
   const { data, error } = await supabase
     .from("vip_subscribers")
-    .select(VIP_SUBSCRIBER_FIELDS)
+    .select(VIP_LOCAL_FIELDS)
     .eq("lid", lid)
-    .eq("active", true)
+    .eq("status", "active")
+    .eq("plan", "plus")
     .maybeSingle()
 
   if (error) throw error
-  return data ? mapVipSubscriber(data) : null
+  if (data) return mapLocalVip(data)
+
+  // Fallback: assinante do portal (Fluxo A).
+  const portal = await getPortalPlusSubscribers()
+  return portal.find((s) => s.lid === lid) || null
 }
 
 export async function getVipSubscriberByName(name) {
   const { data, error } = await supabase
     .from("vip_subscribers")
-    .select(VIP_SUBSCRIBER_FIELDS)
+    .select(VIP_LOCAL_FIELDS)
     .eq("user_name", name)
     .maybeSingle()
 
   if (error) throw error
-  return data ? mapVipSubscriber(data) : null
+  return data ? mapLocalVip(data) : null
 }
 
 export async function isVipSubscriber(lid) {
@@ -599,7 +377,6 @@ export async function isVipSubscriber(lid) {
 export async function getSubscribersByStack(stack) {
   const subscribers = await getVipSubscribers(true)
   const stackLower = (stack || "").toLowerCase()
-
   return subscribers.filter((s) =>
     (s.filters?.stacks || s.stacks || []).some(
       (st) => st.toLowerCase() === stackLower || st.toLowerCase() === "todas"
@@ -607,30 +384,33 @@ export async function getSubscribersByStack(stack) {
   )
 }
 
-// ===== VIP PENDING =====
+// =====================================================
+// VIP — FLUXO B: aprovacao manual (status pending/active/rejected)
+// =====================================================
 
 function mapVipPending(row) {
   return {
-    name: row.user_name || row.name || "",
+    name: row.user_name || "",
     lid: row.lid,
     phone: row.phone || null,
-    stacks: row.stacks || [],
+    plan: row.plan || "plus",
+    stacks: row.filters?.stacks || [],
     filters: row.filters || {},
     paymentProof: row.payment_proof || null,
     status: row.status || "pending",
-    requestedAt: row.requested_at,
+    requestedAt: row.added_at,
     decidedAt: row.decided_at,
     decidedBy: row.decided_by,
-    paymentReceivedAt: row.payment_received_at,
     rejectReason: row.reject_reason || null
   }
 }
 
 export async function getVipPendingSubscribers() {
   const { data, error } = await supabase
-    .from("vip_pending_subscribers")
+    .from("vip_subscribers")
     .select(VIP_PENDING_FIELDS)
-    .order("requested_at", { ascending: true })
+    .eq("status", "pending")
+    .order("added_at", { ascending: true })
 
   if (error) throw error
   return (data || []).map(mapVipPending)
@@ -638,7 +418,7 @@ export async function getVipPendingSubscribers() {
 
 export async function getVipPendingByLid(lid) {
   const pending = await getVipPendingSubscribers()
-  return pending.find((p) => p.lid === lid && p.status === "pending") || null
+  return pending.find((p) => p.lid === lid) || null
 }
 
 export async function getVipPendingByNumber(clientNumber) {
@@ -646,50 +426,45 @@ export async function getVipPendingByNumber(clientNumber) {
   const normalized = (clientNumber || "").replace("@lid", "").replace("@s.whatsapp.net", "")
   return (
     pending.find((p) => {
-      const pendingNumber = p.lid?.replace("@lid", "").replace("@s.whatsapp.net", "") || ""
-      return pendingNumber === normalized && p.status === "pending"
+      const num = p.lid?.replace("@lid", "").replace("@s.whatsapp.net", "") || ""
+      return num === normalized
     }) || null
   )
 }
 
+/**
+ * Registra um assinante do Fluxo B como PENDENTE de aprovacao.
+ * Plano default 'plus' (quem paga vagas personalizadas fora do portal).
+ */
 export async function addVipPendingSubscriber(name, lid, filtersInput, paymentProof = null) {
+  if (!lid) throw new Error("LID e obrigatorio")
   const filters = normalizeVipFilters(filtersInput)
-  const stacks = filters.stacks || []
   const now = new Date().toISOString()
 
-  const { data: existing, error: existingError } = await supabase
-    .from("vip_pending_subscribers")
-    .select("requested_at")
-    .eq("lid", lid)
-    .maybeSingle()
-
-  if (existingError) throw existingError
-
-  const payload = {
-    user_name: (name || "").trim(),
-    lid,
-    stacks,
-    filters,
-    payment_proof: paymentProof,
-    status: "pending",
-    requested_at: existing?.requested_at || now
-  }
-
   const { error } = await supabase
-    .from("vip_pending_subscribers")
-    .upsert(payload, { onConflict: "lid" })
+    .from("vip_subscribers")
+    .upsert(
+      {
+        user_name: (name || "").trim() || "Assinante",
+        lid,
+        plan: "plus",
+        filters,
+        payment_proof: paymentProof,
+        status: "pending",
+        updated_at: now
+      },
+      { onConflict: "lid" }
+    )
 
   if (error) throw error
-  return !existing
+  invalidateVipSubscribersCache()
+  return true
 }
 
 export async function updateVipPendingPaymentProof(lid, paymentProof) {
   const { data, error } = await supabase
-    .from("vip_pending_subscribers")
-    .update({
-      payment_proof: paymentProof,
-      payment_received_at: new Date().toISOString()
-    })
+    .from("vip_subscribers")
+    .update({ payment_proof: paymentProof, updated_at: new Date().toISOString() })
     .eq("lid", lid)
     .eq("status", "pending")
     .select("lid")
@@ -701,7 +476,7 @@ export async function updateVipPendingPaymentProof(lid, paymentProof) {
 
 export async function approveVipSubscriber(lid, decidedBy) {
   const { data: pending, error } = await supabase
-    .from("vip_pending_subscribers")
+    .from("vip_subscribers")
     .select(VIP_PENDING_FIELDS)
     .eq("lid", lid)
     .eq("status", "pending")
@@ -711,22 +486,22 @@ export async function approveVipSubscriber(lid, decidedBy) {
   if (!pending) return { ok: false, reason: "not_found" }
 
   const { error: updateError } = await supabase
-    .from("vip_pending_subscribers")
+    .from("vip_subscribers")
     .update({
-      status: "approved",
+      status: "active",
       decided_at: new Date().toISOString(),
-      decided_by: decidedBy || null
+      decided_by: decidedBy || null,
+      updated_at: new Date().toISOString()
     })
     .eq("lid", lid)
 
   if (updateError) throw updateError
-
-  await addVipSubscriber(pending.user_name || pending.name || "VIP", pending.lid, pending.filters)
+  invalidateVipSubscribersCache()
 
   return {
     ok: true,
     subscriber: {
-      name: pending.user_name || pending.name || "",
+      name: pending.user_name || "",
       lid: pending.lid,
       filters: pending.filters
     }
@@ -735,7 +510,7 @@ export async function approveVipSubscriber(lid, decidedBy) {
 
 export async function rejectVipSubscriber(lid, decidedBy, reason = null) {
   const { data: pending, error } = await supabase
-    .from("vip_pending_subscribers")
+    .from("vip_subscribers")
     .select(VIP_PENDING_FIELDS)
     .eq("lid", lid)
     .eq("status", "pending")
@@ -745,22 +520,18 @@ export async function rejectVipSubscriber(lid, decidedBy, reason = null) {
   if (!pending) return { ok: false, reason: "not_found" }
 
   const { error: updateError } = await supabase
-    .from("vip_pending_subscribers")
+    .from("vip_subscribers")
     .update({
       status: "rejected",
       decided_at: new Date().toISOString(),
       decided_by: decidedBy || null,
-      reject_reason: reason || null
+      reject_reason: reason || null,
+      updated_at: new Date().toISOString()
     })
     .eq("lid", lid)
 
   if (updateError) throw updateError
+  invalidateVipSubscribersCache()
 
   return { ok: true, subscriber: mapVipPending(pending) }
-}
-
-// ===== MUTED LIST (compat) =====
-
-export async function getMutedUsersList(groupId) {
-  return await getMutedUsers(groupId)
 }
