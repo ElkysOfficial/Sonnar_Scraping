@@ -42,14 +42,15 @@ export function buildVipFiltersFromPortal(sub) {
     workMode,
     contract: [],
     languages: [],
+    // Area e senioridade sao gates — o peso so ranqueia (stacks domina).
     weights: {
-      roles: 20,
-      stacks: 30,
-      seniority: 15,
-      locations: 10,
-      workMode: 10,
-      contract: 10,
-      languages: 5
+      roles: 0,
+      stacks: 55,
+      seniority: 10,
+      locations: 20,
+      workMode: 15,
+      contract: 0,
+      languages: 0
     },
     // O portal nao coleta cargo (roles) -> nao pode ser obrigatorio.
     must: {

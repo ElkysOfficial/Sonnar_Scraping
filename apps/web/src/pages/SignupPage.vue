@@ -467,6 +467,27 @@
 
           <form class="auth-form" novalidate @submit.prevent="onSubmitProfile">
             <div class="form-group">
+              <span class="form-label">Área de atuação</span>
+              <p class="form-hint" :class="{ 'form-hint--error': errors.areas }">
+                Selecione uma ou mais. As vagas são filtradas pela sua área.
+              </p>
+              <div class="radio-group">
+                <button
+                  v-for="opt in areaOptions"
+                  :key="opt.value"
+                  type="button"
+                  class="chip-option"
+                  :class="{ 'chip-option--active': form.areas.includes(opt.value) }"
+                  :disabled="loading"
+                  @click="toggleArea(opt.value)"
+                >
+                  {{ opt.label }}
+                </button>
+              </div>
+              <p v-if="errors.areas" class="form-error">{{ errors.areas }}</p>
+            </div>
+
+            <div class="form-group">
               <span class="form-label">Senioridade</span>
               <div class="radio-group">
                 <label
@@ -940,6 +961,7 @@ const form = reactive({
   city: '',
   stateCode: '',
   // profile (Pro/Plus)
+  areas: [] as string[],
   stack: [] as string[],
   seniority: '' as Seniority | '',
   workModels: [] as Exclude<WorkModel, 'remote'>[],   // 'remote' eh implicito
@@ -951,7 +973,7 @@ const errors = reactive({
   name: '', surname: '', birthDate: '', phone: '',
   cpf: '', cnpj: '', legalName: '',
   cep: '', street: '', streetNumber: '', neighborhood: '', city: '', stateCode: '',
-  stack: '', seniority: '', jobLocation: ''
+  areas: '', stack: '', seniority: '', jobLocation: ''
 })
 
 const cepLoading = ref(false)
@@ -973,6 +995,20 @@ const workModelOptions: { value: Exclude<WorkModel, 'remote'>; label: string }[]
   { value: 'onsite', label: 'Presencial' }
 ]
 
+// Areas de atuacao — valores canonicos casam com o gate de area do bot.
+const areaOptions: { value: string; label: string }[] = [
+  { value: 'backend',   label: 'Backend' },
+  { value: 'frontend',  label: 'Frontend' },
+  { value: 'fullstack', label: 'Fullstack' },
+  { value: 'mobile',    label: 'Mobile' },
+  { value: 'devops',    label: 'DevOps / SRE' },
+  { value: 'infra',     label: 'Infraestrutura / Redes' },
+  { value: 'dados',     label: 'Dados / ML' },
+  { value: 'qa',        label: 'QA / Testes' },
+  { value: 'seguranca', label: 'Segurança' },
+  { value: 'suporte',   label: 'Suporte / Helpdesk' }
+]
+
 const needsLocation = computed(() => form.workModels.length > 0)
 
 function toggleStack(item: string) {
@@ -980,6 +1016,13 @@ function toggleStack(item: string) {
   if (i >= 0) form.stack.splice(i, 1)
   else form.stack.push(item)
   if (form.stack.length > 0) errors.stack = ''
+}
+
+function toggleArea(value: string) {
+  const i = form.areas.indexOf(value)
+  if (i >= 0) form.areas.splice(i, 1)
+  else form.areas.push(value)
+  if (form.areas.length > 0) errors.areas = ''
 }
 
 function toggleWorkModel(value: Exclude<WorkModel, 'remote'>) {
@@ -1143,6 +1186,7 @@ function validatePersonal() {
 
 function validateProfile() {
   let ok = true
+  if (form.areas.length === 0) { errors.areas = 'Selecione pelo menos uma área.'; ok = false }
   if (!form.seniority) { errors.seniority = 'Escolha sua senioridade.'; ok = false }
   if (form.stack.length === 0) { errors.stack = 'Selecione pelo menos uma tecnologia.'; ok = false }
   // Se cliente marcou presencial ou híbrido, precisa informar cidade
@@ -1205,6 +1249,7 @@ async function submitSignup() {
       const workModels: WorkModel[] = ['remote', ...form.workModels]
       metadata.profile = {
         whatsapp: form.phone,
+        areas: form.areas,
         stack: form.stack,
         seniority: form.seniority,
         work_models: workModels,

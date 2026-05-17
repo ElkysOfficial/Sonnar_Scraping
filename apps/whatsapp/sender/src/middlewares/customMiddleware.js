@@ -577,12 +577,14 @@ function assembleVipFilters(draft) {
     workMode,
     contract: [],
     languages: [],
+    // Area e senioridade sao GATES (passa/reprova) — nao entram no peso.
+    // O score restante so ranqueia: stacks domina, local/modalidade refinam.
     weights: {
       roles: 0,
-      stacks: 45,
-      seniority: 20,
-      locations: 15,
-      workMode: 20,
+      stacks: 55,
+      seniority: 10,
+      locations: 20,
+      workMode: 15,
       contract: 0,
       languages: 0
     },

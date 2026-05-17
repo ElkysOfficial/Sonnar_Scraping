@@ -127,9 +127,10 @@ function isVipCacheValid() {
  * Normaliza o objeto de filtros VIP para o shape que o matchingEngine espera.
  */
 export function normalizeVipFilters(filtersInput) {
+  // Area e senioridade sao gates — o peso so ranqueia (stacks domina).
   const defaults = {
-    weights: { roles: 20, stacks: 30, seniority: 15, locations: 10, workMode: 10, contract: 10, languages: 5 },
-    must: { roles: true, stacks: true, workMode: false, contract: false, languages: false }
+    weights: { roles: 0, stacks: 55, seniority: 10, locations: 20, workMode: 15, contract: 0, languages: 0 },
+    must: { roles: false, stacks: true, workMode: false, contract: false, languages: false }
   }
 
   if (!filtersInput || typeof filtersInput !== "object") {

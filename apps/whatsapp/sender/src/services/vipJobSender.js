@@ -695,6 +695,13 @@ const AREA_KEYWORDS = {
   suporte: ["suporte", "helpdesk", "help desk", "service desk", "tecnico de ti", "analista de suporte", "suporte tecnico"]
 }
 
+// Cargos de gestao: nao recebem o default junior/pleno quando o titulo
+// nao traz nivel explicito (uma gerencia nao eh vaga de entrada).
+const MANAGEMENT_KEYWORDS = [
+  "gerente", "gestor", "gestao", "coordenador", "coordenacao", "head",
+  "diretor", "supervisor", "manager", "chefe", "lider", "lider tecnico"
+]
+
 function areaKeywordHit(text, keyword) {
   const esc = keyword.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
   return new RegExp(`(^|[^a-z0-9])${esc}([^a-z0-9]|$)`).test(text)
@@ -1523,11 +1530,13 @@ function jobMatchesFilters(job, filters, returnScore = false) {
   const ignoreUnknown = filters.ignoreUnknown !== false
   const seniorityMeta = SENIORITY_META_CACHE || (SENIORITY_META_CACHE = buildSeniorityMeta(synonyms))
   const requestedSeniorityLevels = normalizeSeniorityFilters(seniority, seniorityMeta)
-  // Detecta a senioridade da vaga no titulo + skills (sinais confiaveis).
-  // Nao usa a descricao: ela cita outros niveis ("mentorar juniores") e
-  // contaminaria a deteccao.
+  // Detecta a senioridade no titulo + skills. Se nada for achado, tenta a
+  // descricao — a vaga pode declarar o nivel apenas no corpo do texto.
   const seniorityDetectText = `${jobTitle} ${Array.isArray(job.skills) ? job.skills.join(" ") : ""}`
-  const detectedSeniorityLevels = extractSeniorityLevels(seniorityDetectText, seniorityMeta)
+  let detectedSeniorityLevels = extractSeniorityLevels(seniorityDetectText, seniorityMeta)
+  if (detectedSeniorityLevels.size === 0 && jobDescription) {
+    detectedSeniorityLevels = extractSeniorityLevels(jobDescription, seniorityMeta)
+  }
 
   matchDetails.seniorityGate = {
     requested: requestedSeniorityLevels,
@@ -1544,15 +1553,26 @@ function jobMatchesFilters(job, filters, returnScore = false) {
       // Gate ESTRITO de senioridade. A vaga so passa se o seu nivel for
       // EXATAMENTE um dos selecionados — sem faixa de rank, sem nivel acima.
       const requested = new Set(requestedSeniorityLevels)
-      // Vaga sem nivel no titulo/skills: por convencao, vaga sem "Senior"
-      // explicito eh de entrada/meio -> assume junior OU pleno.
-      const jobLevels = detectedSeniorityLevels.size > 0
-        ? [...detectedSeniorityLevels]
-        : ["junior", "pleno"]
+      const titleLower = (jobTitle || "").toString().toLowerCase()
+      const isManagement = MANAGEMENT_KEYWORDS.some((k) => areaKeywordHit(titleLower, k))
+
+      let jobLevels
+      let assumed = false
+      if (detectedSeniorityLevels.size > 0) {
+        jobLevels = [...detectedSeniorityLevels]
+      } else if (isManagement) {
+        // Cargo de gestao sem nivel explicito -> tratado como senior, nunca
+        // como junior/pleno (gerencia nao eh vaga de entrada/meio).
+        jobLevels = ["senior"]
+        assumed = true
+      } else {
+        // Vaga sem nivel no titulo/skills/descricao -> assume junior/pleno.
+        jobLevels = ["junior", "pleno"]
+        assumed = true
+      }
+
       if (!jobLevels.some((lvl) => requested.has(lvl))) {
-        matchDetails.failReason = detectedSeniorityLevels.size > 0
-          ? "seniority_not_in_requested"
-          : "seniority_assumed_mismatch"
+        matchDetails.failReason = assumed ? "seniority_assumed_mismatch" : "seniority_not_in_requested"
         return returnScore ? { match: false, score: totalScore, maxScore, percentage: "0", details: matchDetails } : false
       }
     }
