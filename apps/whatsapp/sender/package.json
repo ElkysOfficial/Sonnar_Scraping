@@ -24,6 +24,7 @@
     "correios-brasil": "^3.0.6",
     "dotenv": "^16.4.7",
     "express": "^5.2.1",
+    "link-preview-js": "^3.2.0",
     "node-cache": "^5.1.2",
     "node-webpmux": "^3.2.1",
     "openai": "^6.9.0",

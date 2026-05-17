@@ -80,6 +80,9 @@ export async function connect() {
     keepAliveIntervalMs: 30_000,
     maxMsgRetryCount: 5,
     markOnlineOnConnect: true,
+    // Gera o cartao de preview (imagem + titulo) para URLs nas mensagens.
+    // Requer a lib link-preview-js instalada.
+    generateHighQualityLinkPreview: true,
     syncFullHistory: false,
     emitOwnEvents: false,
     msgRetryCounterCache,
