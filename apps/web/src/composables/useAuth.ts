@@ -291,6 +291,16 @@ export function useAuth() {
     try {
       const { error } = await supabase.auth.updateUser({ password: newPassword })
       if (error) throw error
+      // Senha trocada: limpa a flag de senha temporaria (Fluxo B WhatsApp).
+      if (user.value?.id) {
+        await (supabase as { from: (t: string) => any })
+          .from('subscribers')
+          .update({ must_change_password: false })
+          .eq('user_id', user.value.id)
+        if (subscriber.value) {
+          (subscriber.value as { must_change_password?: boolean }).must_change_password = false
+        }
+      }
       return { success: true as const }
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Erro desconhecido'
@@ -334,6 +344,7 @@ export function useAuth() {
     sendPasswordReset,
     verifyPasswordResetToken,
     updatePassword,
+    changePassword: updatePassword,
     signOut,
     fetchUserRole
   }

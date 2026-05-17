@@ -51,6 +51,16 @@ export async function globalAuthGuard(
   const role = userRole.value
   const isStaff = role === 'admin' || role === 'owner'
 
+  // Senha temporaria (assinante captado pelo WhatsApp): forca a troca de
+  // senha antes de liberar qualquer outra rota.
+  if (
+    isAuth &&
+    (subscriber.value as { must_change_password?: boolean } | null)?.must_change_password === true &&
+    to.name !== 'ChangePassword'
+  ) {
+    return next('/change-password')
+  }
+
   const meta = to.meta as {
     requiresAuth?: boolean
     requiresAdmin?: boolean
