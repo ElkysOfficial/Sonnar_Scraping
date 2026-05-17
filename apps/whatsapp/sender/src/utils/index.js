@@ -59,7 +59,9 @@ export function extractDataFromMessage(webMessage) {
 
   const replyText = replyTextType1 || replyTextType2 || replyTextType3 || "";
 
-  const userLid = webMessage?.key?.participant?.replace(
+  // Em grupo, o remetente vem em key.participant. No privado (DM) nao ha
+  // participant — o remetente eh o proprio key.remoteJid.
+  const userLid = (webMessage?.key?.participant || webMessage?.key?.remoteJid)?.replace(
     /:[0-9][0-9]|:[0-9]/g,
     ""
   );
