@@ -687,11 +687,14 @@ const AREA_KEYWORDS = {
   frontend: ["frontend", "front-end", "front end", "desenvolvedor front", "dev front"],
   backend: ["backend", "back-end", "back end", "desenvolvedor back", "dev back"],
   mobile: ["mobile", "android", "ios", "flutter", "react native", "desenvolvedor mobile"],
-  devops: ["devops", "sre", "site reliability", "platform engineer", "engenheiro de plataforma", "cloud engineer"],
+  design: ["design", "designer", "ux", "ui", "ux/ui", "ui/ux", "product designer", "ux designer", "ui designer", "ux research", "ux writer", "figma"],
+  dados: ["dados", "data engineer", "data scientist", "cientista de dados", "engenheiro de dados", "analista de dados", "machine learning", "analytics", "business intelligence", "big data", "data analyst", "engenheiro de ml", "bi", "inteligencia artificial"],
+  devops: ["devops", "sre", "site reliability", "platform engineer", "engenheiro de plataforma", "cloud engineer", "cloud"],
   infra: ["redes", "network", "networking", "infraestrutura", "cisco", "ccna", "ccnp", "noc", "datacenter", "data center"],
-  dados: ["dados", "data engineer", "data scientist", "cientista de dados", "engenheiro de dados", "analista de dados", "machine learning", "analytics", "business intelligence", "big data", "data analyst", "engenheiro de ml"],
   qa: ["qa", "quality assurance", "analista de teste", "analista de testes", "engenheiro de teste", "sdet", "automacao de testes", "quality engineer", "teste de software", "qa engineer"],
   seguranca: ["seguranca", "security", "cybersecurity", "ciberseguranca", "pentest", "appsec", "analista de seguranca", "soc"],
+  automacao: ["automacao", "rpa", "automation", "uipath", "automation anywhere", "power automate", "blue prism", "low-code", "no-code", "low code", "no code"],
+  produto: ["produto", "product manager", "product owner", "gerente de produto", "gestor de produto", "analista de produto", "scrum master", "agilista", "agile coach", "product ops"],
   suporte: ["suporte", "helpdesk", "help desk", "service desk", "tecnico de ti", "analista de suporte", "suporte tecnico"]
 }
 

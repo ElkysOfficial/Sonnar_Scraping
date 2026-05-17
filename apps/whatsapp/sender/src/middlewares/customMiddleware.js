@@ -477,18 +477,21 @@ _Passo 1 de 5 - Área de atuação_
 
 Em qual *área* você quer vagas? Pode escolher mais de uma.
 
-1️⃣  Backend
-2️⃣  Frontend
-3️⃣  Fullstack
-4️⃣  Mobile
-5️⃣  DevOps / SRE
-6️⃣  Infraestrutura / Redes
-7️⃣  Dados / ML
-8️⃣  QA / Testes
-9️⃣  Segurança
-🔟  Suporte / Helpdesk
+*1*  Backend
+*2*  Frontend
+*3*  Fullstack
+*4*  Mobile
+*5*  UX / UI / Design
+*6*  Dados / BI / IA
+*7*  DevOps / SRE / Cloud
+*8*  Infraestrutura / Redes
+*9*  QA / Testes
+*10*  Segurança
+*11*  Automação / RPA
+*12*  Produto / Agilidade
+*13*  Suporte / Helpdesk
 ────────────────────
-_Ex: 1,3 - números separados por vírgula • ou "voltar"._`
+_Ex: 1,5 - números separados por vírgula • ou "voltar"._`
 }
 
 function getVipStacksMessage() {
@@ -550,8 +553,9 @@ const SENIORITY_OPTION_MAP = { "1": "junior", "2": "pleno", "3": "senior" }
 // Mapeia a opcao numerica de area para o valor canonico (ver gate de area).
 const AREA_OPTION_MAP = {
   "1": "backend", "2": "frontend", "3": "fullstack", "4": "mobile",
-  "5": "devops", "6": "infra", "7": "dados", "8": "qa",
-  "9": "seguranca", "10": "suporte"
+  "5": "design", "6": "dados", "7": "devops", "8": "infra",
+  "9": "qa", "10": "seguranca", "11": "automacao", "12": "produto",
+  "13": "suporte"
 }
 
 /** Interpreta a escolha de area(s) de atuacao. */
@@ -726,8 +730,9 @@ function formatVipFiltersForDisplay(filters) {
 
   const AREA_LABEL = {
     backend: "Backend", frontend: "Frontend", fullstack: "Fullstack", mobile: "Mobile",
-    devops: "DevOps/SRE", infra: "Infra/Redes", dados: "Dados/ML", qa: "QA/Testes",
-    seguranca: "Seguranca", suporte: "Suporte"
+    design: "UX/UI/Design", dados: "Dados/BI/IA", devops: "DevOps/SRE/Cloud",
+    infra: "Infra/Redes", qa: "QA/Testes", seguranca: "Seguranca",
+    automacao: "Automacao/RPA", produto: "Produto/Agilidade", suporte: "Suporte"
   }
   const lines = []
   if (filters.areas?.length) {

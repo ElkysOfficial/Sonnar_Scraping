@@ -405,11 +405,14 @@ const areaOptions: { value: string; label: string }[] = [
   { value: 'frontend',  label: 'Frontend' },
   { value: 'fullstack', label: 'Fullstack' },
   { value: 'mobile',    label: 'Mobile' },
-  { value: 'devops',    label: 'DevOps / SRE' },
+  { value: 'design',    label: 'UX / UI / Design' },
+  { value: 'dados',     label: 'Dados / BI / IA' },
+  { value: 'devops',    label: 'DevOps / SRE / Cloud' },
   { value: 'infra',     label: 'Infraestrutura / Redes' },
-  { value: 'dados',     label: 'Dados / ML' },
   { value: 'qa',        label: 'QA / Testes' },
   { value: 'seguranca', label: 'Segurança' },
+  { value: 'automacao', label: 'Automação / RPA' },
+  { value: 'produto',   label: 'Produto / Agilidade' },
   { value: 'suporte',   label: 'Suporte / Helpdesk' }
 ]
 
