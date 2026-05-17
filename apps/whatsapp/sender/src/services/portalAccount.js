@@ -1,14 +1,14 @@
 /**
  * Criação de conta no portal para assinantes do Fluxo B (WhatsApp).
  *
- * Quem assina pelo WhatsApp também ganha acesso ao portal: ao aprovar o VIP,
- * criamos um auth.users via convite por e-mail. O trigger handle_new_user
- * gera subscribers + subscriber_profiles a partir do metadata. Depois
- * marcamos a assinatura como ativa e vinculamos o wa_lid para o bot
- * reconhecer o assinante também pelo Fluxo A.
+ * Ao aprovar um VIP captado pelo WhatsApp, o bot chama a edge function
+ * invite-whatsapp-subscriber do portal. Ela cria a conta (auth.users +
+ * subscribers + subscriber_profiles), com senha temporária, e envia o
+ * e-mail de convite com login + senha. No primeiro acesso o portal força
+ * a troca da senha.
  */
-import { supabase } from "./database.js"
-import { PORTAL_URL } from "../config.js"
+import axios from "axios"
+import { WEB_FUNCTIONS_URL, WHATSAPP_LINK_SECRET } from "../config.js"
 import { infoLog, errorLog } from "../utils/logger.js"
 
 // workMode do bot -> work_models do portal
@@ -44,8 +44,8 @@ function filtersToPortalProfile(filters, phone) {
 }
 
 /**
- * Cria a conta do portal para um assinante do Fluxo B e dispara o convite
- * de definicao de senha por e-mail.
+ * Cria a conta do portal para um assinante do Fluxo B (via edge function
+ * invite-whatsapp-subscriber) e dispara o convite por e-mail.
  *
  * @param {{ email: string, name: string, lid: string, phone: string, filters: Object }} params
  * @returns {Promise<{ ok: true } | { ok: false, reason: string }>}
@@ -54,61 +54,45 @@ export async function createPortalAccountForVip({ email, name, lid, phone, filte
   const cleanEmail = (email || "").toString().trim().toLowerCase()
   if (!cleanEmail) return { ok: false, reason: "no_email" }
 
-  const metadata = {
-    name: (name || "").toString().trim() || "Assinante Sonnar",
-    plan: "plus",
-    profile: filtersToPortalProfile(filters, phone)
+  if (!WEB_FUNCTIONS_URL || !WHATSAPP_LINK_SECRET) {
+    errorLog("[PORTAL] WEB_FUNCTIONS_URL ou WHATSAPP_LINK_SECRET nao configurados")
+    return { ok: false, reason: "not_configured" }
   }
 
-  let invite
+  let resp
   try {
-    invite = await supabase.auth.admin.inviteUserByEmail(cleanEmail, {
-      data: metadata,
-      redirectTo: PORTAL_URL
-    })
-  } catch (err) {
-    errorLog(`[PORTAL] Falha ao convidar ${cleanEmail}: ${err.message}`)
-    return { ok: false, reason: "invite_failed" }
-  }
-
-  if (invite.error) {
-    const msg = invite.error.message || ""
-    if (/already|registered|exist/i.test(msg)) {
-      return { ok: false, reason: "email_exists" }
-    }
-    errorLog(`[PORTAL] inviteUserByEmail erro: ${msg}`)
-    return { ok: false, reason: "invite_failed" }
-  }
-
-  const userId = invite.data?.user?.id
-
-  // O trigger handle_new_user ja criou subscribers + subscriber_profiles.
-  // Marca a assinatura como ativa e vincula o wa_lid (nao-fatal se falhar).
-  try {
-    if (userId) {
-      await supabase.from("subscribers").update({ status: "active" }).eq("user_id", userId)
-      const { data: sub } = await supabase
-        .from("subscribers")
-        .select("id")
-        .eq("user_id", userId)
-        .maybeSingle()
-      if (sub?.id) {
-        await supabase
-          .from("subscriber_profiles")
-          .update({ wa_lid: lid, wa_linked_at: new Date().toISOString() })
-          .eq("subscriber_id", sub.id)
+    resp = await axios.post(
+      `${WEB_FUNCTIONS_URL.replace(/\/$/, "")}/invite-whatsapp-subscriber`,
+      {
+        email: cleanEmail,
+        name: (name || "").toString().trim(),
+        lid,
+        profile: filtersToPortalProfile(filters, phone)
+      },
+      {
+        headers: {
+          "x-link-secret": WHATSAPP_LINK_SECRET,
+          "Content-Type": "application/json"
+        },
+        timeout: 20000,
+        validateStatus: () => true
       }
-    }
-    await supabase
-      .from("vip_subscribers")
-      .update({ portal_linked_at: new Date().toISOString() })
-      .eq("lid", lid)
+    )
   } catch (err) {
-    errorLog(`[PORTAL] Conta criada mas pos-ajuste falhou: ${err.message}`)
+    errorLog(`[PORTAL] Falha de rede ao criar conta: ${err.message}`)
+    return { ok: false, reason: "network_error" }
   }
 
-  infoLog(`[PORTAL] Conta criada e convite enviado para ${cleanEmail} (lid ${lid})`)
-  return { ok: true }
+  if (resp.status === 200 && resp.data?.ok) {
+    infoLog(`[PORTAL] Conta criada e convite enviado para ${cleanEmail} (lid ${lid})`)
+    return { ok: true }
+  }
+
+  const reason = resp.data?.error || `http_${resp.status}`
+  if (reason !== "email_exists") {
+    errorLog(`[PORTAL] invite-whatsapp-subscriber recusou: ${reason}`)
+  }
+  return { ok: false, reason }
 }
 
 export default { createPortalAccountForVip }

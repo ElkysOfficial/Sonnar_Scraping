@@ -52,3 +52,8 @@ verify_jwt = false
 # Autenticada por segredo compartilhado (x-link-secret), nao por JWT.
 [functions.link-whatsapp]
 verify_jwt = false
+
+# invite-whatsapp-subscriber: chamada pelo bot ao aprovar um VIP do Fluxo B.
+# Cria a conta do portal e envia o convite. Autenticada por x-link-secret.
+[functions.invite-whatsapp-subscriber]
+verify_jwt = false
