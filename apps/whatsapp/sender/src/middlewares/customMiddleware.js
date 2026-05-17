@@ -230,200 +230,232 @@ function formatLeadLines(leadData) {
  * Menu principal da Elkys
  */
 function getMainMenu() {
-  return `*ELKYS*
+  return `*ELKYS* ⚙️
+_Software, automação e produtos digitais._
 
-_Software, automacao e produtos digitais para escalar negocios._
+Construímos tecnologia que faz negócio crescer — de
+sistemas sob medida a automações que devolvem horas
+do seu dia.
 
-> Como podemos te ajudar hoje?
+🌐 elkys.com.br
+────────────────────
+*Como podemos te ajudar?*
 
-- 1️⃣ - _Orcamento: receba uma proposta sob medida._
-- 2️⃣ - _Reuniao: agende um horario com nosso time._
-- 3️⃣ - _Vagas: oportunidades e conteudos exclusivos._
-- 4️⃣ - _Quero ser parceiro_
-_______________________
-Digite o numero da opcao desejada`
+1️⃣  💼 *Orçamento*
+_Uma proposta sob medida para o seu projeto._
+
+2️⃣  📅 *Reunião*
+_Converse com nosso time, sem compromisso._
+
+3️⃣  🚀 *Sonnar — Vagas de tecnologia*
+_Vagas de TI direto no seu WhatsApp._
+
+4️⃣  🤝 *Seja parceiro*
+_Indique projetos e cresça com a gente._
+────────────────────
+_Responda com o número da opção._`
 }
 
 /**
  * Submenu do Sonar Bot
  */
 function getSonarMenu() {
-  return `*Vagas de Emprego*
+  return `*SONNAR* 🚀
+_Sua próxima vaga de tecnologia, sem garimpar._
 
-> Escolha como deseja receber as oportunidades:
+O Sonnar varre as principais plataformas de vagas,
+filtra o que combina com o seu perfil e entrega
+no WhatsApp — você não precisa procurar.
 
-- 1️⃣ - Grupo de Vagas: _Acesso exclusivo a vagas diarias_
-- 2️⃣ - Vagas Personalizadas: _Receba filtradas por seu perfil_
+*Por que usar o Sonnar*
+• 🎯 Vagas que batem com a sua stack e senioridade
+• ⚡ Você recebe assim que a vaga é publicada
+• 🧭 Filtro por área, modalidade e localização
+• 📲 Tudo no WhatsApp — sem app, sem login
 
-----------------------------------------
-Digite o numero da opcao desejada
-_ou digite "voltar" para retornar_`
+🌐 Conheça os planos: sonnarjobs.com.br
+────────────────────
+*Como quer receber as vagas?*
+
+1️⃣  👥 *Grupo de vagas*
+_As vagas do dia em um grupo exclusivo._
+
+2️⃣  🎯 *Vagas personalizadas*
+_Só o que combina com o seu perfil, no privado._
+────────────────────
+_Responda com o número • ou "voltar"._`
 }
 
 /**
  * Mensagem para parceiros
  */
 function getPartnerMessage() {
-  return `*Programa de Parceria*
+  return `*Programa de Parceiros* 🤝
+_Indicou, fechou, ganhou._
 
-> Interessado em fazer parte do nosso time?
+Tem um projeto de tecnologia em vista ou conhece
+quem tem? Conecte com a Elkys e seja recompensado
+a cada parceria fechada.
 
-> Fale diretamente com nosso time de parcerias: https://wa.me/553198478235
+• 💰 Comissão por projeto fechado
+• 🤝 Suporte do nosso time comercial
+• ⚡ Sem burocracia para começar
 
-----------------------------------------
-Digite *menu* para voltar`
+👉 Falar com o time: wa.me/553198478235
+────────────────────
+_Digite *menu* para voltar._`
 }
 
 /**
  * Mensagem solicitando nome para orçamento
  */
 function getBudgetNameMessage() {
-  return `*Solicitar Orcamento*
+  return `*Solicitar orçamento* 💼
+_Passo 1 de 5 — Identificação_
 
-> Para continuar, me diga seu nome completo.
-
-----------------------------------------
-_ou digite "voltar" para retornar_`
+Vamos montar a sua proposta. Para começar,
+*qual é o seu nome completo?*
+────────────────────
+_ou digite "voltar" para retornar._`
 }
 
 function getBudgetPhoneMessage(name) {
-  return `*Perfeito, ${name}!*
+  return `*Solicitar orçamento* 💼
+_Passo 2 de 5 — Contato_
 
-> Qual seu telefone com DDD?
+Prazer, ${name}! 👋
+*Qual o seu telefone com DDD?*
 _Ex: (31) 99999-9999_
-
-----------------------------------------
-_ou digite "voltar" para retornar_`
+────────────────────
+_ou digite "voltar" para retornar._`
 }
 
 function getBudgetEmailMessage(name) {
-  return `*Obrigado, ${name}!*
+  return `*Solicitar orçamento* 💼
+_Passo 3 de 5 — E-mail_
 
-> Qual o seu melhor e-mail?
-_Ex: seuemail@dominio.com_
-
-----------------------------------------
-_ou digite "voltar" para retornar_`
+Obrigado, ${name}.
+*Qual o seu melhor e-mail?*
+_Ex: nome@empresa.com_
+────────────────────
+_ou digite "voltar" para retornar._`
 }
 
 function getBudgetCompanyTypeMessage(name) {
-  return `*So mais uma, ${name}!*
+  return `*Solicitar orçamento* 💼
+_Passo 4 de 5 — Perfil_
 
-> Voce esta entrando em contato como empresa?
+Você está entrando em contato como:
 
-*1* - Sim, sou empresa
-*2* - Nao, pessoa fisica
-
-----------------------------------------
-Digite *1* ou *2*
-_ou digite "voltar" para retornar_`
+1️⃣  🏢 *Empresa*
+2️⃣  👤 *Pessoa física*
+────────────────────
+_Digite 1 ou 2 • ou "voltar"._`
 }
 
 /**
  * Mensagem solicitando descrição para orçamento
  */
 function getBudgetDescriptionMessage(name) {
-  return `*Otimo, ${name}!*
+  return `*Solicitar orçamento* 💼
+_Passo 5 de 5 — Seu projeto_
 
-> Conte rapidamente sobre o seu projeto.
-_Ex: sistema de vendas online, app mobile, automacao de processos..._
-
-----------------------------------------
-Digite a descricao
-_ou digite "voltar" para retornar_`
+Ótimo, ${name}! Conte rapidamente o que você precisa.
+_Ex: app mobile, sistema de vendas, automação de processos…_
+────────────────────
+_Escreva a descrição • ou "voltar"._`
 }
 
 /**
  * Mensagem de confirmação de orçamento enviado
  */
 function getBudgetConfirmationMessage() {
-  return `*Obrigado!*
+  return `*Solicitação enviada* ✅
 
-> Suas informacoes foram enviadas com sucesso.
-Nossa equipe analisara seu projeto e entrara em contato em breve.
+Recebemos os dados do seu projeto. Nosso time vai
+analisar e entrar em contato em breve.
 
-----------------------------------------
-Digite *menu* para voltar`
+⏱️ Resposta normalmente em até 1 dia útil.
+────────────────────
+_Digite *menu* para voltar._`
 }
 
 /**
  * Mensagem de solicitação de orçamento enviada para a equipe
  */
 function getOrcamentoNotification(userNumber) {
-  return `*Um novo cliente solicitou um orçamento*
+  return `🔔 *Novo orçamento solicitado*
 
-_Cliente:_ ${userNumber}
-_Data:_ ${new Date().toLocaleString("pt-BR")}
+👤 Cliente: ${userNumber}
+🕒 ${new Date().toLocaleString("pt-BR")}
 
-Entrar em contato assim que possível.`
+_Entrar em contato assim que possível._`
 }
 
 /**
  * Mensagem com detalhes completos do orçamento
  */
 function getBudgetDetailsMessage(budgetData) {
-  return `*Novo Orcamento Solicitado*
+  return `🔔 *Novo orçamento solicitado*
 
-*Nome do Cliente:* ${budgetData.name}
-*Telefone:* ${budgetData.phone || "-"}
-*E-mail:* ${budgetData.email || "-"}
-*Tipo:* ${budgetData.companyType || "-"}
-*Numero:* ${budgetData.clientNumber}
-*Data:* ${new Date().toLocaleString("pt-BR")}
+👤 *Nome:* ${budgetData.name}
+📞 *Telefone:* ${budgetData.phone || "—"}
+✉️ *E-mail:* ${budgetData.email || "—"}
+🏢 *Tipo:* ${budgetData.companyType || "—"}
+📱 *Número:* ${budgetData.clientNumber}
+🕒 *Data:* ${new Date().toLocaleString("pt-BR")}
 
-*Descricao do Projeto:*
+📝 *Projeto*
 ${budgetData.description}
-
-----------------------------------------
-_Favor, entrar em contato com o cliente em breve._`
+────────────────────
+_Entrar em contato com o cliente em breve._`
 }
 
 /**
  * Mensagem de confirmação para o cliente após solicitar orçamento
  */
 function getOrcamentoConfirmation() {
-  return `*Solicitação Enviada*
+  return `*Solicitação enviada* ✅
 
-Obrigado! Nossa equipe entrará em contato em breve.
-
-──────────────────
-Digite *menu* para voltar`
+Obrigado! Nosso time entrará em contato em breve.
+────────────────────
+_Digite *menu* para voltar._`
 }
 
 /**
  * Mensagem com link do calendário
  */
 function getCalendarMessage() {
-  return `*Agendar Reuniao*
+  return `*Agendar uma reunião* 📅
+_Escolha o melhor horário para você._
 
-> Clique no link para escolher o melhor horario:
+Uma conversa rápida para entendermos o seu desafio
+e mostrarmos como podemos ajudar — sem compromisso.
 
+🗓️ Agende aqui:
 ${CALENDAR_LINK}
-
-----------------------------------------
-Digite *menu* para voltar`
+────────────────────
+_Digite *menu* para voltar._`
 }
 
 /**
  * Mensagem de pagamento para acesso ao grupo
  */
 function getPaymentGroupMessage() {
-  return `*Acesso ao Grupo de Vagas*
+  return `*Grupo de vagas Sonnar* 👥
+_Acesso imediato após a confirmação._
 
-> Efetue o pagamento para liberar o acesso:
+Vagas de tecnologia selecionadas, todos os dias,
+em um grupo exclusivo no WhatsApp.
 
-*Cartao / Stripe:*
-${PAYMENT_LINK_GROUP}
+*Formas de pagamento*
+• 💳 Cartão: ${PAYMENT_LINK_GROUP}
+• 🔑 PIX (CNPJ): 64.095.868/0001-03
 
-*PIX:*
-CNPJ: 64.095.868/0001-03
-
-_Apos confirmacao, voce recebera o acesso._
-
-----------------------------------------
-Digite *pago* apos o pagamento
-_ou digite "voltar" para retornar_
-Digite *menu* para menu principal`
+Assim que confirmar, você recebe o link do grupo.
+────────────────────
+Digite *pago* após o pagamento
+_"voltar" para retornar • "menu" para o início_`
 }
 
 /**
@@ -438,76 +470,76 @@ Digite *menu* para menu principal`
  * Vagas 100% remotas sao sempre enviadas — "remoto" entra fixo na modalidade.
  */
 function getVipAreaMessage() {
-  return `*Vagas Personalizadas — Passo 1 de 5*
+  return `*Vagas personalizadas* 🎯
+_Passo 1 de 5 — Área de atuação_
 
-Em qual *area* voce quer vagas? Pode escolher mais de uma.
+Em qual *área* você quer vagas? Pode escolher mais de uma.
 
-*1* - Backend
-*2* - Frontend
-*3* - Fullstack
-*4* - Mobile
-*5* - DevOps / SRE
-*6* - Infraestrutura / Redes
-*7* - Dados / ML
-*8* - QA / Testes
-*9* - Seguranca
-*10* - Suporte / Helpdesk
-
-_Ex: 1,3 — numeros separados por virgula_
-----------------------------------------
-_ou digite "voltar" para retornar_`
+1️⃣  Backend
+2️⃣  Frontend
+3️⃣  Fullstack
+4️⃣  Mobile
+5️⃣  DevOps / SRE
+6️⃣  Infraestrutura / Redes
+7️⃣  Dados / ML
+8️⃣  QA / Testes
+9️⃣  Segurança
+🔟  Suporte / Helpdesk
+────────────────────
+_Ex: 1,3 — números separados por vírgula • ou "voltar"._`
 }
 
 function getVipStacksMessage() {
-  return `*Passo 2 de 5 — Tecnologias*
+  return `*Vagas personalizadas* 🎯
+_Passo 2 de 5 — Tecnologias_
 
-Quais *tecnologias / stacks* voce quer nas vagas?
+Quais *tecnologias / stacks* você quer nas vagas?
 
-Pode informar varias, separadas por virgula.
+Pode informar várias, separadas por vírgula.
 _Ex: react, node, python_
-
-----------------------------------------
-_ou digite "voltar" para retornar_`
+────────────────────
+_ou digite "voltar" para retornar._`
 }
 
 function getVipSeniorityMessage() {
-  return `*Passo 3 de 5 — Senioridade*
+  return `*Vagas personalizadas* 🎯
+_Passo 3 de 5 — Senioridade_
 
-Qual nivel voce procura? Pode escolher mais de um.
+Qual nível você procura? Pode escolher mais de um.
 
-*1* - Junior
-*2* - Pleno
-*3* - Senior
-
-_Ex: 2,3 — ou digite 0 para qualquer nivel_
-----------------------------------------
-_ou digite "voltar" para retornar_`
+1️⃣  Júnior
+2️⃣  Pleno
+3️⃣  Sênior
+────────────────────
+_Ex: 2,3 — ou 0 para qualquer nível • ou "voltar"._`
 }
 
 function getVipWorkModeMessage() {
-  return `*Passo 4 de 5 — Modalidade*
+  return `*Vagas personalizadas* 🎯
+_Passo 4 de 5 — Modalidade_
 
-Vagas *100% remotas* voce ja recebe automaticamente.
+Vagas *100% remotas* você já recebe automaticamente. ✅
 
-Quer receber TAMBEM vagas:
-*1* - Hibridas
-*2* - Presenciais
-*3* - Nao, somente remotas
+Quer receber TAMBÉM vagas:
 
-_Pode combinar 1 e 2 (ex: 1,2)_
-----------------------------------------
-_ou digite "voltar" para retornar_`
+1️⃣  Híbridas
+2️⃣  Presenciais
+3️⃣  Não, somente remotas
+────────────────────
+_Pode combinar 1 e 2 (ex: 1,2) • ou "voltar"._`
 }
 
 function getVipLocationMessage() {
-  return `*Passo 5 de 5 — Localizacao*
+  return `*Vagas personalizadas* 🎯
+_Passo 5 de 5 — Localização_
 
-Para as vagas hibridas/presenciais, quais *estados ou paises* te interessam?
+Para as vagas híbridas/presenciais, quais
+*estados ou países* te interessam?
 
-Pode informar varios, separados por virgula.
+Pode informar vários, separados por vírgula.
 _Ex: SP, MG, RJ_
-----------------------------------------
-_ou digite "voltar" para retornar_`
+────────────────────
+_ou digite "voltar" para retornar._`
 }
 
 // Mapeia a opcao numerica de senioridade para o termo do matchingEngine.
@@ -714,110 +746,107 @@ function formatVipFiltersForDisplay(filters) {
  * Mensagem de pagamento para vagas privadas
  */
 function getPaymentPrivateMessage() {
-  return `*Vagas Personalizadas*
+  return `*Vagas personalizadas Sonnar* 🎯
+_As vagas certas, filtradas pelo seu perfil._
 
-> Receba oportunidades filtradas por seu perfil:
+Você recebe no privado apenas vagas que combinam
+com a sua área, stack e senioridade.
 
-*Cartao / Stripe:*
-${PAYMENT_LINK_PRIVATE}
+*Formas de pagamento*
+• 💳 Cartão: ${PAYMENT_LINK_PRIVATE}
+• 🔑 PIX (CNPJ): 64.095.868/0001-03
 
-*PIX:*
-CNPJ: 64.095.868/0001-03
-
-_Apos confirmacao, voce recebera vagas personalizadas._
-
-----------------------------------------
-Digite *pago* apos o pagamento
-_ou digite "voltar" para retornar_
-Digite *menu* para menu principal`
+Após a confirmação, configuramos o seu perfil.
+────────────────────
+Digite *pago* após o pagamento
+_"voltar" para retornar • "menu" para o início_`
 }
 
 function getLeadNameMessage(planLabel) {
-  return `*${planLabel}*
+  return `*${planLabel}* 🚀
+_Passo 1 de 3 — Identificação_
 
-> Para continuar, qual o seu nome completo?
-
-----------------------------------------
-Digite seu nome
-_ou digite "voltar" para retornar_`
+Vamos garantir o seu acesso. Para começar,
+*qual é o seu nome completo?*
+────────────────────
+_ou digite "voltar" para retornar._`
 }
 
 function getLeadPhoneMessage(name) {
-  return `*Obrigado, ${name}!*
+  return `*Quase lá* 🚀
+_Passo 2 de 3 — Contato_
 
-> Qual seu telefone com DDD?
+Prazer, ${name}! 👋
+*Qual o seu telefone com DDD?*
 _Ex: (31) 99999-9999_
-
-----------------------------------------
-Digite seu telefone
-_ou digite "voltar" para retornar_`
+────────────────────
+_ou digite "voltar" para retornar._`
 }
 
 function getLeadEmailMessage(name) {
-  return `*Quase la, ${name}!*
+  return `*Quase lá* 🚀
+_Passo 3 de 3 — E-mail_
 
-> Informe seu e-mail para enviarmos a confirmacao:
-_Ex: seuemail@dominio.com_
-
-----------------------------------------
-Digite seu e-mail
-_ou digite "voltar" para retornar_`
+*Qual o seu melhor e-mail?*
+_Enviaremos a confirmação para ele._
+_Ex: nome@empresa.com_
+────────────────────
+_ou digite "voltar" para retornar._`
 }
 
 /**
  * Mensagem após confirmação de pagamento do grupo
  */
 function getGroupAccessMessage() {
-  return `*Bem-vindo!*
+  return `*Bem-vindo ao Sonnar!* 🎉
 
 Obrigado pela sua assinatura.
 
-> Acesse o grupo exclusivo:
+👥 Acesse o grupo exclusivo de vagas:
 ${JOB_GROUP_LINK}
 
-Boas oportunidades!
-
-----------------------------------------
-Digite *menu* para voltar`
+Boas oportunidades! 🚀
+────────────────────
+_Digite *menu* para voltar._`
 }
 
 /**
  * Mensagem após confirmação de pagamento das vagas privadas
  */
 function getPrivateAccessMessage() {
-  return `*Bem-vindo!*
+  return `*Bem-vindo ao Sonnar!* 🎉
 
 Obrigado pela sua assinatura.
 
-Voce comecara a receber vagas personalizadas aqui no WhatsApp.
-_Fique atento as notificacoes._
+🎯 Você começará a receber vagas personalizadas
+aqui no WhatsApp, conforme o seu perfil.
 
-----------------------------------------
-Digite *menu* para voltar`
+_Fique de olho nas notificações._
+────────────────────
+_Digite *menu* para voltar._`
 }
 
 /**
  * Mensagem de opção inválida
  */
 function getInvalidOptionMessage() {
-  return `*Opcao invalida*
+  return `*Opção inválida* ⚠️
+_Não reconheci essa resposta._
 
-_Responda com um dos numeros do menu atual._
-
-> Digite *menu* para voltar ao inicio.`
+Responda com um dos números do menu atual.
+👉 Digite *menu* para recomeçar.`
 }
 
 /**
  * Mensagem de timeout de sessão
  */
 function getSessionTimeoutMessage() {
-  return `*Sessao Encerrada*
+  return `*Atendimento encerrado* 💤
 
-> Demoramos uma resposta e encerramos seu atendimento.
-Para iniciar novamente, digite *menu*.
+Ficamos um tempo sem resposta e encerramos a sessão.
+Quando quiser, é só recomeçar.
 
-----------------------------------------
-Estaremos felizes em ajudar novamente!`
+👉 Digite *menu* para voltar.`
 }
 
 /**
@@ -825,15 +854,14 @@ Estaremos felizes em ajudar novamente!`
  */
 function getPaymentNotificationGroup(clientNumber, leadData) {
   const leadLines = formatLeadLines(leadData)
-  return `*Notificacao de Pagamento*
+  return `🔔 *Pagamento — Grupo de vagas*
 
-_Usuario pagou para acesso ao Grupo de Vagas._
+Um cliente pagou pelo acesso ao Grupo de Vagas.
 
-*Cliente:* ${clientNumber}
-${leadLines}*Data:* ${new Date().toLocaleString("pt-BR")}
-
-----------------------------------------
-> Ative o acesso no grupo!`
+📱 *Cliente:* ${clientNumber}
+${leadLines}🕒 *Data:* ${new Date().toLocaleString("pt-BR")}
+────────────────────
+_Ative o acesso do cliente no grupo._`
 }
 
 /**
@@ -841,32 +869,29 @@ ${leadLines}*Data:* ${new Date().toLocaleString("pt-BR")}
  */
 function getPaymentNotificationPrivate(clientNumber, leadData) {
   const leadLines = formatLeadLines(leadData)
-  return `*Notificacao de Pagamento*
+  return `🔔 *Pagamento — Vagas personalizadas*
 
-_Usuario pagou para acesso as Vagas Personalizadas._
+Um cliente pagou pelas Vagas Personalizadas.
 
-*Cliente:* ${clientNumber}
-${leadLines}*Data:* ${new Date().toLocaleString("pt-BR")}
-
-----------------------------------------
-> Configure o acesso as vagas do cliente!`
+📱 *Cliente:* ${clientNumber}
+${leadLines}🕒 *Data:* ${new Date().toLocaleString("pt-BR")}
+────────────────────
+_Configure o acesso às vagas do cliente._`
 }
 
 /**
  * Solicita comprovante de pagamento
  */
 function getPaymentReceiptRequestMessage() {
-  return `*Comprovante de Pagamento*
+  return `*Comprovante de pagamento* 🧾
+_Falta só validar a sua transação._
 
-> Para validar sua transacao, envie o comprovante.
-
-_Voce pode enviar:_
-- Screenshot do pagamento
-- Comprovante da transferencia PIX
-- Qualquer imagem que comprove o pagamento
-
-----------------------------------------
-_ou digite "voltar" para retornar_`
+Envie o comprovante do pagamento. Pode ser:
+• 📸 Print da tela do pagamento
+• 🔑 Comprovante do PIX
+• 📄 Qualquer imagem que comprove
+────────────────────
+_ou digite "voltar" para retornar._`
 }
 
 export async function customMiddleware({ socket, webMessage, type, commonFunctions, action, data }) {
