@@ -134,7 +134,7 @@ export function normalizeVipFilters(filtersInput) {
 
   if (!filtersInput || typeof filtersInput !== "object") {
     return {
-      roles: [], stacks: [], seniority: [], locations: [],
+      roles: [], areas: [], stacks: [], seniority: [], locations: [],
       workMode: [], contract: [], languages: [],
       weights: defaults.weights, must: defaults.must, ignoreUnknown: true
     }
@@ -151,8 +151,14 @@ export function normalizeVipFilters(filtersInput) {
     return [...new Set(normalized)]
   }
 
+  // Areas de atuacao — valores canonicos (backend, frontend, devops, infra...).
+  const areas = Array.isArray(filtersInput.areas)
+    ? [...new Set(filtersInput.areas.map((a) => String(a).toLowerCase().trim()).filter(Boolean))]
+    : []
+
   return {
     roles: normalizeList(filtersInput.roles),
+    areas,
     stacks: normalizeList(filtersInput.stacks, normalizeStackInput),
     seniority: normalizeList(filtersInput.seniority, normalizeSeniorityInput),
     locations: normalizeList(filtersInput.locations),
@@ -193,7 +199,7 @@ async function getPortalPlusSubscribers() {
   const { data, error } = await supabase
     .from("subscriber_profiles")
     .select(
-      "wa_lid, stack, seniority, work_models, location, min_salary, subscribers!inner(name, surname, plan, status, phone)"
+      "wa_lid, stack, areas, seniority, work_models, location, min_salary, subscribers!inner(name, surname, plan, status, phone)"
     )
     .not("wa_lid", "is", null)
     .eq("subscribers.plan", "plus")

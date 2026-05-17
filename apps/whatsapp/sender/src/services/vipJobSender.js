@@ -232,10 +232,15 @@ async function getCompatibleJobsForVip(lid, filters, sentJobIds, subscriberName 
 
     const result = jobMatchesFilters(job, filters, true)
     if (result.match) {
-      // Adiciona score ao job para ordenação
+      // matchScore = porcentagem real (0-100), nao a pontuacao bruta.
+      // result.score e a soma ponderada crua; dividir por maxScore normaliza
+      // perfis com pesos/criterios diferentes para a mesma escala 0-100%.
+      const pct = result.maxScore > 0
+        ? Math.round((result.score / result.maxScore) * 100)
+        : 0
       compatibleJobs.push({
         ...job,
-        matchScore: result.score || 0
+        matchScore: pct
       })
     }
   }
@@ -672,6 +677,65 @@ async function scanJobsForMatch({
  * @param {Object} filters - Filtros do assinante
  * @returns {boolean|{match: boolean, score: number, details: Object}}
  */
+// =====================================================
+// Classificacao de AREA da vaga (gate de area).
+// DevOps/Backend/Redes compartilham stack — sem trava de area um perfil
+// de Redes recebe vaga de Developer. A area vem do TITULO (sinal confiavel).
+// =====================================================
+const AREA_KEYWORDS = {
+  fullstack: ["fullstack", "full stack", "full-stack"],
+  frontend: ["frontend", "front-end", "front end", "desenvolvedor front", "dev front"],
+  backend: ["backend", "back-end", "back end", "desenvolvedor back", "dev back"],
+  mobile: ["mobile", "android", "ios", "flutter", "react native", "desenvolvedor mobile"],
+  devops: ["devops", "sre", "site reliability", "platform engineer", "engenheiro de plataforma", "cloud engineer"],
+  infra: ["redes", "network", "networking", "infraestrutura", "cisco", "ccna", "ccnp", "noc", "datacenter", "data center"],
+  dados: ["dados", "data engineer", "data scientist", "cientista de dados", "engenheiro de dados", "analista de dados", "machine learning", "analytics", "business intelligence", "big data", "data analyst", "engenheiro de ml"],
+  qa: ["qa", "quality assurance", "analista de teste", "analista de testes", "engenheiro de teste", "sdet", "automacao de testes", "quality engineer", "teste de software", "qa engineer"],
+  seguranca: ["seguranca", "security", "cybersecurity", "ciberseguranca", "pentest", "appsec", "analista de seguranca", "soc"],
+  suporte: ["suporte", "helpdesk", "help desk", "service desk", "tecnico de ti", "analista de suporte", "suporte tecnico"]
+}
+
+function areaKeywordHit(text, keyword) {
+  const esc = keyword.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+  return new RegExp(`(^|[^a-z0-9])${esc}([^a-z0-9]|$)`).test(text)
+}
+
+/**
+ * Classifica a area de uma vaga pelo titulo. Retorna Set de areas canonicas
+ * (pode ser vazio quando o titulo nao deixa claro).
+ */
+function classifyJobAreas(title) {
+  const text = (title || "").toString().toLowerCase()
+  const areas = new Set()
+  if (!text) return areas
+  for (const [area, kws] of Object.entries(AREA_KEYWORDS)) {
+    if (kws.some((kw) => areaKeywordHit(text, kw))) areas.add(area)
+  }
+  // Fullstack engloba backend e frontend.
+  if (areas.has("fullstack")) {
+    areas.add("backend")
+    areas.add("frontend")
+  }
+  return areas
+}
+
+/**
+ * Expande as areas pedidas: quem aceita fullstack tambem aceita vaga pura
+ * de backend e de frontend.
+ */
+function expandAreas(areas) {
+  const set = new Set(
+    (Array.isArray(areas) ? areas : [])
+      .map((a) => String(a).toLowerCase().trim())
+      .filter(Boolean)
+  )
+  if (set.has("fullstack")) {
+    set.add("backend")
+    set.add("frontend")
+  }
+  return [...set]
+}
+
 function jobMatchesFilters(job, filters, returnScore = false) {
   // Se não tem filtros, aceita tudo (fallback inteligente)
   if (!filters || Object.keys(filters).length === 0) {
@@ -1459,7 +1523,11 @@ function jobMatchesFilters(job, filters, returnScore = false) {
   const ignoreUnknown = filters.ignoreUnknown !== false
   const seniorityMeta = SENIORITY_META_CACHE || (SENIORITY_META_CACHE = buildSeniorityMeta(synonyms))
   const requestedSeniorityLevels = normalizeSeniorityFilters(seniority, seniorityMeta)
-  const detectedSeniorityLevels = extractSeniorityLevels(jobTitle, seniorityMeta)
+  // Detecta a senioridade da vaga no titulo + skills (sinais confiaveis).
+  // Nao usa a descricao: ela cita outros niveis ("mentorar juniores") e
+  // contaminaria a deteccao.
+  const seniorityDetectText = `${jobTitle} ${Array.isArray(job.skills) ? job.skills.join(" ") : ""}`
+  const detectedSeniorityLevels = extractSeniorityLevels(seniorityDetectText, seniorityMeta)
 
   matchDetails.seniorityGate = {
     requested: requestedSeniorityLevels,
@@ -1473,30 +1541,18 @@ function jobMatchesFilters(job, filters, returnScore = false) {
     matchDetails.seniority = seniorityResult
 
     if (requestedSeniorityLevels.length > 0) {
-      if (detectedSeniorityLevels.size > 0) {
-        const requestedRanks = requestedSeniorityLevels
-          .map(level => seniorityMeta.levels[level]?.rank)
-          .filter((rank) => Number.isFinite(rank))
-        const maxRequestedRank = requestedRanks.length > 0 ? Math.max(...requestedRanks) : -1
-        const minRequestedRank = requestedRanks.length > 0 ? Math.min(...requestedRanks) : -1
-        const jobRanks = [...detectedSeniorityLevels]
-          .map(level => seniorityMeta.levels[level]?.rank)
-          .filter((rank) => Number.isFinite(rank))
-
-        const hasAbove = jobRanks.some(rank => rank > maxRequestedRank)
-        const hasWithin = jobRanks.some(rank => rank >= minRequestedRank && rank <= maxRequestedRank)
-
-        if (hasAbove) {
-          matchDetails.failReason = "seniority_above_requested"
-          return returnScore ? { match: false, score: totalScore, maxScore, percentage: "0", details: matchDetails } : false
-        }
-
-        if (!hasWithin) {
-          matchDetails.failReason = "seniority_not_in_requested"
-          return returnScore ? { match: false, score: totalScore, maxScore, percentage: "0", details: matchDetails } : false
-        }
-      } else if (!ignoreUnknown || must.seniority) {
-        matchDetails.failReason = "seniority_not_detected"
+      // Gate ESTRITO de senioridade. A vaga so passa se o seu nivel for
+      // EXATAMENTE um dos selecionados — sem faixa de rank, sem nivel acima.
+      const requested = new Set(requestedSeniorityLevels)
+      // Vaga sem nivel no titulo/skills: por convencao, vaga sem "Senior"
+      // explicito eh de entrada/meio -> assume junior OU pleno.
+      const jobLevels = detectedSeniorityLevels.size > 0
+        ? [...detectedSeniorityLevels]
+        : ["junior", "pleno"]
+      if (!jobLevels.some((lvl) => requested.has(lvl))) {
+        matchDetails.failReason = detectedSeniorityLevels.size > 0
+          ? "seniority_not_in_requested"
+          : "seniority_assumed_mismatch"
         return returnScore ? { match: false, score: totalScore, maxScore, percentage: "0", details: matchDetails } : false
       }
     }
@@ -1506,6 +1562,22 @@ function jobMatchesFilters(job, filters, returnScore = false) {
     } else if (must.seniority) {
       mustFieldsFailed = true
       matchDetails.failReason = "seniority_required_not_found"
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // 3b. AREA DE ATUACAO (hard gate)
+  // Classifica a vaga por area (titulo) e rejeita quando nao cruza com as
+  // areas pedidas. Vaga sem area identificavel passa — o gate de stacks
+  // ainda filtra. Quem pediu fullstack aceita backend/frontend puros.
+  // ─────────────────────────────────────────────────────────────
+  const requestedAreas = expandAreas(filters.areas || [])
+  if (requestedAreas.length > 0) {
+    const jobAreas = classifyJobAreas(jobTitle)
+    matchDetails.areaGate = { requested: requestedAreas, detected: [...jobAreas] }
+    if (jobAreas.size > 0 && !requestedAreas.some((a) => jobAreas.has(a))) {
+      matchDetails.failReason = "area_not_in_requested"
+      return returnScore ? { match: false, score: totalScore, maxScore, percentage: "0", details: matchDetails } : false
     }
   }
 

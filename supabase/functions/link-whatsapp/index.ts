@@ -43,7 +43,7 @@ serve(async (req) => {
     // Localiza o perfil pelo token de pareamento.
     const { data: profile, error: profileError } = await admin
       .from("subscriber_profiles")
-      .select("id, subscriber_id, stack, seniority, work_models, location, min_salary, wa_lid")
+      .select("id, subscriber_id, stack, areas, seniority, work_models, location, min_salary, wa_lid")
       .eq("wa_link_token", token)
       .maybeSingle();
 
@@ -91,6 +91,7 @@ serve(async (req) => {
         name: fullName || subscriber.name,
         plan: subscriber.plan,
         stack: profile.stack ?? [],
+        areas: profile.areas ?? [],
         seniority: profile.seniority ?? null,
         work_models: profile.work_models ?? [],
         location: profile.location ?? null,

@@ -437,8 +437,29 @@ Digite *menu* para menu principal`
  *  - regime de contrato (CLT/PJ/estagio): nao eh mais filtro.
  * Vagas 100% remotas sao sempre enviadas — "remoto" entra fixo na modalidade.
  */
+function getVipAreaMessage() {
+  return `*Vagas Personalizadas — Passo 1 de 5*
+
+Em qual *area* voce quer vagas? Pode escolher mais de uma.
+
+*1* - Backend
+*2* - Frontend
+*3* - Fullstack
+*4* - Mobile
+*5* - DevOps / SRE
+*6* - Infraestrutura / Redes
+*7* - Dados / ML
+*8* - QA / Testes
+*9* - Seguranca
+*10* - Suporte / Helpdesk
+
+_Ex: 1,3 — numeros separados por virgula_
+----------------------------------------
+_ou digite "voltar" para retornar_`
+}
+
 function getVipStacksMessage() {
-  return `*Vagas Personalizadas — Passo 1 de 4*
+  return `*Passo 2 de 5 — Tecnologias*
 
 Quais *tecnologias / stacks* voce quer nas vagas?
 
@@ -450,7 +471,7 @@ _ou digite "voltar" para retornar_`
 }
 
 function getVipSeniorityMessage() {
-  return `*Passo 2 de 4 — Senioridade*
+  return `*Passo 3 de 5 — Senioridade*
 
 Qual nivel voce procura? Pode escolher mais de um.
 
@@ -464,7 +485,7 @@ _ou digite "voltar" para retornar_`
 }
 
 function getVipWorkModeMessage() {
-  return `*Passo 3 de 4 — Modalidade*
+  return `*Passo 4 de 5 — Modalidade*
 
 Vagas *100% remotas* voce ja recebe automaticamente.
 
@@ -479,7 +500,7 @@ _ou digite "voltar" para retornar_`
 }
 
 function getVipLocationMessage() {
-  return `*Passo 4 de 4 — Localizacao*
+  return `*Passo 5 de 5 — Localizacao*
 
 Para as vagas hibridas/presenciais, quais *estados ou paises* te interessam?
 
@@ -491,6 +512,23 @@ _ou digite "voltar" para retornar_`
 
 // Mapeia a opcao numerica de senioridade para o termo do matchingEngine.
 const SENIORITY_OPTION_MAP = { "1": "junior", "2": "pleno", "3": "senior" }
+
+// Mapeia a opcao numerica de area para o valor canonico (ver gate de area).
+const AREA_OPTION_MAP = {
+  "1": "backend", "2": "frontend", "3": "fullstack", "4": "mobile",
+  "5": "devops", "6": "infra", "7": "dados", "8": "qa",
+  "9": "seguranca", "10": "suporte"
+}
+
+/** Interpreta a escolha de area(s) de atuacao. */
+function parseAreaInput(text) {
+  const tokens = (text || "").split(/[\s,;]+/).map((t) => t.trim()).filter(Boolean)
+  const out = []
+  for (const t of tokens) {
+    if (AREA_OPTION_MAP[t]) out.push(AREA_OPTION_MAP[t])
+  }
+  return [...new Set(out)]
+}
 
 /** Quebra uma entrada livre em lista (virgula / ponto-e-virgula / quebra de linha). */
 function parseListInput(text) {
@@ -532,6 +570,7 @@ function assembleVipFilters(draft) {
 
   return {
     roles: [],
+    areas: draft.areas || [],
     stacks: draft.stacks || [],
     seniority: draft.seniority || [],
     locations: draft.locations || [],
@@ -649,7 +688,15 @@ function parseVipFilters(text) {
 function formatVipFiltersForDisplay(filters) {
   if (!filters) return "Nenhum filtro definido"
 
+  const AREA_LABEL = {
+    backend: "Backend", frontend: "Frontend", fullstack: "Fullstack", mobile: "Mobile",
+    devops: "DevOps/SRE", infra: "Infra/Redes", dados: "Dados/ML", qa: "QA/Testes",
+    seguranca: "Seguranca", suporte: "Suporte"
+  }
   const lines = []
+  if (filters.areas?.length) {
+    lines.push(`Areas: ${filters.areas.map((a) => AREA_LABEL[a] || a).join(", ")}`)
+  }
   if (filters.roles?.length) lines.push(`Cargos: ${filters.roles.join(", ")}`)
   if (filters.stacks?.length) lines.push(`Stacks: ${filters.stacks.join(", ")}`)
   if (filters.seniority?.length) lines.push(`Senioridade: ${filters.seniority.join(", ")}`)
@@ -980,6 +1027,10 @@ export async function customMiddleware({ socket, webMessage, type, commonFunctio
 
       case "awaiting_plan_email":
         await handlePlanEmail(socket, remoteJid, messageText, userId)
+        break
+
+      case "awaiting_vip_area":
+        await handleVipArea(socket, remoteJid, messageText, userId, messageTextRaw)
         break
 
       case "awaiting_vip_stacks":
@@ -1408,19 +1459,19 @@ async function handlePlanEmail(socket, remoteJid, messageText, userId) {
     }
 
     // Para VIP (plano Plus), coleta os filtros em fluxo guiado passo a passo.
-    userState.state = "awaiting_vip_stacks"
+    userState.state = "awaiting_vip_area"
     userState.vipDraft = {}
     conversationStates.set(userId, userState)
-    await sendWithDelay(socket, remoteJid, { text: getVipStacksMessage() })
+    await sendWithDelay(socket, remoteJid, { text: getVipAreaMessage() })
   } catch (error) {
     errorLog(`[HANDLE PLAN EMAIL] Erro: ${error.message}`)
   }
 }
 
 /**
- * Passo 1/4 — Stacks (obrigatorio, aceita varias).
+ * Passo 1/5 — Area de atuacao (obrigatorio, aceita varias).
  */
-async function handleVipStacks(socket, remoteJid, messageText, userId, rawMessage) {
+async function handleVipArea(socket, remoteJid, messageText, userId, rawMessage) {
   try {
     const userState = conversationStates.get(userId)
     if (messageText === "voltar") {
@@ -1428,6 +1479,38 @@ async function handleVipStacks(socket, remoteJid, messageText, userId, rawMessag
       userState.timestamp = Date.now()
       conversationStates.set(userId, userState)
       await sendWithDelay(socket, remoteJid, { text: getLeadEmailMessage(userState.leadData?.name || "") })
+      return
+    }
+
+    const areas = parseAreaInput(rawMessage || messageText)
+    if (areas.length === 0) {
+      await sendWithDelay(socket, remoteJid, {
+        text: `*Nao entendi a area*\n\nDigite o(s) numero(s) da area.\n_Ex: 1 (Backend) ou 1,3_`
+      })
+      return
+    }
+
+    userState.vipDraft = { ...(userState.vipDraft || {}), areas }
+    userState.state = "awaiting_vip_stacks"
+    userState.timestamp = Date.now()
+    conversationStates.set(userId, userState)
+    await sendWithDelay(socket, remoteJid, { text: getVipStacksMessage() })
+  } catch (error) {
+    errorLog(`[HANDLE VIP AREA] Erro: ${error.message}`)
+  }
+}
+
+/**
+ * Passo 2/5 — Stacks (obrigatorio, aceita varias).
+ */
+async function handleVipStacks(socket, remoteJid, messageText, userId, rawMessage) {
+  try {
+    const userState = conversationStates.get(userId)
+    if (messageText === "voltar") {
+      userState.state = "awaiting_vip_area"
+      userState.timestamp = Date.now()
+      conversationStates.set(userId, userState)
+      await sendWithDelay(socket, remoteJid, { text: getVipAreaMessage() })
       return
     }
 

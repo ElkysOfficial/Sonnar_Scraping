@@ -29,8 +29,13 @@ export function buildVipFiltersFromPortal(sub) {
     : []
   const locations = sub?.location ? [String(sub.location).toLowerCase()] : []
 
+  const areas = Array.isArray(sub?.areas)
+    ? sub.areas.map((a) => String(a).toLowerCase().trim()).filter(Boolean)
+    : []
+
   return {
     roles: [],
+    areas,
     stacks,
     seniority,
     locations,

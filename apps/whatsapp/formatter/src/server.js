@@ -78,39 +78,148 @@ function resolveEmbedPayload(payload) {
   return jobDataToEmbed(candidate)
 }
 
-// Limite da descricao na legenda — generoso, mas evita estourar o caption.
-const CAPTION_DESCRIPTION_MAX = 1100
+// =====================================================
+// Extracao das RESPONSABILIDADES da descricao da vaga.
+//
+// A descricao crua (jobs.json) costuma ser longa e bagunçada. Para a legenda
+// queremos so a secao de responsabilidades/atribuicoes, em bullets.
+// Estrategia (auditada sobre todo o jobs.json):
+//   1. Acha um cabecalho de responsabilidades e corta ate o proximo cabecalho.
+//   2. Sem cabecalho: usa o maior bloco de linhas terminadas em ";".
+//   3. Sem nada: cai num resumo curto das primeiras frases.
+// =====================================================
+
+const RESP_START = [
+  "responsabilidades e atribuicoes", "responsabilidades e requisitos",
+  "principais responsabilidades", "principais atividades", "suas atividades",
+  "suas responsabilidades", "o que voce vai fazer", "o que voce ira fazer",
+  "o seu papel no time", "seu papel", "responsabilidades", "atribuicoes",
+  "atividades", "o que voce fara", "principais entregas", "principais desafios",
+  "o desafio"
+]
+const RESP_END = [
+  "requisitos", "pre-requisitos", "pre requisitos", "diferenciais", "desejavel",
+  "desejaveis", "o que esperamos", "o que buscamos", "o que voce precisa",
+  "o que oferecemos", "oferecemos", "beneficios", "hard skills", "soft skills",
+  "qualificacoes", "salario", "remuneracao", "regime", "contratacao",
+  "sobre a empresa", "sobre nos", "quem somos", "o que procuramos", "formacao"
+]
+const MAX_BULLETS = 10
+const MAX_BULLET_LEN = 220
+const MAX_SUMMARY_LEN = 320
+
+function normHeader(line) {
+  return (line || "")
+    .toString()
+    .normalize("NFD").replace(/[̀-ͯ]/g, "")
+    .toLowerCase().trim()
+    .replace(/^[^a-z0-9]+/, "")  // remove emoji/simbolo no inicio
+    .replace(/:+\s*$/, "").trim()
+}
+
+function isRespHeader(line, headers) {
+  const n = normHeader(line)
+  if (!n || n.length > 70) return false
+  return headers.some((h) => n === h || n.startsWith(`${h} `) || n.startsWith(`${h}:`))
+}
+
+function splitRespItems(chunkLines) {
+  let items = []
+  const semicolons = (chunkLines[0]?.match(/;/g) || []).length
+  // Caso BNE: tudo numa linha so, itens separados por virgula.
+  if (chunkLines.length === 1 && chunkLines[0].includes(",") && semicolons <= 1) {
+    items = chunkLines[0].split(/[;,]/)
+  } else {
+    for (const c of chunkLines) {
+      items.push(...(c.includes(";") ? c.split(";") : [c]))
+    }
+  }
+  return items
+    .map((x) => x.replace(/^[\-•*\s]+/, "").replace(/[\s;.]+$/, "").trim())
+    .filter((x) => x.length >= 4 && x.length <= MAX_BULLET_LEN)
+}
+
+// Cabecalhos de REQUISITOS / qualificacoes — usados quando a vaga nao tem
+// uma secao de responsabilidades ("o que a pessoa precisa saber").
+const REQ_START = [
+  "requisitos e qualificacoes", "requisitos obrigatorios", "requisitos tecnicos",
+  "requisitos", "pre-requisitos", "pre requisitos", "qualificacoes",
+  "o que buscamos", "o que esperamos", "o que esperamos de voce",
+  "o que voce precisa", "o que procuramos", "hard skills", "perfil desejado",
+  "o que e necessario", "o que precisamos"
+]
+const REQ_END = [
+  "diferenciais", "desejavel", "desejaveis", "beneficios", "o que oferecemos",
+  "oferecemos", "soft skills", "salario", "remuneracao", "regime",
+  "contratacao", "sobre a empresa", "sobre nos"
+]
+
+// Corta a secao entre o primeiro cabecalho de `startHeaders` e o proximo
+// cabecalho de `endHeaders` (ou outro `startHeaders`). Retorna as linhas ou null.
+function sliceSection(lines, startHeaders, endHeaders) {
+  const startIdx = lines.findIndex((l) => isRespHeader(l, startHeaders))
+  if (startIdx === -1) return null
+  const chunk = []
+  for (const l of lines.slice(startIdx + 1)) {
+    if (isRespHeader(l, endHeaders) || isRespHeader(l, startHeaders)) break
+    chunk.push(l)
+  }
+  return chunk.length ? chunk : null
+}
 
 /**
- * Formata a descricao da vaga para a legenda do WhatsApp:
- * - colapsa o espacamento baguncado vindo do scraping;
- * - linhas terminadas em ":" viram cabecalhos em *negrito*;
- * - linhas terminadas em ";" viram itens com bullet "•".
+ * Extrai a secao-chave da descricao para a legenda.
+ * Prioridade: responsabilidades/atribuicoes -> requisitos -> bloco ";" -> resumo.
+ * @returns {{ kind: "resp"|"req", bullets: string[] } | { kind: "text", text: string } | null}
  */
-function formatDescription(raw) {
+function extractResponsibilities(raw) {
   const lines = (raw || "")
-    .toString()
-    .replace(/\r/g, "")
-    .split("\n")
+    .toString().replace(/\r/g, "").split("\n")
     .map((l) => l.replace(/\s+/g, " ").trim())
-    .filter((l) => l.length > 0)
+    .filter(Boolean)
+  if (!lines.length) return null
 
-  const formatted = lines.map((line) => {
-    if (/[:：]$/.test(line)) return `*${line}*`
-    if (/;$/.test(line)) return `• ${line.replace(/;\s*$/, "")}`
-    return line
-  })
-
-  let text = formatted.join("\n")
-  if (text.length > CAPTION_DESCRIPTION_MAX) {
-    text = `${text.slice(0, CAPTION_DESCRIPTION_MAX).replace(/\s+\S*$/, "")}…`
+  // 1) Responsabilidades / atribuicoes / "o que voce vai fazer".
+  let chunk = sliceSection(lines, RESP_START, RESP_END)
+  if (chunk) {
+    const items = splitRespItems(chunk)
+    if (items.length) return { kind: "resp", bullets: items.slice(0, MAX_BULLETS) }
   }
-  return text
+
+  // 2) Sem responsabilidades: requisitos / "o que a pessoa precisa saber".
+  chunk = sliceSection(lines, REQ_START, REQ_END)
+  if (chunk) {
+    const items = splitRespItems(chunk)
+    if (items.length) return { kind: "req", bullets: items.slice(0, MAX_BULLETS) }
+  }
+
+  // 3) Heuristica: maior bloco de linhas terminadas em ";".
+  let best = []
+  let cur = []
+  for (const l of lines) {
+    if (l.endsWith(";")) {
+      cur.push(l)
+    } else {
+      if (cur.length > best.length) best = cur
+      cur = []
+    }
+  }
+  if (cur.length > best.length) best = cur
+  if (best.length >= 3) {
+    const items = splitRespItems(best)
+    if (items.length) return { kind: "resp", bullets: items.slice(0, MAX_BULLETS) }
+  }
+
+  // 4) Fallback: resumo curto das primeiras frases.
+  const intro = lines.join(" ")
+  if (!intro) return null
+  if (intro.length <= MAX_SUMMARY_LEN) return { kind: "text", text: intro }
+  return { kind: "text", text: `${intro.slice(0, MAX_SUMMARY_LEN).replace(/\s+\S*$/, "")}…` }
 }
 
 /**
  * Monta a legenda enviada junto da imagem.
- * Ordem: titulo, empresa, localizacao, modalidade, skills e descricao.
+ * Ordem: titulo, empresa, localizacao, modalidade, skills e responsabilidades.
  * Salario e regime ficam apenas no card (imagem).
  */
 function formatCaption(jobData, shortUrl) {
@@ -132,11 +241,15 @@ function formatCaption(jobData, shortUrl) {
     out.push(skills.join("  •  "))
   }
 
-  const description = formatDescription(jobData.description)
-  if (description) {
+  const resp = extractResponsibilities(jobData.description)
+  if (resp?.bullets?.length) {
+    out.push("")
+    out.push(resp.kind === "req" ? "*📋 Requisitos*" : "*📋 Responsabilidades*")
+    for (const item of resp.bullets) out.push(`• ${item}`)
+  } else if (resp?.text) {
     out.push("")
     out.push("*📋 Sobre a vaga*")
-    out.push(description)
+    out.push(resp.text)
   }
 
   out.push("")
