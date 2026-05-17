@@ -123,7 +123,9 @@ export async function generateVipJobsCache(lid, name, filters, compatibleJobs, s
   const now = new Date()
   const expiresAt = new Date(now.getTime() + VIP_CACHE_TTL)
 
-  // Mapeia as vagas com informações essenciais
+  // Mapeia as vagas com informações essenciais.
+  // skills/description sao essenciais: o card e a legenda sao gerados a
+  // partir do job vindo deste cache — sem eles o card perde as skills reais.
   const jobs = compatibleJobs.map(job => ({
     id: job.id,
     job_title: job.job_title,
@@ -135,6 +137,8 @@ export async function generateVipJobsCache(lid, name, filters, compatibleJobs, s
     job_url: job.job_url,
     publication_date: job.publication_date,
     source: job.source,
+    skills: Array.isArray(job.skills) ? job.skills : [],
+    description: job.description || "",
     created_at: job.created_at,
     matchScore: job.matchScore || 0
   }))
