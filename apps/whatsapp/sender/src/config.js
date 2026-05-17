@@ -147,8 +147,7 @@ export const ORCAMENTO_NUMBERS = [
 ]
 
 // Números para notificação de pagamento / aprovação de VIP.
-// VAZIO = ninguém recebe a aprovação de VIP (fluxo manual sem aprovador).
-export const PAYMENT_NOTIFICATION_NUMBERS = []
+export const PAYMENT_NOTIFICATION_NUMBERS = ["120152280592452@lid"]
 
 // Link do Google Calendar para agendamento
 export const CALENDAR_LINK = "https://calendar.app.google/aL3PxrCWRYVBxRkD7"
