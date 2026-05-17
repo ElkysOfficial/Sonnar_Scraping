@@ -20,6 +20,24 @@ import { customMiddleware } from "./customMiddleware.js";
 import { messageHandler } from "./messageHandler.js";
 import { onGroupParticipantsUpdate } from "./onGroupParticipantsUpdate.js";
 
+// Dedup por id da mensagem — protege contra processamento duplicado
+// (ex.: um socket antigo ainda emitindo durante uma reconexao).
+const processedMessageIds = new Map();
+const MESSAGE_DEDUP_TTL = 60 * 1000;
+
+function alreadyProcessed(id) {
+  if (!id) return false;
+  const now = Date.now();
+  if (processedMessageIds.has(id)) return true;
+  processedMessageIds.set(id, now);
+  if (processedMessageIds.size > 500) {
+    for (const [key, ts] of processedMessageIds) {
+      if (now - ts > MESSAGE_DEDUP_TTL) processedMessageIds.delete(key);
+    }
+  }
+  return false;
+}
+
 export async function onMessagesUpsert({ socket, messages, startProcess }) {
   if (!messages.length) {
     return;
@@ -32,6 +50,11 @@ export async function onMessagesUpsert({ socket, messages, startProcess }) {
     const userLidClean = userLid?.replace(/:[0-9][0-9]|:[0-9]/g, "").replace("@lid", "").replace("@s.whatsapp.net", "") || "";
     
     if (userLidClean === botLidClean || webMessage.key?.fromMe) {
+      continue;
+    }
+
+    // Ignora a mesma mensagem processada mais de uma vez.
+    if (alreadyProcessed(webMessage.key?.id)) {
       continue;
     }
 

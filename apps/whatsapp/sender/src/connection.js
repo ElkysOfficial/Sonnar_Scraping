@@ -131,6 +131,15 @@ export async function connect() {
     reconnectAttempts += 1;
     reconnectTimeoutId = setTimeout(async () => {
       reconnectTimeoutId = null;
+      // Desliga o socket antigo ANTES de reconectar. Sem isso, os listeners
+      // dele (messages.upsert) continuam vivos e acumulam — cada mensagem
+      // passa a ser processada por 2+ sockets (respostas duplicadas).
+      try {
+        socket.ev.removeAllListeners();
+        socket.end(undefined);
+      } catch {
+        // socket ja morto — ok
+      }
       const newSocket = await connect();
       load(newSocket);
     }, delayMs);
