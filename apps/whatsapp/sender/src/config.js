@@ -143,16 +143,12 @@ export const ELKYS_NUMBER = "5531983244210@s.whatsapp.net"
 // Para adicionar mais números, copie e cole uma linha e substitua o número
 // Exemplo: "120152280592452@lid"
 export const ORCAMENTO_NUMBERS = [
-  "120152280592452@lid",
-  "5953026035805@lid",
-  "209590629191798@lid",
-  "5531972624740@s.whatsapp.net",
   "5531998478235@s.whatsapp.net"
 ]
 
-// Números para notificação de pagamento (um por linha para fácil edição)
-// Para adicionar mais números, copie e cole uma linha e substitua o número
-export const PAYMENT_NOTIFICATION_NUMBERS = ["120152280592452@lid", "5953026035805@lid", "209590629191798@lid"]
+// Números para notificação de pagamento / aprovação de VIP.
+// VAZIO = ninguém recebe a aprovação de VIP (fluxo manual sem aprovador).
+export const PAYMENT_NOTIFICATION_NUMBERS = []
 
 // Link do Google Calendar para agendamento
 export const CALENDAR_LINK = "https://calendar.app.google/aL3PxrCWRYVBxRkD7"

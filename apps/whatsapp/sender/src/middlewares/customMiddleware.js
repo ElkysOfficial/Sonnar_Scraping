@@ -233,11 +233,11 @@ function getMainMenu() {
   return `*ELKYS* ⚙️
 _Software, automação e produtos digitais._
 
-Construímos tecnologia que faz negócio crescer — de
+Construímos tecnologia que faz negócio crescer - de
 sistemas sob medida a automações que devolvem horas
 do seu dia.
 
-🌐 elkys.com.br
+🌐 https://elkys.com.br
 ────────────────────
 *Como podemos te ajudar?*
 
@@ -247,7 +247,7 @@ _Uma proposta sob medida para o seu projeto._
 2️⃣  📅 *Reunião*
 _Converse com nosso time, sem compromisso._
 
-3️⃣  🚀 *Sonnar — Vagas de tecnologia*
+3️⃣  🚀 *Sonnar - Vagas de tecnologia*
 _Vagas de TI direto no seu WhatsApp._
 
 4️⃣  🤝 *Seja parceiro*
@@ -265,15 +265,15 @@ _Sua próxima vaga de tecnologia, sem garimpar._
 
 O Sonnar varre as principais plataformas de vagas,
 filtra o que combina com o seu perfil e entrega
-no WhatsApp — você não precisa procurar.
+no WhatsApp - você não precisa procurar.
 
 *Por que usar o Sonnar*
 • 🎯 Vagas que batem com a sua stack e senioridade
 • ⚡ Você recebe assim que a vaga é publicada
 • 🧭 Filtro por área, modalidade e localização
-• 📲 Tudo no WhatsApp — sem app, sem login
+• 📲 Tudo no WhatsApp - sem app, sem login
 
-🌐 Conheça os planos: sonnarjobs.com.br
+🌐 Conheça os planos: https://sonnarjobs.com.br
 ────────────────────
 *Como quer receber as vagas?*
 
@@ -311,7 +311,7 @@ _Digite *menu* para voltar._`
  */
 function getBudgetNameMessage() {
   return `*Solicitar orçamento* 💼
-_Passo 1 de 5 — Identificação_
+_Passo 1 de 5 - Identificação_
 
 Vamos montar a sua proposta. Para começar,
 *qual é o seu nome completo?*
@@ -321,7 +321,7 @@ _ou digite "voltar" para retornar._`
 
 function getBudgetPhoneMessage(name) {
   return `*Solicitar orçamento* 💼
-_Passo 2 de 5 — Contato_
+_Passo 2 de 5 - Contato_
 
 Prazer, ${name}! 👋
 *Qual o seu telefone com DDD?*
@@ -332,7 +332,7 @@ _ou digite "voltar" para retornar._`
 
 function getBudgetEmailMessage(name) {
   return `*Solicitar orçamento* 💼
-_Passo 3 de 5 — E-mail_
+_Passo 3 de 5 - E-mail_
 
 Obrigado, ${name}.
 *Qual o seu melhor e-mail?*
@@ -343,7 +343,7 @@ _ou digite "voltar" para retornar._`
 
 function getBudgetCompanyTypeMessage(name) {
   return `*Solicitar orçamento* 💼
-_Passo 4 de 5 — Perfil_
+_Passo 4 de 5 - Perfil_
 
 Você está entrando em contato como:
 
@@ -358,7 +358,7 @@ _Digite 1 ou 2 • ou "voltar"._`
  */
 function getBudgetDescriptionMessage(name) {
   return `*Solicitar orçamento* 💼
-_Passo 5 de 5 — Seu projeto_
+_Passo 5 de 5 - Seu projeto_
 
 Ótimo, ${name}! Conte rapidamente o que você precisa.
 _Ex: app mobile, sistema de vendas, automação de processos…_
@@ -399,9 +399,9 @@ function getBudgetDetailsMessage(budgetData) {
   return `🔔 *Novo orçamento solicitado*
 
 👤 *Nome:* ${budgetData.name}
-📞 *Telefone:* ${budgetData.phone || "—"}
-✉️ *E-mail:* ${budgetData.email || "—"}
-🏢 *Tipo:* ${budgetData.companyType || "—"}
+📞 *Telefone:* ${budgetData.phone || "-"}
+✉️ *E-mail:* ${budgetData.email || "-"}
+🏢 *Tipo:* ${budgetData.companyType || "-"}
 📱 *Número:* ${budgetData.clientNumber}
 🕒 *Data:* ${new Date().toLocaleString("pt-BR")}
 
@@ -430,7 +430,7 @@ function getCalendarMessage() {
 _Escolha o melhor horário para você._
 
 Uma conversa rápida para entendermos o seu desafio
-e mostrarmos como podemos ajudar — sem compromisso.
+e mostrarmos como podemos ajudar - sem compromisso.
 
 🗓️ Agende aqui:
 ${CALENDAR_LINK}
@@ -459,7 +459,7 @@ _"voltar" para retornar • "menu" para o início_`
 }
 
 /**
- * Coleta de filtros VIP — fluxo guiado em 4 passos (Fluxo B, via WhatsApp).
+ * Coleta de filtros VIP - fluxo guiado em 4 passos (Fluxo B, via WhatsApp).
  * Substitui o antigo formato "copie e cole", que os usuarios achavam dificil.
  *
  * Campos coletados: stacks, senioridade, modalidade e localizacao.
@@ -467,11 +467,11 @@ _"voltar" para retornar • "menu" para o início_`
  *  - roles: nao eh mais criterio (o portal/Fluxo A tambem nao coleta cargo).
  *  - idioma: nao eh mais filtro.
  *  - regime de contrato (CLT/PJ/estagio): nao eh mais filtro.
- * Vagas 100% remotas sao sempre enviadas — "remoto" entra fixo na modalidade.
+ * Vagas 100% remotas sao sempre enviadas - "remoto" entra fixo na modalidade.
  */
 function getVipAreaMessage() {
   return `*Vagas personalizadas* 🎯
-_Passo 1 de 5 — Área de atuação_
+_Passo 1 de 5 - Área de atuação_
 
 Em qual *área* você quer vagas? Pode escolher mais de uma.
 
@@ -486,12 +486,12 @@ Em qual *área* você quer vagas? Pode escolher mais de uma.
 9️⃣  Segurança
 🔟  Suporte / Helpdesk
 ────────────────────
-_Ex: 1,3 — números separados por vírgula • ou "voltar"._`
+_Ex: 1,3 - números separados por vírgula • ou "voltar"._`
 }
 
 function getVipStacksMessage() {
   return `*Vagas personalizadas* 🎯
-_Passo 2 de 5 — Tecnologias_
+_Passo 2 de 5 - Tecnologias_
 
 Quais *tecnologias / stacks* você quer nas vagas?
 
@@ -503,7 +503,7 @@ _ou digite "voltar" para retornar._`
 
 function getVipSeniorityMessage() {
   return `*Vagas personalizadas* 🎯
-_Passo 3 de 5 — Senioridade_
+_Passo 3 de 5 - Senioridade_
 
 Qual nível você procura? Pode escolher mais de um.
 
@@ -511,12 +511,12 @@ Qual nível você procura? Pode escolher mais de um.
 2️⃣  Pleno
 3️⃣  Sênior
 ────────────────────
-_Ex: 2,3 — ou 0 para qualquer nível • ou "voltar"._`
+_Ex: 2,3 - ou 0 para qualquer nível • ou "voltar"._`
 }
 
 function getVipWorkModeMessage() {
   return `*Vagas personalizadas* 🎯
-_Passo 4 de 5 — Modalidade_
+_Passo 4 de 5 - Modalidade_
 
 Vagas *100% remotas* você já recebe automaticamente. ✅
 
@@ -531,7 +531,7 @@ _Pode combinar 1 e 2 (ex: 1,2) • ou "voltar"._`
 
 function getVipLocationMessage() {
   return `*Vagas personalizadas* 🎯
-_Passo 5 de 5 — Localização_
+_Passo 5 de 5 - Localização_
 
 Para as vagas híbridas/presenciais, quais
 *estados ou países* te interessam?
@@ -593,7 +593,7 @@ function parseWorkModeInput(text) {
 
 /**
  * Monta o objeto de filtros final a partir do rascunho coletado passo a passo.
- * "remoto" entra sempre — vagas remotas sao enviadas a todos os assinantes plus.
+ * "remoto" entra sempre - vagas remotas sao enviadas a todos os assinantes plus.
  */
 function assembleVipFilters(draft) {
   const workMode = ["remoto"]
@@ -609,7 +609,7 @@ function assembleVipFilters(draft) {
     workMode,
     contract: [],
     languages: [],
-    // Area e senioridade sao GATES (passa/reprova) — nao entram no peso.
+    // Area e senioridade sao GATES (passa/reprova) - nao entram no peso.
     // O score restante so ranqueia: stacks domina, local/modalidade refinam.
     weights: {
       roles: 0,
@@ -764,7 +764,7 @@ _"voltar" para retornar • "menu" para o início_`
 
 function getLeadNameMessage(planLabel) {
   return `*${planLabel}* 🚀
-_Passo 1 de 3 — Identificação_
+_Passo 1 de 3 - Identificação_
 
 Vamos garantir o seu acesso. Para começar,
 *qual é o seu nome completo?*
@@ -774,7 +774,7 @@ _ou digite "voltar" para retornar._`
 
 function getLeadPhoneMessage(name) {
   return `*Quase lá* 🚀
-_Passo 2 de 3 — Contato_
+_Passo 2 de 3 - Contato_
 
 Prazer, ${name}! 👋
 *Qual o seu telefone com DDD?*
@@ -785,7 +785,7 @@ _ou digite "voltar" para retornar._`
 
 function getLeadEmailMessage(name) {
   return `*Quase lá* 🚀
-_Passo 3 de 3 — E-mail_
+_Passo 3 de 3 - E-mail_
 
 *Qual o seu melhor e-mail?*
 _Enviaremos a confirmação para ele._
@@ -854,7 +854,7 @@ Quando quiser, é só recomeçar.
  */
 function getPaymentNotificationGroup(clientNumber, leadData) {
   const leadLines = formatLeadLines(leadData)
-  return `🔔 *Pagamento — Grupo de vagas*
+  return `🔔 *Pagamento - Grupo de vagas*
 
 Um cliente pagou pelo acesso ao Grupo de Vagas.
 
@@ -869,7 +869,7 @@ _Ative o acesso do cliente no grupo._`
  */
 function getPaymentNotificationPrivate(clientNumber, leadData) {
   const leadLines = formatLeadLines(leadData)
-  return `🔔 *Pagamento — Vagas personalizadas*
+  return `🔔 *Pagamento - Vagas personalizadas*
 
 Um cliente pagou pelas Vagas Personalizadas.
 
@@ -1496,7 +1496,7 @@ async function handlePlanEmail(socket, remoteJid, messageText, userId) {
 }
 
 /**
- * Passo 1/5 — Area de atuacao (obrigatorio, aceita varias).
+ * Passo 1/5 - Area de atuacao (obrigatorio, aceita varias).
  */
 async function handleVipArea(socket, remoteJid, messageText, userId, rawMessage) {
   try {
@@ -1528,7 +1528,7 @@ async function handleVipArea(socket, remoteJid, messageText, userId, rawMessage)
 }
 
 /**
- * Passo 2/5 — Stacks (obrigatorio, aceita varias).
+ * Passo 2/5 - Stacks (obrigatorio, aceita varias).
  */
 async function handleVipStacks(socket, remoteJid, messageText, userId, rawMessage) {
   try {
@@ -1560,7 +1560,7 @@ async function handleVipStacks(socket, remoteJid, messageText, userId, rawMessag
 }
 
 /**
- * Passo 2/4 — Senioridade (aceita varias; 0 = qualquer nivel).
+ * Passo 2/4 - Senioridade (aceita varias; 0 = qualquer nivel).
  */
 async function handleVipSeniority(socket, remoteJid, messageText, userId, rawMessage) {
   try {
@@ -1585,7 +1585,7 @@ async function handleVipSeniority(socket, remoteJid, messageText, userId, rawMes
 }
 
 /**
- * Passo 3/4 — Modalidade. Remoto eh sempre incluido; aqui escolhe-se
+ * Passo 3/4 - Modalidade. Remoto eh sempre incluido; aqui escolhe-se
  * hibrido/presencial. Se for so remoto, pula a localizacao.
  */
 async function handleVipWorkMode(socket, remoteJid, messageText, userId, rawMessage) {
@@ -1617,7 +1617,7 @@ async function handleVipWorkMode(socket, remoteJid, messageText, userId, rawMess
       return
     }
 
-    // So remoto: nao precisa de localizacao — finaliza os filtros.
+    // So remoto: nao precisa de localizacao - finaliza os filtros.
     userState.vipFilters = assembleVipFilters({ ...userState.vipDraft, locations: [] })
     userState.state = "awaiting_payment_private"
     conversationStates.set(userId, userState)
@@ -1629,7 +1629,7 @@ async function handleVipWorkMode(socket, remoteJid, messageText, userId, rawMess
 }
 
 /**
- * Passo 4/4 — Localizacao (estados/paises) para vagas hibridas/presenciais.
+ * Passo 4/4 - Localizacao (estados/paises) para vagas hibridas/presenciais.
  */
 async function handleVipLocation(socket, remoteJid, messageText, userId, rawMessage) {
   try {
@@ -1856,11 +1856,9 @@ async function handlePaymentReceiptPrivate(socket, remoteJid, messageText, userI
 
       infoLog(`[VIP] Cliente ${clientName} (${clientLid}) salvo como PENDENTE. Aguardando aprovação.`)
 
-      // Notifica os aprovadores
+      // Notifica os aprovadores (somente PAYMENT_NOTIFICATION_NUMBERS).
+      // O OWNER_LID nao recebe mais a aprovacao de VIP automaticamente.
       const approvalTargets = [...(PAYMENT_NOTIFICATION_NUMBERS || [])]
-      if (OWNER_LID && !approvalTargets.includes(OWNER_LID)) {
-        approvalTargets.push(OWNER_LID)
-      }
 
       for (const targetNumber of approvalTargets) {
         try {
