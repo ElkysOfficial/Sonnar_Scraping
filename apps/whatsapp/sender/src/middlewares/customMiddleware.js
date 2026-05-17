@@ -20,11 +20,13 @@ import {
   JOB_GROUP_LINK,
   TIMEOUT_IN_MILLISECONDS_BY_EVENT,
   PREFIX,
-  OWNER_LID
+  OWNER_LID,
+  PORTAL_URL
 } from "../config.js"
 import { extractDataFromMessage, toUserLid } from "../utils/index.js"
 import { errorLog, infoLog } from "../utils/logger.js"
 import { pairSubscriberByToken } from "../services/whatsappLinker.js"
+import { createPortalAccountForVip } from "../services/portalAccount.js"
 import { triggerVipSearch } from "../services/vipJobSender.js"
 import {
   addVipPendingSubscriber,
@@ -1847,8 +1849,12 @@ async function handlePaymentReceiptPrivate(socket, remoteJid, messageText, userI
 
       infoLog(`[HANDLE PAYMENT RECEIPT PRIVATE] Mídia baixada com sucesso: ${media.isImage ? 'imagem' : 'documento'}`)
 
-      // Salva como PENDENTE (NÃO como VIP ainda)
-      await addVipPendingSubscriber(clientName, clientLid, vipFilters)
+      // Salva como PENDENTE (NÃO como VIP ainda). Guarda telefone e e-mail —
+      // o e-mail eh usado para criar a conta do portal na aprovacao.
+      await addVipPendingSubscriber(clientName, clientLid, vipFilters, null, {
+        phone: leadData?.phone || null,
+        email: leadData?.email || null
+      })
       await updateVipPendingPaymentProof(clientLid, {
         type: media.isImage ? "image" : "document",
         receivedAt: new Date().toISOString()
@@ -1964,36 +1970,60 @@ async function handleVipReleaseDecision(socket, remoteJid, messageText, userId) 
       // Aprova o VIP
       const result = await approveVipSubscriber(clientLid, approverLid)
 
-      if (result.ok) {
-        const successMsg = `*VIP LIBERADO!*
-
-Cliente: ${approval.clientName || approval.clientNumber}
-LID: ${clientLid}
-
-O cliente agora receberá vagas personalizadas.`
-
-        await sendWithDelay(socket, remoteJid, { text: successMsg })
-
-        // Notifica o cliente que foi aprovado.
-        // Envia direto para o LID: os digitos do LID NAO sao o telefone,
-        // entao converter para @s.whatsapp.net mandaria para o numero errado.
-        try {
-          await sendWithDelay(socket, clientLid, {
-            text: `*Parabéns! Seu VIP foi ativado!*
-
-Você agora receberá vagas personalizadas de acordo com seu perfil.
-
-Fique atento às notificações!`
-          })
-        } catch (notifyError) {
-          errorLog(`[VIP RELEASE] Erro ao notificar cliente: ${notifyError.message}`)
-        }
-
-        infoLog(`[VIP] Cliente ${approval.clientName} (${clientLid}) APROVADO por ${approverLid}`)
-      } else {
+      if (!result.ok) {
         await sendWithDelay(socket, remoteJid, { text: `Erro ao liberar VIP: ${result.reason}` })
+        conversationStates.set(userId, { state: "menu", timestamp: Date.now() })
+        return
       }
 
+      const sub = result.subscriber || {}
+
+      // Cria a conta do portal e dispara o convite de acesso por e-mail.
+      const portal = await createPortalAccountForVip({
+        email: sub.email,
+        name: sub.name || approval.clientName,
+        lid: clientLid,
+        phone: sub.phone,
+        filters: sub.filters
+      })
+
+      let portalNote
+      if (portal.ok) {
+        portalNote = "Conta do portal criada - o cliente recebe um e-mail para definir a senha."
+      } else if (portal.reason === "email_exists") {
+        portalNote = "_O cliente ja tinha conta no portal (e-mail existente)._"
+      } else if (portal.reason === "no_email") {
+        portalNote = "_Sem e-mail do cliente - conta do portal nao criada._"
+      } else {
+        portalNote = "_Falha ao criar a conta do portal - verificar manualmente._"
+      }
+
+      await sendWithDelay(socket, remoteJid, {
+        text: `*VIP liberado!* ✅
+
+Cliente: ${sub.name || approval.clientName || approval.clientNumber}
+
+${portalNote}`
+      })
+
+      // Notifica o cliente. Envia direto para o LID.
+      try {
+        const clientMsg = portal.ok
+          ? `*Seu VIP foi ativado!* 🎉
+
+Voce vai receber vagas personalizadas do seu perfil aqui no WhatsApp.
+
+📧 Enviamos um e-mail para voce criar a senha e acessar o portal:
+${PORTAL_URL}`
+          : `*Seu VIP foi ativado!* 🎉
+
+Voce vai receber vagas personalizadas do seu perfil aqui no WhatsApp. Fique de olho nas notificacoes!`
+        await sendWithDelay(socket, clientLid, { text: clientMsg })
+      } catch (notifyError) {
+        errorLog(`[VIP RELEASE] Erro ao notificar cliente: ${notifyError.message}`)
+      }
+
+      infoLog(`[VIP] ${sub.name} (${clientLid}) APROVADO por ${approverLid}; portal=${portal.ok}`)
       conversationStates.set(userId, { state: "menu", timestamp: Date.now() })
       return
     }

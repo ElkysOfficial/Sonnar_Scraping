@@ -111,7 +111,7 @@ const VIP_LOCAL_FIELDS =
   "id, lid, user_name, phone, plan, filters, status, added_at, updated_at"
 
 const VIP_PENDING_FIELDS =
-  "id, lid, user_name, phone, plan, filters, payment_proof, status, added_at, decided_at, decided_by, reject_reason"
+  "id, lid, user_name, phone, email, plan, filters, payment_proof, status, added_at, decided_at, decided_by, reject_reason"
 
 export function invalidateVipSubscribersCache() {
   vipSubscribersCache.data = null
@@ -400,6 +400,7 @@ function mapVipPending(row) {
     name: row.user_name || "",
     lid: row.lid,
     phone: row.phone || null,
+    email: row.email || null,
     plan: row.plan || "plus",
     stacks: row.filters?.stacks || [],
     filters: row.filters || {},
@@ -443,7 +444,7 @@ export async function getVipPendingByNumber(clientNumber) {
  * Registra um assinante do Fluxo B como PENDENTE de aprovacao.
  * Plano default 'plus' (quem paga vagas personalizadas fora do portal).
  */
-export async function addVipPendingSubscriber(name, lid, filtersInput, paymentProof = null) {
+export async function addVipPendingSubscriber(name, lid, filtersInput, paymentProof = null, contact = {}) {
   if (!lid) throw new Error("LID e obrigatorio")
   const filters = normalizeVipFilters(filtersInput)
   const now = new Date().toISOString()
@@ -454,6 +455,8 @@ export async function addVipPendingSubscriber(name, lid, filtersInput, paymentPr
       {
         user_name: (name || "").trim() || "Assinante",
         lid,
+        phone: contact.phone || null,
+        email: contact.email || null,
         plan: "plus",
         filters,
         payment_proof: paymentProof,
@@ -510,6 +513,8 @@ export async function approveVipSubscriber(lid, decidedBy) {
     subscriber: {
       name: pending.user_name || "",
       lid: pending.lid,
+      phone: pending.phone || null,
+      email: pending.email || null,
       filters: pending.filters
     }
   }

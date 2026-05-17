@@ -193,3 +193,7 @@ export const WEB_FUNCTIONS_URL = process.env.WEB_FUNCTIONS_URL || ""
 
 // Segredo compartilhado com a edge function link-whatsapp (header x-link-secret).
 export const WHATSAPP_LINK_SECRET = process.env.WHATSAPP_LINK_SECRET || ""
+
+// URL do portal web — usada no convite de acesso enviado ao assinante do
+// Fluxo B (quem assina pelo WhatsApp tambem ganha conta no portal).
+export const PORTAL_URL = process.env.PORTAL_URL || "https://sonnarjobs.com.br"
