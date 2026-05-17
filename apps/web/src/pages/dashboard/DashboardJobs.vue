@@ -58,11 +58,11 @@
           </svg>
         </span>
         <div class="djobs-stat__body">
-          <span class="djobs-stat__num">{{ filteredJobs.length }}</span>
+          <span class="djobs-stat__num">{{ jobs.length }}</span>
           <span class="djobs-stat__label">vagas recebidas</span>
         </div>
       </div>
-      <div class="djobs-stat djobs-stat--accent">
+      <div class="djobs-stat">
         <span class="djobs-stat__icon">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <circle cx="12" cy="12" r="9" />
@@ -101,91 +101,125 @@
     </div>
 
     <!-- Lista -->
-    <ul class="djobs-list">
+    <ul v-if="jobs.length" class="djobs-list">
       <li
-        v-for="job in filteredJobs"
-        :key="job.id"
+        v-for="job in jobs"
+        :key="job.job_id"
         class="djobs-card"
         :class="[
-          job.score != null ? matchClass(job.score) : '',
-          { 'djobs-card--featured': job.score != null && job.score >= 85 }
+          matchClass(job.match_score),
+          { 'djobs-card--featured': (job.match_score ?? 0) >= 85 }
         ]"
       >
         <span class="djobs-card__rail" aria-hidden="true"></span>
 
-        <!-- Badges absolutos: novo + featured -->
-        <div class="djobs-card__badges" aria-hidden="true">
-          <span v-if="isFresh(job.posted_at)" class="djobs-badge djobs-badge--new">Novo</span>
-          <span v-if="job.score != null && job.score >= 85" class="djobs-badge djobs-badge--featured">
-            <svg viewBox="0 0 16 16" width="11" height="11" fill="currentColor" aria-hidden="true">
+        <!-- Cabeçalho: avatar + identidade + match (altura fixa) -->
+        <header class="djobs-card__head">
+          <span class="djobs-card__avatar" aria-hidden="true">{{ companyInitial(job.company) }}</span>
+          <div class="djobs-card__ident">
+            <h3 class="djobs-card__title" :title="job.title">{{ job.title }}</h3>
+            <p class="djobs-card__company">{{ job.company || 'Empresa confidencial' }}</p>
+          </div>
+          <span
+            v-if="job.match_score != null"
+            class="djobs-match"
+            :class="matchClass(job.match_score)"
+            :aria-label="`${job.match_score}% de compatibilidade`"
+          >
+            <svg
+              v-if="job.match_score >= 85"
+              class="djobs-match__star"
+              viewBox="0 0 16 16" width="9" height="9" fill="currentColor" aria-hidden="true"
+            >
               <path d="M8 0l2.4 5 5.6.8-4 4 1 5.7L8 12.7l-5 2.7 1-5.7-4-4 5.6-.8z" />
             </svg>
-            Top match
-          </span>
-        </div>
-
-        <header class="djobs-card__head">
-          <div class="djobs-card__brand">
-            <span class="djobs-card__avatar" aria-hidden="true">{{ companyInitial(job.company) }}</span>
-            <div class="djobs-card__title">
-              <h3>{{ job.title }}</h3>
-              <p>{{ job.company }}</p>
-            </div>
-          </div>
-          <span v-if="job.score != null" class="djobs-match" :class="matchClass(job.score)" :aria-label="`${job.score}% de match`">
-            <span class="djobs-match__num">{{ job.score }}</span>
+            <span class="djobs-match__num">{{ job.match_score }}</span>
             <span class="djobs-match__sym">%</span>
           </span>
         </header>
 
-        <div v-if="job.tags.length" class="djobs-card__tags">
-          <span
-            v-for="t in job.tags.slice(0, 4)" :key="t"
-            class="djobs-tag"
-            :class="{ 'djobs-tag--hit': stackLower.has(t.toLowerCase()) }"
-          >{{ t }}</span>
-          <span v-if="job.tags.length > 4" class="djobs-tag djobs-tag--more">+{{ job.tags.length - 4 }}</span>
-        </div>
-
+        <!-- Faixa salarial (sempre presente — mantém o alinhamento) -->
         <div class="djobs-card__salary">
-          <span class="djobs-card__salary-label">Faixa</span>
-          <span class="djobs-card__salary-value">{{ job.salary || '—' }}</span>
+          <span class="djobs-card__salary-label">Faixa salarial</span>
+          <span class="djobs-card__salary-value">{{ formatSalary(job) || 'A combinar' }}</span>
         </div>
 
-        <div class="djobs-card__metas">
-          <span class="djobs-card__meta">
-            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <circle cx="12" cy="12" r="9" />
-              <polyline points="12 7 12 12 16 14" />
+        <!-- Skills (zona flexível — absorve a variação de altura) -->
+        <div class="djobs-card__tags">
+          <template v-if="job.skills && job.skills.length">
+            <span
+              v-for="t in job.skills.slice(0, 6)"
+              :key="t"
+              class="djobs-tag"
+              :class="{ 'djobs-tag--hit': stackLower.has(t.toLowerCase()) }"
+            >{{ t }}</span>
+            <span v-if="job.skills.length > 6" class="djobs-tag djobs-tag--more">
+              +{{ job.skills.length - 6 }}
+            </span>
+          </template>
+          <span v-else class="djobs-tag djobs-tag--ghost">Skills não listadas</span>
+        </div>
+
+        <!-- Bloco inferior ancorado: fatos + rodapé + CTA sempre alinhados -->
+        <div class="djobs-card__bottom">
+          <div class="djobs-card__facts">
+            <span class="djobs-fact djobs-fact--mode">{{ workLabel(job.work_type) || 'Modalidade n/d' }}</span>
+            <span v-if="job.hiring_regime" class="djobs-fact">{{ job.hiring_regime }}</span>
+            <span class="djobs-fact djobs-fact--loc">
+              <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
+                <circle cx="12" cy="10" r="3" />
+              </svg>
+              {{ formatLocation(job) || 'Local não informado' }}
+            </span>
+            <span v-if="formatPubDate(job.publication_date)" class="djobs-fact djobs-fact--loc">
+              <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <rect x="3" y="5" width="18" height="16" rx="2" />
+                <path d="M3 9h18M8 3v4M16 3v4" />
+              </svg>
+              Publicada {{ formatPubDate(job.publication_date) }}
+            </span>
+          </div>
+
+          <div class="djobs-card__foot">
+            <span v-if="isFresh(job.sent_at)" class="djobs-card__new">Novo</span>
+            <span class="djobs-card__foot-item">
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="9" />
+                <polyline points="12 7 12 12 16 14" />
+              </svg>
+              Recebida {{ formatRelative(job.sent_at) }}
+            </span>
+            <span class="djobs-card__source">{{ sourceLabel(job.source) || 'via Sonnar' }}</span>
+          </div>
+
+          <a
+            v-if="job.url"
+            :href="job.url"
+            target="_blank"
+            rel="noopener"
+            class="djobs-card__cta"
+            :aria-label="`Ver vaga ${job.title}${job.company ? ' em ' + job.company : ''}`"
+          >
+            <span>Ver vaga</span>
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <line x1="5" y1="12" x2="19" y2="12" />
+              <polyline points="12 5 19 12 12 19" />
             </svg>
-            {{ formatRelative(job.posted_at) }}
-          </span>
-          <span class="djobs-card__dot" aria-hidden="true"></span>
-          <span class="djobs-card__meta djobs-card__meta--model">{{ workLabel(job.work_model) }}</span>
+          </a>
+          <span v-else class="djobs-card__cta djobs-card__cta--off">Link indisponível</span>
         </div>
-
-        <a
-          v-if="job.url"
-          :href="job.url"
-          target="_blank"
-          rel="noopener"
-          class="djobs-card__cta"
-          :aria-label="`Ver vaga ${job.title} em ${job.company}`"
-        >
-          <span>Ver vaga</span>
-          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <line x1="5" y1="12" x2="19" y2="12" />
-            <polyline points="12 5 19 12 12 19" />
-          </svg>
-        </a>
       </li>
     </ul>
 
-    <p v-if="loading" class="djobs-empty">Carregando suas vagas…</p>
-    <p v-else-if="filteredJobs.length === 0" class="djobs-empty">
-      Você ainda não recebeu vagas. Assim que o bot enviar vagas do seu perfil no
-      WhatsApp, elas aparecem aqui.
-    </p>
+    <p v-else-if="loading" class="djobs-empty">Carregando suas vagas…</p>
+
+    <div v-else class="djobs-empty">
+      <p class="djobs-empty__title">Nenhuma vaga por aqui ainda</p>
+      <p class="djobs-empty__text">
+        Assim que o Sonnar enviar vagas do seu perfil no WhatsApp, elas aparecem aqui.
+      </p>
+    </div>
   </div>
 </template>
 
@@ -197,8 +231,36 @@ import type { Database } from '@/integrations/supabase/types'
 
 type Profile = Database['public']['Tables']['subscriber_profiles']['Row']
 
+/**
+ * Vaga entregue ao VIP — retorno da RPC get_my_vip_jobs().
+ * A RPC já filtra pelo wa_lid do próprio usuário (cada VIP só vê o que recebeu)
+ * e enriquece o snapshot da entrega com os dados completos da tabela `jobs`.
+ */
+type VipJob = {
+  job_id: string
+  sent_at: string
+  match_score: number | null
+  title: string
+  company: string | null
+  location: string | null
+  state_code: string | null
+  country_code: string | null
+  work_type: string | null
+  hiring_regime: string | null
+  salary_raw: string | null
+  salary_min: number | null
+  salary_max: number | null
+  salary_currency: string | null
+  publication_date: string | null
+  source: string | null
+  skills: string[] | null
+  url: string | null
+}
+
 const { subscriber } = useAuth()
 const profile = ref<Profile | null>(null)
+const jobs = ref<VipJob[]>([])
+const loading = ref(true)
 
 // ============= PAREAMENTO DO WHATSAPP =============
 const waToken = ref<string | null>(null)
@@ -232,104 +294,108 @@ async function loadWaLinkStatus() {
   waToken.value = row.token ?? null
 }
 
-// ============= VAGAS RECEBIDAS =============
-// Vagas que o assinante recebeu no WhatsApp. O bot grava um snapshot da vaga
-// em vip_delivery_history a cada envio; aqui apenas lemos (a RLS filtra pelo
-// wa_lid do próprio usuário). Sem envios ainda => lista vazia.
-type ReceivedJob = {
-  id: string
-  title: string
-  company: string
-  tags: string[]
-  work_model: string | null
-  salary: string | null
-  url: string | null
-  source: string | null
-  posted_at: string
-  score: number | null
-}
+// ============= STATS =============
+const topMatch = computed(() =>
+  jobs.value.reduce((max, j) => Math.max(max, j.match_score ?? 0), 0)
+)
+const remoteCount = computed(() =>
+  jobs.value.filter(j => workLabel(j.work_type) === 'Remoto').length
+)
+const last24hCount = computed(() => {
+  const cutoff = Date.now() - 24 * 3600 * 1000
+  return jobs.value.filter(j => +new Date(j.sent_at) >= cutoff).length
+})
 
-const jobs = ref<ReceivedJob[]>([])
-const loading = ref(true)
-
-async function fetchReceivedJobs() {
-  loading.value = true
-  // vip_delivery_history não está nos tipos gerados — cast para any.
-  const { data, error } = await (supabase as any)
-    .from('vip_delivery_history')
-    .select('job_id, job_snapshot, match_score, sent_at')
-    .order('sent_at', { ascending: false })
-  loading.value = false
-
-  if (error) {
-    console.error('Falha ao carregar vagas recebidas:', error.message)
-    jobs.value = []
-    return
-  }
-
-  jobs.value = (data || []).map((row: any) => {
-    const s = row.job_snapshot || {}
-    return {
-      id: row.job_id,
-      title: s.title || 'Vaga',
-      company: s.company || '',
-      tags: Array.isArray(s.tags) ? s.tags : [],
-      work_model: s.work_model || null,
-      salary: s.salary || null,
-      url: s.url || null,
-      source: s.source || null,
-      posted_at: row.sent_at,
-      score: row.match_score ?? null
-    }
-  })
-}
-
-// Já vem ordenada por sent_at desc do banco.
-const filteredJobs = computed(() => jobs.value)
-
+// Skills do perfil — usadas pra destacar os chips compatíveis.
 const stackLower = computed(() => {
   const s = new Set<string>()
   ;(profile.value?.stack || []).forEach(t => s.add(t.toLowerCase()))
   return s
 })
 
-const topMatch = computed(() => {
-  const scores = jobs.value.map(j => j.score ?? 0)
-  return scores.length ? Math.max(...scores) : 0
-})
-const remoteCount = computed(() => jobs.value.filter(j => j.work_model === 'remote').length)
-const last24hCount = computed(() => {
-  const cutoff = Date.now() - 24 * 3600 * 1000
-  return jobs.value.filter(j => +new Date(j.posted_at) >= cutoff).length
-})
-
-function matchClass(score: number) {
-  if (score >= 75) return 'djobs-match--high'
-  if (score >= 50) return 'djobs-match--mid'
+// ============= FORMATAÇÃO =============
+function matchClass(score: number | null) {
+  const s = score ?? 0
+  if (s >= 75) return 'djobs-match--high'
+  if (s >= 50) return 'djobs-match--mid'
   return 'djobs-match--low'
 }
 
-function companyInitial(company: string) {
-  return (company || '?').trim().charAt(0).toUpperCase()
+function companyInitial(company: string | null) {
+  return (company || 'Sonnar').trim().charAt(0).toUpperCase()
 }
 
 function isFresh(iso: string) {
   return Date.now() - new Date(iso).getTime() < 24 * 3600 * 1000
 }
 
-function workLabel(m: string | null) {
-  return ({ remote: 'Remoto', hybrid: 'Híbrido', onsite: 'Presencial' } as Record<string, string>)[m || ''] || '—'
+/** Normaliza modalidade vinda crua ("remote") ou já traduzida ("Remoto"). */
+function workLabel(raw: string | null): string | null {
+  if (!raw) return null
+  const s = raw.toLowerCase()
+  if (s.includes('remot')) return 'Remoto'
+  if (s.includes('hibr') || s.includes('híbr')) return 'Híbrido'
+  if (s.includes('presen') || s.includes('onsite') || s.includes('on-site')) return 'Presencial'
+  return raw.charAt(0).toUpperCase() + raw.slice(1)
+}
+
+/** Limpa "Cidade - UF - Estado de X" -> "Cidade - UF". */
+function formatLocation(job: VipJob): string | null {
+  const loc = (job.location || '').trim()
+  if (!loc) return null
+  const match = loc.match(/^(.+?\s-\s[A-Za-z]{2})\s-\s.+$/)
+  return (match ? match[1] : loc).trim()
+}
+
+function currencySymbol(code: string | null) {
+  switch ((code || 'BRL').toUpperCase()) {
+    case 'USD': return 'US$'
+    case 'EUR': return '€'
+    case 'GBP': return '£'
+    default: return 'R$'
+  }
+}
+
+/** Faixa salarial: usa o range numérico quando há; senão o texto cru. */
+function formatSalary(job: VipJob): string | null {
+  const sym = currencySymbol(job.salary_currency)
+  const k = (n: number) => `${sym} ${(n / 1000).toFixed(0)}k`
+  if (job.salary_min && job.salary_max) return `${k(job.salary_min)} – ${k(job.salary_max)}`
+  if (job.salary_min) return `A partir de ${k(job.salary_min)}`
+  if (job.salary_max) return `Até ${k(job.salary_max)}`
+
+  const raw = (job.salary_raw || '').trim()
+  if (!raw) return null
+  return raw.charAt(0).toUpperCase() + raw.slice(1).toLowerCase()
+}
+
+function formatPubDate(iso: string | null): string | null {
+  if (!iso) return null
+  const dt = new Date(`${iso}T00:00:00`)
+  if (Number.isNaN(dt.getTime())) return null
+  return dt.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' }).replace('.', '')
+}
+
+function sourceLabel(source: string | null): string | null {
+  const clean = (source || '').trim()
+  if (!clean) return null
+  return `via ${clean.charAt(0).toUpperCase() + clean.slice(1)}`
 }
 
 function formatRelative(iso: string) {
   const ms = Date.now() - new Date(iso).getTime()
-  const h = Math.floor(ms / 3600000)
-  if (h < 1) return 'agora'
-  if (h < 24) return `${h}h atrás`
+  const min = Math.floor(ms / 60000)
+  if (min < 1) return 'agora'
+  if (min < 60) return `há ${min} min`
+  const h = Math.floor(min / 60)
+  if (h < 24) return `há ${h}h`
   const d = Math.floor(h / 24)
-  return `${d}d atrás`
+  if (d < 30) return `há ${d}d`
+  const months = Math.floor(d / 30)
+  return `há ${months} ${months === 1 ? 'mês' : 'meses'}`
 }
 
+// ============= CARGA DE DADOS =============
 async function fetchProfile() {
   if (!subscriber.value?.id) return
   const { data } = await supabase
@@ -340,9 +406,24 @@ async function fetchProfile() {
   profile.value = data ?? null
 }
 
+async function fetchJobs() {
+  // get_my_vip_jobs ainda não está nos tipos gerados — cast para any.
+  const { data, error } = await (supabase as any).rpc('get_my_vip_jobs')
+  if (error) {
+    console.error('Falha ao carregar vagas recebidas:', error.message)
+    jobs.value = []
+    return
+  }
+  jobs.value = (data ?? []) as VipJob[]
+}
+
 onMounted(async () => {
-  await fetchProfile()
-  await Promise.all([loadWaLinkStatus(), fetchReceivedJobs()])
+  try {
+    await fetchProfile()
+    await Promise.all([loadWaLinkStatus(), fetchJobs()])
+  } finally {
+    loading.value = false
+  }
 })
 </script>
 
@@ -351,15 +432,6 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
   gap: var(--space-5);
-}
-
-.djobs-top {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: var(--space-4);
-}
-@media (min-width: 900px) {
-  .djobs-top { grid-template-columns: 2fr 1fr; align-items: stretch; }
 }
 
 /* Banners */
@@ -424,7 +496,7 @@ onMounted(async () => {
   .djobs-banner { flex-direction: column; align-items: flex-start; text-align: left; }
 }
 
-/* Stats */
+/* Stats — 4 cards idênticos (sem destaque), 2x2 no mobile, 1x4 a partir de 720px */
 .djobs-stats {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -435,63 +507,52 @@ onMounted(async () => {
 }
 
 .djobs-stat {
-  position: relative;
-  padding: var(--space-4);
-  background: var(--color-background);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-card);
   display: flex;
   align-items: center;
   gap: var(--space-3);
   min-width: 0;
-  transition: box-shadow var(--transition-base), border-color var(--transition-fast), transform var(--transition-fast);
+  min-height: 78px;
+  padding: var(--space-4);
+  background: var(--color-background);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  transition: border-color var(--transition-fast);
 }
-.djobs-stat:hover {
-  border-color: var(--color-accent-muted);
-}
-
-.djobs-stat--accent {
-  background: linear-gradient(140deg, var(--color-accent-soft), transparent 70%), var(--color-background);
-  border-color: color-mix(in srgb, var(--color-accent) 25%, var(--color-border));
-}
+.djobs-stat:hover { border-color: var(--color-accent-muted); }
 
 .djobs-stat__icon {
   flex-shrink: 0;
   display: grid;
   place-items: center;
-  width: var(--control-height-sm);
-  height: var(--control-height-sm);
+  width: 40px;
+  height: 40px;
   border-radius: var(--radius-md);
-  background: var(--color-surface);
-  border: 1px solid var(--color-border-subtle);
+  background: var(--color-accent-soft);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 18%, transparent);
   color: var(--color-accent);
-}
-.djobs-stat--accent .djobs-stat__icon {
-  background: var(--color-accent);
-  color: var(--color-text-inverse);
-  border-color: transparent;
-  box-shadow: var(--shadow-sm);
 }
 
 .djobs-stat__body {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
   min-width: 0;
 }
 
 .djobs-stat__num {
+  display: flex;
+  align-items: baseline;
   font-size: var(--text-3xl);
   font-weight: var(--font-bold);
   letter-spacing: var(--ls-tight);
   color: var(--color-text-primary);
-  line-height: var(--lh-tight);
+  line-height: 1;
   font-variant-numeric: tabular-nums;
 }
 .djobs-stat__pct {
-  font-size: var(--text-lg);
+  font-size: var(--text-base);
   color: var(--color-text-muted);
-  margin-left: 1px;
+  margin-left: 2px;
   font-weight: var(--font-semibold);
 }
 .djobs-stat__label {
@@ -512,12 +573,11 @@ onMounted(async () => {
   padding: 0;
   display: grid;
   grid-template-columns: 1fr;
-  gap: var(--space-3);
+  gap: var(--space-4);
 }
 @media (min-width: 640px)  { .djobs-list { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (min-width: 960px)  { .djobs-list { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-@media (min-width: 1200px) { .djobs-list { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
-@media (min-width: 1500px) { .djobs-list { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
+@media (min-width: 1040px) { .djobs-list { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (min-width: 1480px) { .djobs-list { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
 
 .djobs-card {
   position: relative;
@@ -530,7 +590,7 @@ onMounted(async () => {
   flex-direction: column;
   gap: var(--space-4);
   overflow: hidden;
-  transition: box-shadow var(--transition-base), border-color var(--transition-fast), transform var(--transition-fast);
+  transition: box-shadow var(--transition-base), border-color var(--transition-fast);
   isolation: isolate;
 }
 
@@ -545,19 +605,15 @@ onMounted(async () => {
   pointer-events: none;
   z-index: -1;
 }
-
-.djobs-card:hover {
-  border-color: var(--color-accent-muted);
-}
+.djobs-card:hover { border-color: var(--color-accent-muted); }
 .djobs-card:hover::after { opacity: 1; }
-
 .djobs-card:focus-within {
   outline: none;
   border-color: var(--color-accent);
   box-shadow: var(--focus-ring);
 }
 
-/* Variante featured (high match >= 85%) */
+/* Variante featured (match >= 85%) */
 .djobs-card--featured {
   border-color: color-mix(in srgb, var(--color-success) 35%, var(--color-border));
   background:
@@ -569,7 +625,7 @@ onMounted(async () => {
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-success) 20%, transparent), var(--shadow-md);
 }
 
-/* Trilho lateral colorido por match score */
+/* Trilho lateral por match score */
 .djobs-card__rail {
   position: absolute;
   left: 0;
@@ -578,62 +634,16 @@ onMounted(async () => {
   width: 3px;
   border-radius: 0 3px 3px 0;
   background: var(--color-border);
-  transition: background var(--transition-fast);
 }
 .djobs-card.djobs-match--high .djobs-card__rail { background: var(--color-success); }
 .djobs-card.djobs-match--mid  .djobs-card__rail { background: var(--color-accent); }
 .djobs-card.djobs-match--low  .djobs-card__rail { background: var(--color-warning); }
 
-/* Badges absolutos no topo direito */
-.djobs-card__badges {
-  position: absolute;
-  top: var(--space-3);
-  right: var(--space-3);
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: var(--space-1);
-  z-index: 2;
-  pointer-events: none;
-}
-
-.djobs-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  padding: 2px var(--space-2);
-  border-radius: var(--radius-sm);
-  font-size: 10px;
-  font-weight: var(--font-bold);
-  text-transform: uppercase;
-  letter-spacing: var(--ls-wide);
-  line-height: 1.4;
-}
-.djobs-badge--new {
-  background: var(--color-accent);
-  color: var(--color-text-inverse);
-  box-shadow: 0 1px 0 color-mix(in srgb, var(--color-accent) 60%, transparent);
-}
-.djobs-badge--featured {
-  background: color-mix(in srgb, var(--color-success) 15%, var(--color-background));
-  color: var(--color-success);
-  border: 1px solid color-mix(in srgb, var(--color-success) 30%, transparent);
-}
-
 /* Cabeçalho */
 .djobs-card__head {
   display: flex;
   align-items: flex-start;
-  justify-content: space-between;
   gap: var(--space-3);
-}
-
-.djobs-card__brand {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  min-width: 0;
-  flex: 1;
 }
 
 .djobs-card__avatar {
@@ -651,30 +661,36 @@ onMounted(async () => {
   letter-spacing: var(--ls-tight);
 }
 
-.djobs-card__title { min-width: 0; flex: 1; }
-.djobs-card__title h3 {
+.djobs-card__ident { flex: 1; min-width: 0; }
+
+/* Título: reserva sempre 2 linhas — cards ficam idênticos independente do
+   tamanho do nome da vaga. Título completo no atributo title (tooltip). */
+.djobs-card__title {
   font-size: var(--text-lg);
-  margin: 0 0 3px;
+  margin: 0 0 4px;
   font-weight: var(--font-bold);
   letter-spacing: var(--ls-tight);
-  line-height: 1.2;
+  line-height: 1.3;
   color: var(--color-text-primary);
+  overflow-wrap: anywhere;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  min-height: calc(1.3em * 2);
 }
-.djobs-card__title p {
+
+.djobs-card__company {
   margin: 0;
   color: var(--color-text-secondary);
   font-size: var(--text-sm);
   font-weight: var(--font-medium);
-  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-/* Match badge - disco numérico */
+/* Disco de match */
 .djobs-match {
   flex-shrink: 0;
   display: inline-flex;
@@ -685,6 +701,10 @@ onMounted(async () => {
   font-variant-numeric: tabular-nums;
   border: 1px solid transparent;
   line-height: 1;
+}
+.djobs-match__star {
+  align-self: center;
+  margin-right: 2px;
 }
 .djobs-match__num {
   font-size: var(--text-base);
@@ -712,13 +732,14 @@ onMounted(async () => {
   border-color: color-mix(in srgb, var(--color-warning) 30%, transparent);
 }
 
-/* Tags */
+/* Skills — zona flexível que absorve a variação de altura entre cards */
 .djobs-card__tags {
   display: flex;
   flex-wrap: wrap;
+  align-content: flex-start;
   gap: 6px;
+  min-height: 26px;
 }
-
 .djobs-tag {
   display: inline-flex;
   align-items: center;
@@ -729,38 +750,28 @@ onMounted(async () => {
   color: var(--color-text-secondary);
   font-size: 11px;
   font-weight: var(--font-medium);
-  letter-spacing: -0.005em;
   white-space: nowrap;
   transition: all var(--transition-fast);
 }
-
-.djobs-card:hover .djobs-tag {
-  border-color: var(--color-border);
-}
-
-.djobs-tag:hover {
-  background: var(--color-surface-elevated);
-  color: var(--color-text-primary);
-}
-
+.djobs-card:hover .djobs-tag { border-color: var(--color-border); }
 .djobs-tag--hit {
   background: var(--color-accent-soft);
   border-color: color-mix(in srgb, var(--color-accent) 28%, transparent);
   color: var(--color-accent);
   font-weight: var(--font-semibold);
 }
-.djobs-tag--hit:hover {
-  background: color-mix(in srgb, var(--color-accent) 18%, var(--color-background));
-  border-color: var(--color-accent);
-}
-
 .djobs-tag--more {
   background: transparent;
   color: var(--color-text-muted);
   border-style: dashed;
 }
+.djobs-tag--ghost {
+  background: transparent;
+  color: var(--color-text-muted);
+  border-style: dashed;
+}
 
-/* Zona de destaque salarial */
+/* Faixa salarial */
 .djobs-card__salary {
   display: flex;
   align-items: baseline;
@@ -770,10 +781,6 @@ onMounted(async () => {
   border-radius: var(--radius-md);
   background: linear-gradient(135deg, var(--color-accent-soft), var(--color-surface));
   border: 1px solid color-mix(in srgb, var(--color-accent) 18%, var(--color-border-subtle));
-  transition: border-color var(--transition-fast);
-}
-.djobs-card:hover .djobs-card__salary {
-  border-color: var(--color-accent-muted);
 }
 .djobs-card__salary-label {
   font-size: 10px;
@@ -781,38 +788,73 @@ onMounted(async () => {
   text-transform: uppercase;
   letter-spacing: var(--ls-wide);
   color: var(--color-accent);
+  flex-shrink: 0;
 }
 .djobs-card__salary-value {
-  font-size: var(--text-lg);
+  font-size: var(--text-base);
   font-weight: var(--font-bold);
   color: var(--color-text-primary);
   letter-spacing: var(--ls-tight);
-  font-variant-numeric: tabular-nums;
+  text-align: right;
 }
 
-/* Linha de metadados */
-.djobs-card__metas {
+/* Bloco inferior ancorado — facts + rodapé + CTA sempre no mesmo lugar */
+.djobs-card__bottom {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+/* Fatos da vaga — altura fixa de 2 linhas: a linha de modalidade/regime/
+   local/data fica sempre na mesma posição, quebrando ou não. */
+.djobs-card__facts {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: 6px;
+  min-height: 56px;
+}
+.djobs-fact {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-subtle);
+  color: var(--color-text-secondary);
+  font-size: 11px;
+  font-weight: var(--font-semibold);
+  letter-spacing: var(--ls-wide);
+  text-transform: uppercase;
+}
+.djobs-fact--mode {
+  background: var(--color-accent-soft);
+  border-color: color-mix(in srgb, var(--color-accent) 22%, transparent);
+  color: var(--color-accent);
+}
+.djobs-fact--loc {
+  text-transform: none;
+  letter-spacing: normal;
+  font-weight: var(--font-medium);
+}
+
+/* Rodapé */
+.djobs-card__foot {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: var(--space-2);
   font-size: var(--text-xs);
   color: var(--color-text-muted);
-  flex-wrap: wrap;
 }
-
-.djobs-card__meta {
+.djobs-card__foot-item {
   display: inline-flex;
   align-items: center;
   gap: 4px;
   font-weight: var(--font-medium);
 }
-.djobs-card__meta--model {
-  text-transform: uppercase;
-  letter-spacing: var(--ls-wide);
-  font-weight: var(--font-semibold);
-  color: var(--color-text-secondary);
-}
-
 .djobs-card__dot {
   width: 3px;
   height: 3px;
@@ -820,8 +862,26 @@ onMounted(async () => {
   background: var(--color-text-muted);
   opacity: 0.5;
 }
+.djobs-card__source {
+  margin-left: auto;
+  font-weight: var(--font-semibold);
+  color: var(--color-text-secondary);
+}
+.djobs-card__new {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--color-accent);
+  color: var(--color-text-inverse);
+  font-size: 9px;
+  font-weight: var(--font-bold);
+  text-transform: uppercase;
+  letter-spacing: var(--ls-wide);
+  line-height: 1.5;
+}
 
-/* CTA como botao real, nao link perdido */
+/* CTA */
 .djobs-card__cta {
   margin-top: auto;
   display: inline-flex;
@@ -840,28 +900,15 @@ onMounted(async () => {
   min-height: var(--control-height-sm);
   transition: all var(--transition-fast);
 }
-
-.djobs-card__cta svg {
-  transition: transform var(--transition-fast);
-}
-
+.djobs-card__cta svg { transition: transform var(--transition-fast); }
 .djobs-card__cta:hover {
   background: var(--color-accent);
   border-color: var(--color-accent);
   color: var(--color-text-inverse);
 }
-.djobs-card__cta:hover svg {
-  transform: translateX(2px);
-}
-
-.djobs-card__cta:focus-visible {
-  outline: none;
-  box-shadow: var(--focus-ring);
-}
-
-.djobs-card__cta:active {
-  transform: translateY(1px);
-}
+.djobs-card__cta:hover svg { transform: translateX(2px); }
+.djobs-card__cta:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.djobs-card__cta:active { transform: translateY(1px); }
 
 .djobs-card--featured .djobs-card__cta {
   background: var(--color-accent);
@@ -873,10 +920,32 @@ onMounted(async () => {
   border-color: var(--color-accent-hover);
 }
 
+/* CTA desabilitado — vaga sem link (raro, mas mantém o card padronizado) */
+.djobs-card__cta--off {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+.djobs-card__cta--off:hover {
+  background: var(--color-surface);
+  border-color: var(--color-border);
+  color: var(--color-text-primary);
+}
+
+/* Estado vazio */
 .djobs-empty {
   text-align: center;
   padding: var(--space-12) var(--space-6);
   color: var(--color-text-muted);
   font-size: var(--text-base);
+}
+.djobs-empty__title {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-lg);
+  font-weight: var(--font-semibold);
+  color: var(--color-text-secondary);
+}
+.djobs-empty__text {
+  margin: 0;
+  font-size: var(--text-sm);
 }
 </style>

@@ -1,68 +1,97 @@
 <template>
   <div class="dsub">
-    <!-- Card de status -->
-    <article class="dsub-card dsub-status">
-      <div class="dsub-status__top">
-        <div>
-          <p class="dsub-eyebrow">Plano atual</p>
-          <h2 class="dsub-plan">{{ planLabel }}</h2>
-          <p class="dsub-price">{{ planPrice }}</p>
+    <div class="dsub-top">
+      <!-- ============ HERO DE STATUS ============ -->
+      <article class="dsub-card dsub-hero">
+        <div class="dsub-hero__top">
+          <div class="dsub-hero__id">
+            <p class="dsub-eyebrow">Plano atual</p>
+            <h2 class="dsub-plan">{{ planLabel }}</h2>
+            <p class="dsub-price">
+              <span class="dsub-price__value">{{ planPriceValue }}</span>
+              <span v-if="planPriceSuffix" class="dsub-price__suffix">{{ planPriceSuffix }}</span>
+            </p>
+          </div>
+          <span :class="['status-pill', `status-pill--${subscriber?.status}`]">
+            <span class="status-dot" aria-hidden="true"></span>
+            {{ statusLabel }}
+          </span>
         </div>
-        <span :class="['status-pill', `status-pill--${subscriber?.status}`]">
-          {{ statusLabel }}
-        </span>
-      </div>
 
-      <p class="dsub-status__msg">{{ statusCopy }}</p>
+        <p class="dsub-hero__msg" :class="`dsub-hero__msg--${msgTone}`">{{ statusCopy }}</p>
 
-      <dl class="dsub-meta">
-        <div>
-          <dt>E-mail de cobrança</dt>
-          <dd>{{ subscriber?.email }}</dd>
-        </div>
-        <div v-if="subscriber?.current_period_end">
-          <dt>Próxima cobrança</dt>
-          <dd>{{ formatDate(subscriber.current_period_end) }}</dd>
-        </div>
-        <div v-if="subscriber?.created_at">
-          <dt>Cliente desde</dt>
-          <dd>{{ formatDate(subscriber.created_at) }}</dd>
-        </div>
-      </dl>
+        <dl class="dsub-meta">
+          <div>
+            <dt>E-mail de cobrança</dt>
+            <dd>{{ subscriber?.email || '—' }}</dd>
+          </div>
+          <div>
+            <dt>{{ subscriber?.current_period_end ? 'Próxima cobrança' : 'Renovação' }}</dt>
+            <dd>{{ subscriber?.current_period_end ? formatDate(subscriber.current_period_end) : 'Sem cobrança recorrente' }}</dd>
+          </div>
+          <div v-if="subscriber?.created_at">
+            <dt>Cliente desde</dt>
+            <dd>{{ formatDate(subscriber.created_at) }}</dd>
+          </div>
+        </dl>
 
-      <div class="dsub-actions">
-        <button
-          v-if="needsCheckout"
-          class="btn btn-primary btn-lg"
-          @click="goCheckout"
-          :disabled="loadingCheckout"
+        <div class="dsub-actions">
+          <button
+            v-if="needsCheckout"
+            class="btn btn-primary btn-lg"
+            :disabled="loadingCheckout"
+            @click="goCheckout"
+          >
+            {{ loadingCheckout ? 'Aguarde…' : 'Continuar pagamento' }}
+          </button>
+          <button
+            v-if="canManage"
+            class="btn btn-secondary"
+            :disabled="loadingManage"
+            @click="goManage"
+          >
+            {{ loadingManage ? 'Abrindo…' : 'Gerenciar pagamento' }}
+          </button>
+          <button
+            v-if="canCancel"
+            class="btn btn-ghost btn-danger-link"
+            :disabled="loadingCancel"
+            @click="onCancel"
+          >
+            {{ loadingCancel ? 'Cancelando…' : 'Cancelar assinatura' }}
+          </button>
+        </div>
+
+        <p v-if="errorMessage" class="dsub-error" role="alert">{{ errorMessage }}</p>
+      </article>
+
+      <!-- ============ O QUE O PLANO INCLUI ============ -->
+      <aside class="dsub-card dsub-includes">
+        <header class="dsub-includes__head">
+          <h3>O que o {{ planLabel }} inclui</h3>
+          <p>{{ includesCopy }}</p>
+        </header>
+        <ul class="dsub-includes__list">
+          <li v-for="f in planFeatures" :key="f">
+            <span class="dsub-check" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="20 6 9 17 4 12" />
+              </svg>
+            </span>
+            <span>{{ f }}</span>
+          </li>
+        </ul>
+        <router-link
+          v-if="subscriber?.plan !== 'free'"
+          to="/dashboard/configuracoes"
+          class="dsub-includes__link"
         >
-          {{ loadingCheckout ? 'Aguarde…' : 'Continuar pagamento' }}
-        </button>
+          Ajustar perfil de busca →
+        </router-link>
+      </aside>
+    </div>
 
-        <button
-          v-if="canManage"
-          class="btn btn-secondary"
-          @click="goManage"
-          :disabled="loadingManage"
-        >
-          {{ loadingManage ? 'Abrindo…' : 'Gerenciar pagamento' }}
-        </button>
-
-        <button
-          v-if="canCancel"
-          class="btn btn-ghost btn-danger-link"
-          @click="onCancel"
-          :disabled="loadingCancel"
-        >
-          {{ loadingCancel ? 'Cancelando…' : 'Cancelar assinatura' }}
-        </button>
-      </div>
-
-      <p v-if="errorMessage" class="dsub-error" role="alert">{{ errorMessage }}</p>
-    </article>
-
-    <!-- Comparativo dos planos -->
+    <!-- ============ UPGRADE ============ -->
     <section v-if="subscriber?.plan !== 'plus'" class="dsub-upgrade">
       <header class="dsub-upgrade__head">
         <h3>{{ upgradeHeading }}</h3>
@@ -78,17 +107,15 @@
         >
           <header class="dsub-plan-card__head">
             <span class="dsub-plan-card__eyebrow">{{ p.label }}</span>
-            <span class="dsub-plan-card__price">
-              {{ p.price }}<small>/mês</small>
-            </span>
+            <span class="dsub-plan-card__price">{{ p.price }}<small>/mês</small></span>
           </header>
           <ul class="dsub-plan-card__features">
             <li v-for="f in p.features" :key="f">
-              <svg viewBox="0 0 18 18" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <circle cx="9" cy="9" r="7.5" opacity="0.35" />
-                <circle cx="9" cy="9" r="4.5" opacity="0.7" />
-                <circle cx="9" cy="9" r="2" fill="currentColor" stroke="none" />
-              </svg>
+              <span class="dsub-check" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="20 6 9 17 4 12" />
+                </svg>
+              </span>
               <span>{{ f }}</span>
             </li>
           </ul>
@@ -98,6 +125,11 @@
         </article>
       </div>
     </section>
+
+    <!-- ============ NOTA DE SUPORTE ============ -->
+    <p class="dsub-support">
+      Cobrança processada com segurança via Stripe. Dúvidas sobre pagamento? Fale com o suporte.
+    </p>
   </div>
 </template>
 
@@ -117,9 +149,7 @@ async function startCheckout(plan: 'pro' | 'plus') {
   errorMessage.value = ''
   loadingCheckout.value = true
   try {
-    const { data, error } = await supabase.functions.invoke('create-checkout-session', {
-      body: { plan }
-    })
+    const { data, error } = await supabase.functions.invoke('create-checkout-session', { body: { plan } })
     if (error) throw error
     if (!data?.checkoutUrl) throw new Error('URL de checkout não retornada')
     window.location.href = data.checkoutUrl
@@ -131,16 +161,16 @@ async function startCheckout(plan: 'pro' | 'plus') {
 }
 
 const planLabel = computed(() => ({
-  free: 'Comunidade',
-  pro: 'Pro',
-  plus: 'Plus'
+  free: 'Comunidade', pro: 'Pro', plus: 'Plus'
 }[subscriber.value?.plan || 'free']))
 
-const planPrice = computed(() => ({
-  free: 'Grátis',
-  pro: 'R$ 5,00 por mês',
-  plus: 'R$ 10,00 por mês'
+const planPriceValue = computed(() => ({
+  free: 'Grátis', pro: 'R$ 5,00', plus: 'R$ 10,00'
 }[subscriber.value?.plan || 'free']))
+
+const planPriceSuffix = computed(() =>
+  subscriber.value?.plan === 'free' ? '' : 'por mês'
+)
 
 const statusLabel = computed(() => ({
   active: 'Ativo',
@@ -153,32 +183,69 @@ const statusCopy = computed(() => {
   const s = subscriber.value?.status
   const p = subscriber.value?.plan
   if (s === 'active' && p === 'free') return 'Você tem acesso aos canais públicos da Comunidade.'
-  if (s === 'active') return 'Tudo em ordem. Continue recebendo vagas no seu canal.'
+  if (s === 'active') return 'Tudo em ordem. Você está recebendo as vagas do seu perfil no WhatsApp.'
   if (s === 'pending') return 'Estamos aguardando a confirmação do seu pagamento. Pode levar alguns minutos.'
   if (s === 'past_due') return 'Identificamos um pagamento em atraso. Atualize sua forma de pagamento para continuar recebendo vagas.'
   if (s === 'canceled') return 'Sua assinatura foi encerrada. Reative para voltar a receber vagas.'
   return ''
 })
 
+const msgTone = computed(() => {
+  const s = subscriber.value?.status
+  if (s === 'active') return 'ok'
+  if (s === 'pending') return 'warn'
+  return 'danger'
+})
+
 const needsCheckout = computed(() =>
   subscriber.value?.status === 'pending' && subscriber.value?.plan !== 'free'
 )
-
 const canManage = computed(() =>
   subscriber.value?.status === 'active' && subscriber.value?.plan !== 'free'
 )
-
 const canCancel = computed(() =>
   ['active', 'past_due'].includes(subscriber.value?.status || '') &&
   subscriber.value?.plan !== 'free'
 )
 
+// ----- O que o plano inclui -----
+const planFeatures = computed<string[]>(() => {
+  const p = subscriber.value?.plan
+  if (p === 'plus') {
+    return [
+      'Vagas em tempo real direto no seu WhatsApp',
+      'IA analisa e filtra cada vaga pelo seu perfil',
+      'Match score individual por vaga',
+      'Prioridade no recebimento das vagas novas',
+      'Sem duplicatas e sem ruído'
+    ]
+  }
+  if (p === 'pro') {
+    return [
+      'Vagas em tempo real direto no seu WhatsApp',
+      'Filtro por stack e senioridade',
+      'Sem duplicatas e sem ruído'
+    ]
+  }
+  return [
+    'Acesso aos canais públicos da Comunidade',
+    'Vagas gerais sem filtro personalizado'
+  ]
+})
+
+const includesCopy = computed(() => {
+  const p = subscriber.value?.plan
+  if (p === 'plus') return 'Seu plano usa IA para entregar só o que combina com você.'
+  if (p === 'pro') return 'Vagas curadas para o seu perfil, em tempo real.'
+  return 'Faça upgrade para receber vagas personalizadas.'
+})
+
+// ----- Upgrade -----
 const upgradeHeading = computed(() => {
   if (subscriber.value?.plan === 'free') return 'Receba vagas direto no seu WhatsApp'
   if (subscriber.value?.plan === 'pro') return 'Faça upgrade para o Plus'
   return 'Conheça os planos pagos'
 })
-
 const upgradeCopy = computed(() => {
   if (subscriber.value?.plan === 'free') return 'Os planos pagos entregam vagas curadas para o seu perfil, em tempo real.'
   if (subscriber.value?.plan === 'pro') return 'No Plus, a IA analisa cada vaga e calcula o match com o seu perfil.'
@@ -263,13 +330,19 @@ function upgrade(tier: 'pro' | 'plus') {
 
 <style scoped>
 .dsub {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.dsub-top {
   display: grid;
   grid-template-columns: 1fr;
   gap: var(--space-5);
-  align-items: start;
+  align-items: stretch;
 }
-@media (min-width: 1024px) {
-  .dsub { grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); }
+@media (min-width: 960px) {
+  .dsub-top { grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); }
 }
 
 .dsub-card {
@@ -278,30 +351,27 @@ function upgrade(tier: 'pro' | 'plus') {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-card);
   padding: var(--card-padding);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-5);
   overflow: hidden;
   isolation: isolate;
 }
 
-.dsub-status::before {
+/* ---------- Hero ---------- */
+.dsub-hero {
+  border-color: color-mix(in srgb, var(--color-accent) 20%, var(--color-border));
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+.dsub-hero::before {
   content: '';
   position: absolute;
   inset: 0;
-  background:
-    radial-gradient(80% 60% at 100% 0%, var(--color-accent-soft), transparent 60%),
-    radial-gradient(60% 40% at 0% 100%, color-mix(in srgb, var(--color-accent) 8%, transparent), transparent 70%);
+  background: radial-gradient(70% 55% at 100% 0%, var(--color-accent-soft), transparent 65%);
   pointer-events: none;
   z-index: -1;
 }
 
-.dsub-status {
-  border-color: color-mix(in srgb, var(--color-accent) 18%, var(--color-border));
-}
-
-/* Status card */
-.dsub-status__top {
+.dsub-hero__top {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
@@ -316,25 +386,26 @@ function upgrade(tier: 'pro' | 'plus') {
   font-weight: var(--font-semibold);
   margin: 0;
 }
-
 .dsub-plan {
   font-size: var(--text-4xl);
   letter-spacing: var(--ls-tight);
   font-weight: var(--font-bold);
   line-height: var(--lh-tight);
-  margin: var(--space-1) 0 2px;
+  margin: var(--space-1) 0 var(--space-1);
 }
-
-.dsub-price {
-  margin: 0;
-  color: var(--color-text-secondary);
-  font-size: var(--text-base);
+.dsub-price { margin: 0; display: flex; align-items: baseline; gap: var(--space-1); }
+.dsub-price__value {
+  font-size: var(--text-lg);
+  font-weight: var(--font-semibold);
+  color: var(--color-text-primary);
 }
+.dsub-price__suffix { font-size: var(--text-sm); color: var(--color-text-muted); }
 
 .status-pill {
   flex-shrink: 0;
   display: inline-flex;
   align-items: center;
+  gap: var(--space-2);
   padding: var(--space-1) var(--space-3);
   border-radius: var(--radius-full);
   font-size: var(--text-xs);
@@ -345,29 +416,41 @@ function upgrade(tier: 'pro' | 'plus') {
   background: var(--color-surface);
   color: var(--color-text-secondary);
 }
+.status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-full);
+  background: currentColor;
+}
 .status-pill--active   { background: var(--color-success-soft); color: var(--color-success); border-color: color-mix(in srgb, var(--color-success) 30%, transparent); }
 .status-pill--pending  { background: var(--color-warning-soft); color: var(--color-warning); border-color: color-mix(in srgb, var(--color-warning) 30%, transparent); }
 .status-pill--past_due,
 .status-pill--canceled { background: var(--color-error-soft);   color: var(--color-error);   border-color: color-mix(in srgb, var(--color-error) 30%, transparent); }
 
-.dsub-status__msg {
+.dsub-hero__msg {
   margin: 0;
   color: var(--color-text-secondary);
   line-height: var(--lh-body);
+  font-size: var(--text-sm);
   padding: var(--space-3) var(--space-4);
   background: var(--color-surface);
   border-radius: var(--radius-md);
   border-left: 3px solid var(--color-accent);
 }
+.dsub-hero__msg--ok     { border-left-color: var(--color-success); }
+.dsub-hero__msg--warn   { border-left-color: var(--color-warning); }
+.dsub-hero__msg--danger { border-left-color: var(--color-error); }
 
 /* Meta */
 .dsub-meta {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
   gap: var(--space-4);
   margin: 0;
+  padding-top: var(--space-1);
+  border-top: 1px solid var(--color-border-subtle);
 }
-.dsub-meta div { display: flex; flex-direction: column; gap: 2px; }
+.dsub-meta div { display: flex; flex-direction: column; gap: 2px; padding-top: var(--space-3); }
 .dsub-meta dt {
   font-size: var(--text-xs);
   text-transform: uppercase;
@@ -376,10 +459,11 @@ function upgrade(tier: 'pro' | 'plus') {
   font-weight: var(--font-semibold);
 }
 .dsub-meta dd {
-  font-size: var(--text-base);
+  font-size: var(--text-sm);
   color: var(--color-text-primary);
   margin: 0;
   font-weight: var(--font-medium);
+  word-break: break-word;
 }
 
 .dsub-actions {
@@ -390,7 +474,7 @@ function upgrade(tier: 'pro' | 'plus') {
 }
 
 .dsub-error {
-  margin: var(--space-2) 0 0;
+  margin: 0;
   padding: var(--space-3) var(--space-4);
   border-radius: var(--radius-md);
   background: var(--color-error-soft);
@@ -409,9 +493,61 @@ function upgrade(tier: 'pro' | 'plus') {
   background: color-mix(in srgb, var(--color-error) 8%, transparent);
 }
 
-/* Upgrade */
-.dsub-upgrade { display: flex; flex-direction: column; gap: var(--space-4); }
+/* ---------- Includes ---------- */
+.dsub-includes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.dsub-includes__head h3 {
+  margin: 0 0 var(--space-1);
+  font-size: var(--text-lg);
+  font-weight: var(--font-semibold);
+  letter-spacing: var(--ls-tight);
+}
+.dsub-includes__head p {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--text-sm);
+  line-height: var(--lh-body);
+}
+.dsub-includes__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  flex: 1;
+}
+.dsub-includes__list li {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--color-text-primary);
+  line-height: var(--lh-body);
+}
+.dsub-check {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--radius-full);
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+}
+.dsub-includes__link {
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+  color: var(--color-accent);
+  text-decoration: none;
+}
+.dsub-includes__link:hover { text-decoration: underline; }
 
+/* ---------- Upgrade ---------- */
+.dsub-upgrade { display: flex; flex-direction: column; gap: var(--space-4); }
 .dsub-upgrade__head h3 {
   margin: 0 0 var(--space-1);
   font-size: var(--text-2xl);
@@ -450,12 +586,8 @@ function upgrade(tier: 'pro' | 'plus') {
 .dsub-plan-card--featured {
   position: relative;
   border-color: var(--color-accent);
-  box-shadow:
-    0 0 0 1px var(--color-accent) inset,
-    var(--shadow-lg);
-  background:
-    linear-gradient(180deg, var(--color-accent-soft), transparent 50%),
-    var(--color-background);
+  box-shadow: 0 0 0 1px var(--color-accent) inset, var(--shadow-lg);
+  background: linear-gradient(180deg, var(--color-accent-soft), transparent 50%), var(--color-background);
 }
 .dsub-plan-card--featured::before {
   content: 'Recomendado';
@@ -493,7 +625,6 @@ function upgrade(tier: 'pro' | 'plus') {
   color: var(--color-text-muted);
   margin-left: var(--space-1);
 }
-
 .dsub-plan-card__features {
   list-style: none;
   margin: 0;
@@ -505,13 +636,18 @@ function upgrade(tier: 'pro' | 'plus') {
 }
 .dsub-plan-card__features li {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: var(--space-2);
-  font-size: var(--text-base);
+  font-size: var(--text-sm);
   color: var(--color-text-primary);
+  line-height: var(--lh-body);
 }
-.dsub-plan-card__features svg {
-  flex-shrink: 0;
-  color: var(--color-accent);
+
+/* ---------- Suporte ---------- */
+.dsub-support {
+  margin: 0;
+  text-align: center;
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
 }
 </style>
