@@ -78,33 +78,71 @@ function resolveEmbedPayload(payload) {
   return jobDataToEmbed(candidate)
 }
 
-// Limite defensivo para a descricao na legenda (evita estourar o caption).
-const CAPTION_DESCRIPTION_MAX = 600
+// Limite da descricao na legenda — generoso, mas evita estourar o caption.
+const CAPTION_DESCRIPTION_MAX = 1100
 
-function truncateDescription(text) {
-  const clean = (text || "").toString().replace(/\n{3,}/g, "\n\n").trim()
-  if (clean.length <= CAPTION_DESCRIPTION_MAX) return clean
-  return `${clean.slice(0, CAPTION_DESCRIPTION_MAX).trimEnd()}…`
+/**
+ * Formata a descricao da vaga para a legenda do WhatsApp:
+ * - colapsa o espacamento baguncado vindo do scraping;
+ * - linhas terminadas em ":" viram cabecalhos em *negrito*;
+ * - linhas terminadas em ";" viram itens com bullet "•".
+ */
+function formatDescription(raw) {
+  const lines = (raw || "")
+    .toString()
+    .replace(/\r/g, "")
+    .split("\n")
+    .map((l) => l.replace(/\s+/g, " ").trim())
+    .filter((l) => l.length > 0)
+
+  const formatted = lines.map((line) => {
+    if (/[:：]$/.test(line)) return `*${line}*`
+    if (/;$/.test(line)) return `• ${line.replace(/;\s*$/, "")}`
+    return line
+  })
+
+  let text = formatted.join("\n")
+  if (text.length > CAPTION_DESCRIPTION_MAX) {
+    text = `${text.slice(0, CAPTION_DESCRIPTION_MAX).replace(/\s+\S*$/, "")}…`
+  }
+  return text
 }
 
+/**
+ * Monta a legenda enviada junto da imagem.
+ * Ordem: titulo, empresa, localizacao, modalidade, skills e descricao.
+ * Salario e regime ficam apenas no card (imagem).
+ */
 function formatCaption(jobData, shortUrl) {
-  // Legenda enviada junto da imagem: titulo, empresa, descricao (se houver),
-  // modalidade (se houver) e link. Local/salario/regime ficam so no card.
-  let caption = `*${jobData.title}*\n`
-  caption += `${jobData.company}\n`
+  const out = []
 
-  const description = truncateDescription(jobData.description)
-  if (description) {
-    caption += `\n${description}\n`
+  out.push(`*${jobData.title}*`)
+  if (jobData.company) out.push(`🏢 _${jobData.company}_`)
+  if (jobData.location && jobData.location !== "Nao informado") {
+    out.push(`📍 ${jobData.location}`)
   }
-
   if (jobData.workType && jobData.workType !== "Nao informado") {
-    caption += `\n${jobData.workType}\n`
+    out.push(`💼 ${jobData.workType}`)
   }
 
-  caption += `\nVer mais sobre a vaga: ${shortUrl}`
+  const skills = Array.isArray(jobData.skills) ? jobData.skills : []
+  if (skills.length) {
+    out.push("")
+    out.push("*🧩 Tecnologias*")
+    out.push(skills.join("  •  "))
+  }
 
-  return caption
+  const description = formatDescription(jobData.description)
+  if (description) {
+    out.push("")
+    out.push("*📋 Sobre a vaga*")
+    out.push(description)
+  }
+
+  out.push("")
+  out.push(`🔗 *Ver a vaga:* ${shortUrl}`)
+
+  return out.join("\n")
 }
 
 async function buildCardPayload(payload, to) {

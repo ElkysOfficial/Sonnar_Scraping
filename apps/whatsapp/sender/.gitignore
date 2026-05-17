@@ -6,3 +6,8 @@ assets/auth/baileys
 .env.*
 !.env.example
 node_modules
+
+# Dados de runtime - regenerados pelo bot, nao versionar
+database/vip-jobs/
+assets/temp/
+*.log

@@ -466,8 +466,14 @@ export function extractJobDataFromEmbed(embed) {
   const { salary, salaryNote } = separateSalaryNote(rawSalary)
   const company = getFieldValue(["empresa", "company"]) || embed.author?.name || "Confidencial"
 
-  // Extract UF
-  const ufMatch = locationRaw.match(/\s*-\s*([A-Z]{2})\s*$/i)
+  // Limpa "Cidade - UF - Nome do Estado" -> "Cidade - UF" (sem redundancia).
+  const location =
+    locationRaw === "Nao informado"
+      ? locationRaw
+      : (locationRaw.match(/^(.+?\s-\s[A-Za-z]{2})\s-\s.+$/)?.[1] || locationRaw).trim()
+
+  // Extrai a UF (2 letras) do fim da localizacao ja limpa.
+  const ufMatch = location.match(/-\s*([A-Za-z]{2})\s*$/)
   const uf = ufMatch ? ufMatch[1].toUpperCase() : ""
 
   // Determine work mode
@@ -479,14 +485,13 @@ export function extractJobDataFromEmbed(embed) {
   // Extract tags
   const title = embed.title || "Vaga"
 
-  // Preferência 1: skills vindo da API (array de strings, autoritativo)
-  // Fallback: heurística por regex no título (comportamento legado)
-  let tags = []
+  // Preferência 1: skills vindo da API (array de strings, autoritativo).
+  // Fallback: heurística por regex no título (comportamento legado).
+  let skills = []
   if (Array.isArray(embed.skills) && embed.skills.length > 0) {
-    tags = embed.skills
+    skills = embed.skills
       .map((s) => (s == null ? "" : s.toString().trim()))
       .filter((s) => s.length > 0)
-      .slice(0, 5)
   } else {
     const techTags = [
       "React", "Vue", "Angular", "Node.js", "Python", "Java", "TypeScript",
@@ -496,22 +501,25 @@ export function extractJobDataFromEmbed(embed) {
       "SQL", "MongoDB", "PostgreSQL", "Redis", "GraphQL", "REST"
     ]
 
-    tags = techTags.filter(tag =>
+    skills = techTags.filter(tag =>
       title.toLowerCase().includes(tag.toLowerCase())
-    ).slice(0, 4)
+    )
 
     // Add seniority tag if found
     const titleLower = title.toLowerCase()
-    if (tags.length < 4) {
+    if (skills.length < 4) {
       if (titleLower.includes("senior") || titleLower.includes("sênior") || titleLower.includes(" sr")) {
-        tags.push("Senior")
+        skills.push("Senior")
       } else if (titleLower.includes("pleno")) {
-        tags.push("Pleno")
+        skills.push("Pleno")
       } else if (titleLower.includes("junior") || titleLower.includes("júnior") || titleLower.includes(" jr")) {
-        tags.push("Junior")
+        skills.push("Junior")
       }
     }
   }
+
+  // O card desenha no maximo 5 chips; a legenda (caption) usa a lista completa.
+  const tags = skills.slice(0, 5)
 
   // Timestamp
   const timestamp = embed.timestamp ? new Date(embed.timestamp) : new Date()
@@ -527,7 +535,7 @@ export function extractJobDataFromEmbed(embed) {
     title,
     company,
     tags,
-    location: locationRaw.trim() || locationRaw,
+    location,
     salary,
     salaryNote,
     source,
@@ -537,7 +545,9 @@ export function extractJobDataFromEmbed(embed) {
     id: embed.id || "",
     // Propagados para a legenda (caption). workType eh o valor cru ("Remoto",
     // "Hibrido"...); fica "Nao informado" quando a vaga nao trouxe o dado.
+    // skills = lista completa (a legenda usa toda; o card so os 5 primeiros).
     workType,
+    skills,
     description: embed.description || ""
   }
 }
