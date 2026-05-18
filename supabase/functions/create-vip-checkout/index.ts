@@ -16,7 +16,7 @@
 // Output: 200 { checkoutUrl } | 409 { error: 'already_active' } | 4xx/5xx { error }
 
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
-import Stripe from "https://esm.sh/stripe@14.21.0?target=deno";
+import Stripe from "https://esm.sh/stripe@17.7.0?target=deno";
 import { corsHeaders, getAdminClient, jsonResponse } from "../_shared/auth.ts";
 
 serve(async (req) => {
@@ -51,7 +51,7 @@ serve(async (req) => {
   }
 
   const stripe = new Stripe(stripeKey, {
-    apiVersion: "2023-10-16",
+    apiVersion: "2024-09-30.acacia",
     httpClient: Stripe.createFetchHttpClient(),
   });
   const supabase = getAdminClient();
@@ -115,8 +115,9 @@ serve(async (req) => {
       line_items: [{ price: pricePlus, quantity: 1 }],
       success_url: `${siteUrl}/?vip=confirmado`,
       cancel_url: `${siteUrl}/?vip=cancelado`,
-      // Dados fiscais para emissao de nota fiscal.
-      tax_id_collection: { enabled: true },
+      // Dados fiscais para emissao de nota fiscal. required: 'if_supported'
+      // obriga o CPF/CNPJ para clientes do Brasil.
+      tax_id_collection: { enabled: true, required: "if_supported" },
       billing_address_collection: "required",
       // LID amarra o pagamento ao assinante do WhatsApp no stripe-webhook.
       metadata: { lid, flow: "whatsapp_vip", plan: "plus" },
