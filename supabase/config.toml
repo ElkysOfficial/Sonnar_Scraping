@@ -66,3 +66,13 @@ verify_jwt = false
 # pelo redirect PHP em sonnarjobs.com.br/v/<code>.
 [functions.resolve-short-link]
 verify_jwt = false
+
+# create-vip-checkout: chamada pelo bot para gerar o Checkout recorrente
+# (cartao) do VIP do WhatsApp. Autenticada por x-link-secret.
+[functions.create-vip-checkout]
+verify_jwt = false
+
+# notify-vip-billing: chamada pelo vigia de cobranca do bot para enviar
+# e-mails de expiracao/falha de pagamento. Autenticada por x-link-secret.
+[functions.notify-vip-billing]
+verify_jwt = false

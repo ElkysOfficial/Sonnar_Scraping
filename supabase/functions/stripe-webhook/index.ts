@@ -1,5 +1,5 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
-import Stripe from "https://esm.sh/stripe@14.21.0?target=deno";
+import Stripe from "https://esm.sh/stripe@17.7.0?target=deno";
 import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { getAdminClient, jsonResponse } from "../_shared/auth.ts";
 
@@ -95,6 +95,211 @@ async function upsertSubscriberFromSubscription(
   return { matched: false, userId };
 }
 
+// =====================================================
+// Fluxo B - VIP do WhatsApp (tabela vip_subscribers, chaveada por lid).
+// Os Checkouts criados por create-vip-checkout carregam metadata.flow
+// = 'whatsapp_vip' e metadata.lid. O webhook usa isso para ativar e
+// manter o VIP automaticamente, sem aprovacao manual.
+// =====================================================
+
+const VIP_STATUS_MAP: Record<string, string> = {
+  active: "active",
+  trialing: "active",
+  past_due: "past_due",
+  unpaid: "past_due",
+  canceled: "canceled",
+  incomplete: "pending",
+  incomplete_expired: "canceled",
+};
+
+// Extrai os dados fiscais do customer_details do Checkout (necessarios
+// para emissao de nota fiscal). O numero do endereco vem embutido na
+// line1 no padrao brasileiro ("Rua X, 123") - extraido best-effort.
+function extractFiscal(
+  cd: Stripe.Checkout.Session.CustomerDetails | null
+): Record<string, string | null> | null {
+  if (!cd) return null;
+  const onlyDigits = (s: string | null | undefined) =>
+    s ? s.replace(/\D/g, "") : null;
+  const taxIds = cd.tax_ids ?? [];
+  const cpf = onlyDigits(taxIds.find((t) => t.type === "br_cpf")?.value);
+  const cnpj = onlyDigits(taxIds.find((t) => t.type === "br_cnpj")?.value);
+
+  const addr = cd.address;
+  let street = addr?.line1 ?? null;
+  let streetNumber: string | null = null;
+  if (street) {
+    const m = street.match(/,\s*([^,]+?)\s*$/);
+    if (m && /\d/.test(m[1])) {
+      streetNumber = m[1].trim();
+      street = street.slice(0, m.index).trim();
+    }
+  }
+  return {
+    person_type: cnpj ? "pj" : cpf ? "pf" : null,
+    cpf,
+    cnpj,
+    legal_name: cnpj ? cd.name ?? null : null,
+    cep: onlyDigits(addr?.postal_code),
+    street,
+    street_number: streetNumber,
+    complement: addr?.line2 ?? null,
+    city: addr?.city ?? null,
+    state_code: addr?.state ?? null,
+  };
+}
+
+// Cria a conta do portal para o VIP recem-ativado, repassando os dados
+// fiscais. Idempotente: 409 email_exists e tratado como sucesso.
+async function provisionVipPortalAccount(
+  vip: {
+    email: string | null;
+    user_name: string;
+    lid: string;
+    phone: string | null;
+    filters: unknown;
+  },
+  fiscal: Record<string, string | null> | null
+): Promise<void> {
+  if (!vip.email) return;
+  const baseUrl = Deno.env.get("SUPABASE_URL");
+  const secret = Deno.env.get("WHATSAPP_LINK_SECRET");
+  if (!baseUrl || !secret) {
+    console.error("provisionVipPortalAccount: SUPABASE_URL/WHATSAPP_LINK_SECRET ausente");
+    return;
+  }
+  try {
+    const res = await fetch(`${baseUrl}/functions/v1/invite-whatsapp-subscriber`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-link-secret": secret },
+      body: JSON.stringify({
+        email: vip.email,
+        name: vip.user_name,
+        lid: vip.lid,
+        phone: vip.phone,
+        profile: vip.filters ?? {},
+        fiscal,
+      }),
+    });
+    if (!res.ok && res.status !== 409) {
+      console.error(`provisionVipPortalAccount: invite recusou ${res.status}`);
+    }
+  } catch (e) {
+    console.error("provisionVipPortalAccount: falha ao chamar invite", e);
+  }
+}
+
+// Trata eventos do Fluxo B. Retorna null se o evento NAO for VIP - nesse
+// caso o webhook segue com o fluxo normal do portal.
+async function handleVipEvent(
+  stripe: Stripe,
+  supabase: SupabaseClient,
+  event: Stripe.Event
+): Promise<{ status: string; error: string | null } | null> {
+  // ---- checkout.session.completed (VIP) ----
+  if (event.type === "checkout.session.completed") {
+    const session = event.data.object as Stripe.Checkout.Session;
+    if (session.metadata?.flow !== "whatsapp_vip") return null;
+    const lid = session.metadata?.lid ?? null;
+    if (!lid) return { status: "vip_missing_lid", error: "checkout VIP sem lid" };
+
+    const { data: rows, error } = await supabase
+      .from("vip_subscribers")
+      .update({
+        status: "active",
+        payment_method: "card",
+        stripe_customer_id: asString(session.customer),
+        stripe_subscription_id: asString(session.subscription),
+        updated_at: new Date().toISOString(),
+      })
+      .eq("lid", lid)
+      .select("email, user_name, lid, phone, filters, portal_linked_at");
+
+    if (error) return { status: "vip_update_failed", error: error.message };
+    const vip = rows?.[0];
+    if (!vip) return { status: "vip_not_found", error: `lid ${lid} sem registro` };
+
+    // Conta do portal so na 1a ativacao, com os dados fiscais do Checkout.
+    if (!vip.portal_linked_at) {
+      await provisionVipPortalAccount(vip, extractFiscal(session.customer_details ?? null));
+    }
+    return { status: "vip_activated", error: null };
+  }
+
+  // ---- customer.subscription.created/updated/deleted (VIP) ----
+  if (
+    event.type === "customer.subscription.created" ||
+    event.type === "customer.subscription.updated" ||
+    event.type === "customer.subscription.deleted"
+  ) {
+    const sub = event.data.object as Stripe.Subscription;
+    if (sub.metadata?.flow !== "whatsapp_vip") return null;
+    const lid = sub.metadata?.lid ?? null;
+    if (!lid) return { status: "vip_missing_lid", error: "subscription VIP sem lid" };
+
+    const status =
+      event.type === "customer.subscription.deleted"
+        ? "canceled"
+        : VIP_STATUS_MAP[sub.status] ?? "pending";
+
+    await supabase
+      .from("vip_subscribers")
+      .update({
+        status,
+        stripe_subscription_id: sub.id,
+        stripe_customer_id: asString(sub.customer),
+        current_period_end: isoFromUnix(sub.current_period_end),
+        updated_at: new Date().toISOString(),
+      })
+      .eq("lid", lid);
+    return { status: `vip_subscription_${status}`, error: null };
+  }
+
+  // ---- invoice.paid / invoice.payment_failed (VIP) ----
+  // A fatura nao carrega nosso metadata; identifica o VIP pela subscription.
+  if (event.type === "invoice.paid" || event.type === "invoice.payment_failed") {
+    const invoice = event.data.object as Stripe.Invoice;
+    const subscriptionId = asString(invoice.subscription);
+    if (!subscriptionId) return null;
+
+    const { data: vip } = await supabase
+      .from("vip_subscribers")
+      .select("lid")
+      .eq("stripe_subscription_id", subscriptionId)
+      .maybeSingle();
+    if (!vip) return null; // nao e VIP - segue fluxo do portal
+
+    if (event.type === "invoice.paid") {
+      let periodEnd: string | null = null;
+      try {
+        const sub = await stripe.subscriptions.retrieve(subscriptionId);
+        periodEnd = isoFromUnix(sub.current_period_end);
+      } catch (_e) {
+        // mantem current_period_end como esta se o retrieve falhar
+      }
+      await supabase
+        .from("vip_subscribers")
+        .update({
+          status: "active",
+          ...(periodEnd ? { current_period_end: periodEnd } : {}),
+          updated_at: new Date().toISOString(),
+        })
+        .eq("lid", vip.lid);
+      return { status: "vip_invoice_paid", error: null };
+    }
+
+    const attemptCount = invoice.attempt_count ?? 0;
+    const newStatus = attemptCount >= 3 ? "canceled" : "past_due";
+    await supabase
+      .from("vip_subscribers")
+      .update({ status: newStatus, updated_at: new Date().toISOString() })
+      .eq("lid", vip.lid);
+    return { status: `vip_payment_failed_${newStatus}`, error: null };
+  }
+
+  return null;
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -109,7 +314,7 @@ serve(async (req) => {
   }
 
   const stripe = new Stripe(stripeKey, {
-    apiVersion: "2023-10-16",
+    apiVersion: "2024-09-30.acacia",
     httpClient: Stripe.createFetchHttpClient(),
   });
 
@@ -140,6 +345,20 @@ serve(async (req) => {
 
     if (existingEvent) {
       return jsonResponse({ received: true, status: "already_processed" });
+    }
+
+    // ---- Fluxo B: VIP do WhatsApp ----
+    // Tratado antes do fluxo do portal. Se nao for VIP, handleVipEvent
+    // devolve null e o processamento do portal segue normalmente.
+    const vipResult = await handleVipEvent(stripe, supabase, event);
+    if (vipResult) {
+      await supabase.from("stripe_events").insert({
+        event_id: event.id,
+        event_type: event.type,
+        payload: event.data.object,
+        error: vipResult.error,
+      });
+      return jsonResponse({ received: true, status: vipResult.status });
     }
 
     // ---- checkout.session.completed ----

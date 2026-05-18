@@ -12,6 +12,7 @@ import { badMacHandler } from "./utils/badMacHandler.js";
 import { errorLog, infoLog } from "./utils/logger.js";
 import { startJobSender } from "./services/jobSender.js";
 import { startVipJobSender } from "./services/vipJobSender.js";
+import { startVipBillingWatcher } from "./services/vipBilling.js";
 import { startCardSender } from "./services/cardJobSender.js";
 import { startApiReceiver } from "./services/apiReceiver.js";
 
@@ -67,6 +68,9 @@ export function load(socket) {
   startVipJobSender(socket).catch((error) => {
     errorLog(`Erro ao iniciar serviÃ§o VIP: ${error.message}`);
   });
+
+  // Inicia o vigia de cobrança do VIP (boas-vindas, expiração PIX, past_due)
+  startVipBillingWatcher(socket);
 
   // Inicia o serviço de envio de cards (imagens com caption)
   infoLog("Card sender enabled, starting service...");
