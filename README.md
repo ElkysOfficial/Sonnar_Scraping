@@ -164,9 +164,11 @@ Vault Obsidian em [`docs/vault/`](docs/vault/) — second brain operacional. Pon
 - [`12-decisions/`](docs/vault/12-decisions/) — ADRs (5 hoje)
 - [`13-issues/`](docs/vault/13-issues/) — débito técnico catalogado
 
-## Roadmap
+## Roadmap e histórico
 
-Ver [Roadmap.md](Roadmap.md) e [`docs/vault/14-roadmap/`](docs/vault/14-roadmap/).
+- [Roadmap.md](Roadmap.md) — releases e visão de longo prazo.
+- [CHANGELOG.md](CHANGELOG.md) — histórico detalhado de mudanças por versão.
+- [`docs/vault/14-roadmap/`](docs/vault/14-roadmap/) — roadmap operacional no vault.
 
 ## Licença
 

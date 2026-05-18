@@ -1,170 +1,134 @@
 # Roadmap do Projeto
 
-### Versão 1.0.0 (01-09-2023) - Lançada :rocket:
+> A numeração de versões deste roadmap está alinhada às **tags do git** e ao
+> [Versionamento Semântico](https://semver.org/lang/pt-BR/). O histórico
+> detalhado de cada release vive em [CHANGELOG.md](CHANGELOG.md).
 
-Objetivo principal: Ajudar os usuários a encontrar vagas de emprego de forma mais eficiente, economizando tempo e eliminando vagas duplicadas e a necessidade de entrar em diversas plataformas.
+## Histórico de releases
 
-**Funcionalidades Adicionadas:**
+### v1.0.0 (01/09/2023) — Lançada :rocket:
 
-- [x] Busca automática de vagas em um site específico.
-- [x] Detecção aprimorada de vagas duplicadas.
-- [x] Envio de vagas encontradas para um canal do Discord específico.
-- [x] Lógica para evitar o envio de vagas repetidas.
-- [x] Personalização dos intervalos de busca de acordo com as preferências do usuário.
+Objetivo: ajudar usuários a encontrar vagas de forma mais eficiente,
+economizando tempo e eliminando duplicatas.
 
-**Benefícios para o Usuário:**
+- [x] Busca automática de vagas em site específico.
+- [x] Detecção de vagas duplicadas.
+- [x] Envio de vagas para um canal do Discord.
+- [x] Lógica para evitar envio de vagas repetidas.
+- [x] Intervalos de busca personalizáveis.
 
-Com o Bot de Vagas de Emprego, os usuários podem agora automatizar a busca por oportunidades de emprego e receber atualizações em tempo real. Isso significa menos tempo gasto procurando vagas e mais tempo dedicado a se candidatar a elas.
+### v1.1.0 (13/12/2023) — Lançada :rocket:
 
-### Versão 2.0.0 (13/12/2023) - Lançada :rocket:
+- [x] Eficiência do mecanismo de busca aprimorada.
+- [x] Suporte a mais sites de busca de emprego.
+- [x] Melhoria na formatação das mensagens.
+- [x] Biblioteca `keyring` para segurança do token e do canal do Discord.
 
-- [x] Melhorada a eficiência do mecanismo de busca de vagas.
-- [x] Adição de suporte a mais sites de busca de emprego.
-- [x] Melhoria na formação das mensagens enviadas.
-- [x] Adição da biblioteca keyring para segurança do token e do canal do discord.
+### v1.1.1 (2023) — Lançada :rocket:
 
-### Versão 3.0.0 (Em desenvolvimento) :hammer:
+- [x] Ajustes na configuração do `keyring`.
 
-- **Aprimoramentos**:
-  - [x] Otimização do código para melhor desempenho.
-  - [x] Busca em 15 sites de emprego.
-  - [ ] Refatoração e melhorias no código.
-  - [x] Implementação da estrutura de microsserviços (extração, formatação, envio).
-  - [ ] Suporte para filtros avançados (Slash Commands).
-  - [ ] Autenticação e Autorização (Tokens JWT).
-  - [ ] Armazenamento seguro de senhas.
-  - [ ] Integração com banco de dados.
+### v2.0.0 (18/05/2026) — Lançada :rocket:
 
-### Versão 4.0.0 (Planejamento) :calendar:
+Transformação de bot de scraping para **SaaS B2C multicanal de matching de
+vagas**. Detalhes completos em [CHANGELOG.md](CHANGELOG.md).
 
-- **Novas Funcionalidades**:
+- [x] Reestruturação para monorepo e arquitetura de microsserviços.
+- [x] Portal web (landing + dashboard + admin).
+- [x] Bot de WhatsApp com grupo de vagas e gestão de VIP.
+- [x] Integração com banco de dados (Supabase: Postgres, Auth, Edge, Storage).
+- [x] Autenticação e autorização (JWT/PKCE, RLS).
+- [x] Armazenamento seguro de senhas.
+- [x] Pagamentos via Stripe (planos free / pro / plus).
+- [x] Motor de matching por área de atuação e senioridade.
+- [x] Busca em 15+ sites de emprego.
+- [x] `message-formatting-core` desacoplando bots da fonte de dados.
 
-  - [ ] Integração multiplataforma (LinkedIn,WhatsApp, Telegram, e-mail).
+## Em desenvolvimento
 
-### Versão 4.1.0 (Planejamento) :calendar:
+### v3.0.0 — Multiplataforma e robustez :hammer:
 
-- **Novas Funcionalidades**:
+Tema central: levar a distribuição de vagas para novos canais e endurecer a
+operação. Prioriza alto impacto com baixo custo de banco de dados.
 
-  - [ ] Ampliação na busca de vagas para outros paises.
-  - [ ] Suporte a múltiplos idiomas.
+- **Novos canais**:
+  - [ ] Integração com Telegram (canal de distribuição de vagas).
+  - [ ] Reativar e polir o bot de Discord.
+- **Robustez e qualidade**:
+  - [ ] Observabilidade em produção (Sentry no web + Edge Functions).
+  - [ ] Cobertura de testes (Vitest) de `useAuth` e composables do portal.
+  - [ ] E2E (Playwright) dos cenários de autenticação.
+  - [ ] Novas engines de scraping e melhorias nos cards de vaga.
+- **Filtros**:
+  - [ ] Filtros avançados de busca (slash commands / comandos de bot).
 
-### Versão 5.0.0 (Planejamento) :calendar:
+## Visão de longo prazo
 
-- **Novas Funcionalidades e Aprimoramento**:
+Ideias planejadas, sem versão fixa — serão promovidas a releases concretos
+conforme o alinhamento de produto. Quando um item virar trabalho real, abrir
+um ADR em `docs/vault/12-decisions/` ou uma issue em `docs/vault/13-issues/`.
 
-  - [ ] Filtros avançados e personalizados.
-  - [ ] Suporte a mais plataformas de comunicação (Slack, Microsoft Teams, SMS, Facebook Messenger).
-  - [ ] Sistema de feedback para aprimorar recomendações.
-  - [ ] Integração com IA para recomendações personalizadas.
-  - [ ] Análise de dados para insights sobre o mercado.
+### Expansão geográfica e idiomas
 
-  ```text
-  - Distribuição salarial por linguagem.
-  - Correlação entre regime de trabalho e salário.
-  - Soft Skills Mais Procuradas em x local ou x estado
-  - Demanda por Linguagem por Estado ou Pais
-  - Identificar as linguagens e soft skills mais requisitadas para cada nível de experiência (júnior, pleno, sênior).
+- [ ] Ampliação na busca de vagas para outros países.
+- [ ] Suporte a múltiplos idiomas.
 
-  Comparação entre Estados:
-  Além da demanda por linguagem, comparar salários, soft skills e outras métricas entre diferentes estados.
+### Comunicação e personalização
 
-  Nuvem de Palavras:
-  Criar nuvens de palavras para visualizar as palavras mais frequentes nas descrições das vagas, tanto em geral quanto por linguagem, área ou estado.
+- [ ] Suporte a mais plataformas (Slack, Microsoft Teams, SMS, Messenger).
+- [ ] Sistema de feedback para aprimorar recomendações.
+- [ ] Recomendação de vagas com base no perfil do usuário.
 
-  Análise de Sentimento:
-  Aplicar técnicas de análise de sentimento para identificar o tom geral das descrições das vagas (positivo, negativo, neutro).
-  ```
+### Inteligência de dados
 
-  - [ ] Dashboard interativo para visualização dos dados.
-  - [ ] Recomendação de vagas com base no perfil do usuário.
+- [ ] Integração com IA para recomendações personalizadas.
+- [ ] Dashboard interativo de análise do mercado.
 
-### Versão 6.0.0 (Planejamento) :calendar:
+```text
+- Distribuição salarial por linguagem.
+- Correlação entre regime de trabalho e salário.
+- Soft skills mais procuradas por local/estado.
+- Demanda por linguagem por estado/país.
+- Linguagens e soft skills mais requisitadas por nível de experiência.
+- Comparação entre estados (salários, soft skills, métricas).
+- Nuvem de palavras das descrições das vagas.
+- Análise de sentimento do tom das descrições.
+```
 
-- **Novas Funcionalidades e Aprimoramento**:
+### Conteúdo e carreira
 
-  - [ ] Criação de artes com dados da vaga para divulgação em redes sociais.
-  - [ ] Criação de um website para o projeto.
-  - [ ] Integração com ferramentas de edição de currículo.
-  - [ ] Otimização de currículo com base em dados coletados e no currículo fornecido.
-  - [ ] Sugestão de conteúdo para aprimoramento profissional com base em dados do currículo e do mercado.
+- [ ] Criação de artes com dados da vaga para redes sociais.
+- [ ] Website institucional do projeto.
+- [ ] Integração com ferramentas de edição de currículo.
+- [ ] Otimização de currículo com base nos dados coletados.
+- [ ] Sugestão de conteúdo para aprimoramento profissional.
+- [ ] Preparação para entrevistas (simulações, perguntas, dicas).
+- [ ] Mentoria e networking.
+- [ ] Curadoria de conteúdo educacional gratuito.
+- [ ] Desafios, simulados e testes de personalidade/aptidão.
+- [ ] Plano de desenvolvimento individual com lembretes e progresso.
+- [ ] Fórum / comunidade online entre usuários.
 
-### Versão 7.0.0 (Planejamento) :calendar:
+### Análise preditiva
 
-- **Novas Funcionalidades e Aprimoramento**:
+- [ ] Aprendizado de máquina para prever tendências do mercado.
+- [ ] Previsão de demanda por habilidades e profissões.
+- [ ] Sugestão de cursos e certificações com base nas previsões.
+- [ ] Recomendação de carreira por perfil + tendências.
 
-  - [ ] Preparação para entrevistas (simulações, perguntas frequentes, dicas).
-  - [ ] Mentoria e networking (conexão com profissionais experientes).
-  - [ ] Curadoria de conteúdo educacional gratuito e de qualidade.
-  - [ ] Geração de desafios, simulados e testes.
-  - [ ] Testes de personalidade e aptidão.
-  - [ ] Plano de desenvolvimento individual com lembretes e notificações.
-  - [ ] Histórico de progresso para acompanhamento do desenvolvimento.
-  - [ ] Criação de um fórum ou comunidade online para interação e troca de ideias entre os usuários.
+### Mercado freelancer e segurança
 
-### Versão 8.0.0 (Planejamento) :calendar:
+- [ ] Integração de busca por projetos freelancer.
+- [ ] Detecção de fraudes com aprendizado de máquina.
 
-- **Novas Funcionalidades e Aprimoramento**:
+### Aplicativo móvel e experiências imersivas
 
-- Análise preditiva:
-  - [ ] Utilização de aprendizado de máquina para prever tendências do mercado de trabalho.
-  - [ ] Previsão de demanda por habilidades e profissões.
-  - [ ] Sugestão de cursos e certificações com base nas previsões.
-  - [ ] Recomendação de carreira com base no perfil do usuário e nas tendências do mercado.
+- [ ] App móvel com busca por voz e por imagem.
+- [ ] Sistema de "match" entre candidatos e empresas/clientes.
+- [ ] Entrevistas e simulações em realidade virtual.
+- [ ] Cursos e treinamentos em realidade aumentada.
 
-### Versão 9.0.0 (Planejamento) :calendar:
+### Integração com redes sociais
 
-- **Novas Funcionalidades e Aprimoramento**:
-
-- Expansão para o mercado freelancer:
-  - [ ] Integração de busca por projetos freelancer.
-
-### Versão 10.0.0 (Planejamento) :calendar:
-
-- **Novas Funcionalidades e Aprimoramento**:
-
-  - [ ] Aprendizado de máquina para detecção de fraudes:Utilize algoritmos de aprendizado de máquina para identificar padrões e comportamentos suspeitos, protegendo seus usuários de golpes e fraudes no mercado de trabalho e freelancer.
-
-### Versão 11.0.0 (Planejamento) :calendar:
-
-- **Novas Funcionalidades e Aprimoramento**:
-
-- Desenvolvimento de um aplicativo móvel:
-  - [ ] Busca por voz.
-  - [ ] Busca por imagem.
-  - [ ] Sistema de "match" entre candidatos e empresas/clientes.
-
-### Versão 12.0.0 (Planejamento) :calendar:
-
-- **Novas Funcionalidades e Aprimoramento**:
-
-- Realidade aumentada e virtual:
-  - [ ] Entrevistas em realidade virtual.
-  - [ ] Simulações de ambientes de trabalho.
-  - [ ] Cursos e treinamentos em realidade aumentada.
-
-### Versão 13.0.0 (Planejamento) :calendar:
-
-- **Novas Funcionalidades e Aprimoramento**:
-
-- Integração com Redes Sociais:
-
-  - [ ] Login e cadastro via redes sociais.
-  - [ ] Compartilhamento de vagas e perfis em redes sociais.
-  - [ ] Análise de perfil social para recomendações de vagas.
-
-- Inteligência Artificial e Machine Learning:
-
-  - [ ] Recomendação de vagas baseada em histórico e perfil do usuário.
-  - [ ] Chatbot para suporte e dúvidas frequentes.
-  - [ ] Análise preditiva para tendências de mercado de trabalho.
-
-- Melhorias na Experiência do Usuário:
-
-  - [ ] Interface de usuário mais intuitiva e responsiva.
-  - [ ] Notificações personalizadas e em tempo real.
-  - [ ] Feedback e avaliações de entrevistas e processos seletivos.
-
-- Segurança e Privacidade:
-  - [ ] Autenticação de dois fatores.
-  - [ ] Criptografia de ponta a ponta para dados sensíveis.
-  - [ ] Controle de privacidade aprimorado para usuários.
+- [ ] Login e compartilhamento via redes sociais.
+- [ ] Análise de perfil social para recomendações.

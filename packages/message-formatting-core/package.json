@@ -1,6 +1,6 @@
 {
   "name": "message-formatting-core",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Core job formatting service shared by every channel",
   "type": "module",
   "main": "src/server.js",
