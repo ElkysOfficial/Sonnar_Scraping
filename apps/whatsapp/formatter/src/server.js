@@ -5,6 +5,7 @@
 
 import express from "express"
 import { createJobCard, extractJobDataFromEmbed } from "./services/cardGenerator.js"
+import { shortenUrl } from "./services/urlShortener.js"
 import { v4 as uuidv4 } from "uuid"
 import {
   infoLog,
@@ -270,11 +271,11 @@ async function buildCardPayload(payload, to) {
     throw new Error("Não foi possível extrair os dados da vaga")
   }
 
-  // Usa a URL original da vaga (sem encurtador). Encurtadores grátis sao
-  // instaveis (400/rate-limit) e escondem o dominio real — mostrar
-  // careerjet.com.br / gupy.io etc. passa mais confianca ao candidato.
+  // Encurta a URL pelo encurtador proprio (sonnarjobs.com.br/v/<code>).
+  // Se o servico falhar, shortenUrl devolve a URL original.
   const imageBuffer = await createJobCard(jobData)
-  const caption = formatCaption(jobData, jobData.url)
+  const shortUrl = await shortenUrl(jobData.url)
+  const caption = formatCaption(jobData, shortUrl)
 
   return {
     to,

@@ -1,5 +1,5 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
-import Stripe from "https://esm.sh/stripe@14.21.0?target=deno";
+import Stripe from "https://esm.sh/stripe@17.7.0?target=deno";
 import { authorize, corsHeaders, jsonResponse } from "../_shared/auth.ts";
 
 interface RequestBody {
@@ -51,7 +51,7 @@ serve(async (req) => {
     }
 
     const stripe = new Stripe(stripeKey, {
-      apiVersion: "2023-10-16",
+      apiVersion: "2024-09-30.acacia",
       httpClient: Stripe.createFetchHttpClient(),
     });
 
@@ -86,6 +86,10 @@ serve(async (req) => {
       line_items: [{ price: priceId, quantity: 1 }],
       success_url: `${origin}/pagamento/confirmando`,
       cancel_url: `${origin}/pagar?canceled=true`,
+      // Dados fiscais para emissao de nota fiscal. required: 'if_supported'
+      // obriga o CPF/CNPJ para clientes do Brasil.
+      tax_id_collection: { enabled: true, required: "if_supported" },
+      billing_address_collection: "required",
       metadata: { user_id: user.id, subscriber_id: subscriber.id, plan },
       subscription_data: {
         // 7 dias gratis. Cliente cancela no periodo = nao paga nada.

@@ -76,8 +76,7 @@
 
     <!-- =========== Aba: Visão geral =========== -->
     <template v-if="activeTab === 'overview'">
-
-    <!-- Hero de saúde (Apple-style com gauge + área chart) -->
+<!-- Hero de saúde (Apple-style com gauge + área chart) -->
     <HealthHero
       :tone="health.healthClass"
       :headline="health.headline"
@@ -228,13 +227,11 @@
         </table>
       </div>
     </section>
-
-    </template>
+</template>
 
     <!-- =========== Aba: Proteção =========== -->
     <template v-if="activeTab === 'protection'">
-
-    <TabChartCard
+<TabChartCard
       eyebrow="Proteção"
       title="Erros vs sucessos por site (últimos 5 minutos)"
       tone="info"
@@ -282,13 +279,11 @@
         </table>
       </div>
     </section>
-
-    </template>
+</template>
 
     <!-- =========== Aba: Fila =========== -->
     <template v-if="activeTab === 'queue'">
-
-    <TabChartCard
+<TabChartCard
       eyebrow="Fila"
       title="Distribuição das vagas por etapa"
       tone="info"
@@ -364,13 +359,11 @@
         </table>
       </div>
     </section>
-
-    </template>
+</template>
 
     <!-- =========== Aba: DLQ & Operações =========== -->
     <template v-if="activeTab === 'dlq'">
-
-    <TabChartCard
+<TabChartCard
       eyebrow="DLQ"
       title="Falhas por tipo de erro"
       tone="danger"
@@ -470,13 +463,11 @@
         </table>
       </div>
     </section>
-
-    </template>
+</template>
 
     <!-- =========== Aba: Manutenção =========== -->
     <template v-if="activeTab === 'maintenance'">
-
-    <TabChartCard
+<TabChartCard
       eyebrow="Manutenção"
       title="Vagas por idade (dias até purga)"
       tone="warn"
@@ -559,8 +550,7 @@
         <li v-if="!eventsFiltered.length" class="empty">Nenhum evento no período selecionado.</li>
       </ul>
     </section>
-
-    </template>
+</template>
 
     <p v-if="errorMsg" class="error-msg">{{ errorMsg }}</p>
     </template><!-- /v-else (initialLoading) -->

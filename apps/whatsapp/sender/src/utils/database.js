@@ -495,13 +495,20 @@ export async function approveVipSubscriber(lid, decidedBy) {
   if (error) throw error
   if (!pending) return { ok: false, reason: "not_found" }
 
+  // Aprovacao manual = pagamento PIX: vale 30 dias, com renovacao manual.
+  const now = new Date()
+  const expiresAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000)
   const { error: updateError } = await supabase
     .from("vip_subscribers")
     .update({
       status: "active",
-      decided_at: new Date().toISOString(),
+      payment_method: "pix",
+      expires_at: expiresAt.toISOString(),
+      // Zera os avisos: a renovacao reinicia o ciclo de notificacoes.
+      billing_notifications: {},
+      decided_at: now.toISOString(),
       decided_by: decidedBy || null,
-      updated_at: new Date().toISOString()
+      updated_at: now.toISOString()
     })
     .eq("lid", lid)
 

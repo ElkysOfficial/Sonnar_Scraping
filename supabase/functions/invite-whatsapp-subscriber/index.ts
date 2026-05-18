@@ -6,7 +6,11 @@
 // Autenticada por segredo compartilhado (header x-link-secret), igual a
 // link-whatsapp. Requer verify_jwt = false no config.toml.
 //
-// Input (JSON): { email, name, lid, profile }
+// Input (JSON): { email, name, lid, profile, phone?, fiscal? }
+//   fiscal (opcional): { person_type, cpf, cnpj, legal_name, cep, street,
+//                        street_number, complement, city, state_code }
+//   - enviado pelo stripe-webhook na ativacao de um VIP de cartao, com os
+//     dados coletados no Checkout (para emissao de nota fiscal).
 // Output: 200 { ok: true } | 409 { error: 'email_exists' } | 4xx/5xx { error }
 
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
@@ -53,6 +57,11 @@ serve(async (req) => {
   const name = typeof body?.name === "string" ? body.name.trim() : "";
   const lid = typeof body?.lid === "string" ? body.lid.trim() : "";
   const profile = body?.profile && typeof body.profile === "object" ? body.profile : {};
+  const phone = typeof body?.phone === "string" ? body.phone.trim() : null;
+  const fiscal =
+    body?.fiscal && typeof body.fiscal === "object"
+      ? (body.fiscal as Record<string, string | null>)
+      : null;
 
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
     return jsonResponse({ error: "invalid_email" }, 400);
@@ -84,10 +93,34 @@ serve(async (req) => {
   // Marca assinatura ativa + senha temporaria; vincula o wa_lid.
   try {
     if (userId) {
-      await admin
-        .from("subscribers")
-        .update({ status: "active", must_change_password: true })
-        .eq("user_id", userId);
+      // Marca ativo + senha temporaria, e grava os dados fiscais (se vierem
+      // do Checkout) respeitando as constraints da tabela: cpf 11 digitos,
+      // cnpj 14, cep 8, e a coerencia PF (cpf) x PJ (cnpj + legal_name).
+      const subPayload: Record<string, unknown> = {
+        status: "active",
+        must_change_password: true,
+      };
+      if (phone) subPayload.phone = phone;
+      if (fiscal) {
+        const digits = (v: string | null | undefined, len: number) =>
+          v && new RegExp(`^[0-9]{${len}}$`).test(v) ? v : null;
+        const cpf = digits(fiscal.cpf, 11);
+        const cnpj = digits(fiscal.cnpj, 14);
+        if (cnpj) {
+          subPayload.person_type = "pj";
+          subPayload.cnpj = cnpj;
+          subPayload.legal_name = fiscal.legal_name || name || "Nao informado";
+        } else if (cpf) {
+          subPayload.person_type = "pf";
+          subPayload.cpf = cpf;
+        }
+        const cep = digits(fiscal.cep, 8);
+        if (cep) subPayload.cep = cep;
+        for (const k of ["street", "street_number", "complement", "city", "state_code"] as const) {
+          if (fiscal[k]) subPayload[k] = fiscal[k];
+        }
+      }
+      await admin.from("subscribers").update(subPayload).eq("user_id", userId);
 
       const { data: sub } = await admin
         .from("subscribers")
