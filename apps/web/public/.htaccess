@@ -25,6 +25,10 @@
   RewriteCond %{REQUEST_URI} ^/assets/
   RewriteRule ^ - [R=404,L]
 
+  # Encurtador de URL proprio: /v/<code> resolve pelo redirect PHP em
+  # vez de cair no fallback do SPA.
+  RewriteRule ^v/([A-Za-z0-9]{1,16})/?$ /v/index.php?c=$1 [L,QSA]
+
   # If the requested resource doesn't exist, use index.html
   RewriteRule ^ /index.html [L]
 </IfModule>
