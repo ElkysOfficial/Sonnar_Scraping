@@ -2,10 +2,11 @@
 **/__pycache__/
 **/.env
 **/dist/
-**/package-lock.json
 **/bun.lockb
 *.log
 errors.log
+
+# package-lock.json E versionado: garante build reproduzivel no CI (npm ci).
 
 # WhatsApp session/auth caches
 apps/whatsapp/**/assets/auth/
