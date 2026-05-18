@@ -107,7 +107,7 @@ export const OPENAI_API_KEY = ""
 
 // ======= CONFIGURAÇÕES DO SERVIÇO DE VAGAS =======
 // ID do grupo para envio de vagas (use /get-group-id para obter)
-export const JOB_GROUP_ID = "120363421632065613@g.us"
+export const JOB_GROUP_ID = "120363407444852407@g.us"
 
 // Intervalo de envio em ms (30 minutos - reduz egress do Supabase)
 export const JOB_SEND_INTERVAL = 30 * 60 * 1000
