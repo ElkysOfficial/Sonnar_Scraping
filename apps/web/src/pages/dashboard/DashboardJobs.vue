@@ -31,7 +31,24 @@
       <router-link to="/dashboard/assinatura" class="btn btn-primary">Fazer upgrade</router-link>
     </div>
 
-    <!-- Conectar WhatsApp do bot (Pro/Plus ainda não pareados) -->
+    <!-- Entrar no grupo de vagas (plano Pro) -->
+    <div v-if="showProGroupCard" class="djobs-banner djobs-banner--wa">
+      <div class="djobs-banner__icon">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M21 11.5a8.38 8.38 0 0 1-8.5 8.5 8.5 8.5 0 0 1-4-1L3 21l1.5-5.5a8.5 8.5 0 0 1-1-4A8.38 8.38 0 0 1 12 3a8.5 8.5 0 0 1 9 8.5z" />
+        </svg>
+      </div>
+      <div class="djobs-banner__body">
+        <h2>Entre no grupo de vagas Pro</h2>
+        <p>
+          Seu plano está ativo. As vagas filtradas pelo seu stack chegam no grupo
+          exclusivo do WhatsApp. Entre uma única vez e comece a receber.
+        </p>
+      </div>
+      <a :href="jobGroupLink" target="_blank" rel="noopener" class="btn btn-primary">Entrar no grupo</a>
+    </div>
+
+    <!-- Conectar WhatsApp do bot (Plus ainda não pareado) -->
     <div v-if="showWaCard" class="djobs-banner djobs-banner--wa">
       <div class="djobs-banner__icon">
         <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -269,13 +286,22 @@ const waLinked = ref(false)
 // Número do bot (mesmo da landing). Sem dígitos = sem deep-link.
 const botPhone = (import.meta.env.VITE_WHATSAPP_PHONE || '').replace(/\D/g, '')
 
+// O pareamento pessoal do WhatsApp so faz sentido no plano Plus — e o plano
+// que entrega vagas personalizadas no privado. O Pro recebe no grupo.
 const showWaCard = computed(() =>
-  subscriber.value?.plan !== 'free' &&
+  subscriber.value?.plan === 'plus' &&
   !!profile.value &&
   !waLinked.value &&
   !!waToken.value &&
   !!botPhone
 )
+
+// Link de convite do grupo de vagas do plano Pro.
+const jobGroupLink =
+  import.meta.env.VITE_JOB_GROUP_LINK ||
+  'https://chat.whatsapp.com/FXIecIwuh1FHyCdNr9P5Cw'
+
+const showProGroupCard = computed(() => subscriber.value?.plan === 'pro')
 
 const waDeepLink = computed(() =>
   `https://wa.me/${botPhone}?text=${encodeURIComponent(`parear ${waToken.value || ''}`)}`

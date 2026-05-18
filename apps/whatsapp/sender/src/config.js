@@ -157,7 +157,7 @@ export const PAYMENT_LINK_GROUP = "https://buy.stripe.com/9B68wI4uY23P2FW5qkbfO0
 export const PAYMENT_LINK_PRIVATE = "https://buy.stripe.com/14AcMY2mQbEpcgwg4YbfO01"
 
 // Link do grupo de vagas (será enviado após confirmação de pagamento)
-export const JOB_GROUP_LINK = "https://chat.whatsapp.com/HGtEZLt5jys7aOONUUhF6a"
+export const JOB_GROUP_LINK = "https://chat.whatsapp.com/FXIecIwuh1FHyCdNr9P5Cw"
 
 // ======= CONFIGURAÇÕES DO CARD SENDER =======
 // Habilita o envio de cards com imagem (se false, usa apenas texto)
