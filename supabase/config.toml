@@ -57,3 +57,8 @@ verify_jwt = false
 # Cria a conta do portal e envia o convite. Autenticada por x-link-secret.
 [functions.invite-whatsapp-subscriber]
 verify_jwt = false
+
+# create-vip-checkout: chamada pelo bot para gerar o Checkout recorrente
+# (cartao) do VIP do WhatsApp. Autenticada por x-link-secret.
+[functions.create-vip-checkout]
+verify_jwt = false
