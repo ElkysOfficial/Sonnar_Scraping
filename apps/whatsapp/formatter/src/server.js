@@ -5,7 +5,6 @@
 
 import express from "express"
 import { createJobCard, extractJobDataFromEmbed } from "./services/cardGenerator.js"
-import { shortenUrl } from "./services/urlShortener.js"
 import { v4 as uuidv4 } from "uuid"
 import {
   infoLog,
@@ -271,11 +270,11 @@ async function buildCardPayload(payload, to) {
     throw new Error("Não foi possível extrair os dados da vaga")
   }
 
-  const [imageBuffer, shortUrl] = await Promise.all([
-    createJobCard(jobData),
-    shortenUrl(jobData.url)
-  ])
-  const caption = formatCaption(jobData, shortUrl)
+  // Usa a URL original da vaga (sem encurtador). Encurtadores grátis sao
+  // instaveis (400/rate-limit) e escondem o dominio real — mostrar
+  // careerjet.com.br / gupy.io etc. passa mais confianca ao candidato.
+  const imageBuffer = await createJobCard(jobData)
+  const caption = formatCaption(jobData, jobData.url)
 
   return {
     to,
@@ -426,7 +425,7 @@ app.listen(PORT, async () => {
   banner("WHATSAPP CARD GENERATOR")
 
   infoLog(`Server running on port ${PORT}`)
-  infoLog(`Data source: Supabase (${process.env.SUPABASE_URL || "not configured"})`)
+  infoLog(`Data source: message-formatting-core (${process.env.MESSAGE_FORMATTING_CORE_URL || "http://localhost:3100"})`)
   divider()
 
   console.log("")

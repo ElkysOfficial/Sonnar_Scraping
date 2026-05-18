@@ -141,7 +141,17 @@ class LocalJobStore:
         try:
             with open(tmp_path, 'w', encoding='utf-8') as f:
                 json.dump(self._data, f, ensure_ascii=False, indent=2)
-            os.replace(tmp_path, self.path)
+            # os.replace pode falhar no Windows (WinError 5 / PermissionError)
+            # se outro processo estiver lendo o jobs.json naquele instante.
+            # O lock e breve — tenta de novo algumas vezes antes de desistir.
+            for attempt in range(8):
+                try:
+                    os.replace(tmp_path, self.path)
+                    break
+                except PermissionError:
+                    if attempt == 7:
+                        raise
+                    time.sleep(0.25)
             self._dirty = 0
             self._last_flush = time.monotonic()
         except OSError as exc:
