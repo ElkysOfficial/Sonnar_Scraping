@@ -29,7 +29,9 @@ module.exports = {
       autorestart: true,
       max_restarts: 10,
       restart_delay: 3000,
-      max_memory_restart: "250M",
+      // O core faz JSON.parse do jobs.json inteiro (~18k vagas) a cada
+      // request. 250M era apertado e o PM2 reiniciava a cada ciclo VIP.
+      max_memory_restart: "512M",
       time: true,
     },
     {
