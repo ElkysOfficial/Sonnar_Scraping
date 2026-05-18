@@ -57,3 +57,12 @@ verify_jwt = false
 # Cria a conta do portal e envia o convite. Autenticada por x-link-secret.
 [functions.invite-whatsapp-subscriber]
 verify_jwt = false
+
+# shorten-url: cria links curtos. Chamada pelos formatters via x-link-secret.
+[functions.shorten-url]
+verify_jwt = false
+
+# resolve-short-link: resolve /v/<code> para o destino. Publica - chamada
+# pelo redirect PHP em sonnarjobs.com.br/v/<code>.
+[functions.resolve-short-link]
+verify_jwt = false
