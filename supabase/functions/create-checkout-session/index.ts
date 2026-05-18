@@ -86,6 +86,9 @@ serve(async (req) => {
       line_items: [{ price: priceId, quantity: 1 }],
       success_url: `${origin}/pagamento/confirmando`,
       cancel_url: `${origin}/pagar?canceled=true`,
+      // Dados fiscais para emissao de nota fiscal.
+      tax_id_collection: { enabled: true },
+      billing_address_collection: "required",
       metadata: { user_id: user.id, subscriber_id: subscriber.id, plan },
       subscription_data: {
         // 7 dias gratis. Cliente cancela no periodo = nao paga nada.
