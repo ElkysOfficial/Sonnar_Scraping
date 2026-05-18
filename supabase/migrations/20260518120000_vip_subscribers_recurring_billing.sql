@@ -11,7 +11,8 @@ ALTER TABLE public.vip_subscribers
   ADD COLUMN IF NOT EXISTS stripe_customer_id     TEXT,
   ADD COLUMN IF NOT EXISTS stripe_subscription_id TEXT,
   ADD COLUMN IF NOT EXISTS current_period_end     TIMESTAMPTZ,
-  ADD COLUMN IF NOT EXISTS expires_at             TIMESTAMPTZ;
+  ADD COLUMN IF NOT EXISTS expires_at             TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS billing_notifications  JSONB NOT NULL DEFAULT '{}'::jsonb;
 
 -- Amplia o status para cobrir o ciclo de vida de uma assinatura recorrente.
 -- pending  : aguardando pagamento (cartao) ou aprovacao (PIX)
@@ -46,3 +47,6 @@ COMMENT ON COLUMN public.vip_subscribers.current_period_end IS
   'Fim do periodo pago atual da assinatura Stripe (cartao). Mantido pelo webhook.';
 COMMENT ON COLUMN public.vip_subscribers.expires_at IS
   'Validade do VIP PIX (manual): 30 dias a partir da aprovacao. NULL para cartao.';
+COMMENT ON COLUMN public.vip_subscribers.billing_notifications IS
+  'Marcacoes de avisos ja enviados pelo bot (welcome, expiry_warning, expired, '
+  || 'past_due) para nao repetir notificacao. Chave -> timestamp ISO.';

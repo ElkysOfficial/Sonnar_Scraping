@@ -16,7 +16,6 @@ import {
   PAYMENT_NOTIFICATION_NUMBERS,
   CALENDAR_LINK,
   PAYMENT_LINK_GROUP,
-  PAYMENT_LINK_PRIVATE,
   JOB_GROUP_LINK,
   TIMEOUT_IN_MILLISECONDS_BY_EVENT,
   PREFIX,
@@ -27,6 +26,7 @@ import { extractDataFromMessage, toUserLid } from "../utils/index.js"
 import { errorLog, infoLog } from "../utils/logger.js"
 import { pairSubscriberByToken } from "../services/whatsappLinker.js"
 import { createPortalAccountForVip } from "../services/portalAccount.js"
+import { createVipCheckout } from "../services/vipCheckout.js"
 import { triggerVipSearch } from "../services/vipJobSender.js"
 import {
   addVipPendingSubscriber,
@@ -759,14 +759,49 @@ _As vagas certas, filtradas pelo seu perfil._
 Você recebe no privado apenas vagas que combinam
 com a sua área, stack e senioridade.
 
-*Formas de pagamento*
-• 💳 Cartão: ${PAYMENT_LINK_PRIVATE}
-• 🔑 PIX (CNPJ): 64.095.868/0001-03
+*Como prefere pagar?*
 
-Após a confirmação, configuramos o seu perfil.
+*1* 💳 Cartão — assinatura mensal automática
+*2* 🔑 PIX — pagamento manual, renovação a cada 30 dias
+────────────────────
+_Responda com *1* ou *2*._
+_"voltar" para retornar • "menu" para o início_`
+}
+
+/**
+ * Mensagem com o link de Checkout do cartão (assinatura recorrente).
+ */
+function getCardCheckoutMessage(checkoutUrl) {
+  return `*Pagamento por cartão* 💳
+_Vagas personalizadas Sonnar_
+
+Conclua a assinatura no link seguro do Stripe:
+${checkoutUrl}
+
+✅ Assim que o pagamento for confirmado, o seu VIP é
+ativado *automaticamente* — sem comprovante e sem
+espera por aprovação.
+
+📧 Você também receberá um e-mail com o acesso ao portal.
+────────────────────
+_Digite *menu* para voltar ao início._`
+}
+
+/**
+ * Mensagem de pagamento via PIX (manual, com validade de 30 dias).
+ */
+function getPaymentPixMessage() {
+  return `*Pagamento via PIX* 🔑
+_Vagas personalizadas Sonnar_
+
+Faça o PIX para a chave abaixo:
+🔑 *CNPJ:* 64.095.868/0001-03
+
+O acesso por PIX vale *30 dias* e é renovado a cada
+novo pagamento confirmado.
 ────────────────────
 Digite *pago* após o pagamento
-_"voltar" para retornar • "menu" para o início_`
+_"voltar" para escolher outra forma • "menu" para o início_`
 }
 
 function getLeadNameMessage(planLabel) {
@@ -1088,7 +1123,11 @@ export async function customMiddleware({ socket, webMessage, type, commonFunctio
         break
 
       case "awaiting_payment_private":
-        await handlePaymentPrivate(socket, remoteJid, messageText, userId)
+        await handlePaymentPrivate(socket, remoteJid, messageText, userId, webMessage)
+        break
+
+      case "awaiting_payment_pix":
+        await handlePaymentPix(socket, remoteJid, messageText, userId)
         break
 
       case "awaiting_payment_receipt_group":
@@ -1698,9 +1737,11 @@ async function handlePaymentGroup(socket, remoteJid, messageText, userId) {
 }
 
 /**
- * Processa confirmação de pagamento para vagas privadas
+ * Processa a escolha da forma de pagamento das vagas privadas (Fluxo B):
+ *  1 = cartão — gera o Checkout recorrente; o VIP é ativado pelo webhook.
+ *  2 = PIX    — segue para o fluxo manual (comprovante + aprovação).
  */
-async function handlePaymentPrivate(socket, remoteJid, messageText, userId) {
+async function handlePaymentPrivate(socket, remoteJid, messageText, userId, webMessage) {
   try {
     const userState = conversationStates.get(userId)
 
@@ -1713,17 +1754,47 @@ async function handlePaymentPrivate(socket, remoteJid, messageText, userId) {
         await sendWithDelay(socket, remoteJid, { text: getVipWorkModeMessage() })
         break
 
-      case "pago": {
-        infoLog(`[DEBUG PAGO] Definindo estado awaiting_payment_receipt_private para userId: ${userId}`)
-        conversationStates.set(userId, {
-          state: "awaiting_payment_receipt_private",
-          timestamp: Date.now(),
-          clientNumber: remoteJid,
-          leadData: userState?.leadData || {},
-          vipFilters: userState?.vipFilters || null
+      case "1": {
+        // Cartão: assinatura recorrente. Gera o Checkout amarrado ao LID.
+        const lead = userState?.leadData || {}
+        if (!lead.email || !lead.name) {
+          await sendWithDelay(socket, remoteJid, {
+            text: "*Faltam seus dados* ⚠️\n\nNão tenho o seu nome/e-mail. Digite *menu* e refaça o cadastro."
+          })
+          break
+        }
+        const { userLid: senderLid } = extractDataFromMessage(webMessage)
+        const clientLid =
+          senderLid && senderLid.includes("@lid") ? senderLid : remoteJid
+
+        await sendWithDelay(socket, remoteJid, {
+          text: "Gerando o seu link de pagamento seguro... 🔐"
         })
-        infoLog(`[DEBUG PAGO] Estado salvo. Filtros VIP: ${JSON.stringify(userState?.vipFilters)}`)
-        await sendWithDelay(socket, remoteJid, { text: getPaymentReceiptRequestMessage() })
+        const result = await createVipCheckout({
+          lid: clientLid,
+          name: lead.name,
+          email: lead.email,
+          phone: lead.phone,
+          filters: userState?.vipFilters || {}
+        })
+        if (!result.ok) {
+          await sendWithDelay(socket, remoteJid, {
+            text: "*Não consegui gerar o link agora* ⚠️\n\nTente novamente em instantes ou escolha o *PIX* (opção 2)."
+          })
+          break
+        }
+        await sendWithDelay(socket, remoteJid, { text: getCardCheckoutMessage(result.checkoutUrl) })
+        // O VIP será ativado automaticamente pelo webhook; encerra a conversa.
+        conversationStates.set(userId, { state: "menu", timestamp: Date.now() })
+        break
+      }
+
+      case "2": {
+        // PIX: fluxo manual (comprovante + aprovação do owner).
+        userState.state = "awaiting_payment_pix"
+        userState.timestamp = Date.now()
+        conversationStates.set(userId, userState)
+        await sendWithDelay(socket, remoteJid, { text: getPaymentPixMessage() })
         break
       }
 
@@ -1733,6 +1804,43 @@ async function handlePaymentPrivate(socket, remoteJid, messageText, userId) {
   } catch (error) {
     errorLog(`[HANDLE PAYMENT PRIVATE] Erro: ${error.message}`)
     errorLog(`[HANDLE PAYMENT PRIVATE] Stack: ${error.stack}`)
+  }
+}
+
+/**
+ * Processa a tela de pagamento PIX (manual). Só o caminho PIX cai no "pago"
+ * + envio de comprovante + aprovação do owner.
+ */
+async function handlePaymentPix(socket, remoteJid, messageText, userId) {
+  try {
+    const userState = conversationStates.get(userId)
+
+    switch (messageText) {
+      case "voltar":
+        userState.state = "awaiting_payment_private"
+        userState.timestamp = Date.now()
+        conversationStates.set(userId, userState)
+        await sendWithDelay(socket, remoteJid, { text: getPaymentPrivateMessage() })
+        break
+
+      case "pago": {
+        conversationStates.set(userId, {
+          state: "awaiting_payment_receipt_private",
+          timestamp: Date.now(),
+          clientNumber: remoteJid,
+          leadData: userState?.leadData || {},
+          vipFilters: userState?.vipFilters || null
+        })
+        await sendWithDelay(socket, remoteJid, { text: getPaymentReceiptRequestMessage() })
+        break
+      }
+
+      default:
+        await sendWithDelay(socket, remoteJid, { text: getInvalidOptionMessage() })
+    }
+  } catch (error) {
+    errorLog(`[HANDLE PAYMENT PIX] Erro: ${error.message}`)
+    errorLog(`[HANDLE PAYMENT PIX] Stack: ${error.stack}`)
   }
 }
 
@@ -1820,12 +1928,12 @@ async function handlePaymentReceiptPrivate(socket, remoteJid, messageText, userI
 
     if (messageText === "voltar") {
       conversationStates.set(userId, {
-        state: "awaiting_payment_private",
+        state: "awaiting_payment_pix",
         timestamp: Date.now(),
         leadData: userState?.leadData || {},
         vipFilters: userState?.vipFilters || null
       })
-      await sendWithDelay(socket, remoteJid, { text: getPaymentPrivateMessage() })
+      await sendWithDelay(socket, remoteJid, { text: getPaymentPixMessage() })
       return
     }
 
