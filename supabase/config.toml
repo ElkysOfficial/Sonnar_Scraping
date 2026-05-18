@@ -58,6 +58,15 @@ verify_jwt = false
 [functions.invite-whatsapp-subscriber]
 verify_jwt = false
 
+# shorten-url: cria links curtos. Chamada pelos formatters via x-link-secret.
+[functions.shorten-url]
+verify_jwt = false
+
+# resolve-short-link: resolve /v/<code> para o destino. Publica - chamada
+# pelo redirect PHP em sonnarjobs.com.br/v/<code>.
+[functions.resolve-short-link]
+verify_jwt = false
+
 # create-vip-checkout: chamada pelo bot para gerar o Checkout recorrente
 # (cartao) do VIP do WhatsApp. Autenticada por x-link-secret.
 [functions.create-vip-checkout]
