@@ -18,6 +18,7 @@ tags: [infra, moc]
 ## Notas
 
 - [[pterodactyl-hosting]] ✅ Hospedagem do bot WhatsApp em Pterodactyl (deploy, startup, scheduler).
+- [[whatsapp-api-elkys-integration]] 🔧 Integração WhatsApp API ↔ site Elkys (token, VPS Hostinger, Edge Functions) — pendente deploy.
 
 ## Notas a criar
 

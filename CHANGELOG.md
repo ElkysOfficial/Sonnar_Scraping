@@ -5,6 +5,21 @@ Todas as mudanças relevantes deste projeto são documentadas neste arquivo.
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/)
 e o projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [2.2.0] - 2026-05-19
+
+### Adicionado
+
+- **Autenticação por token no API Receiver do bot de WhatsApp**: os endpoints
+  `POST /send` e `POST /send-batch` (porta 3002) passam a exigir o header
+  `Authorization: Bearer <token>`, validado em tempo constante contra a nova
+  variável `WHATSAPP_API_TOKEN`. Sem token configurado o servidor recusa todas
+  as requisições (fail-safe `503`). Habilita o consumo seguro da API por
+  serviços externos. `/health` e `/status` seguem públicos.
+- **`setup-vps.sh`**: script de bootstrap da VPS que instala as dependências
+  dos quatro apps e sobe tudo via PM2 num único comando.
+- **Documentação da integração WhatsApp API ↔ portal** em
+  `docs/vault/09-infra/whatsapp-api-elkys-integration.md`.
+
 ## [2.1.6] - 2026-05-18
 
 ### Corrigido

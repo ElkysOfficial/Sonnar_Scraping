@@ -5,15 +5,54 @@
  * @author Sonar Bot
  */
 
+import crypto from "node:crypto"
 import express from "express"
 import { infoLog, successLog, warningLog, errorLog } from "../utils/logger.js"
 import { getCurrentSocket, isCurrentSocketReady } from "../utils/socketManager.js"
-import { WHATSAPP_API_PORT } from "../config.js"
+import { WHATSAPP_API_PORT, WHATSAPP_API_TOKEN } from "../config.js"
 
 const app = express()
 app.use(express.json({ limit: "50mb" }))
 
 const API_PORT = WHATSAPP_API_PORT
+
+/**
+ * Compara dois tokens em tempo constante (evita timing attack).
+ * @param {string} a
+ * @param {string} b
+ * @returns {boolean}
+ */
+function safeEqual(a, b) {
+  const bufA = Buffer.from(String(a))
+  const bufB = Buffer.from(String(b))
+  if (bufA.length !== bufB.length) return false
+  return crypto.timingSafeEqual(bufA, bufB)
+}
+
+/**
+ * Middleware de autenticacao por token Bearer.
+ * Protege os endpoints de envio. Espera o header:
+ *   Authorization: Bearer <WHATSAPP_API_TOKEN>
+ */
+function requireAuth(req, res, next) {
+  // Fail-safe: sem token configurado, recusa tudo (nao expor sem proteger).
+  if (!WHATSAPP_API_TOKEN) {
+    errorLog("[API] WHATSAPP_API_TOKEN nao configurado — requisicao recusada")
+    return res
+      .status(503)
+      .json({ success: false, error: "API token not configured" })
+  }
+
+  const header = req.headers.authorization || ""
+  const token = header.startsWith("Bearer ") ? header.slice(7) : ""
+
+  if (!token || !safeEqual(token, WHATSAPP_API_TOKEN)) {
+    warningLog(`[API] Requisicao nao autorizada de ${req.ip}`)
+    return res.status(401).json({ success: false, error: "Unauthorized" })
+  }
+
+  next()
+}
 
 /**
  * @typedef {Object} WhatsAppOutbound
@@ -70,7 +109,7 @@ async function sendWhatsAppMessage(data) {
  *
  * Body: WhatsAppOutbound
  */
-app.post("/send", async (req, res) => {
+app.post("/send", requireAuth, async (req, res) => {
   try {
     const data = req.body
 
@@ -105,7 +144,7 @@ app.post("/send", async (req, res) => {
  *
  * Body: { messages: WhatsAppOutbound[], delay?: number }
  */
-app.post("/send-batch", async (req, res) => {
+app.post("/send-batch", requireAuth, async (req, res) => {
   try {
     const { messages, delay = 2000 } = req.body
 
@@ -178,9 +217,10 @@ export function startApiReceiver() {
     infoLog("       📡 WHATSAPP API RECEIVER STARTED")
     infoLog("════════════════════════════════════════════════════")
     infoLog(`📍 Port: ${API_PORT}`)
+    infoLog(`🔒 Auth: ${WHATSAPP_API_TOKEN ? "Bearer token (ativo)" : "SEM TOKEN — /send recusara requisicoes"}`)
     infoLog(`Endpoints:`)
-    infoLog(`  POST /send - Send single message`)
-    infoLog(`  POST /send-batch - Send multiple messages`)
+    infoLog(`  POST /send - Send single message (auth)`)
+    infoLog(`  POST /send-batch - Send multiple messages (auth)`)
     infoLog(`  GET  /status - Check connection status`)
     infoLog("════════════════════════════════════════════════════")
   })

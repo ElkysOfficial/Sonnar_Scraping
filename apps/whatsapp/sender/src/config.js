@@ -176,6 +176,11 @@ export const ENABLE_API_RECEIVER = process.env.ENABLE_API_RECEIVER === "true" ||
 // Porta do servidor de API
 export const WHATSAPP_API_PORT = process.env.WHATSAPP_API_PORT || 3002
 
+// Token de autenticacao do API Receiver. Toda requisicao para /send e
+// /send-batch precisa do header `Authorization: Bearer <token>`.
+// Se ficar vazio, o servidor recusa requisicoes externas (fail-safe).
+export const WHATSAPP_API_TOKEN = process.env.WHATSAPP_API_TOKEN || ""
+
 // ======= CONFIGURAÇÕES DO CACHE JSON DE VAGAS =======
 // Diretório para armazenar cache JSON de vagas VIP
 export const VIP_CACHE_DIR = path.resolve(__dirname, "..", "database", "vip-jobs")
