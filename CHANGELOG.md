@@ -5,6 +5,17 @@ Todas as mudanças relevantes deste projeto são documentadas neste arquivo.
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/)
 e o projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [2.2.1] - 2026-05-19
+
+### Corrigido
+
+- **Checkout do portal falhava com erro 500 ao clicar em "Ir para pagamento"**:
+  a função `create-checkout-session` ligava `tax_id_collection` reusando um
+  `customer` existente do Stripe sem informar `customer_update`. O Stripe
+  rejeitava a criação da sessão (`Tax ID collection requires updating business
+  name on the customer`). Adicionado `customer_update: { name: "auto", address:
+  "auto" }`, alinhando com o fix já aplicado no `create-vip-checkout` (v2.1.4).
+
 ## [2.2.0] - 2026-05-19
 
 ### Adicionado
