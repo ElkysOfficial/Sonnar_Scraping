@@ -5,6 +5,29 @@ Todas as mudanças relevantes deste projeto são documentadas neste arquivo.
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/)
 e o projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [2.1.0] - 2026-05-18
+
+Release que entrega o **encurtador de URL próprio** e o **VIP do WhatsApp como
+assinatura recorrente**. Consolida o PR #21 (encurtador de URL + VIP recorrente
+do WhatsApp).
+
+### Adicionado
+
+- **Encurtador de URL próprio**: edge function `shorten-url` e tabela
+  `short_links`, gerando links curtos no domínio do projeto
+  (`sonnarjobs.com.br/v/<code>`). O formatter (`urlShortener.js`) encurta a URL
+  da vaga ao montar o card, com degradação graciosa — se o serviço falhar ou
+  não estiver configurado, devolve a URL original sem bloquear o envio.
+- **VIP do WhatsApp como assinatura recorrente do Stripe**: backend de cobrança
+  recorrente, fluxo de pagamento no bot do WhatsApp e notificações de cobrança.
+- **Dados fiscais no checkout**: coleta de CPF/CNPJ no checkout do portal, agora
+  obrigatório no Checkout do Stripe.
+
+### Removido
+
+- Encurtadores de URL gratuitos (tinyurl/cleanuri) e o módulo órfão
+  `cardApi.js` do formatter, substituídos pelo encurtador próprio.
+
 ## [2.0.0] - 2026-05-18
 
 Marco que transforma o Sonnar de um **bot de scraping para Discord** em um
@@ -94,6 +117,7 @@ modelo de distribuição e o produto mudaram por completo em relação à linha 
 - Lógica para evitar envio de vagas repetidas.
 - Intervalos de busca personalizáveis.
 
+[2.1.0]: https://github.com/ElkysOfficial/Sonnar_Scraping/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/ElkysOfficial/Sonnar_Scraping/compare/1.1.1...v2.0.0
 [1.1.1]: https://github.com/ElkysOfficial/Sonnar_Scraping/compare/1.1.0...1.1.1
 [1.1.0]: https://github.com/ElkysOfficial/Sonnar_Scraping/compare/1.0.0...1.1.0
