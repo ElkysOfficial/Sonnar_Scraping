@@ -53,19 +53,40 @@ function readJobsFile() {
   }
 }
 
+// Renomeia tmp -> destino com retentativas. No Windows o rename falha
+// (EBUSY/EPERM/EACCES) se o scraper tiver o jobs.json aberto naquele
+// instante. O lock e breve — tentar de novo algumas vezes resolve.
+const RENAME_ATTEMPTS = 12
+const RENAME_DELAY_MS = 200
+
+async function renameWithRetry(tmp, dest) {
+  for (let attempt = 0; attempt < RENAME_ATTEMPTS; attempt++) {
+    try {
+      fs.renameSync(tmp, dest)
+      return
+    } catch (err) {
+      const transient = ["EBUSY", "EPERM", "EACCES"].includes(err.code)
+      if (!transient || attempt === RENAME_ATTEMPTS - 1) throw err
+      await new Promise((r) => setTimeout(r, RENAME_DELAY_MS))
+    }
+  }
+}
+
 function writeJobsFile(data) {
-  writeQueue = writeQueue.then(() => {
-    return new Promise((resolve) => {
+  writeQueue = writeQueue.then(async () => {
+    const tmp = `${JOBS_JSON_PATH}.tmp`
+    try {
+      fs.mkdirSync(path.dirname(JOBS_JSON_PATH), { recursive: true })
+      fs.writeFileSync(tmp, JSON.stringify(data, null, 2), "utf8")
+      await renameWithRetry(tmp, JOBS_JSON_PATH)
+    } catch (err) {
+      console.error("[core] falha ao escrever jobs.json:", err.message)
       try {
-        fs.mkdirSync(path.dirname(JOBS_JSON_PATH), { recursive: true })
-        const tmp = `${JOBS_JSON_PATH}.tmp`
-        fs.writeFileSync(tmp, JSON.stringify(data, null, 2), "utf8")
-        fs.renameSync(tmp, JOBS_JSON_PATH)
-      } catch (err) {
-        console.error("[core] falha ao escrever jobs.json:", err.message)
+        if (fs.existsSync(tmp)) fs.unlinkSync(tmp)
+      } catch {
+        /* tmp ja removido ou inacessivel — ignora */
       }
-      resolve()
-    })
+    }
   })
   return writeQueue
 }
