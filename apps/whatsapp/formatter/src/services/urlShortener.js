@@ -10,8 +10,6 @@
  */
 import { errorLog } from "../utils/logger.js"
 
-const WEB_FUNCTIONS_URL = process.env.WEB_FUNCTIONS_URL || ""
-const LINK_SECRET = process.env.WHATSAPP_LINK_SECRET || ""
 const TIMEOUT_MS = 8000
 
 /**
@@ -22,16 +20,24 @@ const TIMEOUT_MS = 8000
 export async function shortenUrl(url) {
   const original = (url || "").toString().trim()
   if (!/^https?:\/\//i.test(original)) return original
-  if (!WEB_FUNCTIONS_URL || !LINK_SECRET) return original
+
+  // Lido por chamada (nao no topo do modulo) para nao depender da ordem
+  // de import — o dotenv pode ainda nao ter rodado quando este modulo carrega.
+  const webFunctionsUrl = process.env.WEB_FUNCTIONS_URL || ""
+  const linkSecret = process.env.WHATSAPP_LINK_SECRET || ""
+  if (!webFunctionsUrl || !linkSecret) {
+    errorLog("[SHORTENER] WEB_FUNCTIONS_URL ou WHATSAPP_LINK_SECRET ausentes — URL nao encurtada")
+    return original
+  }
 
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS)
   try {
-    const res = await fetch(`${WEB_FUNCTIONS_URL.replace(/\/$/, "")}/shorten-url`, {
+    const res = await fetch(`${webFunctionsUrl.replace(/\/$/, "")}/shorten-url`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "x-link-secret": LINK_SECRET
+        "x-link-secret": linkSecret
       },
       body: JSON.stringify({ url: original }),
       signal: controller.signal
