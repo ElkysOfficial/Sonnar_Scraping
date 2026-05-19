@@ -3,6 +3,7 @@
  * Generates job card images and formats them for WhatsApp distribution
  */
 
+import "dotenv/config"
 import express from "express"
 import { createJobCard, extractJobDataFromEmbed } from "./services/cardGenerator.js"
 import { shortenUrl } from "./services/urlShortener.js"
