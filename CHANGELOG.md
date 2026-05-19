@@ -5,6 +5,19 @@ Todas as mudanças relevantes deste projeto são documentadas neste arquivo.
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/)
 e o projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [2.1.6] - 2026-05-18
+
+### Corrigido
+
+- **Assinante VIP de cartão não recebia o e-mail de acesso ao portal**: o
+  trigger `handle_new_user` montava `subscriber_profiles` no shape do cadastro
+  do portal (Fluxo A). O VIP do WhatsApp (Fluxo B) envia o perfil com outro
+  shape — `seniority` como array, chaves no plural, sem `whatsapp` — e como
+  essas colunas são `NOT NULL` o `INSERT` estourava e abortava a criação da
+  conta. Resultado: `invite-whatsapp-subscriber` retornava 500 e o e-mail
+  nunca era enviado. O trigger agora aceita os dois shapes e, em último caso,
+  nunca deixa o perfil bloquear a criação da conta.
+
 ## [2.1.5] - 2026-05-18
 
 ### Corrigido
@@ -172,6 +185,7 @@ modelo de distribuição e o produto mudaram por completo em relação à linha 
 - Lógica para evitar envio de vagas repetidas.
 - Intervalos de busca personalizáveis.
 
+[2.1.6]: https://github.com/ElkysOfficial/Sonnar_Scraping/compare/v2.1.5...v2.1.6
 [2.1.5]: https://github.com/ElkysOfficial/Sonnar_Scraping/compare/v2.1.4...v2.1.5
 [2.1.4]: https://github.com/ElkysOfficial/Sonnar_Scraping/compare/v2.1.3...v2.1.4
 [2.1.3]: https://github.com/ElkysOfficial/Sonnar_Scraping/compare/v2.1.2...v2.1.3
