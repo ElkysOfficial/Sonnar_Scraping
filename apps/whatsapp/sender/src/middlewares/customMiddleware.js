@@ -1778,9 +1778,17 @@ async function handlePaymentPrivate(socket, remoteJid, messageText, userId, webM
           filters: userState?.vipFilters || {}
         })
         if (!result.ok) {
-          await sendWithDelay(socket, remoteJid, {
-            text: "*Não consegui gerar o link agora* ⚠️\n\nTente novamente em instantes ou escolha o *PIX* (opção 2)."
-          })
+          if (result.reason === "already_active") {
+            // Lead ja e VIP ativo — nao ha o que pagar. Nao oferece PIX.
+            await sendWithDelay(socket, remoteJid, {
+              text: "*Você já tem o Sonnar VIP ativo* ✅\n\nNão é preciso pagar de novo — sua assinatura está em dia. Digite *menu* para acessar as suas vagas."
+            })
+            conversationStates.set(userId, { state: "menu", timestamp: Date.now() })
+          } else {
+            await sendWithDelay(socket, remoteJid, {
+              text: "*Não consegui gerar o link agora* ⚠️\n\nTente novamente em instantes ou escolha o *PIX* (opção 2)."
+            })
+          }
           break
         }
         await sendWithDelay(socket, remoteJid, { text: getCardCheckoutMessage(result.checkoutUrl) })
