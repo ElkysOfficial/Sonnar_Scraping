@@ -5,6 +5,20 @@ Todas as mudanças relevantes deste projeto são documentadas neste arquivo.
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/)
 e o projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [2.1.5] - 2026-05-18
+
+### Corrigido
+
+- **"Opção inválida" ao mandar "oi" após a sessão expirar**: ao encerrar a
+  sessão por inatividade o bot voltava o estado para `menu` sem reexibir o
+  menu, então uma saudação caía como opção inválida. Agora saudações (`oi`,
+  `olá`, `bom dia`...) em estado de navegação reabrem o menu principal.
+
+### Alterado
+
+- O link de Checkout do Stripe (URL longa) agora é encurtado para
+  `sonnarjobs.com.br/v/<code>` antes de ser enviado no WhatsApp.
+
 ## [2.1.4] - 2026-05-18
 
 ### Corrigido
@@ -158,6 +172,7 @@ modelo de distribuição e o produto mudaram por completo em relação à linha 
 - Lógica para evitar envio de vagas repetidas.
 - Intervalos de busca personalizáveis.
 
+[2.1.5]: https://github.com/ElkysOfficial/Sonnar_Scraping/compare/v2.1.4...v2.1.5
 [2.1.4]: https://github.com/ElkysOfficial/Sonnar_Scraping/compare/v2.1.3...v2.1.4
 [2.1.3]: https://github.com/ElkysOfficial/Sonnar_Scraping/compare/v2.1.2...v2.1.3
 [2.1.2]: https://github.com/ElkysOfficial/Sonnar_Scraping/compare/v2.1.1...v2.1.2
