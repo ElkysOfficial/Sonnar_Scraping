@@ -5,6 +5,16 @@ Todas as mudanças relevantes deste projeto são documentadas neste arquivo.
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/)
 e o projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [2.1.1] - 2026-05-18
+
+### Corrigido
+
+- **Encurtador de URL não funcionava no formatter**: o `server.js` nunca
+  carregava o `.env` e o `urlShortener.js` lia `WEB_FUNCTIONS_URL` /
+  `WHATSAPP_LINK_SECRET` no topo do módulo — avaliado antes do `dotenv`. As
+  variáveis chegavam vazias e a vaga era enviada com a URL longa. Agora o
+  `.env` é carregado antes de tudo e a leitura do ambiente é feita por chamada.
+
 ## [2.1.0] - 2026-05-18
 
 Release que entrega o **encurtador de URL próprio** e o **VIP do WhatsApp como
@@ -117,6 +127,7 @@ modelo de distribuição e o produto mudaram por completo em relação à linha 
 - Lógica para evitar envio de vagas repetidas.
 - Intervalos de busca personalizáveis.
 
+[2.1.1]: https://github.com/ElkysOfficial/Sonnar_Scraping/compare/v2.1.0...v2.1.1
 [2.1.0]: https://github.com/ElkysOfficial/Sonnar_Scraping/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/ElkysOfficial/Sonnar_Scraping/compare/1.1.1...v2.0.0
 [1.1.1]: https://github.com/ElkysOfficial/Sonnar_Scraping/compare/1.1.0...1.1.1
