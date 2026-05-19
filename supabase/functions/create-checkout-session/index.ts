@@ -90,6 +90,10 @@ serve(async (req) => {
       // obriga o CPF/CNPJ para clientes do Brasil.
       tax_id_collection: { enabled: true, required: "if_supported" },
       billing_address_collection: "required",
+      // Ao reusar um customer existente, o Stripe exige customer_update para
+      // habilitar tax_id_collection — sem isso a criacao da sessao falha com
+      // "Tax ID collection requires updating business name on the customer".
+      customer_update: { name: "auto", address: "auto" },
       metadata: { user_id: user.id, subscriber_id: subscriber.id, plan },
       subscription_data: {
         // 7 dias gratis. Cliente cancela no periodo = nao paga nada.
