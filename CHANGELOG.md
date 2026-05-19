@@ -5,6 +5,17 @@ Todas as mudanças relevantes deste projeto são documentadas neste arquivo.
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/)
 e o projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [2.1.4] - 2026-05-18
+
+### Corrigido
+
+- **Checkout VIP por cartão falhava para customer já existente**: a edge
+  function `create-vip-checkout` criava a sessão com `tax_id_collection`
+  habilitado mas sem `customer_update`. Ao reaproveitar um customer do Stripe
+  (por LID ou e-mail) o Stripe rejeitava com "Tax ID collection requires
+  updating business name on the customer". Adicionado
+  `customer_update: { name: "auto", address: "auto" }`.
+
 ## [2.1.3] - 2026-05-18
 
 ### Corrigido
@@ -147,6 +158,7 @@ modelo de distribuição e o produto mudaram por completo em relação à linha 
 - Lógica para evitar envio de vagas repetidas.
 - Intervalos de busca personalizáveis.
 
+[2.1.4]: https://github.com/ElkysOfficial/Sonnar_Scraping/compare/v2.1.3...v2.1.4
 [2.1.3]: https://github.com/ElkysOfficial/Sonnar_Scraping/compare/v2.1.2...v2.1.3
 [2.1.2]: https://github.com/ElkysOfficial/Sonnar_Scraping/compare/v2.1.1...v2.1.2
 [2.1.1]: https://github.com/ElkysOfficial/Sonnar_Scraping/compare/v2.1.0...v2.1.1
