@@ -5,6 +5,16 @@ Todas as mudanças relevantes deste projeto são documentadas neste arquivo.
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/)
 e o projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [2.1.2] - 2026-05-18
+
+### Corrigido
+
+- **Falha intermitente ao gravar `jobs.json` no Windows**: o `sonnar-core` e o
+  `sonnar-scraper` escrevem o mesmo arquivo e o rename atômico falhava com
+  `EBUSY` / `WinError 5` quando o outro processo o tinha aberto. O core, que
+  não tinha retentativa alguma, agora tenta o rename 12× com intervalo; o
+  retry do scraper foi ampliado para 12 tentativas com backoff progressivo.
+
 ## [2.1.1] - 2026-05-18
 
 ### Corrigido
@@ -127,6 +137,7 @@ modelo de distribuição e o produto mudaram por completo em relação à linha 
 - Lógica para evitar envio de vagas repetidas.
 - Intervalos de busca personalizáveis.
 
+[2.1.2]: https://github.com/ElkysOfficial/Sonnar_Scraping/compare/v2.1.1...v2.1.2
 [2.1.1]: https://github.com/ElkysOfficial/Sonnar_Scraping/compare/v2.1.0...v2.1.1
 [2.1.0]: https://github.com/ElkysOfficial/Sonnar_Scraping/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/ElkysOfficial/Sonnar_Scraping/compare/1.1.1...v2.0.0
