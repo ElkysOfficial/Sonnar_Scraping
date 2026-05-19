@@ -5,6 +5,16 @@ Todas as mudanças relevantes deste projeto são documentadas neste arquivo.
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/)
 e o projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [2.1.3] - 2026-05-18
+
+### Corrigido
+
+- **Checkout VIP enganava lead já ativo**: ao gerar o link de pagamento por
+  cartão, qualquer falha caía na mensagem genérica "Não consegui gerar o link
+  / tente de novo / PIX". Quando o motivo era `already_active` (o lead já é
+  VIP ativo), isso sugeria erro transitório e oferecia pagar de novo. Agora
+  esse caso tem mensagem própria avisando que a assinatura está em dia.
+
 ## [2.1.2] - 2026-05-18
 
 ### Corrigido
@@ -137,6 +147,7 @@ modelo de distribuição e o produto mudaram por completo em relação à linha 
 - Lógica para evitar envio de vagas repetidas.
 - Intervalos de busca personalizáveis.
 
+[2.1.3]: https://github.com/ElkysOfficial/Sonnar_Scraping/compare/v2.1.2...v2.1.3
 [2.1.2]: https://github.com/ElkysOfficial/Sonnar_Scraping/compare/v2.1.1...v2.1.2
 [2.1.1]: https://github.com/ElkysOfficial/Sonnar_Scraping/compare/v2.1.0...v2.1.1
 [2.1.0]: https://github.com/ElkysOfficial/Sonnar_Scraping/compare/v2.0.0...v2.1.0
