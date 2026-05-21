@@ -5,6 +5,41 @@ Todas as mudanças relevantes deste projeto são documentadas neste arquivo.
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/)
 e o projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [2.3.3] - 2026-05-21
+
+### Corrigido
+
+- **Purge de vagas antigas quebrava quando não havia o que purgar**: o
+  `purgeStaleJobs` comparava `removed > 0`, mas `removed` pode ser o Symbol
+  `SKIP_WRITE` (devolvido pelo `updateJobsFile` quando não há gravação).
+  Comparar um Symbol com `>` lança `TypeError: Cannot convert a Symbol value
+  to a number`. Em todo ciclo sem vaga antiga (no boot ou a cada 6h) o purge
+  logava `falha no purge de vagas antigas`. Agora checa `!== SKIP_WRITE`
+  antes da comparação, como os outros três usos do sinal já faziam.
+- **Traceback de encerramento do scraper silenciado de vez**: a 2.3.0 tratou
+  o `KeyboardInterrupt`, mas o `CancelledError` que o `asyncio` dispara ao
+  cancelar as tasks de fundo no shutdown ainda vazava um traceback no log de
+  erro a cada `pm2 restart`. Um handler de exceção do loop ignora o
+  `CancelledError` esperado e o `except` do topo passou a cobrir os dois
+  tipos. Encerramento esperado não é erro.
+
+### Alterado
+
+- **Timestamps dos logs em data/hora brasileira**: a saída de console do
+  scraper passou a incluir a data (`DD/MM/AAAA HH:MM:SS`) e o logger do
+  formatter idem. O horário acompanha o fuso do servidor — defina
+  `America/Sao_Paulo` na VPS. O log-arquivo JSON do scraper segue em UTC ISO
+  (formato de máquina, para parsing).
+- **`kill_timeout` do scraper subiu para 10 s**: o PM2 dava só 1,6 s entre o
+  `SIGINT` e o `SIGKILL`, e o scraper era morto à força — cortando um
+  `POST /jobs/batch` em andamento e podendo deixar processos Chromium órfãos
+  consumindo RAM. Com 10 s ele fecha o ciclo e o browser antes de sair.
+
+### Adicionado
+
+- `scripts/verificar.sh` — checagem rápida pós-deploy: status do PM2, erros
+  nos logs, health do core, middleware de erro JSON, stats e testes unitários.
+
 ## [2.3.2] - 2026-05-21
 
 ### Corrigido

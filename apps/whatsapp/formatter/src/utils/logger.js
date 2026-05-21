@@ -30,12 +30,16 @@ const COLORS = {
 }
 
 function getTimestamp() {
+  // Data + hora no formato brasileiro (DD/MM/AAAA HH:MM:SS). new Date() segue
+  // o fuso do servidor — defina America/Sao_Paulo na VPS para o horario de BR.
   const now = new Date()
-  return now.toLocaleTimeString("pt-BR", {
+  const date = now.toLocaleDateString("pt-BR")
+  const time = now.toLocaleTimeString("pt-BR", {
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit"
   })
+  return `${date} ${time}`
 }
 
 function formatLog(level, icon, color, message) {

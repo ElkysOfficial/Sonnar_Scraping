@@ -180,7 +180,7 @@ def _short_logger_name(name: str) -> str:
 
 
 class PrettyFormatter(logging.Formatter):
-    """Formato humano para stdout: HH:MM:SS  LEVEL  area  mensagem-em-portugues.
+    """Formato humano para stdout: DD/MM/AAAA HH:MM:SS  LEVEL  area  mensagem.
 
     Para event_names mapeados em ``_HUMAN_MESSAGES``, traduz a mensagem
     completa para PT-BR sem termos tecnicos. Eventos nao mapeados caem no
@@ -192,7 +192,9 @@ class PrettyFormatter(logging.Formatter):
         self.color = color
 
     def format(self, record: logging.LogRecord) -> str:
-        ts = datetime.fromtimestamp(record.created).strftime("%H:%M:%S")
+        # Data + hora no formato brasileiro. fromtimestamp() sem tz usa o fuso
+        # do servidor — defina America/Sao_Paulo na VPS para o horario de BR.
+        ts = datetime.fromtimestamp(record.created).strftime("%d/%m/%Y %H:%M:%S")
         level = record.levelname.ljust(7)
         if self.color:
             level = f"{_LEVEL_COLORS.get(record.levelname,'')}{level}{_RESET}"

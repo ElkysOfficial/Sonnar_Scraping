@@ -164,7 +164,7 @@ async function purgeStaleJobs() {
       }
       return n > 0 ? n : SKIP_WRITE
     })
-    if (removed > 0) {
+    if (removed !== SKIP_WRITE && removed > 0) {
       console.log(`[core] purge: ${removed} vaga(s) antiga(s) removida(s)`)
     }
   } catch (err) {
