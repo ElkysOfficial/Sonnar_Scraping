@@ -95,8 +95,10 @@ async function renameWithRetry(tmp, dest) {
 // mutator(data) → gravar inteiro roda dentro da fila, serializado. Assim dois
 // handlers concorrentes nunca leem a mesma versão e sobrescrevem um ao outro.
 //
-// `mutator(data)` recebe o dict atual, modifica-o in-place e pode devolver um
-// valor (repassado ao chamador) ou `SKIP_WRITE` para pular a gravação. Se a
+// `mutator(data)` recebe o dict atual, modifica-o in-place e devolve o valor a
+// repassar ao chamador — ou `SKIP_WRITE` para pular a gravação. Quando pula, o
+// chamador recebe o próprio `SKIP_WRITE` de volta: um sinal explícito, sem
+// ambiguidade com um mutator que (por engano) retorne `undefined`. Se a
 // leitura/escrita falhar, a promise é rejeitada — o endpoint deve responder
 // erro para o cliente poder reenviar (nada de sucesso silencioso).
 //
@@ -106,7 +108,7 @@ function updateJobsFile(mutator) {
   const run = writeQueue.then(async () => {
     const data = readJobsFileStrict()
     const result = await mutator(data)
-    if (result === SKIP_WRITE) return undefined
+    if (result === SKIP_WRITE) return SKIP_WRITE
 
     const tmp = `${JOBS_JSON_PATH}.${process.pid}.tmp`
     try {
@@ -347,7 +349,7 @@ app.post("/jobs/batch", jsonBatch, async (req, res) => {
       }
       return upserted > 0 ? { upserted, skipped } : SKIP_WRITE
     })
-    if (counts === undefined) {
+    if (counts === SKIP_WRITE) {
       // Nenhuma vaga válida no lote — nada gravado.
       return res.json({ success: true, upserted: 0, skipped: incoming.length })
     }
@@ -444,7 +446,7 @@ app.put("/jobs/status", jsonSmall, async (req, res) => {
       data[hit.url] = hit.entry
       return hit.entry
     })
-    if (entry === undefined) {
+    if (entry === SKIP_WRITE) {
       return res.status(404).json({ success: false, message: "Vaga não encontrada" })
     }
     res.json({ success: true, job: entryToApiJob(entry) })
@@ -463,7 +465,7 @@ app.delete("/jobs/:id", async (req, res) => {
       delete data[hit.url]
       return true
     })
-    if (removed === undefined) {
+    if (removed === SKIP_WRITE) {
       return res.status(404).json({ success: false, message: "Vaga não encontrada" })
     }
     res.json({ success: true })
@@ -481,6 +483,18 @@ app.get("/health", (req, res) => {
     jobsPath: JOBS_JSON_PATH,
     jobsExists: fs.existsSync(JOBS_JSON_PATH)
   })
+})
+
+// Normaliza erros não capturados nas rotas. Sem isto, um corpo JSON malformado
+// (erro do body-parser) cairia no handler padrão do Express — resposta HTML e
+// stack trace no log. Middleware de erro tem de ter 4 argumentos e vir por último.
+// eslint-disable-next-line no-unused-vars
+app.use((err, req, res, next) => {
+  if (err?.type === "entity.parse.failed" || err instanceof SyntaxError) {
+    return res.status(400).json({ success: false, message: "Corpo JSON inválido." })
+  }
+  console.error("[core] erro não tratado:", err?.message || err)
+  res.status(500).json({ success: false, message: "Erro interno." })
 })
 
 app.listen(PORT, () => {
