@@ -33,7 +33,31 @@ logger = logging.getLogger(__name__)
 # Tamanho máximo de vagas por request. Um flush pode acumular milhares de
 # vagas (ex.: core fora do ar por um tempo); enviar tudo numa request só
 # estouraria o limite de corpo do core. Fatiar mantém cada request pequena.
-CHUNK_SIZE = int(os.getenv("CORE_PUSH_CHUNK_SIZE", "500"))
+_DEFAULT_CHUNK_SIZE = 500
+
+
+def _resolve_chunk_size() -> int:
+    """Lê CORE_PUSH_CHUNK_SIZE do env com validação.
+
+    Um valor não-inteiro, zero ou negativo quebraria ``range(0, n, step)``
+    (``step`` zero) ou faria o flush nunca enviar nada. Nesses casos, cai no
+    default e registra um aviso.
+    """
+    raw = os.getenv("CORE_PUSH_CHUNK_SIZE")
+    if raw is None:
+        return _DEFAULT_CHUNK_SIZE
+    try:
+        value = int(raw)
+    except ValueError:
+        logger.warning("CORE_PUSH_CHUNK_SIZE invalido (%r); usando %d.", raw, _DEFAULT_CHUNK_SIZE)
+        return _DEFAULT_CHUNK_SIZE
+    if value < 1:
+        logger.warning("CORE_PUSH_CHUNK_SIZE deve ser >= 1 (%d); usando %d.", value, _DEFAULT_CHUNK_SIZE)
+        return _DEFAULT_CHUNK_SIZE
+    return value
+
+
+CHUNK_SIZE = _resolve_chunk_size()
 
 
 class CoreJobsSink:
