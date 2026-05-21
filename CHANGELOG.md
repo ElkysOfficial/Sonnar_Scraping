@@ -5,6 +5,35 @@ Todas as mudanças relevantes deste projeto são documentadas neste arquivo.
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/)
 e o projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [2.3.1] - 2026-05-21
+
+### Corrigido
+
+- **Escrita do `jobs.json` agora é transacional**: o ciclo ler → modificar →
+  gravar passou a rodar inteiro dentro da fila de escrita serializada. Antes,
+  a fila serializava só a gravação — dois handlers do core (ex.: `POST
+  /jobs/batch` e `PUT /jobs/status`) podiam ler a mesma versão do arquivo e o
+  último a gravar sobrescrevia o outro (*lost update*). O single-writer da
+  2.3.0 matou a corrida **entre processos**; esta corrige a corrida **entre os
+  handlers do próprio core**. Vale também para o `purgeStaleJobs`.
+- **Falha de escrita não vira mais sucesso silencioso**: `updateJobsFile`
+  propaga o erro em vez de engoli-lo, e os endpoints respondem `500` quando a
+  gravação falha. Sem isso, o `POST /jobs/batch` podia responder `200` sem
+  persistir, fazendo o scraper descartar as vagas da fila de reenvio.
+- **`CORE_PUSH_CHUNK_SIZE` inválido quebrava o envio ao core**: um valor zero,
+  negativo ou não-numérico estourava o `range()` do fatiamento. Agora é
+  validado (mínimo 1) e cai no default 500, com aviso no log.
+- **`JOBS_MAX_AGE_DAYS` inválido**: valor não-finito ou negativo era aceito;
+  agora é validado (mínimo 1 dia) e cai no default de 90.
+- **Limite de corpo HTTP do core por rota**: o `express.json` de 25 MB era
+  global. Voltou a 1 MB por padrão; o limite de 25 MB vale só para o
+  `POST /jobs/batch`, reduzindo a superfície de memória/DoS do parser.
+
+### Adicionado
+
+- Testes unitários do `CoreJobsSink` — fatiamento em chunks, falha de chunk
+  intermediário, cliente não inicializado e erro de rede.
+
 ## [2.3.0] - 2026-05-21
 
 ### Adicionado
