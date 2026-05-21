@@ -5,6 +5,18 @@ Todas as mudanças relevantes deste projeto são documentadas neste arquivo.
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/)
 e o projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [2.3.4] - 2026-05-21
+
+### Corrigido
+
+- **Código de pareamento do WhatsApp ia para o número errado**: o
+  `VITE_WHATSAPP_PHONE` no `.env.production` da web apontava para
+  `5531998478235`. O deep-link de pareamento do dashboard
+  (`wa.me/<numero>?text=parear <token>`, em `DashboardJobs.vue`) enviava o
+  código para esse número em vez do número correto do bot
+  (`5531999738235`). Corrigido o valor. **Exige rebuild + redeploy da web** —
+  variável `VITE_` é embutida no bundle em build-time.
+
 ## [2.3.3] - 2026-05-21
 
 ### Corrigido
