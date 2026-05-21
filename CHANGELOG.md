@@ -5,6 +5,42 @@ Todas as mudanças relevantes deste projeto são documentadas neste arquivo.
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/)
 e o projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [2.3.0] - 2026-05-21
+
+### Adicionado
+
+- **`jobs.json` com escritor único (single-writer)**: o `message-formatting-core`
+  passa a ser o **único processo que grava o `jobs.json`**. O scraper não escreve
+  mais o arquivo — coleta as vagas, mantém um buffer em memória e as envia ao core
+  pelo novo endpoint `POST /jobs/batch` (em chunks, para não estourar o limite de
+  corpo da request). Antes, scraper e core gravavam o mesmo arquivo ao mesmo tempo:
+  uma corrida que causava `ENOENT` no rename do temporário e fazia o scraper apagar
+  marcações de envio (`sent_to`) recém-feitas pelo core. Se o core estiver fora do
+  ar, o scraper retém as vagas em memória e reenvia quando ele volta — o dedup do
+  scraper segue lendo o `jobs.json` no startup, sem mudança.
+- **Purge de vagas antigas no core**: a remoção de vagas com `publication_date`
+  acima de 90 dias (configurável via `JOBS_MAX_AGE_DAYS`) passa a ser feita pelo
+  core — no boot e a cada 6h —, já que ele é o único escritor do arquivo.
+
+### Corrigido
+
+- **`Falha ao gravar jobs.json` (`ENOENT`)**: eliminado por construção pelo
+  single-writer acima. Como reforço, o nome do arquivo temporário da escrita
+  atômica passou a incluir o PID, impedindo que um processo renomeie o `.tmp`
+  de outro.
+- **`sent_to` sobrescrito pelo scraper**: o core nunca mais perde marcações de
+  envio — o `POST /jobs/batch` preserva o `sent_to` em disco e ignora o que o
+  scraper enviar. Evita que vagas já enviadas sejam reenviadas aos usuários.
+- **Corpo JSON inválido poluía o log de erro do API Receiver do WhatsApp**: um
+  `POST` com JSON malformado gerava `SyntaxError` com stack trace no log do PM2.
+  Adicionado middleware de erro que responde `400` limpo, sem despejar o stderr.
+- **Traceback de `KeyboardInterrupt` no scraper**: parar/reiniciar o serviço
+  via PM2 (SIGINT) despejava um traceback gigante no log de erro. O encerramento
+  agora é tratado como evento esperado.
+- **Documentação do teto de memória do core**: `OPERACAO.md` indicava 250 MB,
+  mas o `ecosystem.config.cjs` já usa 512 MB (o core faz `JSON.parse` do
+  `jobs.json` inteiro a cada request). Tabela e orçamento de RAM corrigidos.
+
 ## [2.2.1] - 2026-05-19
 
 ### Corrigido
