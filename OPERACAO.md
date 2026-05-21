@@ -6,7 +6,7 @@ Guia de operação dos serviços do Sonnar via **PM2**. Tudo sobe/para com um co
 
 | Processo (PM2) | App | Porta | O que faz |
 | --- | --- | --- | --- |
-| `sonnar-core` | `packages/message-formatting-core` | 3100 | API HTTP que serve o `jobs.json` |
+| `sonnar-core` | `packages/message-formatting-core` | 3100 | API HTTP — **único processo que grava o `jobs.json`** + serve as vagas |
 | `sonnar-wa-formatter` | `apps/whatsapp/formatter` | 3001 | Gera os cards (imagem) das vagas |
 | `sonnar-wa-sender` | `apps/whatsapp/sender` | 3002 | Bot do WhatsApp (Baileys) |
 | `sonnar-scraper` | `apps/scraper` | — | Coleta vagas das engines em loop (`while True`) |
@@ -16,8 +16,15 @@ O Discord (`apps/discord/*`) **não** está no ecosystem ainda.
 
 Fluxo de dados:
 ```
-scraper → jobs.json → core (3100) → formatter (3001) → sender (3002 / WhatsApp)
+scraper ──POST /jobs/batch──▶ core (3100) ──grava──▶ jobs.json
+                                   └──serve──▶ formatter (3001) ──▶ sender (3002 / WhatsApp)
 ```
+
+> **Single-writer:** o `jobs.json` tem **um único escritor — o core**. O scraper
+> não grava o arquivo: coleta as vagas e as envia ao core via HTTP. Isso elimina
+> a corrida de dois processos gravando o mesmo arquivo (que causava o erro
+> `Falha ao gravar jobs.json` e a perda de marcações de envio). Se o core estiver
+> fora do ar, o scraper segura as vagas em memória e reenvia quando ele voltar.
 
 ## Pré-requisitos
 
@@ -27,7 +34,7 @@ npm install -g pm2          # uma vez, por máquina
 
 Cada app precisa do seu `.env` e dependências instaladas:
 - `apps/whatsapp/sender/.env` — `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `WEB_FUNCTIONS_URL`, `WHATSAPP_LINK_SECRET`
-- `apps/scraper/.env` — `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`
+- `apps/scraper/.env` — `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `CORE_API_URL` (opcional — default `http://localhost:3100`)
 - `apps/scraper`: `pip install -r requirements.txt`
 - Node apps: `npm install` em cada um (já feito)
 
@@ -86,11 +93,11 @@ A máquina tem **4GB de RAM**. O ecosystem tem `max_memory_restart` por processo
 
 | Processo | Teto (`max_memory_restart`) | Observação |
 | --- | --- | --- |
-| `sonnar-core` | 250 MB | Express leve, servindo JSON |
+| `sonnar-core` | 512 MB | Faz `JSON.parse` do `jobs.json` inteiro (~18k vagas) por request; 250M reiniciava a cada ciclo VIP |
 | `sonnar-wa-formatter` | 400 MB | Canvas (geração de imagem) tem picos |
 | `sonnar-wa-sender` | 500 MB | Baileys cresce com o tempo (reinício limpa) |
 | `sonnar-scraper` | 1024 MB | Mais pesado — coleta + parsing |
-| **Total apps** | **~2,2 GB** | Sobra ~1 GB pro SO + ~0,8 GB de folga |
+| **Total apps** | **~2,4 GB** | Sobra ~1 GB pro SO + ~0,6 GB de folga |
 
 ### Regras para não estourar / não dar gargalo
 

@@ -1,25 +1,24 @@
 """
-Persistencia local em JSON (UTF-8) para vagas extraidas.
+Buffer local de vagas em memória (UTF-8) — camada de dedup do scraper.
 
-Formato: ver versão anterior (chave = job_url).
+ARQUITETURA single-writer (mudança 2026-05)
+-------------------------------------------
+O scraper NÃO grava mais o ``jobs.json``. O único processo que escreve esse
+arquivo é o ``message-formatting-core``. Antes, scraper e core gravavam o
+mesmo arquivo — dois escritores causavam corrida no rename (``ENOENT``) e o
+scraper apagava atualizações de ``sent_to`` feitas pelo core.
 
-Mudança 2026-05: ``upsert`` é write-back **em batch**.
-Antes: cada upsert reserializava o JSON inteiro (O(N) por save), bloqueando o
-event loop em volumes >5k vagas.
+Agora:
+  - No startup, ``_load()`` LÊ o ``jobs.json`` (escrito pelo core) só para
+    semear o conjunto de dedup. Leitura é segura: há um único escritor e a
+    gravação dele é atômica (rename).
+  - ``upsert``/``mark_sent`` atualizam o buffer em memória e marcam a
+    ``job_url`` como "suja".
+  - ``drain_dirty()`` devolve as vagas sujas; o ``JobsRepository`` as envia
+    ao core via HTTP (``POST /jobs/batch``) — e o core grava o arquivo.
 
-Agora: o flush para disco acontece quando:
-    - acumular FLUSH_THRESHOLD upserts pendentes, OU
-    - passar FLUSH_INTERVAL_S desde o último flush, OU
-    - chamada explícita de ``flush_now()``.
-
-Isso preserva a propriedade "fonte de verdade pro message_sending" porque
-toda leitura passa por ``known_urls()``/``has()``/``get()`` que lêem do
-buffer em memória — sempre consistente — e o flush garante durabilidade
-em janelas curtas (default 5s).
-
-Em desligamento normal o controlador chama ``flush_now()``. Em SIGKILL
-perdem-se até 5s de upserts; o CSV (append-only) e o Supabase continuam
-preservando os mesmos jobs.
+``known_urls()``/``has()``/``get()`` continuam lendo do buffer em memória,
+sempre consistente.
 """
 from __future__ import annotations
 
@@ -27,31 +26,36 @@ import json
 import logging
 import os
 import threading
-import time
-from typing import Dict, Optional
+from typing import Dict, Iterable, List, Optional
 
 
 logger = logging.getLogger(__name__)
 
 
-FLUSH_THRESHOLD = int(os.getenv("LOCAL_STORE_FLUSH_THRESHOLD", "50"))
-FLUSH_INTERVAL_S = float(os.getenv("LOCAL_STORE_FLUSH_INTERVAL_S", "5.0"))
+# Caminho do jobs.json ANCORADO no diretório do app (não no CWD do processo).
+# Usado apenas para LEITURA no startup — quem grava o arquivo é o core.
+_SRC_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DEFAULT_JSON_PATH = os.path.join(_SRC_DIR, "data", "jobs.json")
 
 
 class LocalJobStore:
-    """Store JSON UTF-8 thread-safe com flush em batch."""
+    """Buffer de vagas em memória, thread-safe, com rastreio de vagas sujas.
+
+    "Sujas" = vagas inseridas/alteradas desde o último ``drain_dirty()`` e que
+    ainda precisam ser enviadas ao core para persistência.
+    """
 
     def __init__(self, path: Optional[str] = None):
-        self.path = path or os.path.join('src', 'data', 'jobs.json')
+        self.path = path or DEFAULT_JSON_PATH
         self._lock = threading.Lock()
         self._data: Dict[str, dict] = {}
-        self._dirty = 0
-        self._last_flush = 0.0
+        self._dirty: set = set()
         self._load()
 
     # ---------------- carregamento ----------------
 
     def _load(self) -> None:
+        """Lê o jobs.json (escrito pelo core) para semear o buffer de dedup."""
         if not os.path.exists(self.path):
             self._data = {}
             return
@@ -62,7 +66,6 @@ class LocalJobStore:
         except (json.JSONDecodeError, OSError) as exc:
             logger.error('Falha ao carregar jobs.json (%s); iniciando vazio.', exc)
             self._data = {}
-        self._last_flush = time.monotonic()
 
     # ---------------- leitura ----------------
 
@@ -79,7 +82,7 @@ class LocalJobStore:
             entry = self._data.get(job_url)
             return dict(entry) if entry else None
 
-    # ---------------- escrita (batched) ----------------
+    # ---------------- escrita (buffer + marcação de sujas) ----------------
 
     def upsert(self, job: dict) -> None:
         url = job.get('job_url')
@@ -91,9 +94,7 @@ class LocalJobStore:
             merged = {**existing, **job}
             merged['sent_to'] = sent_to
             self._data[url] = merged
-            self._dirty += 1
-            if self._should_flush_unlocked():
-                self._flush_unlocked()
+            self._dirty.add(url)
 
     def mark_sent(self, job_url: str, channel: str) -> None:
         with self._lock:
@@ -103,63 +104,49 @@ class LocalJobStore:
             sent = set(entry.get('sent_to', []))
             sent.add(channel)
             entry['sent_to'] = sorted(sent)
-            self._dirty += 1
-            if self._should_flush_unlocked():
-                self._flush_unlocked()
+            self._dirty.add(job_url)
 
     def delete_older_than(self, cutoff_iso: str) -> int:
+        """Remove do buffer em memória vagas com publication_date < cutoff.
+
+        Mantém o conjunto de dedup enxuto. O purge do arquivo ``jobs.json``
+        em si é responsabilidade do core (único escritor).
+        """
         removed = 0
         with self._lock:
             for url in list(self._data.keys()):
                 pub = self._data[url].get('publication_date')
                 if pub and pub < cutoff_iso:
                     del self._data[url]
+                    self._dirty.discard(url)
                     removed += 1
-            if removed:
-                self._dirty += removed
-                self._flush_unlocked()
         return removed
 
-    def flush_now(self) -> None:
-        """Força flush imediato (use no shutdown/idle)."""
+    # ---------------- sincronização com o core ----------------
+
+    def pending_count(self) -> int:
+        """Quantas vagas estão sujas (aguardando envio ao core)."""
         with self._lock:
-            if self._dirty > 0:
-                self._flush_unlocked()
+            return len(self._dirty)
 
-    # ---------------- internos ----------------
+    def drain_dirty(self) -> List[dict]:
+        """Devolve (e limpa) as vagas marcadas como sujas desde o último drain.
 
-    def _should_flush_unlocked(self) -> bool:
-        if self._dirty >= FLUSH_THRESHOLD:
-            return True
-        if (time.monotonic() - self._last_flush) >= FLUSH_INTERVAL_S and self._dirty > 0:
-            return True
-        return False
+        O chamador deve enviá-las ao core. Se o envio falhar, deve chamar
+        ``requeue`` com as job_urls para não perder as alterações.
+        """
+        with self._lock:
+            jobs = []
+            for url in self._dirty:
+                entry = self._data.get(url)
+                if entry is not None:
+                    jobs.append(dict(entry))
+            self._dirty.clear()
+            return jobs
 
-    def _flush_unlocked(self) -> None:
-        os.makedirs(os.path.dirname(self.path), exist_ok=True)
-        tmp_path = f'{self.path}.tmp'
-        try:
-            with open(tmp_path, 'w', encoding='utf-8') as f:
-                json.dump(self._data, f, ensure_ascii=False, indent=2)
-            # os.replace pode falhar no Windows (WinError 5 / PermissionError)
-            # se o core estiver lendo/gravando o jobs.json naquele instante.
-            # O lock e breve — tenta de novo com backoff progressivo (~9s no
-            # pior caso) antes de desistir.
-            attempts = 12
-            for attempt in range(attempts):
-                try:
-                    os.replace(tmp_path, self.path)
-                    break
-                except PermissionError:
-                    if attempt == attempts - 1:
-                        raise
-                    time.sleep(min(0.2 * (attempt + 1), 1.0))
-            self._dirty = 0
-            self._last_flush = time.monotonic()
-        except OSError as exc:
-            logger.error('Falha ao gravar jobs.json: %s', exc)
-            if os.path.exists(tmp_path):
-                try:
-                    os.remove(tmp_path)
-                except OSError:
-                    pass
+    def requeue(self, job_urls: Iterable[str]) -> None:
+        """Re-marca job_urls como sujas (usar quando o envio ao core falhar)."""
+        with self._lock:
+            for url in job_urls:
+                if url in self._data:
+                    self._dirty.add(url)

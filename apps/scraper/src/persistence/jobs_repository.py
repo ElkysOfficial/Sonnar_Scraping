@@ -20,6 +20,7 @@ import re
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Tuple
 
+from .core_sink import CoreJobsSink
 from .csv_store import CSVJobStore
 from .local_store import LocalJobStore
 from .location_normalizer import normalize_location
@@ -170,8 +171,10 @@ class JobsRepository:
     """
     Orquestra normalização e persistência em três sinks (todos best-effort):
 
-      1. ``LocalJobStore``   → ``src/data/jobs.json`` (write-through atômico,
-         fonte de verdade para envio de mensagens pelos bots).
+      1. ``LocalJobStore`` + ``CoreJobsSink`` → ``jobs.json``. O buffer em
+         memória dedupa e acumula as vagas; ``flush_to_core`` as envia ao
+         message-formatting-core, que é o ÚNICO processo que grava o arquivo
+         (single-writer — ver ``core_sink.py``).
       2. ``CSVJobStore``     → ``src/data/job.csv``  (append-only, histórico
          imutável para analytics).
       3. ``SupabaseJobsClient`` → tabela ``public.jobs`` (alimenta agregados
@@ -189,8 +192,10 @@ class JobsRepository:
         self.local = LocalJobStore(path=json_path)
         self.csv = CSVJobStore(path=csv_path)
         self.supabase = SupabaseJobsClient()
+        self.core = CoreJobsSink()
 
     async def __aenter__(self):
+        await self.core.__aenter__()
         await self.supabase.__aenter__()
         await self.purge_stale()
         return self
@@ -214,16 +219,26 @@ class JobsRepository:
 
     async def __aexit__(self, exc_type, exc, tb):
         try:
-            self.local.flush_now()
+            await self.flush_to_core()
         except Exception as flush_exc:
-            logger.error('Falha flush_now no shutdown: %s', flush_exc)
+            logger.error('Falha flush_to_core no shutdown: %s', flush_exc)
         await self.supabase.__aexit__(exc_type, exc, tb)
+        await self.core.__aexit__(exc_type, exc, tb)
 
-    def flush_now(self) -> None:
-        try:
-            self.local.flush_now()
-        except Exception as exc:
-            logger.error('Falha flush_now: %s', exc)
+    async def flush_to_core(self) -> None:
+        """Envia ao core as vagas acumuladas no buffer local desde o último
+        envio. O core é o ÚNICO escritor do jobs.json.
+
+        Em caso de falha (core fora do ar, timeout) as vagas voltam para a
+        fila de sujas e são reenviadas no próximo ciclo — nada se perde.
+        """
+        jobs = self.local.drain_dirty()
+        if not jobs:
+            return
+        ok = await self.core.push_batch(jobs)
+        if not ok:
+            self.local.requeue(j['job_url'] for j in jobs if j.get('job_url'))
+            logger.warning('Envio ao core falhou; %d vaga(s) reenfileirada(s).', len(jobs))
 
     def known_urls(self) -> set:
         """Conjunto de job_urls ja persistidos (do JSON local). Usado em dedup."""
