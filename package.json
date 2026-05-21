@@ -1,6 +1,6 @@
 {
   "name": "sonnar-scraping",
-  "version": "2.3.3",
+  "version": "2.3.4",
   "private": true,
   "description": "Monorepo Sonnar - orquestracao dos servicos via PM2",
   "scripts": {
