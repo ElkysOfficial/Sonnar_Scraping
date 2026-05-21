@@ -27,6 +27,7 @@ import { errorLog, infoLog } from "../utils/logger.js"
 import { pairSubscriberByToken } from "../services/whatsappLinker.js"
 import { createPortalAccountForVip } from "../services/portalAccount.js"
 import { createVipCheckout } from "../services/vipCheckout.js"
+import { shortenUrl } from "../services/urlShortener.js"
 import { triggerVipSearch } from "../services/vipJobSender.js"
 import {
   addVipPendingSubscriber,
@@ -879,6 +880,21 @@ Responda com um dos números do menu atual.
 👉 Digite *menu* para recomeçar.`
 }
 
+// Saudacoes que reabrem o menu principal (sessao nova ou expirada).
+const GREETINGS = new Set([
+  "oi", "oii", "oiii", "oie", "ola", "olá", "ola!", "alo", "alô",
+  "eai", "e ai", "eaí", "opa", "oi!", "ola!",
+  "bom dia", "boa tarde", "boa noite", "boa madrugada",
+  "inicio", "início", "comecar", "começar", "start", "hi", "hello"
+])
+
+/**
+ * Saudação simples (oi, olá, bom dia...) — usada para reabrir o menu.
+ */
+function isGreeting(text) {
+  return GREETINGS.has((text || "").toString().trim().toLowerCase())
+}
+
 /**
  * Mensagem de timeout de sessão
  */
@@ -1055,6 +1071,16 @@ export async function customMiddleware({ socket, webMessage, type, commonFunctio
 
     // Atualiza timestamp
     userState.timestamp = Date.now()
+
+    // Saudação (oi, olá, bom dia...) em estado de navegação reabre o menu
+    // principal. Cobre a sessão expirada: o timeout volta o estado para
+    // "menu" sem reexibir o menu, então o "oi" do usuário caía em
+    // "Opção inválida". Não intercepta os estados awaiting_* (fluxo ativo).
+    if (isGreeting(messageText) && (userState.state === "menu" || userState.state === "sonar_menu")) {
+      conversationStates.set(userId, { state: "menu", timestamp: Date.now(), budgetData: {}, previousState: "" })
+      await sendWithDelay(socket, remoteJid, { text: getMainMenu() })
+      return
+    }
 
     // Processa de acordo com o estado atual
     switch (userState.state) {
@@ -1778,12 +1804,23 @@ async function handlePaymentPrivate(socket, remoteJid, messageText, userId, webM
           filters: userState?.vipFilters || {}
         })
         if (!result.ok) {
-          await sendWithDelay(socket, remoteJid, {
-            text: "*Não consegui gerar o link agora* ⚠️\n\nTente novamente em instantes ou escolha o *PIX* (opção 2)."
-          })
+          if (result.reason === "already_active") {
+            // Lead ja e VIP ativo — nao ha o que pagar. Nao oferece PIX.
+            await sendWithDelay(socket, remoteJid, {
+              text: "*Você já tem o Sonnar VIP ativo* ✅\n\nNão é preciso pagar de novo — sua assinatura está em dia. Digite *menu* para acessar as suas vagas."
+            })
+            conversationStates.set(userId, { state: "menu", timestamp: Date.now() })
+          } else {
+            await sendWithDelay(socket, remoteJid, {
+              text: "*Não consegui gerar o link agora* ⚠️\n\nTente novamente em instantes ou escolha o *PIX* (opção 2)."
+            })
+          }
           break
         }
-        await sendWithDelay(socket, remoteJid, { text: getCardCheckoutMessage(result.checkoutUrl) })
+        // Encurta o link do Checkout (URL do Stripe e enorme). Se o
+        // encurtador falhar, shortenUrl devolve a URL original.
+        const checkoutUrl = await shortenUrl(result.checkoutUrl)
+        await sendWithDelay(socket, remoteJid, { text: getCardCheckoutMessage(checkoutUrl) })
         // O VIP será ativado automaticamente pelo webhook; encerra a conversa.
         conversationStates.set(userId, { state: "menu", timestamp: Date.now() })
         break

@@ -30,6 +30,12 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 
+# Caminho default ANCORADO no diretório do app, não no CWD do processo —
+# mesmo motivo do LocalJobStore: evita ENOENT na escrita se o CWD mudar.
+_SRC_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DEFAULT_CSV_PATH = os.path.join(_SRC_DIR, "data", "job.csv")
+
+
 # Ordem das colunas do CSV - corresponde 1:1 ao schema da tabela jobs no Supabase
 CSV_COLUMNS = [
     "job_url",
@@ -61,7 +67,7 @@ class CSVJobStore:
     """
 
     def __init__(self, path: Optional[str] = None):
-        self.path = path or os.path.join("src", "data", "job.csv")
+        self.path = path or DEFAULT_CSV_PATH
         self._lock = threading.Lock()
         self._seen_urls: set = set()
         self._ensure_header()

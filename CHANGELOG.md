@@ -5,6 +5,200 @@ Todas as mudanças relevantes deste projeto são documentadas neste arquivo.
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/)
 e o projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [2.3.2] - 2026-05-21
+
+### Corrigido
+
+- **Resposta de erro do core sempre em JSON**: um corpo JSON malformado caía no
+  handler padrão do Express (resposta HTML e stack trace no log). Um middleware
+  de erro passa a responder `400` JSON consistente e a registrar erros não
+  previstos sem despejar stack no stderr.
+- **Sinal de "pular gravação" explícito no `updateJobsFile`**: ao não gravar, a
+  função devolve `SKIP_WRITE` em vez de `undefined`, eliminando a ambiguidade
+  com um mutator que retorne `undefined` por engano (apontado no review da 2.3.1).
+
+## [2.3.1] - 2026-05-21
+
+### Corrigido
+
+- **Escrita do `jobs.json` agora é transacional**: o ciclo ler → modificar →
+  gravar passou a rodar inteiro dentro da fila de escrita serializada. Antes,
+  a fila serializava só a gravação — dois handlers do core (ex.: `POST
+  /jobs/batch` e `PUT /jobs/status`) podiam ler a mesma versão do arquivo e o
+  último a gravar sobrescrevia o outro (*lost update*). O single-writer da
+  2.3.0 matou a corrida **entre processos**; esta corrige a corrida **entre os
+  handlers do próprio core**. Vale também para o `purgeStaleJobs`.
+- **Falha de escrita não vira mais sucesso silencioso**: `updateJobsFile`
+  propaga o erro em vez de engoli-lo, e os endpoints respondem `500` quando a
+  gravação falha. Sem isso, o `POST /jobs/batch` podia responder `200` sem
+  persistir, fazendo o scraper descartar as vagas da fila de reenvio.
+- **`CORE_PUSH_CHUNK_SIZE` inválido quebrava o envio ao core**: um valor zero,
+  negativo ou não-numérico estourava o `range()` do fatiamento. Agora é
+  validado (mínimo 1) e cai no default 500, com aviso no log.
+- **`JOBS_MAX_AGE_DAYS` inválido**: valor não-finito ou negativo era aceito;
+  agora é validado (mínimo 1 dia) e cai no default de 90.
+- **Limite de corpo HTTP do core por rota**: o `express.json` de 25 MB era
+  global. Voltou a 1 MB por padrão; o limite de 25 MB vale só para o
+  `POST /jobs/batch`, reduzindo a superfície de memória/DoS do parser.
+
+### Adicionado
+
+- Testes unitários do `CoreJobsSink` — fatiamento em chunks, falha de chunk
+  intermediário, cliente não inicializado e erro de rede.
+
+## [2.3.0] - 2026-05-21
+
+### Adicionado
+
+- **`jobs.json` com escritor único (single-writer)**: o `message-formatting-core`
+  passa a ser o **único processo que grava o `jobs.json`**. O scraper não escreve
+  mais o arquivo — coleta as vagas, mantém um buffer em memória e as envia ao core
+  pelo novo endpoint `POST /jobs/batch` (em chunks, para não estourar o limite de
+  corpo da request). Antes, scraper e core gravavam o mesmo arquivo ao mesmo tempo:
+  uma corrida que causava `ENOENT` no rename do temporário e fazia o scraper apagar
+  marcações de envio (`sent_to`) recém-feitas pelo core. Se o core estiver fora do
+  ar, o scraper retém as vagas em memória e reenvia quando ele volta — o dedup do
+  scraper segue lendo o `jobs.json` no startup, sem mudança.
+- **Purge de vagas antigas no core**: a remoção de vagas com `publication_date`
+  acima de 90 dias (configurável via `JOBS_MAX_AGE_DAYS`) passa a ser feita pelo
+  core — no boot e a cada 6h —, já que ele é o único escritor do arquivo.
+
+### Corrigido
+
+- **`Falha ao gravar jobs.json` (`ENOENT`)**: eliminado por construção pelo
+  single-writer acima. Como reforço, o nome do arquivo temporário da escrita
+  atômica passou a incluir o PID, impedindo que um processo renomeie o `.tmp`
+  de outro.
+- **`sent_to` sobrescrito pelo scraper**: o core nunca mais perde marcações de
+  envio — o `POST /jobs/batch` preserva o `sent_to` em disco e ignora o que o
+  scraper enviar. Evita que vagas já enviadas sejam reenviadas aos usuários.
+- **Corpo JSON inválido poluía o log de erro do API Receiver do WhatsApp**: um
+  `POST` com JSON malformado gerava `SyntaxError` com stack trace no log do PM2.
+  Adicionado middleware de erro que responde `400` limpo, sem despejar o stderr.
+- **Traceback de `KeyboardInterrupt` no scraper**: parar/reiniciar o serviço
+  via PM2 (SIGINT) despejava um traceback gigante no log de erro. O encerramento
+  agora é tratado como evento esperado.
+- **Documentação do teto de memória do core**: `OPERACAO.md` indicava 250 MB,
+  mas o `ecosystem.config.cjs` já usa 512 MB (o core faz `JSON.parse` do
+  `jobs.json` inteiro a cada request). Tabela e orçamento de RAM corrigidos.
+
+## [2.2.1] - 2026-05-19
+
+### Corrigido
+
+- **Checkout do portal falhava com erro 500 ao clicar em "Ir para pagamento"**:
+  a função `create-checkout-session` ligava `tax_id_collection` reusando um
+  `customer` existente do Stripe sem informar `customer_update`. O Stripe
+  rejeitava a criação da sessão (`Tax ID collection requires updating business
+  name on the customer`). Adicionado `customer_update: { name: "auto", address:
+  "auto" }`, alinhando com o fix já aplicado no `create-vip-checkout` (v2.1.4).
+
+## [2.2.0] - 2026-05-19
+
+### Adicionado
+
+- **Autenticação por token no API Receiver do bot de WhatsApp**: os endpoints
+  `POST /send` e `POST /send-batch` (porta 3002) passam a exigir o header
+  `Authorization: Bearer <token>`, validado em tempo constante contra a nova
+  variável `WHATSAPP_API_TOKEN`. Sem token configurado o servidor recusa todas
+  as requisições (fail-safe `503`). Habilita o consumo seguro da API por
+  serviços externos. `/health` e `/status` seguem públicos.
+- **`setup-vps.sh`**: script de bootstrap da VPS que instala as dependências
+  dos quatro apps e sobe tudo via PM2 num único comando.
+- **Documentação da integração WhatsApp API ↔ portal** em
+  `docs/vault/09-infra/whatsapp-api-elkys-integration.md`.
+
+## [2.1.6] - 2026-05-18
+
+### Corrigido
+
+- **Assinante VIP de cartão não recebia o e-mail de acesso ao portal**: o
+  trigger `handle_new_user` montava `subscriber_profiles` no shape do cadastro
+  do portal (Fluxo A). O VIP do WhatsApp (Fluxo B) envia o perfil com outro
+  shape — `seniority` como array, chaves no plural, sem `whatsapp` — e como
+  essas colunas são `NOT NULL` o `INSERT` estourava e abortava a criação da
+  conta. Resultado: `invite-whatsapp-subscriber` retornava 500 e o e-mail
+  nunca era enviado. O trigger agora aceita os dois shapes e, em último caso,
+  nunca deixa o perfil bloquear a criação da conta.
+
+## [2.1.5] - 2026-05-18
+
+### Corrigido
+
+- **"Opção inválida" ao mandar "oi" após a sessão expirar**: ao encerrar a
+  sessão por inatividade o bot voltava o estado para `menu` sem reexibir o
+  menu, então uma saudação caía como opção inválida. Agora saudações (`oi`,
+  `olá`, `bom dia`...) em estado de navegação reabrem o menu principal.
+
+### Alterado
+
+- O link de Checkout do Stripe (URL longa) agora é encurtado para
+  `sonnarjobs.com.br/v/<code>` antes de ser enviado no WhatsApp.
+
+## [2.1.4] - 2026-05-18
+
+### Corrigido
+
+- **Checkout VIP por cartão falhava para customer já existente**: a edge
+  function `create-vip-checkout` criava a sessão com `tax_id_collection`
+  habilitado mas sem `customer_update`. Ao reaproveitar um customer do Stripe
+  (por LID ou e-mail) o Stripe rejeitava com "Tax ID collection requires
+  updating business name on the customer". Adicionado
+  `customer_update: { name: "auto", address: "auto" }`.
+
+## [2.1.3] - 2026-05-18
+
+### Corrigido
+
+- **Checkout VIP enganava lead já ativo**: ao gerar o link de pagamento por
+  cartão, qualquer falha caía na mensagem genérica "Não consegui gerar o link
+  / tente de novo / PIX". Quando o motivo era `already_active` (o lead já é
+  VIP ativo), isso sugeria erro transitório e oferecia pagar de novo. Agora
+  esse caso tem mensagem própria avisando que a assinatura está em dia.
+
+## [2.1.2] - 2026-05-18
+
+### Corrigido
+
+- **Falha intermitente ao gravar `jobs.json` no Windows**: o `sonnar-core` e o
+  `sonnar-scraper` escrevem o mesmo arquivo e o rename atômico falhava com
+  `EBUSY` / `WinError 5` quando o outro processo o tinha aberto. O core, que
+  não tinha retentativa alguma, agora tenta o rename 12× com intervalo; o
+  retry do scraper foi ampliado para 12 tentativas com backoff progressivo.
+
+## [2.1.1] - 2026-05-18
+
+### Corrigido
+
+- **Encurtador de URL não funcionava no formatter**: o `server.js` nunca
+  carregava o `.env` e o `urlShortener.js` lia `WEB_FUNCTIONS_URL` /
+  `WHATSAPP_LINK_SECRET` no topo do módulo — avaliado antes do `dotenv`. As
+  variáveis chegavam vazias e a vaga era enviada com a URL longa. Agora o
+  `.env` é carregado antes de tudo e a leitura do ambiente é feita por chamada.
+
+## [2.1.0] - 2026-05-18
+
+Release que entrega o **encurtador de URL próprio** e o **VIP do WhatsApp como
+assinatura recorrente**. Consolida o PR #21 (encurtador de URL + VIP recorrente
+do WhatsApp).
+
+### Adicionado
+
+- **Encurtador de URL próprio**: edge function `shorten-url` e tabela
+  `short_links`, gerando links curtos no domínio do projeto
+  (`sonnarjobs.com.br/v/<code>`). O formatter (`urlShortener.js`) encurta a URL
+  da vaga ao montar o card, com degradação graciosa — se o serviço falhar ou
+  não estiver configurado, devolve a URL original sem bloquear o envio.
+- **VIP do WhatsApp como assinatura recorrente do Stripe**: backend de cobrança
+  recorrente, fluxo de pagamento no bot do WhatsApp e notificações de cobrança.
+- **Dados fiscais no checkout**: coleta de CPF/CNPJ no checkout do portal, agora
+  obrigatório no Checkout do Stripe.
+
+### Removido
+
+- Encurtadores de URL gratuitos (tinyurl/cleanuri) e o módulo órfão
+  `cardApi.js` do formatter, substituídos pelo encurtador próprio.
+
 ## [2.0.0] - 2026-05-18
 
 Marco que transforma o Sonnar de um **bot de scraping para Discord** em um
@@ -94,6 +288,13 @@ modelo de distribuição e o produto mudaram por completo em relação à linha 
 - Lógica para evitar envio de vagas repetidas.
 - Intervalos de busca personalizáveis.
 
+[2.1.6]: https://github.com/ElkysOfficial/Sonnar_Scraping/compare/v2.1.5...v2.1.6
+[2.1.5]: https://github.com/ElkysOfficial/Sonnar_Scraping/compare/v2.1.4...v2.1.5
+[2.1.4]: https://github.com/ElkysOfficial/Sonnar_Scraping/compare/v2.1.3...v2.1.4
+[2.1.3]: https://github.com/ElkysOfficial/Sonnar_Scraping/compare/v2.1.2...v2.1.3
+[2.1.2]: https://github.com/ElkysOfficial/Sonnar_Scraping/compare/v2.1.1...v2.1.2
+[2.1.1]: https://github.com/ElkysOfficial/Sonnar_Scraping/compare/v2.1.0...v2.1.1
+[2.1.0]: https://github.com/ElkysOfficial/Sonnar_Scraping/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/ElkysOfficial/Sonnar_Scraping/compare/1.1.1...v2.0.0
 [1.1.1]: https://github.com/ElkysOfficial/Sonnar_Scraping/compare/1.1.0...1.1.1
 [1.1.0]: https://github.com/ElkysOfficial/Sonnar_Scraping/compare/1.0.0...1.1.0

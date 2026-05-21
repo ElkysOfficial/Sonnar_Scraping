@@ -11,7 +11,7 @@
 //
 // MEMORIA: a maquina tem 4GB. `max_memory_restart` reinicia o processo se
 // ele passar do teto, evitando que a maquina inteira estoure (OOM).
-// Orcamento: ~2.2GB pros apps + ~1GB SO = ~0.8GB de folga. Ver OPERACAO.md.
+// Orcamento: ~2.4GB pros apps + ~1GB SO = ~0.6GB de folga. Ver OPERACAO.md.
 // =====================================================
 
 // Interpretador Python: `python` no Windows, `python3` no Linux (VPS).

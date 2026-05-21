@@ -1,13 +1,14 @@
 /**
- * Encurtador de URL próprio do Sonnar.
+ * Encurtador de URL do Sonnar para o bot do WhatsApp.
  *
  * Chama a edge function shorten-url, que gera (ou reaproveita) um link
- * curto sonnarjobs.com.br/v/<code>. Diferente dos encurtadores gratuitos
- * removidos em fce25a0, este é interno e no domínio do projeto.
+ * curto sonnarjobs.com.br/v/<code>. Usado para encurtar URLs longas
+ * antes de enviar ao usuario (ex.: o link de Checkout do Stripe).
  *
- * Degradação graciosa: se o serviço falhar, não estiver configurado ou
- * demorar demais, devolve a URL original — nunca bloqueia o envio da vaga.
+ * Degradacao graciosa: se o servico falhar, nao estiver configurado ou
+ * demorar demais, devolve a URL original — nunca bloqueia o envio.
  */
+import { WEB_FUNCTIONS_URL, WHATSAPP_LINK_SECRET } from "../config.js"
 import { errorLog } from "../utils/logger.js"
 
 const TIMEOUT_MS = 8000
@@ -20,12 +21,7 @@ const TIMEOUT_MS = 8000
 export async function shortenUrl(url) {
   const original = (url || "").toString().trim()
   if (!/^https?:\/\//i.test(original)) return original
-
-  // Lido por chamada (nao no topo do modulo) para nao depender da ordem
-  // de import — o dotenv pode ainda nao ter rodado quando este modulo carrega.
-  const webFunctionsUrl = process.env.WEB_FUNCTIONS_URL || ""
-  const linkSecret = process.env.WHATSAPP_LINK_SECRET || ""
-  if (!webFunctionsUrl || !linkSecret) {
+  if (!WEB_FUNCTIONS_URL || !WHATSAPP_LINK_SECRET) {
     errorLog("[SHORTENER] WEB_FUNCTIONS_URL ou WHATSAPP_LINK_SECRET ausentes — URL nao encurtada")
     return original
   }
@@ -33,11 +29,11 @@ export async function shortenUrl(url) {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS)
   try {
-    const res = await fetch(`${webFunctionsUrl.replace(/\/$/, "")}/shorten-url`, {
+    const res = await fetch(`${WEB_FUNCTIONS_URL.replace(/\/$/, "")}/shorten-url`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "x-link-secret": linkSecret
+        "x-link-secret": WHATSAPP_LINK_SECRET
       },
       body: JSON.stringify({ url: original }),
       signal: controller.signal

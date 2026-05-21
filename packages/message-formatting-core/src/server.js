@@ -11,7 +11,8 @@ const __dirname = path.dirname(__filename)
 
 const PORT = process.env.MESSAGE_FORMATTING_CORE_PORT || 3100
 
-// Source-of-truth: jobs.json mantido pelo scraper Python.
+// Source-of-truth: jobs.json. O core é o ÚNICO processo que grava este
+// arquivo (single-writer); o scraper envia as vagas via POST /jobs/batch.
 // Estrutura: { [job_url]: { job_title, job_url, company, ..., sent_to: ["discord", ...] } }
 const DEFAULT_JOBS_PATH = path.resolve(__dirname, "..", "..", "..", "apps", "scraper", "src", "data", "jobs.json")
 const JOBS_JSON_PATH = process.env.JOBS_JSON_PATH || DEFAULT_JOBS_PATH
@@ -38,9 +39,17 @@ function deriveId(jobUrl) {
 
 // ---------------- storage ----------------
 
-// Write coordination: lock simples para evitar duas escritas concorrentes.
+// Fila de escrita: TODA mutação do jobs.json (ler → modificar → gravar) roda
+// serializada aqui dentro. Serializar só a gravação não bastava — dois
+// handlers podiam ler a mesma versão, modificar e gravar, e o último
+// sobrescrevia o outro (lost update). Agora o ciclo inteiro é transacional.
 let writeQueue = Promise.resolve()
 
+// Sentinela: um mutator pode devolvê-la para indicar "nada mudou, não grave".
+const SKIP_WRITE = Symbol("skip-write")
+
+// Leitura tolerante: usada pelos endpoints GET. Em erro devolve {} (degrada
+// para "vazio" em vez de derrubar a request).
 function readJobsFile() {
   try {
     if (!fs.existsSync(JOBS_JSON_PATH)) return {}
@@ -53,21 +62,114 @@ function readJobsFile() {
   }
 }
 
-function writeJobsFile(data) {
-  writeQueue = writeQueue.then(() => {
-    return new Promise((resolve) => {
+// Leitura estrita: usada DENTRO de uma transação de escrita. Se o arquivo
+// existe mas não pode ser lido/parseado, LANÇA — abortar é mais seguro do que
+// gravar {} por cima e apagar todas as vagas. Arquivo ausente => {} (1ª escrita).
+function readJobsFileStrict() {
+  if (!fs.existsSync(JOBS_JSON_PATH)) return {}
+  const raw = fs.readFileSync(JOBS_JSON_PATH, "utf8").trim()
+  if (!raw) return {}
+  return JSON.parse(raw)
+}
+
+// Renomeia tmp -> destino com retentativas. No Windows o rename pode falhar
+// (EBUSY/EPERM/EACCES) se outro processo tiver o arquivo aberto naquele
+// instante — tentar de novo algumas vezes resolve.
+const RENAME_ATTEMPTS = 12
+const RENAME_DELAY_MS = 200
+
+async function renameWithRetry(tmp, dest) {
+  for (let attempt = 0; attempt < RENAME_ATTEMPTS; attempt++) {
+    try {
+      fs.renameSync(tmp, dest)
+      return
+    } catch (err) {
+      const transient = ["EBUSY", "EPERM", "EACCES"].includes(err.code)
+      if (!transient || attempt === RENAME_ATTEMPTS - 1) throw err
+      await new Promise((r) => setTimeout(r, RENAME_DELAY_MS))
+    }
+  }
+}
+
+// Aplica uma mutação ao jobs.json de forma TRANSACIONAL: o ciclo ler →
+// mutator(data) → gravar inteiro roda dentro da fila, serializado. Assim dois
+// handlers concorrentes nunca leem a mesma versão e sobrescrevem um ao outro.
+//
+// `mutator(data)` recebe o dict atual, modifica-o in-place e devolve o valor a
+// repassar ao chamador — ou `SKIP_WRITE` para pular a gravação. Quando pula, o
+// chamador recebe o próprio `SKIP_WRITE` de volta: um sinal explícito, sem
+// ambiguidade com um mutator que (por engano) retorne `undefined`. Se a
+// leitura/escrita falhar, a promise é rejeitada — o endpoint deve responder
+// erro para o cliente poder reenviar (nada de sucesso silencioso).
+//
+// O PID no nome do tmp é defesa extra: duas instâncias do core no mesmo
+// diretório nunca colidem no arquivo temporário.
+function updateJobsFile(mutator) {
+  const run = writeQueue.then(async () => {
+    const data = readJobsFileStrict()
+    const result = await mutator(data)
+    if (result === SKIP_WRITE) return SKIP_WRITE
+
+    const tmp = `${JOBS_JSON_PATH}.${process.pid}.tmp`
+    try {
+      fs.mkdirSync(path.dirname(JOBS_JSON_PATH), { recursive: true })
+      fs.writeFileSync(tmp, JSON.stringify(data, null, 2), "utf8")
+      await renameWithRetry(tmp, JOBS_JSON_PATH)
+    } catch (err) {
       try {
-        fs.mkdirSync(path.dirname(JOBS_JSON_PATH), { recursive: true })
-        const tmp = `${JOBS_JSON_PATH}.tmp`
-        fs.writeFileSync(tmp, JSON.stringify(data, null, 2), "utf8")
-        fs.renameSync(tmp, JOBS_JSON_PATH)
-      } catch (err) {
-        console.error("[core] falha ao escrever jobs.json:", err.message)
+        if (fs.existsSync(tmp)) fs.unlinkSync(tmp)
+      } catch {
+        /* tmp já removido ou inacessível — ignora */
       }
-      resolve()
-    })
+      throw err
+    }
+    return result
   })
-  return writeQueue
+  // A fila não pode travar se uma transação falhar: o próximo updateJobsFile
+  // encadeia na versão "engolida". O chamador recebe o erro real via `run`.
+  writeQueue = run.then(
+    () => {},
+    () => {}
+  )
+  return run
+}
+
+// Janela de retenção: vagas com publication_date mais antigo que isto são
+// removidas do jobs.json (não devem ser enviadas pelos bots). Com o
+// single-writer, o purge é responsabilidade do core (único escritor).
+// Valor inválido (não-finito ou < 1) cai no default de 90 dias.
+const JOBS_MAX_AGE_DAYS = (() => {
+  const n = Number(process.env.JOBS_MAX_AGE_DAYS)
+  return Number.isFinite(n) && n >= 1 ? n : 90
+})()
+const PURGE_INTERVAL_MS = 6 * 60 * 60 * 1000
+
+function cutoffDate(days) {
+  const d = new Date()
+  d.setUTCDate(d.getUTCDate() - days)
+  return d.toISOString().slice(0, 10)
+}
+
+async function purgeStaleJobs() {
+  try {
+    const removed = await updateJobsFile((data) => {
+      const cutoff = cutoffDate(JOBS_MAX_AGE_DAYS)
+      let n = 0
+      for (const url of Object.keys(data)) {
+        const pub = data[url].publication_date
+        if (pub && pub < cutoff) {
+          delete data[url]
+          n++
+        }
+      }
+      return n > 0 ? n : SKIP_WRITE
+    })
+    if (removed > 0) {
+      console.log(`[core] purge: ${removed} vaga(s) antiga(s) removida(s)`)
+    }
+  } catch (err) {
+    console.error("[core] falha no purge de vagas antigas:", err.message)
+  }
 }
 
 // ---------------- shape translation ----------------
@@ -170,26 +272,91 @@ function buildIncoming(payload) {
 
 const app = express()
 app.use(cors())
-app.use(express.json({ limit: "2mb" }))
+
+// Limites de corpo por rota: o POST /jobs/batch recebe lotes grandes do
+// scraper; os demais endpoints de escrita lidam com uma vaga só. Aplicar o
+// limite grande apenas onde é preciso reduz a superfície de memória/DoS do
+// parser JSON (o body inteiro é materializado em memória).
+const jsonSmall = express.json({ limit: "1mb" })
+const jsonBatch = express.json({ limit: "25mb" })
 
 // POST /jobs - upsert por job_url
-app.post("/jobs", async (req, res) => {
+app.post("/jobs", jsonSmall, async (req, res) => {
+  let incoming
   try {
-    const { url, entry } = buildIncoming(req.body || {})
-    const data = readJobsFile()
-    const existing = data[url] || {}
-    const mergedSent = Array.from(new Set([...(existing.sent_to || []), ...entry.sent_to]))
-    const merged = {
-      ...existing,
-      ...entry,
-      sent_to: mergedSent,
-      created_at: existing.created_at || entry.created_at
-    }
-    data[url] = merged
-    await writeJobsFile(data)
+    incoming = buildIncoming(req.body || {})
+  } catch (err) {
+    return res.status(400).json({ success: false, message: err.message })
+  }
+  try {
+    const merged = await updateJobsFile((data) => {
+      const existing = data[incoming.url] || {}
+      const mergedSent = Array.from(
+        new Set([...(existing.sent_to || []), ...incoming.entry.sent_to])
+      )
+      const m = {
+        ...existing,
+        ...incoming.entry,
+        sent_to: mergedSent,
+        created_at: existing.created_at || incoming.entry.created_at
+      }
+      data[incoming.url] = m
+      return m
+    })
     res.status(201).json({ success: true, job: entryToApiJob(merged) })
   } catch (err) {
-    res.status(400).json({ success: false, message: err.message })
+    console.error("[core] POST /jobs falhou:", err.message)
+    res.status(500).json({ success: false, message: err.message })
+  }
+})
+
+// POST /jobs/batch - upsert em lote, usado pelo scraper.
+//
+// SINGLE-WRITER: o core é o ÚNICO processo que grava o jobs.json. O scraper
+// não escreve mais o arquivo — coleta as vagas e envia para cá. Isso elimina
+// a corrida de dois escritores sobre o mesmo arquivo (que causava ENOENT no
+// rename). A leitura+merge+gravação roda dentro de updateJobsFile (fila), então
+// um PUT /jobs/status concorrente nunca é sobrescrito por este batch.
+//
+// sent_to NUNCA é sobrescrito pelo que o scraper manda: ele é autoridade do
+// core (são os bots que marcam envio). Sempre preservamos o sent_to em disco.
+app.post("/jobs/batch", jsonBatch, async (req, res) => {
+  const incoming = Array.isArray(req.body?.jobs) ? req.body.jobs : null
+  if (!incoming) {
+    return res.status(400).json({ success: false, message: "Campo 'jobs' (array) é obrigatório." })
+  }
+  try {
+    const counts = await updateJobsFile((data) => {
+      const now = new Date().toISOString()
+      let upserted = 0
+      let skipped = 0
+      for (const job of incoming) {
+        const url = (job?.job_url || "").toString().trim()
+        if (!url || !job.job_title) {
+          skipped++
+          continue
+        }
+        const existing = data[url] || {}
+        data[url] = {
+          ...existing,
+          ...job,
+          // sent_to é autoridade do core — ignora o que o scraper enviou.
+          sent_to: existing.sent_to || [],
+          created_at: existing.created_at || job.created_at || job.scraped_at || now,
+          updated_at: now
+        }
+        upserted++
+      }
+      return upserted > 0 ? { upserted, skipped } : SKIP_WRITE
+    })
+    if (counts === SKIP_WRITE) {
+      // Nenhuma vaga válida no lote — nada gravado.
+      return res.json({ success: true, upserted: 0, skipped: incoming.length })
+    }
+    res.json({ success: true, ...counts })
+  } catch (err) {
+    console.error("[core] POST /jobs/batch falhou:", err.message)
+    res.status(500).json({ success: false, message: err.message })
   }
 })
 
@@ -260,39 +427,52 @@ app.get("/jobs/:id", (req, res) => {
 })
 
 // PUT /jobs/status - marca status de envio para um canal
-app.put("/jobs/status", async (req, res) => {
+app.put("/jobs/status", jsonSmall, async (req, res) => {
+  const { id, channel, status } = req.body || {}
+  if (!id) return res.status(400).json({ success: false, message: "ID é obrigatório" })
+
+  const targetChannel = normalizeChannel(channel)
   try {
-    const { id, channel, status } = req.body || {}
-    if (!id) return res.status(400).json({ success: false, message: "ID é obrigatório" })
+    const entry = await updateJobsFile((data) => {
+      const hit = findEntryById(data, id)
+      if (!hit) return SKIP_WRITE
 
-    const targetChannel = normalizeChannel(channel)
-    const data = readJobsFile()
-    const hit = findEntryById(data, id)
-    if (!hit) return res.status(404).json({ success: false, message: "Vaga não encontrada" })
+      const sentSet = new Set(hit.entry.sent_to || [])
+      if (status) sentSet.add(targetChannel)
+      else sentSet.delete(targetChannel)
 
-    const sentSet = new Set(hit.entry.sent_to || [])
-    if (status) sentSet.add(targetChannel)
-    else sentSet.delete(targetChannel)
-
-    hit.entry.sent_to = Array.from(sentSet).sort()
-    hit.entry.updated_at = new Date().toISOString()
-    data[hit.url] = hit.entry
-    await writeJobsFile(data)
-
-    res.json({ success: true, job: entryToApiJob(hit.entry) })
+      hit.entry.sent_to = Array.from(sentSet).sort()
+      hit.entry.updated_at = new Date().toISOString()
+      data[hit.url] = hit.entry
+      return hit.entry
+    })
+    if (entry === SKIP_WRITE) {
+      return res.status(404).json({ success: false, message: "Vaga não encontrada" })
+    }
+    res.json({ success: true, job: entryToApiJob(entry) })
   } catch (err) {
+    console.error("[core] PUT /jobs/status falhou:", err.message)
     res.status(500).json({ success: false, message: err.message })
   }
 })
 
 // DELETE /jobs/:id - remove vaga
 app.delete("/jobs/:id", async (req, res) => {
-  const data = readJobsFile()
-  const hit = findEntryById(data, req.params.id)
-  if (!hit) return res.status(404).json({ success: false, message: "Vaga não encontrada" })
-  delete data[hit.url]
-  await writeJobsFile(data)
-  res.json({ success: true })
+  try {
+    const removed = await updateJobsFile((data) => {
+      const hit = findEntryById(data, req.params.id)
+      if (!hit) return SKIP_WRITE
+      delete data[hit.url]
+      return true
+    })
+    if (removed === SKIP_WRITE) {
+      return res.status(404).json({ success: false, message: "Vaga não encontrada" })
+    }
+    res.json({ success: true })
+  } catch (err) {
+    console.error("[core] DELETE /jobs falhou:", err.message)
+    res.status(500).json({ success: false, message: err.message })
+  }
 })
 
 // Health
@@ -305,12 +485,27 @@ app.get("/health", (req, res) => {
   })
 })
 
+// Normaliza erros não capturados nas rotas. Sem isto, um corpo JSON malformado
+// (erro do body-parser) cairia no handler padrão do Express — resposta HTML e
+// stack trace no log. Middleware de erro tem de ter 4 argumentos e vir por último.
+// eslint-disable-next-line no-unused-vars
+app.use((err, req, res, next) => {
+  if (err?.type === "entity.parse.failed" || err instanceof SyntaxError) {
+    return res.status(400).json({ success: false, message: "Corpo JSON inválido." })
+  }
+  console.error("[core] erro não tratado:", err?.message || err)
+  res.status(500).json({ success: false, message: "Erro interno." })
+})
+
 app.listen(PORT, () => {
   console.log(`[core] message-formatting-core ouvindo em http://localhost:${PORT}`)
   console.log(`[core] fonte de dados: ${JOBS_JSON_PATH}`)
   if (!fs.existsSync(JOBS_JSON_PATH)) {
-    console.warn("[core] AVISO: jobs.json ainda não existe — rode o scraper ou crie manualmente.")
+    console.warn("[core] AVISO: jobs.json ainda não existe — será criado quando o scraper enviar o 1º lote.")
   }
+  // Purge de vagas antigas: no boot e a cada 6h (o core é o único escritor).
+  purgeStaleJobs()
+  setInterval(purgeStaleJobs, PURGE_INTERVAL_MS)
 })
 
 export default app
