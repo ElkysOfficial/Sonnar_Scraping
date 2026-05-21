@@ -14,11 +14,30 @@
 // Orcamento: ~2.4GB pros apps + ~1GB SO = ~0.6GB de folga. Ver OPERACAO.md.
 // =====================================================
 
-// Interpretador Python: `python` no Windows, `python3` no Linux (VPS).
-// Se usar virtualenv, aponte SCRAPER_PYTHON para o python da venv.
-const PYTHON =
-  process.env.SCRAPER_PYTHON ||
-  (process.platform === "win32" ? "python" : "python3");
+// Interpretador Python do scraper. Ordem de prioridade:
+//   1. SCRAPER_PYTHON   - override explicito (env var)
+//   2. apps/scraper/.venv - virtualenv local, criada pelo setup-vps.sh
+//   3. python do sistema - `python` no Windows, `python3` no Linux
+//
+// O passo 2 e essencial: sem ele, um `pm2 start ecosystem.config.cjs` sem
+// SCRAPER_PYTHON exportado cairia no python do sistema (sem as deps da
+// requirements.txt) e o scraper quebraria com `ModuleNotFoundError`.
+const fs = require("fs");
+const path = require("path");
+
+function resolveScraperPython() {
+  if (process.env.SCRAPER_PYTHON) return process.env.SCRAPER_PYTHON;
+  const isWin = process.platform === "win32";
+  const venvPython = path.join(
+    __dirname,
+    "apps/scraper/.venv",
+    isWin ? "Scripts/python.exe" : "bin/python"
+  );
+  if (fs.existsSync(venvPython)) return venvPython;
+  return isWin ? "python" : "python3";
+}
+
+const PYTHON = resolveScraperPython();
 
 module.exports = {
   apps: [

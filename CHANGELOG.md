@@ -5,6 +5,21 @@ Todas as mudanças relevantes deste projeto são documentadas neste arquivo.
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/)
 e o projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [2.3.5] - 2026-05-21
+
+### Corrigido
+
+- **Scraper quebrava ao subir sem `SCRAPER_PYTHON` exportado**: o
+  `ecosystem.config.cjs` resolvia o interpretador como `SCRAPER_PYTHON ||
+  python3`. Como `SCRAPER_PYTHON` só é exportado dentro do `setup-vps.sh`,
+  qualquer `pm2 start ecosystem.config.cjs` (ou recriação do processo) sem
+  essa variável caía no `python3` do sistema — sem as dependências da
+  `requirements.txt` — e o scraper entrava em crash-loop com
+  `ModuleNotFoundError: No module named 'dotenv'`. Agora o ecosystem
+  **detecta a virtualenv `apps/scraper/.venv` automaticamente** e só recorre
+  ao python do sistema se ela não existir. `SCRAPER_PYTHON` segue válido como
+  override explícito.
+
 ## [2.3.4] - 2026-05-21
 
 ### Corrigido
