@@ -62,6 +62,10 @@ module.exports = {
       autorestart: true,
       max_restarts: 10,
       restart_delay: 15000,
+      // O scraper precisa de tempo entre o SIGINT e o SIGKILL para encerrar
+      // o ciclo, terminar um POST /jobs/batch em andamento e fechar o browser
+      // (evita Chromium orfao). O padrao do PM2 (1.6s) era curto demais.
+      kill_timeout: 10000,
       max_memory_restart: "1024M",
       time: true,
     },
