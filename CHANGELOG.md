@@ -5,6 +5,18 @@ Todas as mudanças relevantes deste projeto são documentadas neste arquivo.
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/)
 e o projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [2.3.2] - 2026-05-21
+
+### Corrigido
+
+- **Resposta de erro do core sempre em JSON**: um corpo JSON malformado caía no
+  handler padrão do Express (resposta HTML e stack trace no log). Um middleware
+  de erro passa a responder `400` JSON consistente e a registrar erros não
+  previstos sem despejar stack no stderr.
+- **Sinal de "pular gravação" explícito no `updateJobsFile`**: ao não gravar, a
+  função devolve `SKIP_WRITE` em vez de `undefined`, eliminando a ambiguidade
+  com um mutator que retorne `undefined` por engano (apontado no review da 2.3.1).
+
 ## [2.3.1] - 2026-05-21
 
 ### Corrigido
