@@ -74,7 +74,11 @@ async function renameWithRetry(tmp, dest) {
 
 function writeJobsFile(data) {
   writeQueue = writeQueue.then(async () => {
-    const tmp = `${JOBS_JSON_PATH}.tmp`
+    // O PID entra no nome do tmp: o scraper Python também grava este mesmo
+    // jobs.json com escrita atômica. Com um tmp partilhado ('jobs.json.tmp'),
+    // um processo renomeava o tmp do outro -> ENOENT no rename. Um tmp por
+    // PID elimina a colisão entre core e scraper.
+    const tmp = `${JOBS_JSON_PATH}.${process.pid}.tmp`
     try {
       fs.mkdirSync(path.dirname(JOBS_JSON_PATH), { recursive: true })
       fs.writeFileSync(tmp, JSON.stringify(data, null, 2), "utf8")
@@ -89,6 +93,39 @@ function writeJobsFile(data) {
     }
   })
   return writeQueue
+}
+
+// Janela de retenção: vagas com publication_date mais antigo que isto são
+// removidas do jobs.json (não devem ser enviadas pelos bots). Antes o purge
+// era feito pelo scraper; com o single-writer, é o core (único escritor).
+const JOBS_MAX_AGE_DAYS = Number(process.env.JOBS_MAX_AGE_DAYS) || 90
+const PURGE_INTERVAL_MS = 6 * 60 * 60 * 1000
+
+function cutoffDate(days) {
+  const d = new Date()
+  d.setUTCDate(d.getUTCDate() - days)
+  return d.toISOString().slice(0, 10)
+}
+
+async function purgeStaleJobs() {
+  try {
+    const data = readJobsFile()
+    const cutoff = cutoffDate(JOBS_MAX_AGE_DAYS)
+    let removed = 0
+    for (const url of Object.keys(data)) {
+      const pub = data[url].publication_date
+      if (pub && pub < cutoff) {
+        delete data[url]
+        removed++
+      }
+    }
+    if (removed > 0) {
+      await writeJobsFile(data)
+      console.log(`[core] purge: ${removed} vaga(s) com publication_date < ${cutoff} removida(s)`)
+    }
+  } catch (err) {
+    console.error("[core] falha no purge de vagas antigas:", err.message)
+  }
 }
 
 // ---------------- shape translation ----------------
@@ -191,7 +228,10 @@ function buildIncoming(payload) {
 
 const app = express()
 app.use(cors())
-app.use(express.json({ limit: "2mb" }))
+// 25mb: o POST /jobs/batch do scraper pode trazer centenas de vagas com
+// descrição completa numa request. O scraper ainda fatia em chunks, mas a
+// folga aqui evita rejeição de corpo (413) em lotes grandes.
+app.use(express.json({ limit: "25mb" }))
 
 // POST /jobs - upsert por job_url
 app.post("/jobs", async (req, res) => {
@@ -211,6 +251,52 @@ app.post("/jobs", async (req, res) => {
     res.status(201).json({ success: true, job: entryToApiJob(merged) })
   } catch (err) {
     res.status(400).json({ success: false, message: err.message })
+  }
+})
+
+// POST /jobs/batch - upsert em lote, usado pelo scraper.
+//
+// SINGLE-WRITER: o core é o ÚNICO processo que grava o jobs.json. O scraper
+// não escreve mais o arquivo — coleta as vagas e envia para cá. Isso elimina
+// a corrida de dois escritores sobre o mesmo arquivo (que causava ENOENT no
+// rename e perda de atualizações de sent_to).
+//
+// sent_to NUNCA é sobrescrito pelo que o scraper manda: ele é autoridade do
+// core (são os bots que marcam envio). Sempre preservamos o sent_to em disco.
+app.post("/jobs/batch", async (req, res) => {
+  try {
+    const incoming = Array.isArray(req.body?.jobs) ? req.body.jobs : null
+    if (!incoming) {
+      return res.status(400).json({ success: false, message: "Campo 'jobs' (array) é obrigatório." })
+    }
+
+    const data = readJobsFile()
+    const now = new Date().toISOString()
+    let upserted = 0
+    let skipped = 0
+
+    for (const job of incoming) {
+      const url = (job?.job_url || "").toString().trim()
+      if (!url || !job.job_title) {
+        skipped++
+        continue
+      }
+      const existing = data[url] || {}
+      data[url] = {
+        ...existing,
+        ...job,
+        // sent_to é autoridade do core — ignora o que o scraper enviou.
+        sent_to: existing.sent_to || [],
+        created_at: existing.created_at || job.created_at || job.scraped_at || now,
+        updated_at: now
+      }
+      upserted++
+    }
+
+    if (upserted > 0) await writeJobsFile(data)
+    res.json({ success: true, upserted, skipped })
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message })
   }
 })
 
@@ -330,8 +416,11 @@ app.listen(PORT, () => {
   console.log(`[core] message-formatting-core ouvindo em http://localhost:${PORT}`)
   console.log(`[core] fonte de dados: ${JOBS_JSON_PATH}`)
   if (!fs.existsSync(JOBS_JSON_PATH)) {
-    console.warn("[core] AVISO: jobs.json ainda não existe — rode o scraper ou crie manualmente.")
+    console.warn("[core] AVISO: jobs.json ainda não existe — será criado quando o scraper enviar o 1º lote.")
   }
+  // Purge de vagas antigas: no boot e a cada 6h (o core é o único escritor).
+  purgeStaleJobs()
+  setInterval(purgeStaleJobs, PURGE_INTERVAL_MS)
 })
 
 export default app

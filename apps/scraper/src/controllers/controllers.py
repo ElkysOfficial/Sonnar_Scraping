@@ -450,6 +450,26 @@ async def _run_reenrichment_pass(*, repo: JobsRepository, sent_jobs: set) -> Non
 
 
 # ---------------------------------------------------------------------------
+# Flush periódico para o core (single-writer do jobs.json)
+# ---------------------------------------------------------------------------
+
+# A cada CORE_PUSH_INTERVAL_S o scraper envia ao core as vagas acumuladas no
+# buffer local. Mantém os bots com dados frescos sem esperar o fim do lote
+# (que pode levar ~2h). O core é o único processo que grava o jobs.json.
+CORE_PUSH_INTERVAL_S = float(os.getenv("CORE_PUSH_INTERVAL_S", "5.0"))
+
+
+async def _core_flush_loop(repo: JobsRepository) -> None:
+    """Envia periodicamente ao core as vagas acumuladas no buffer local."""
+    while True:
+        await asyncio.sleep(CORE_PUSH_INTERVAL_S)
+        try:
+            await repo.flush_to_core()
+        except Exception:
+            logger.exception("core_flush_error")
+
+
+# ---------------------------------------------------------------------------
 # Loop principal - itera lotes e dorme entre eles
 # ---------------------------------------------------------------------------
 
@@ -470,6 +490,7 @@ async def scrape_jobs() -> None:
     """
     metrics_task = asyncio.create_task(metrics.run_flusher(METRICS_FLUSH_INTERVAL_S))
     tracker_task = asyncio.create_task(tracker.run_flusher())
+    core_flush_task = None
 
     try:
         async with JobsRepository() as repo:
@@ -494,6 +515,10 @@ async def scrape_jobs() -> None:
                 "local_known": len(local_known),
                 "tracker_known": len(tracker_known),
             })
+
+            # Flusher de fundo: envia ao core (único escritor do jobs.json) as
+            # vagas acumuladas, mantendo os bots com dados frescos durante o lote.
+            core_flush_task = asyncio.create_task(_core_flush_loop(repo))
 
             while True:
                 batches = list(iter_batches(BATCH_SIZE))
@@ -522,8 +547,8 @@ async def scrape_jobs() -> None:
                     # de auto-reenrich ou listings anteriores) e chama refetch_one.
                     await _run_reenrichment_pass(repo=repo, sent_jobs=sent_jobs)
 
-                    # Flush local entre lotes + fechar Playwright para liberar RAM
-                    repo.flush_now()
+                    # Envia ao core as vagas do lote + fecha Playwright (libera RAM)
+                    await repo.flush_to_core()
                     await tracker.flush()
                     try:
                         from ..utils.browser_fetch import close_browser
@@ -540,7 +565,9 @@ async def scrape_jobs() -> None:
                 logger.info("cycle_complete")
                 set_active_batch(None)
     finally:
-        for t in (metrics_task, tracker_task):
+        for t in (metrics_task, tracker_task, core_flush_task):
+            if t is None:
+                continue
             t.cancel()
             try:
                 await t

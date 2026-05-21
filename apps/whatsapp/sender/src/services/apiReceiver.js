@@ -209,6 +209,23 @@ app.get("/health", (req, res) => {
 })
 
 /**
+ * Error handler — captura corpo JSON malformado (body-parser) e demais erros
+ * sem despejar stack trace no stderr. Sem isto, um POST com JSON invalido
+ * gerava "SyntaxError: Bad control character in string literal in JSON" no
+ * log de erro do PM2. Tem de ter 4 argumentos para o Express tratar como
+ * middleware de erro, e vir DEPOIS de todas as rotas.
+ */
+// eslint-disable-next-line no-unused-vars
+app.use((err, req, res, next) => {
+  if (err.type === "entity.parse.failed" || err instanceof SyntaxError) {
+    warningLog(`[API] Corpo JSON invalido recebido de ${req.ip}`)
+    return res.status(400).json({ success: false, error: "Invalid JSON body" })
+  }
+  errorLog(`[API] Erro nao tratado: ${err.message}`)
+  res.status(500).json({ success: false, error: "Internal server error" })
+})
+
+/**
  * Start API receiver server
  */
 export function startApiReceiver() {

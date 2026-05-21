@@ -13,4 +13,10 @@ async def main():
     await scraping_task
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        # PM2 stop/restart envia SIGINT — encerramento esperado, nao e erro.
+        # Sem este catch, o KeyboardInterrupt vazava como traceback gigante
+        # no log de erro do PM2 a cada parada do servico.
+        print("scraper encerrado.")
