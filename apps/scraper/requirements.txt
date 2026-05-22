@@ -25,6 +25,11 @@ argostranslate>=1.9.0
 # Env loading (.env)
 python-dotenv>=1.0.0
 
+# Testes - pytest-asyncio habilita os testes async (test_core_sink usa
+# @pytest.mark.asyncio; sem o plugin esses casos falham na coleta).
+pytest>=8.0.0
+pytest-asyncio>=0.24.0
+
 # Standard library dependencies already included in Python:
 # - asyncio
 # - json
