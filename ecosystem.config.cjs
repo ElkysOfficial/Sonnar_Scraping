@@ -48,9 +48,11 @@ module.exports = {
       autorestart: true,
       max_restarts: 10,
       restart_delay: 3000,
-      // O core faz JSON.parse do jobs.json inteiro (~18k vagas) a cada
-      // request. 250M era apertado e o PM2 reiniciava a cada ciclo VIP.
-      max_memory_restart: "512M",
+      // O core faz JSON.parse do jobs.json inteiro a cada request. 250M era
+      // apertado; 512M passou a estourar (~624M) depois que a careerjet
+      // voltou a coletar e o jobs.json cresceu. 1024M da folga — a VPS tem
+      // 8GB e o orcamento total fica em ~3.95GB.
+      max_memory_restart: "1024M",
       time: true,
     },
     {
