@@ -5,6 +5,23 @@ Todas as mudanças relevantes deste projeto são documentadas neste arquivo.
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/)
 e o projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [2.5.2] - 2026-05-22
+
+### Corrigido
+
+- **`sonnar-scraper` em loop de reinício após ativar a tradução**: o teto
+  de memória do processo no PM2 (`max_memory_restart`) era de 1024 MB,
+  definido quando a VPS tinha 4 GB. A VPS hoje tem 8 GB e a engine
+  careerjet carrega modelos de tradução (Argos) na RAM — o processo
+  passava de 1 GB e o PM2 o reiniciava em loop, sem concluir a coleta. O
+  teto sobe para 2048 MB, com folga de sobra na máquina de 8 GB; os
+  comentários do `ecosystem.config.cjs` e o `OPERACAO.md` foram
+  atualizados para 8 GB.
+- **Testes assíncronos falhando na coleta**: os casos de `test_core_sink`
+  usam `@pytest.mark.asyncio`, mas o plugin `pytest-asyncio` não estava
+  declarado nas dependências. Adicionado — a suíte volta a 102 testes
+  passando (antes 97 passando, 5 falhando).
+
 ## [2.5.1] - 2026-05-22
 
 ### Corrigido
