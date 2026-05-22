@@ -1,331 +1,530 @@
 """
-Engine Careerjet Brasil - listing → fetch detalhe (JSON-LD) por vaga.
+Engine Careerjet - API oficial de busca (search.api.careerjet.net/v4),
+multi-pais com traducao automatica para portugues.
 
-Fluxo:
-    1. ``get_careerjet_links()`` - paginação até 5 páginas por stack do
-       lote ativo, coletando URLs únicas dos cards.
-    2. ``get_careerjet_jobs()`` - resolve cada link em paralelo
-       (semáforo=8), parseando o ``<script type=application/ld+json>``
-       schema.org JobPosting embutido no SSR.
+A API v4 e autenticada e devolve as vagas ja estruturadas em JSON, entao
+nao ha fase de "fetch de detalhe": cada item do response e uma vaga.
+
+Autenticacao
+------------
+Basic Auth onde o *usuario* e a chave de API e a *senha* e uma string vazia.
+A chave esta vinculada a um IP autorizado - chamadas de outro IP falham.
+Configure ``CAREERJET_API_KEY`` no .env.
+
+Cobertura multi-pais
+--------------------
+A API expoe 141 ``locale_code`` (paises/idiomas) - lista levantada por
+sondagem direta. A engine cobre todos, mas em rodizio para nao explodir o
+volume de requests por ciclo:
+
+* ``pt_BR`` (Brasil) e processado SEMPRE - e o mercado principal do
+  produto. Para o Brasil roda-se a busca nacional + uma busca por cada
+  uma das 27 UFs (ver ``_BR_LOCATION_VARIANTS``).
+* Os outros 140 locales rotacionam em lotes ao longo dos ciclos (rotacao
+  baseada no relogio, sem arquivo de estado) - cada um faz so a busca
+  nacional. Ver ``_ROTATING_LOCALES`` / ``_rotating_batch()``.
+
+Traducao
+--------
+Vagas cujo locale nao e portugues sao traduzidas (titulo + descricao) via
+:mod:`src.utils.translator` (Argos Translate, offline) antes de emitir.
+O idioma de origem vem do proprio ``locale_code`` - nao precisa detectar.
+
+A API entrega ``description`` como *excerto* (parametro ``fragment_size``),
+nao o texto integral - por isso a engine e listing-only (sem
+``refetch_one``) e ``is_partial`` sempre devolve False, igual ao Jooble.
 """
 from __future__ import annotations
 
 import asyncio
-import json
+import math
 import os
-import random
-import re
 import sys
-import urllib.parse
-from datetime import date
+import time
+from email.utils import parsedate_to_datetime
 
-from bs4 import BeautifulSoup
-from curl_cffi import requests
+import httpx
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 from variavel import get_active_stacks  # noqa: E402
 from src.persistence.extraction_tracker import tracker  # noqa: E402
-from src.utils.http_session import fetch_sync  # noqa: E402
 from src.utils.job_fallbacks import apply_description_fallbacks  # noqa: E402
 from src.utils.text_utils import extract_skills, strip_html  # noqa: E402
+from src.utils.translator import prepare as prepare_translation  # noqa: E402
+from src.utils.translator import translate_to_pt  # noqa: E402
+
+# Em modo standalone (python -m src.engines.careerjet) o .env ainda nao foi
+# carregado pelo scrapy.py - garante a chave de API tambem nesse cenario.
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv()
+except Exception:
+    pass
 
 
-PARSER_VERSION = "careerjet-2026.05.08"
+PARSER_VERSION = "careerjet-api-i18n-2026.05.22"
 
 
-# Tamanho minimo de descricao para considerar a vaga *coletada por completo*.
-# Careerjet entrega description direto do JSON-LD (sempre 1500-3500 chars na
-# amostra). Abaixo de 200 chars o JSON-LD provavelmente veio truncado/erro.
-_MIN_USEFUL_DESCRIPTION = 200
+# --- Configuracao --------------------------------------------------------
+
+_API_URL = "https://search.api.careerjet.net/v4/query"
+
+# Chave de API (Basic Auth: usuario=chave, senha=vazia). Vinculada ao IP
+# autorizado do VPS - definir no .env como CAREERJET_API_KEY.
+_API_KEY = os.getenv("CAREERJET_API_KEY", "")
+
+# IP autorizado para a chave + user agent: ambos sao parametros GET
+# OBRIGATORIOS da API. O IP precisa ser o mesmo que a chave autoriza.
+_USER_IP = os.getenv("CAREERJET_USER_IP", "82.25.68.106")
+_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/130.0.0.0 Safari/537.36"
+)
+# Header Referer e obrigatorio: a pagina de onde a chamada se origina.
+_REFERER = os.getenv("CAREERJET_REFERER", "https://elkys.com.br/find-jobs/")
+
+# Paginacao: a API devolve 20 vagas por pagina (o parametro page_size e
+# ignorado nesta chave) e aceita 'page' de 1 a 10. Brasil busca mais fundo;
+# os demais paises ficam mais rasos para conter o volume. Variantes de
+# baixo volume param sozinhas na 1a pagina (response vazio).
+_MAX_PAGES = int(os.getenv("CAREERJET_MAX_PAGES", "3"))
+_MAX_PAGES_FOREIGN = int(os.getenv("CAREERJET_MAX_PAGES_FOREIGN", "2"))
+# Tamanho do excerto da descricao (default da API e so 120 chars).
+_FRAGMENT_SIZE = int(os.getenv("CAREERJET_FRAGMENT_SIZE", "2000"))
+# Quantos locales estrangeiros entram por ciclo (rodizio). Com 140 locales
+# e lotes de 10, todos sao cobertos a cada ~14 ciclos (~28h).
+_COUNTRY_BATCH_SIZE = int(os.getenv("CAREERJET_COUNTRY_BATCH_SIZE", "10"))
+
+# Retry para falhas transitorias (5xx / timeout).
+_MAX_RETRIES = 3
+
+# Locale principal: o Brasil e processado em todo ciclo.
+_PRIMARY_LOCALE = "pt_BR"
+
+# Demais locales suportados pelo Careerjet (140) - levantados por sondagem
+# direta da API. Rotacionam em lotes ao longo dos ciclos. O idioma de
+# origem (para a traducao) sao os 2 primeiros caracteres do locale_code.
+# Albania e Macedonia tem site no Careerjet mas nao tem locale na API.
+_ROTATING_LOCALES = (
+    "ar_AE", "ar_EG", "ar_LY", "ar_MA", "ar_SA", "ar_TN",
+    "bg_BG", "bs_BA", "cs_CZ", "da_DK", "da_GL",
+    "de_AT", "de_CH", "de_DE", "de_LI", "de_LU",
+    "el_CY", "el_GR",
+    "en_AE", "en_AF", "en_AU", "en_BD", "en_BH", "en_BW", "en_CA",
+    "en_CN", "en_EG", "en_ET", "en_GB", "en_GG", "en_GH", "en_GI",
+    "en_HK", "en_ID", "en_IE", "en_IM", "en_IN", "en_JE", "en_KE",
+    "en_KW", "en_KY", "en_LY", "en_MT", "en_MU", "en_MY", "en_NA",
+    "en_NG", "en_NZ", "en_OM", "en_PH", "en_PK", "en_QA", "en_SA",
+    "en_SG", "en_TH", "en_TW", "en_TZ", "en_UG", "en_US", "en_VG",
+    "en_VN", "en_ZA", "en_ZM",
+    "es_AR", "es_BO", "es_CL", "es_CO", "es_CR", "es_DO", "es_EC",
+    "es_ES", "es_GT", "es_HN", "es_MX", "es_NI", "es_PA", "es_PE",
+    "es_PR", "es_PY", "es_SV", "es_UY", "es_VE",
+    "et_EE", "fi_FI",
+    "fr_BE", "fr_BI", "fr_BJ", "fr_CA", "fr_CD", "fr_CF", "fr_CH",
+    "fr_CI", "fr_CM", "fr_DZ", "fr_FR", "fr_GA", "fr_GF", "fr_GP",
+    "fr_LU", "fr_MA", "fr_MG", "fr_ML", "fr_MQ", "fr_RE", "fr_SN",
+    "fr_TG", "fr_TN", "fr_YT",
+    "he_IL", "hr_HR", "hu_HU", "id_ID", "it_IT", "ja_JP", "ko_KR",
+    "lt_LT", "lv_LV", "nl_BE", "nl_NL", "no_NO", "pl_PL",
+    "pt_AO", "pt_MZ", "pt_PT",
+    "ro_MD", "ro_RO", "ru_BY", "ru_KZ", "ru_RU", "ru_UA",
+    "sk_SK", "sl_SI", "sr_ME", "sr_RS", "sv_SE", "th_TH", "tr_TR",
+    "uk_UA", "vi_VN", "zh_CN",
+)
+
+# Variantes de busca por localidade aplicadas APENAS ao Brasil. A primeira
+# ("" = sem 'location') e a busca nacional: cobre o pais inteiro e as vagas
+# marcadas apenas como "Brasil" (remoto/nacional). As demais sao as 27 UFs
+# - garantem que estados de menor volume entrem na coleta mesmo quando o
+# ranking nacional por data e dominado por SP/RJ/MG. Os outros paises usam
+# so a busca nacional. Vagas repetidas entre variantes caem no dedup de URL.
+_BR_LOCATION_VARIANTS = (
+    "",  # busca nacional (inclui "Brasil"/remoto)
+    "Acre", "Alagoas", "Amapá", "Amazonas", "Bahia", "Ceará",
+    "Espírito Santo", "Goiás", "Maranhão", "Mato Grosso",
+    "Mato Grosso do Sul", "Minas Gerais", "Pará", "Paraíba", "Paraná",
+    "Pernambuco", "Piauí", "Rio de Janeiro", "Rio Grande do Norte",
+    "Rio Grande do Sul", "Rondônia", "Roraima", "Santa Catarina",
+    "São Paulo", "Sergipe", "Tocantins", "Distrito Federal",
+)
+
+
+class _CareerjetConfigError(RuntimeError):
+    """Erro irrecuperavel de configuracao (credenciais, locale, IP)."""
 
 
 def is_partial(job_data: dict) -> bool:
-    """Decide se uma vaga Careerjet deve ficar em ``partial``.
+    """Careerjet (API) nunca fica em ``partial``.
 
-    O Careerjet entrega description sempre via JSON-LD - quando ela vem, e
-    o que o site tem. Campos que NAO disparam reenrichment porque sao
-    intrinsicamente opcionais na fonte:
-
-    * ``salary`` vazio - apenas ~10% das vagas Careerjet trazem ``baseSalary``
-      no JSON-LD (anuncios brasileiros raramente publicam faixa). Refetch
-      nao traz salario que o site nao publicou.
-    * ``state_code`` ausente quando ``location_raw='Brasil'`` - quando a
-      vaga foi cadastrada com cidade=Brasil sem regiao especifica, o
-      ``addressRegion`` simplesmente nao existe no JSON-LD. Esperado.
-    * ``company`` vazio - raro mas acontece quando ``hiringOrganization.name``
-      nao foi preenchido pelo recrutador.
-
-    Sinal real de incompleto: ``description`` ausente ou trivial - indica
-    falha no parsing do JSON-LD ou pagina servida sem o bloco.
+    A API ja entrega cada vaga estruturada no response - nao existe pagina
+    de detalhe canonica para reenriquecer (``url`` e um redirect
+    ``jobviewtrack.com`` para o site de origem). Campos vazios (salary,
+    hiring_regime) sao naturais quando o anunciante nao os informou.
     """
-    description = (job_data.get("description") or "").strip()
-    return len(description) < _MIN_USEFUL_DESCRIPTION
+    return False
 
 
-# --- Sessão ---------------------------------------------------------------
+# --- Rodizio de paises ---------------------------------------------------
 
-_session = None
+def _rotating_batch() -> list:
+    """Lote de locales estrangeiros do ciclo atual.
 
-
-def get_session():
-    """Retorna a sessão global, criando-a sob demanda (impersonate Chrome)."""
-    global _session
-    if _session is None:
-        _session = requests.Session(impersonate="chrome")
-    return _session
-
-
-def reset_session() -> None:
-    """Descarta a sessão atual (use após bloqueios em sequência)."""
-    global _session
-    _session = None
-
-
-# --- Configuração --------------------------------------------------------
-
-_REGIME_MAP = {
-    "FULL_TIME": "CLT",
-    "PART_TIME": "Meio Período",
-    "CONTRACTOR": "PJ",
-    "INTERN": "Estágio",
-    "TEMPORARY": "Temporário",
-    "VOLUNTEER": "Voluntário",
-}
-
-_RE_DATE_BR = re.compile(r"(\d{2})/(\d{2})/(\d{4})")
-_RE_DATE_BR_NO_YEAR = re.compile(r"(\d{2})/(\d{2})")
+    A rotacao e baseada no relogio (sem arquivo de estado): a cada ~2h o
+    indice avanca um lote, cobrindo todos os ``_ROTATING_LOCALES`` ao longo
+    de aproximadamente um dia. Sobrevive a reinicios do processo.
+    """
+    n = len(_ROTATING_LOCALES)
+    if n == 0 or _COUNTRY_BATCH_SIZE <= 0:
+        return []
+    total_batches = math.ceil(n / _COUNTRY_BATCH_SIZE)
+    idx = int(time.time() // 7200) % total_batches
+    start = idx * _COUNTRY_BATCH_SIZE
+    return list(_ROTATING_LOCALES[start:start + _COUNTRY_BATCH_SIZE])
 
 
-# --- Helpers privados ----------------------------------------------------
+def _active_locales() -> list:
+    """``pt_BR`` (sempre) + o lote rotativo de locales estrangeiros."""
+    return [_PRIMARY_LOCALE] + _rotating_batch()
 
-def _parse_relative_date(text: str) -> str:
-    """Tenta normalizar data do card para ``DD/MM/YYYY``.
 
-    Aceita ``DD/MM/YYYY``, ``DD/MM`` (assume ano corrente, voltando se
-    estiver no futuro) ou retorno vazio.
+def _location_variants(locale: str) -> tuple:
+    """Variantes de localidade do locale: Brasil varre as 27 UFs, os demais
+    paises fazem apenas a busca nacional."""
+    return _BR_LOCATION_VARIANTS if locale == _PRIMARY_LOCALE else ("",)
+
+
+def _max_pages(locale: str) -> int:
+    """Profundidade de paginacao: o Brasil vai mais fundo que os demais."""
+    return _MAX_PAGES if locale == _PRIMARY_LOCALE else _MAX_PAGES_FOREIGN
+
+
+# --- Filtro de idioma ----------------------------------------------------
+
+# Marcadores de portugues: palavras funcionais entre espacos (para casar
+# como palavra inteira) e termos de conteudo tipicos de anuncios de vaga.
+_PT_MARKERS = (
+    " de ", " da ", " do ", " das ", " dos ", " para ", " com ", " em ",
+    " que ", " uma ", " um ", " na ", " no ", " ou ", " voce ", " você ",
+    "experiência", "experiencia", "conhecimento", "desenvolvedor", "vaga",
+    "requisitos", "atividades", "responsabilidades", "trabalho", "salário",
+    "benefícios", "empresa", "área", "equipe", "nível", "atuação",
+)
+# Marcadores de ingles equivalentes.
+_EN_MARKERS = (
+    " the ", " and ", " for ", " with ", " you ", " we ", " our ", " are ",
+    " will ", " your ", " job ", " role ", " team ", " of ", " to ",
+    "experience", "requirements", "responsibilities", "developer",
+    "knowledge", "benefits", "company", "skills", "looking for",
+)
+# Diacriticos praticamente exclusivos do portugues - sinal forte.
+_PT_DIACRITICS = "ãõçáàâêéíóôú"
+
+
+def _looks_portuguese(text: str) -> bool:
+    """Heuristica: o texto aparenta estar escrito em portugues?
+
+    Conservadora: so devolve False quando o texto tem massa clara de
+    marcadores ingleses superando os portugueses. Usada apenas para os
+    locales pt_* - se uma vaga internacional vazou no indice BR/PT escrita
+    em ingles, ela e tratada como ingles e traduzida.
     """
     if not text:
+        return True
+    low = " " + text.lower() + " "
+    pt = sum(low.count(m) for m in _PT_MARKERS)
+    en = sum(low.count(m) for m in _EN_MARKERS)
+    if any(ch in low for ch in _PT_DIACRITICS):
+        pt += 3
+    if en >= 3 and en > pt:
+        return False
+    return True
+
+
+def _source_lang(locale_lang: str, title: str, description: str) -> str:
+    """Idioma de origem efetivo de uma vaga.
+
+    Para locales nao-portugueses, o idioma e o do proprio locale. Para os
+    locales pt_* (pt_BR/pt_PT), o conteudo costuma ser portugues - mas se
+    uma vaga internacional vazou em ingles, detecta e marca como ``en``
+    para que seja traduzida tambem.
+    """
+    if locale_lang != "pt":
+        return locale_lang
+    if not _looks_portuguese(f"{title} {description}"):
+        return "en"
+    return "pt"
+
+
+# --- Helpers de parsing --------------------------------------------------
+
+def _parse_date(raw: str) -> str:
+    """``'Wed, 21 May 2026 07:53:29 GMT'`` -> ``'21/05/2026'``.
+
+    Devolve string vazia se a data nao puder ser interpretada.
+    """
+    if not raw:
         return ""
-    m = _RE_DATE_BR.search(text)
-    if m:
-        return m.group(0)
-    m = _RE_DATE_BR_NO_YEAR.search(text)
-    if m:
-        today = date.today()
-        dd, mm = m.group(1), m.group(2)
-        year = today.year
-        try:
-            if int(mm) > today.month or (int(mm) == today.month and int(dd) > today.day):
-                year = today.year - 1
-        except ValueError:
-            pass
-        return f"{dd}/{mm}/{year}"
+    try:
+        dt = parsedate_to_datetime(raw)
+    except (TypeError, ValueError):
+        return ""
+    return dt.strftime("%d/%m/%Y") if dt is not None else ""
+
+
+def _build_salary(job: dict) -> str:
+    """Monta a string de salario a partir dos campos da API.
+
+    Prefere o campo ``salary`` ja formatado; senao reconstroi de
+    ``salary_min``/``salary_max``/``salary_currency_code``. A normalizacao
+    fina (``process_salary``) acontece depois, no pipeline do controller.
+    """
+    salary = (job.get("salary") or "").strip()
+    if salary:
+        return salary
+    currency = job.get("salary_currency_code") or "BRL"
+    mn = job.get("salary_min")
+    mx = job.get("salary_max")
+    if mn and mx:
+        return f"{currency} {mn}" if mn == mx else f"{currency} {mn} - {mx}"
+    if mn:
+        return f"{currency} {mn}"
     return ""
 
 
-def _parse_jsonld_jobposting(soup) -> dict | None:
-    """Procura bloco JSON-LD com ``@type=JobPosting`` no HTML.
+def _build_location(raw: str) -> list:
+    """``'São Paulo - SP'`` / ``'Recife, PE'`` -> ``['cidade', 'UF']``.
+
+    A API usa ``' - '`` (ou virgula) como separador. Nivel pais ('Brasil',
+    'Brazil') ou vazio -> lista vazia. Nomes de cidade sao mantidos no
+    idioma original (sao nomes proprios, nao se traduzem).
+    """
+    if not raw:
+        return []
+    cleaned = raw.strip()
+    if cleaned.lower() in ("brasil", "brazil"):
+        return []
+    cleaned = cleaned.replace(" - ", ",")
+    parts = [p.strip() for p in cleaned.split(",") if p.strip()]
+    return parts[:2]
+
+
+def _work_type(title: str, location: list) -> str:
+    """Modalidade derivada do titulo + localidade.
+
+    Sem campo dedicado na API - o ``apply_description_fallbacks`` ainda
+    pode promover para Remoto/Hibrido a partir da descricao.
+    """
+    blob = title.lower()
+    if "remoto" in blob or "remote" in blob or "home office" in blob or "home-office" in blob:
+        return "Remoto"
+    if "híbrido" in blob or "hibrido" in blob or "hybrid" in blob:
+        return "Híbrido"
+    if location:
+        return "Presencial"
+    return "Remoto"
+
+
+def _extract_job(job: dict, seen: set) -> tuple | None:
+    """Extrai os campos crus de um item da API (sem traduzir/normalizar).
 
     Returns:
-        Dict do JobPosting, ou ``None`` se não houver.
+        Tupla ``(url, title, company, location, salary, date, description)``
+        no idioma original, ou ``None`` se for duplicata ou faltar
+        url/titulo. A traducao, o ``work_type``, as skills e os fallbacks
+        sao aplicados depois, em ``get_careerjet_jobs``.
     """
-    for script in soup.find_all("script", type="application/ld+json"):
-        try:
-            data = json.loads(script.text or "{}")
-        except (json.JSONDecodeError, ValueError):
-            continue
-        if isinstance(data, dict) and data.get("@type") == "JobPosting":
-            return data
-    return None
+    url = (job.get("url") or "").strip()
+    if not url or url in seen:
+        return None
+
+    title = (job.get("title") or "").strip()
+    if not title:
+        return None
+
+    seen.add(url)
+
+    description = strip_html(job.get("description") or "")
+    company = (job.get("company") or "").strip()
+    location = _build_location(job.get("locations") or "")
+    salary = _build_salary(job)
+    publication_date = _parse_date(job.get("date") or "")
+
+    return (url, title, company, location, salary, publication_date, description)
 
 
-async def _fetch_job_detail(link: str, session, semaphore: asyncio.Semaphore) -> list | None:
-    """Busca a página de detalhe e devolve a lista canônica.
+# --- Chamada a API -------------------------------------------------------
+
+async def _fetch_page(
+    client: httpx.AsyncClient, locale: str, stack: str, page: int, location: str,
+) -> tuple:
+    """Faz uma chamada a API para ``locale``/``stack``/``location``/``page``.
 
     Args:
-        link: URL canônica da vaga.
-        session: sessão ``curl_cffi`` reutilizada entre chamadas.
-        semaphore: limita o número de fetches simultâneos.
+        locale: ``locale_code`` do pais/idioma (ex.: ``pt_BR``, ``de_DE``).
+        location: UF/regiao a filtrar, ou string vazia para busca nacional.
 
     Returns:
-        Lista canônica de 8 campos, ou ``None`` se faltar JSON-LD/título.
+        Tupla ``(jobs, total_pages)``. ``jobs`` e ``None`` se a chamada
+        falhou apos os retries; lista vazia se a busca nao casou (ex.: modo
+        LOCATIONS) ou nao trouxe vagas.
+
+    Raises:
+        _CareerjetConfigError: em HTTP 400/403 (locale invalido, credenciais
+            ou parametros obrigatorios ausentes) - inutil continuar.
     """
-    async with semaphore:
+    params = {
+        "locale_code": locale,
+        "keywords": stack,
+        "sort": "date",
+        "page": page,
+        "fragment_size": _FRAGMENT_SIZE,
+        "user_ip": _USER_IP,
+        "user_agent": _USER_AGENT,
+    }
+    if location:
+        params["location"] = location
+
+    for attempt in range(1, _MAX_RETRIES + 1):
         try:
-            response = await fetch_sync(session, link, timeout=20)
-            if response is None or response.status_code != 200:
-                return None
+            resp = await client.get(
+                _API_URL, params=params, headers={"Referer": _REFERER},
+            )
+        except (httpx.TimeoutException, httpx.TransportError):
+            if attempt == _MAX_RETRIES:
+                return None, 0
+            await asyncio.sleep(2.0 * attempt)
+            continue
 
-            soup = BeautifulSoup(response.text, "html.parser")
-            data = _parse_jsonld_jobposting(soup)
-            if not data:
-                return None
+        if resp.status_code in (400, 403):
+            raise _CareerjetConfigError(
+                f"HTTP {resp.status_code}: {resp.text[:200]}"
+            )
+        if resp.status_code != 200:
+            if attempt == _MAX_RETRIES:
+                return None, 0
+            await asyncio.sleep(2.0 * attempt)
+            continue
 
-            job_title = (data.get("title") or "").strip()
-            if not job_title:
-                return None
+        try:
+            data = resp.json()
+        except ValueError:
+            return None, 0
 
-            hiring_org = data.get("hiringOrganization") or {}
-            company = hiring_org.get("name", "") if isinstance(hiring_org, dict) else ""
+        # type=LOCATIONS (busca ambigua / sem correspondencia de localidade)
+        # nao traz vagas - apenas seguimos para a proxima variante.
+        if data.get("type") != "JOBS":
+            return [], 0
 
-            # jobLocation pode ser dict ou lista
-            job_loc = data.get("jobLocation") or {}
-            if isinstance(job_loc, list):
-                job_loc = job_loc[0] if job_loc else {}
-            address = job_loc.get("address", {}) if isinstance(job_loc, dict) else {}
-            locality = address.get("addressLocality", "") if isinstance(address, dict) else ""
-            region = address.get("addressRegion", "") if isinstance(address, dict) else ""
+        return data.get("jobs") or [], int(data.get("pages") or 1)
 
-            location = []
-            if locality:
-                location.append(str(locality))
-            if region:
-                location.append(str(region))
-
-            # Modalidade
-            job_loc_type = data.get("jobLocationType", "")
-            title_lower = job_title.lower()
-            if job_loc_type == "TELECOMMUTE" or "remoto" in title_lower or "remote" in title_lower:
-                work_type = "Remoto"
-            elif "híbrido" in title_lower or "hibrido" in title_lower or "hybrid" in title_lower:
-                work_type = "Híbrido"
-            elif location:
-                work_type = "Presencial"
-            else:
-                work_type = "Remoto"
-
-            # Regime
-            employment_type = data.get("employmentType", "")
-            if isinstance(employment_type, list):
-                hiring_regime = next((_REGIME_MAP[t] for t in employment_type if t in _REGIME_MAP), "")
-            else:
-                hiring_regime = _REGIME_MAP.get(employment_type, "")
-
-            # Salário
-            salary = ""
-            base = data.get("baseSalary") or {}
-            if isinstance(base, dict):
-                currency = base.get("currency", "BRL")
-                value = base.get("value") or {}
-                if isinstance(value, dict):
-                    mn = value.get("minValue", "")
-                    mx = value.get("maxValue", "")
-                    if mn and mx:
-                        salary = f"{currency} {mn}" if mn == mx else f"{currency} {mn} - {mx}"
-                    elif mn:
-                        salary = f"{currency} {mn}"
-                elif value:
-                    salary = f"{currency} {value}"
-
-            # Data
-            date_posted = (data.get("datePosted") or "")[:10]
-            if len(date_posted) == 10 and "-" in date_posted:
-                y, m, d = date_posted.split("-")
-                publication_date = f"{d}/{m}/{y}"
-            else:
-                publication_date = _parse_relative_date(date_posted)
-
-            description = strip_html(data.get("description", ""))
-            skills = extract_skills(description) if description else []
-
-            return apply_description_fallbacks([
-                link, job_title, company, location, work_type,
-                hiring_regime, salary, publication_date,
-                skills, description,
-            ])
-        except Exception:
-            return None
+    return None, 0
 
 
-# --- Fase 1: coleta de links ---------------------------------------------
-
-async def get_careerjet_links() -> list:
-    """Lista links únicos paginando até 5 páginas por stack do lote ativo."""
-    links = []
-    seen = set()
-    session = get_session()
-
-    for stack in get_active_stacks():
-        encoded = urllib.parse.quote(stack)
-        for page in range(1, 6):
-            try:
-                url = f"https://www.careerjet.com.br/vagas?s={encoded}&l=Brasil&p={page}"
-                response = await fetch_sync(session, url, timeout=20)
-                if response is None or response.status_code != 200:
-                    break
-
-                soup = BeautifulSoup(response.text, "html.parser")
-                cells = soup.find_all("article", class_="job clicky")
-                if not cells:
-                    break
-
-                added = 0
-                for cell in cells:
-                    a = cell.find("a", href=True)
-                    if not a:
-                        continue
-                    href = a.get("href")
-                    if href.startswith("/"):
-                        href = "https://www.careerjet.com.br" + href
-                    if href not in seen:
-                        seen.add(href)
-                        tracker.discover(href, engine="careerjet")
-                        links.append(href)
-                        added += 1
-                if added == 0:
-                    break
-            except Exception:
-                break
-
-    return links
-
-
-# --- Fase 2 / Função pública ---------------------------------------------
+# --- Funcao publica ------------------------------------------------------
 
 async def get_careerjet_jobs(on_job=None) -> list:
-    """Coleta vagas do Careerjet em duas fases (links + fetch paralelo).
+    """Coleta vagas do Careerjet via API oficial (multi-pais + traducao).
+
+    Para cada locale do ciclo (pt_BR sempre + o lote rotativo) e cada stack
+    do lote ativo, pagina a API; vagas de locales nao-portugueses tem
+    titulo e descricao traduzidos para portugues antes de emitir.
 
     Args:
         on_job: callback opcional ``async fn(parsed)`` invocado a cada vaga
-                resolvida - usado pelo controller para persistir em streaming.
+                emitida - usado pelo controller para persistir em streaming.
 
     Returns:
-        Lista no formato canônico de 8 campos.
+        Lista no formato canonico de 10 campos.
     """
-    job_links = await get_careerjet_links()
-    if not job_links:
-        print("Foram obtidas 0 vagas do site careerjet")
+    if not _API_KEY:
+        print("[careerjet] CAREERJET_API_KEY ausente no .env - engine ignorada")
         return []
 
-    session = get_session()
-    semaphore = asyncio.Semaphore(8)
+    jobs: list = []
+    seen: set[str] = set()
+    locales = _active_locales()
 
-    async def _fetch_and_emit(link):
-        """Resolve uma vaga e emite via callback (se configurado)."""
-        parsed = await _fetch_job_detail(link, session, semaphore)
-        if parsed is not None and on_job is not None:
+    # Front-load do download dos modelos de traducao dos idiomas do ciclo.
+    langs = sorted({lc[:2] for lc in locales if lc[:2] != "pt"})
+    if langs:
+        try:
+            await asyncio.to_thread(prepare_translation, langs)
+        except Exception:
+            pass
+
+    auth = httpx.BasicAuth(_API_KEY, "")
+    timeout = httpx.Timeout(connect=10.0, read=30.0, write=10.0, pool=5.0)
+
+    async def _emit(raw: dict, locale_lang: str) -> None:
+        """Normaliza, traduz e emite uma vaga crua da API."""
+        base = _extract_job(raw, seen)
+        if base is None:
+            return
+        url, title, company, location, salary, publication_date, description = base
+
+        src = _source_lang(locale_lang, title, description)
+        if src != "pt":
+            title = await asyncio.to_thread(translate_to_pt, title, src)
+            description = await asyncio.to_thread(translate_to_pt, description, src)
+
+        work_type = _work_type(title, location)
+        skills = extract_skills(description) if description else []
+        parsed = apply_description_fallbacks([
+            url, title, company, location, work_type,
+            "", salary, publication_date,
+            skills, description,
+        ])
+        tracker.discover(parsed[0], engine="careerjet")
+        jobs.append(parsed)
+        if on_job is not None:
             try:
                 await on_job(parsed)
             except Exception:
                 pass
-        return parsed
 
-    results = await asyncio.gather(*(_fetch_and_emit(l) for l in job_links))
-    jobs = [r for r in results if r is not None]
+    async with httpx.AsyncClient(auth=auth, timeout=timeout) as client:
+        for locale in locales:
+            locale_lang = locale[:2]
+            variants = _location_variants(locale)
+            max_pages = _max_pages(locale)
+
+            for stack in get_active_stacks():
+                for location in variants:
+                    total_pages = 1
+                    page = 1
+                    while page <= min(total_pages, max_pages):
+                        try:
+                            page_jobs, total_pages = await _fetch_page(
+                                client, locale, stack, page, location,
+                            )
+                        except _CareerjetConfigError as exc:
+                            print(f"[careerjet] erro de configuracao, abortando: {exc}")
+                            print(f"Foram obtidas {len(jobs)} vagas do site careerjet")
+                            return jobs
+
+                        if not page_jobs:
+                            break
+
+                        for raw in page_jobs:
+                            try:
+                                await _emit(raw, locale_lang)
+                            except Exception:
+                                continue
+
+                        page += 1
+                        await asyncio.sleep(0.25)
 
     print(f"Foram obtidas {len(jobs)} vagas do site careerjet")
     return jobs
 
 
-async def refetch_one(url: str) -> list | None:
-    """Reprocessa uma URL específica do Careerjet (passe de reenrichment)."""
-    session = get_session()
-    sem = asyncio.Semaphore(1)
-    return await _fetch_job_detail(url, session, sem)
-
-
 # --- Modo debug -----------------------------------------------------------
 
 if __name__ == "__main__":
-    for j in asyncio.run(get_careerjet_jobs())[:10]:
+    found = asyncio.run(get_careerjet_jobs())
+    print(f"Total: {len(found)}")
+    for j in found[:10]:
         print(j)

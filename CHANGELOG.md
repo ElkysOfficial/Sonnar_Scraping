@@ -5,6 +5,28 @@ Todas as mudanças relevantes deste projeto são documentadas neste arquivo.
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/)
 e o projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [2.5.0] - 2026-05-22
+
+### Adicionado
+
+- **Engine Careerjet multi-país com tradução automática**: a coleta de
+  vagas do Careerjet, antes restrita ao Brasil via scraping de HTML,
+  passa a usar a API v4 oficial e cobre os 141 `locale_code` suportados
+  (Brasil + 140 países). Os países estrangeiros entram em rodízio por
+  ciclo; o Brasil é processado em todo ciclo, com a busca nacional mais
+  uma busca por cada uma das 27 UFs. Vagas em outros idiomas têm título
+  e descrição traduzidos para português antes de salvar, por um tradutor
+  offline (Argos Translate) — tradução direta quando há o par de
+  idiomas, com pivô por inglês quando não há. Exige a nova dependência
+  `argostranslate` e a variável `CAREERJET_API_KEY` no `.env`.
+
+### Alterado
+
+- A engine `careerjet` deixa de raspar o HTML de `careerjet.com.br` e
+  passa a consumir a API `search.api.careerjet.net`. É listing-only (sem
+  reenriquecimento), já que a API serve a descrição como excerto; o
+  domínio de métricas do controller acompanha a mudança.
+
 ## [2.4.2] - 2026-05-21
 
 ### Corrigido
