@@ -77,7 +77,7 @@ ENGINE_PRIMARY_DOMAIN = {
     "gupy":           "portal.api.gupy.io",
     "jooble":         "br.jooble.org",
     "catho":          "www.catho.com.br",
-    "careerjet":      "www.careerjet.com.br",
+    "careerjet":      "search.api.careerjet.net",
     "geekhunter":     "www.geekhunter.com.br",
     "michaelpage":    "www.michaelpage.com.br",
     "programathor":   "programathor.com.br",
