@@ -222,8 +222,8 @@ const planFeatures = computed<string[]>(() => {
   }
   if (p === 'pro') {
     return [
-      'Vagas em tempo real direto no seu WhatsApp',
-      'Filtro por stack e senioridade',
+      'Todas as vagas de TI no seu canal exclusivo do WhatsApp',
+      'Atualização contínua das principais plataformas',
       'Sem duplicatas e sem ruído'
     ]
   }
@@ -236,7 +236,7 @@ const planFeatures = computed<string[]>(() => {
 const includesCopy = computed(() => {
   const p = subscriber.value?.plan
   if (p === 'plus') return 'Seu plano usa IA para entregar só o que combina com você.'
-  if (p === 'pro') return 'Vagas curadas para o seu perfil, em tempo real.'
+  if (p === 'pro') return 'Todas as vagas de TI no seu canal exclusivo, sem ruído.'
   return 'Faça upgrade para receber vagas personalizadas.'
 })
 
@@ -261,8 +261,8 @@ const upgradeOptions = computed(() => {
       price: 'R$ 5',
       featured: false,
       features: [
-        'Vagas em tempo real no seu canal',
-        'Filtro por stack e senioridade',
+        'Canal exclusivo de vagas no WhatsApp',
+        'Todas as vagas de TI, em tempo real',
         'Sem duplicatas, sem ruído'
       ]
     },

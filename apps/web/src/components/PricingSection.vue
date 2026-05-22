@@ -86,6 +86,7 @@
                     <strong v-if="feature.highlight">{{ feature.highlight }}</strong>
                     <template v-if="feature.highlight"> </template>
                     {{ feature.label }}
+                    <span v-if="feature.kind === 'soon'" class="plan-feature-soon">Em breve</span>
                   </span>
                 </li>
               </ul>
@@ -154,8 +155,8 @@ const plans = [
           { highlight: 'IA analisa', label: 'cada vaga e calcula match com seu perfil' },
           { highlight: 'Match score 0–100', label: 'em toda vaga recebida' },
           { highlight: 'Tempo real', label: '- vagas chegam antes do canal Pro' },
-          { highlight: 'Curadoria humana:', label: 'top 10 vagas semanais selecionadas' },
-          { highlight: 'Relatório semanal', label: 'do mercado por stack e senioridade' },
+          { highlight: 'Curadoria humana:', label: 'top 10 vagas semanais selecionadas', kind: 'soon' },
+          { highlight: 'Relatório semanal', label: 'do mercado por stack e senioridade', kind: 'soon' },
           { label: 'Suporte prioritário no WhatsApp' }
         ]
       }
@@ -165,7 +166,7 @@ const plans = [
     tier: 'pro',
     name: 'Pro',
     price: 5,
-    tagline: 'Vagas no seu canal exclusivo, filtradas pelo seu stack.',
+    tagline: 'Todas as vagas de TI no seu canal exclusivo do WhatsApp.',
     ctaLabel: 'Começar 7 dias grátis',
     trial: '7 dias grátis · cancele quando quiser',
     featureGroups: [
@@ -173,23 +174,15 @@ const plans = [
         title: 'Vagas',
         items: [
           { highlight: 'Canal exclusivo no WhatsApp', label: '(separado da comunidade)' },
-          { highlight: 'Atualização a cada 10 min', label: 'das principais plataformas' },
+          { highlight: 'Todas as vagas de TI', label: 'coletadas das principais plataformas' },
           { label: 'Sem duplicatas, sem ruído' }
-        ]
-      },
-      {
-        title: 'Filtros',
-        items: [
-          { label: 'Por stack (linguagem, framework, cloud)' },
-          { label: 'Por senioridade (Júnior a Staff)' },
-          { label: 'Por modelo (remoto, híbrido, presencial)' }
         ]
       },
       {
         title: 'Não inclui',
         items: [
-          { label: 'Match score por IA (Plus)', kind: 'off' },
-          { label: 'Curadoria humana semanal (Plus)', kind: 'off' }
+          { label: 'Filtro das vagas pelo seu perfil (Plus)', kind: 'off' },
+          { label: 'Match score por IA (Plus)', kind: 'off' }
         ]
       }
     ]
@@ -413,6 +406,21 @@ export default {
   text-decoration-thickness: 1px;
 }
 .plan-feature--off .plan-feature-icon { color: var(--color-text-muted); opacity: 0.7; }
+.plan-feature--soon { color: var(--color-text-secondary); }
+.plan-feature--soon .plan-feature-icon { color: var(--color-text-muted); }
+
+.plan-feature-soon {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  vertical-align: middle;
+  white-space: nowrap;
+}
 
 .plan-feature-icon {
   width: 18px;

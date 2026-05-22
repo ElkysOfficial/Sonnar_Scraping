@@ -765,7 +765,7 @@ const planOptions = [
     tier: 'plus' as const,
     label: 'Plus',
     price: 'R$ 10/mês',
-    tagline: 'IA + curadoria humana. Para quem busca direcionamento.',
+    tagline: 'A IA seleciona as vagas alinhadas ao seu perfil.',
     featured: true,
     trial: true
   },
@@ -773,7 +773,7 @@ const planOptions = [
     tier: 'pro' as const,
     label: 'Pro',
     price: 'R$ 5/mês',
-    tagline: 'Canal exclusivo no WhatsApp com filtros automáticos.',
+    tagline: 'Todas as vagas de TI no seu canal exclusivo do WhatsApp.',
     featured: false,
     trial: true
   }
