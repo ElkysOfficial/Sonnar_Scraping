@@ -5,6 +5,22 @@ Todas as mudanças relevantes deste projeto são documentadas neste arquivo.
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/)
 e o projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [2.6.1] - 2026-05-22
+
+### Corrigido
+
+- **Planos anunciavam recursos que não são entregues hoje**: a página de
+  planos (`PricingSection.vue`), a tela de cadastro (`SignupPage.vue`) e o
+  painel do assinante (`DashboardSubscription.vue`) descreviam features
+  inexistentes. O plano **Pro** prometia "filtros por stack, senioridade e
+  modelo", mas a entrega do Pro é via grupo de WhatsApp — que recebe
+  **todas** as vagas, sem filtro por perfil (filtro é exclusivo do Plus).
+  As features do **Plus** "curadoria humana semanal" e "relatório semanal
+  de mercado" ainda não foram implementadas. Correções: a promessa de
+  filtros foi removida do Pro em todos os pontos; "curadoria humana" e
+  "relatório semanal" do Plus passam a exibir o selo **Em breve**. A copy
+  agora reflete apenas o que é entregue hoje.
+
 ## [2.6.0] - 2026-05-22
 
 ### Adicionado
