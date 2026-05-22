@@ -13,13 +13,14 @@ Configure ``CAREERJET_API_KEY`` no .env.
 
 Cobertura multi-pais
 --------------------
-O Careerjet indexa ~68 ``locale_code`` (paises/idiomas). A engine cobre
-todos, mas em rodizio para nao explodir o volume de requests por ciclo:
+A API expoe 141 ``locale_code`` (paises/idiomas) - lista levantada por
+sondagem direta. A engine cobre todos, mas em rodizio para nao explodir o
+volume de requests por ciclo:
 
 * ``pt_BR`` (Brasil) e processado SEMPRE - e o mercado principal do
   produto. Para o Brasil roda-se a busca nacional + uma busca por cada
   uma das 27 UFs (ver ``_BR_LOCATION_VARIANTS``).
-* Os outros 67 locales rotacionam em lotes ao longo dos ciclos (rotacao
+* Os outros 140 locales rotacionam em lotes ao longo dos ciclos (rotacao
   baseada no relogio, sem arquivo de estado) - cada um faz so a busca
   nacional. Ver ``_ROTATING_LOCALES`` / ``_rotating_batch()``.
 
@@ -92,8 +93,9 @@ _MAX_PAGES = int(os.getenv("CAREERJET_MAX_PAGES", "3"))
 _MAX_PAGES_FOREIGN = int(os.getenv("CAREERJET_MAX_PAGES_FOREIGN", "2"))
 # Tamanho do excerto da descricao (default da API e so 120 chars).
 _FRAGMENT_SIZE = int(os.getenv("CAREERJET_FRAGMENT_SIZE", "2000"))
-# Quantos locales estrangeiros entram por ciclo (rodizio).
-_COUNTRY_BATCH_SIZE = int(os.getenv("CAREERJET_COUNTRY_BATCH_SIZE", "5"))
+# Quantos locales estrangeiros entram por ciclo (rodizio). Com 140 locales
+# e lotes de 10, todos sao cobertos a cada ~14 ciclos (~28h).
+_COUNTRY_BATCH_SIZE = int(os.getenv("CAREERJET_COUNTRY_BATCH_SIZE", "10"))
 
 # Retry para falhas transitorias (5xx / timeout).
 _MAX_RETRIES = 3
@@ -101,21 +103,35 @@ _MAX_RETRIES = 3
 # Locale principal: o Brasil e processado em todo ciclo.
 _PRIMARY_LOCALE = "pt_BR"
 
-# Demais locales suportados pelo Careerjet. Rotacionam em lotes ao longo
-# dos ciclos. O idioma de origem (para a traducao) sao os 2 primeiros
-# caracteres do locale_code.
+# Demais locales suportados pelo Careerjet (140) - levantados por sondagem
+# direta da API. Rotacionam em lotes ao longo dos ciclos. O idioma de
+# origem (para a traducao) sao os 2 primeiros caracteres do locale_code.
+# Albania e Macedonia tem site no Careerjet mas nao tem locale na API.
 _ROTATING_LOCALES = (
-    "cs_CZ", "da_DK", "de_AT", "de_CH", "de_DE",
-    "en_AE", "en_AU", "en_BD", "en_CA", "en_CN", "en_HK", "en_IE",
-    "en_IN", "en_KW", "en_MY", "en_NZ", "en_OM", "en_PH", "en_PK",
-    "en_QA", "en_SG", "en_GB", "en_US", "en_ZA", "en_SA", "en_TW",
-    "en_VN",
+    "ar_AE", "ar_EG", "ar_LY", "ar_MA", "ar_SA", "ar_TN",
+    "bg_BG", "bs_BA", "cs_CZ", "da_DK", "da_GL",
+    "de_AT", "de_CH", "de_DE", "de_LI", "de_LU",
+    "el_CY", "el_GR",
+    "en_AE", "en_AF", "en_AU", "en_BD", "en_BH", "en_BW", "en_CA",
+    "en_CN", "en_EG", "en_ET", "en_GB", "en_GG", "en_GH", "en_GI",
+    "en_HK", "en_ID", "en_IE", "en_IM", "en_IN", "en_JE", "en_KE",
+    "en_KW", "en_KY", "en_LY", "en_MT", "en_MU", "en_MY", "en_NA",
+    "en_NG", "en_NZ", "en_OM", "en_PH", "en_PK", "en_QA", "en_SA",
+    "en_SG", "en_TH", "en_TW", "en_TZ", "en_UG", "en_US", "en_VG",
+    "en_VN", "en_ZA", "en_ZM",
     "es_AR", "es_BO", "es_CL", "es_CO", "es_CR", "es_DO", "es_EC",
-    "es_ES", "es_GT", "es_MX", "es_PA", "es_PE", "es_PR", "es_PY",
-    "es_UY", "es_VE",
-    "fi_FI", "fr_CA", "fr_BE", "fr_CH", "fr_FR", "fr_LU", "fr_MA",
-    "hu_HU", "it_IT", "ja_JP", "ko_KR", "nl_BE", "nl_NL", "no_NO",
-    "pl_PL", "pt_PT", "ru_RU", "ru_UA", "sv_SE", "sk_SK", "tr_TR",
+    "es_ES", "es_GT", "es_HN", "es_MX", "es_NI", "es_PA", "es_PE",
+    "es_PR", "es_PY", "es_SV", "es_UY", "es_VE",
+    "et_EE", "fi_FI",
+    "fr_BE", "fr_BI", "fr_BJ", "fr_CA", "fr_CD", "fr_CF", "fr_CH",
+    "fr_CI", "fr_CM", "fr_DZ", "fr_FR", "fr_GA", "fr_GF", "fr_GP",
+    "fr_LU", "fr_MA", "fr_MG", "fr_ML", "fr_MQ", "fr_RE", "fr_SN",
+    "fr_TG", "fr_TN", "fr_YT",
+    "he_IL", "hr_HR", "hu_HU", "id_ID", "it_IT", "ja_JP", "ko_KR",
+    "lt_LT", "lv_LV", "nl_BE", "nl_NL", "no_NO", "pl_PL",
+    "pt_AO", "pt_MZ", "pt_PT",
+    "ro_MD", "ro_RO", "ru_BY", "ru_KZ", "ru_RU", "ru_UA",
+    "sk_SK", "sl_SI", "sr_ME", "sr_RS", "sv_SE", "th_TH", "tr_TR",
     "uk_UA", "vi_VN", "zh_CN",
 )
 
