@@ -6,27 +6,36 @@
 
     <!--
       Content Security Policy - defesa em profundidade contra XSS.
-      JWT vive em localStorage (Supabase Auth padrão SPA), então qualquer
-      script injetado conseguiria exfiltrar a sessão. Esta CSP corta a
-      raiz do problema bloqueando inline scripts e eval.
 
-      script-src: 'self' + hashes específicos dos 2 blocos JSON-LD inline
-        abaixo (SEO structured data). NÃO usa 'unsafe-inline' nem
-        'unsafe-eval'. Se mudar o conteúdo dos blocos, recalcular o hash.
+      ATENÇÃO - trade-off de segurança assumido: o Google AdSense (anúncios
+      no dashboard) NÃO é compatível com uma CSP estrita. O runtime de
+      anúncios injeta scripts inline e usa eval, então 'unsafe-inline' e
+      'unsafe-eval' tiveram de ser adicionados ao script-src. Isso enfraquece
+      a proteção contra XSS: como o JWT vive em localStorage (Supabase Auth
+      padrão SPA), um script injetado ainda conseguiria exfiltrar a sessão.
+      Os hashes dos blocos JSON-LD foram removidos porque, na presença de
+      hash/nonce, o navegador IGNORA 'unsafe-inline' — e o AdSense precisa
+      dele. Se os anúncios forem removidos no futuro, reverter script-src
+      para 'self' + hashes dos 2 blocos JSON-LD e recolocar a proteção.
+
+      script-src: 'self' + AdSense (googlesyndication / googleadservices /
+        doubleclick / google.com). 'unsafe-inline' cobre os blocos JSON-LD
+        e os scripts do AdSense; 'unsafe-eval' é exigido pelo runtime de ads.
       style-src: mantém 'unsafe-inline' porque Vue/Vite injetam style
         attributes em runtime (impacto de XSS em CSS é baixo).
-      connect-src: Supabase REST + Realtime + Stripe API + ViaCEP (autofill de endereço).
-      frame-src: Stripe Checkout (iframes).
+      connect-src: Supabase REST + Realtime + Stripe API + ViaCEP + telemetria
+        do AdSense (beacons / ad traffic quality).
+      frame-src: Stripe Checkout + iframes de criativos do AdSense.
       frame-ancestors NÃO funciona via meta - vive no .htaccess (X-Frame-Options DENY).
     -->
     <meta http-equiv="Content-Security-Policy" content="
       default-src 'self';
-      script-src 'self' 'sha256-iAgwvczqHPQc2k+zCRwDRa230yZ7nowS14iX1hQ1tZA=' 'sha256-YH0tLW74qBFTfZmb8DZGRaKH2My6HP/Dk4svJfa6WAo=';
+      script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.googlesyndication.com https://partner.googleadservices.com https://*.doubleclick.net https://*.google.com https://*.adtrafficquality.google;
       style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
       font-src 'self' https://fonts.gstatic.com data:;
       img-src 'self' data: blob: https:;
-      connect-src 'self' https://*.supabase.co wss://*.supabase.co https://api.stripe.com https://viacep.com.br;
-      frame-src https://js.stripe.com https://hooks.stripe.com https://checkout.stripe.com;
+      connect-src 'self' https://*.supabase.co wss://*.supabase.co https://api.stripe.com https://viacep.com.br https://*.googlesyndication.com https://*.doubleclick.net https://*.google.com https://*.adtrafficquality.google;
+      frame-src https://js.stripe.com https://hooks.stripe.com https://checkout.stripe.com https://*.googlesyndication.com https://*.doubleclick.net https://www.google.com https://*.adtrafficquality.google;
       worker-src 'self' blob:;
       object-src 'none';
       base-uri 'self';
@@ -196,6 +205,13 @@
         ]
       }
     </script>
+    <!-- Google AdSense - loader dos anúncios exibidos no dashboard -->
+    <link rel="preconnect" href="https://pagead2.googlesyndication.com" crossorigin />
+    <script
+      async
+      src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-7896888594916293"
+      crossorigin="anonymous"
+    ></script>
   </head>
   <body>
     <div id="app"></div>

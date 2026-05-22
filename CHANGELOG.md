@@ -5,6 +5,38 @@ Todas as mudanças relevantes deste projeto são documentadas neste arquivo.
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/)
 e o projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [2.4.0] - 2026-05-21
+
+### Adicionado
+
+- **Anúncios do Google AdSense no dashboard de vagas**: o grid de vagas do
+  dashboard (`DashboardJobs.vue`) passa a intercalar uma unidade de anúncio a
+  cada 6 cards. O novo componente `AdSlot.vue` encapsula o `<ins>` do AdSense e
+  enfileira a requisição no `onMounted` — cada montagem cria um `<ins>` novo,
+  então a navegação SPA não dispara o erro *"All 'ins' elements already have
+  ads"*. A unidade usa o formato in-article/fluid e ocupa a linha inteira do
+  grid, separando blocos de cards sem se passar por uma vaga. O loader
+  `adsbygoogle.js` é carregado uma única vez no `index.html`.
+
+### Alterado
+
+- **Content Security Policy relaxada para suportar o AdSense**: o runtime de
+  anúncios do Google injeta scripts inline e usa `eval`, incompatíveis com a
+  CSP estrita anterior. Foram adicionados `'unsafe-inline'` e `'unsafe-eval'` ao
+  `script-src`, além dos domínios `googlesyndication`, `googleadservices`,
+  `doubleclick`, `google.com` e `adtrafficquality.google` em `script-src`,
+  `frame-src` e `connect-src`. Os hashes dos dois blocos JSON-LD foram removidos
+  porque o navegador ignora `'unsafe-inline'` quando há hash na diretiva.
+
+### Segurança
+
+- **Trade-off de XSS assumido**: relaxar o `script-src` enfraquece a defesa
+  contra XSS — como o JWT da sessão vive em `localStorage` (padrão do Supabase
+  Auth em SPA), um script injetado ainda conseguiria exfiltrá-lo. A decisão foi
+  assumida em troca da monetização por anúncios e está documentada no
+  comentário da CSP em `index.html`, com instruções de reversão caso os
+  anúncios sejam removidos no futuro.
+
 ## [2.3.5] - 2026-05-21
 
 ### Corrigido
