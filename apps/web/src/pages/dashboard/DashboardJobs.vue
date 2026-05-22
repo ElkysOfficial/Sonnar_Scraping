@@ -119,15 +119,20 @@
 
     <!-- Lista -->
     <ul v-if="jobs.length" class="djobs-list">
-      <li
-        v-for="job in jobs"
-        :key="job.job_id"
-        class="djobs-card"
-        :class="[
-          matchClass(job.match_score),
-          { 'djobs-card--featured': (job.match_score ?? 0) >= 85 }
-        ]"
-      >
+      <template v-for="job in feedItems" :key="isAd(job) ? job.key : job.job_id">
+        <!-- Anúncio: ocupa a linha inteira do grid, separando blocos de cards -->
+        <li v-if="isAd(job)" class="djobs-ad">
+          <AdSlot />
+        </li>
+
+        <li
+          v-else
+          class="djobs-card"
+          :class="[
+            matchClass(job.match_score),
+            { 'djobs-card--featured': (job.match_score ?? 0) >= 85 }
+          ]"
+        >
         <span class="djobs-card__rail" aria-hidden="true"></span>
 
         <!-- Cabeçalho: avatar + identidade + match (altura fixa) -->
@@ -226,7 +231,8 @@
           </a>
           <span v-else class="djobs-card__cta djobs-card__cta--off">Link indisponível</span>
         </div>
-      </li>
+        </li>
+      </template>
     </ul>
 
     <p v-else-if="loading" class="djobs-empty">Carregando suas vagas…</p>
@@ -243,6 +249,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useAuth } from '@/composables/useAuth'
+import AdSlot from '@/components/AdSlot.vue'
 import { supabase } from '@/integrations/supabase/client'
 import type { Database } from '@/integrations/supabase/types'
 
@@ -274,10 +281,42 @@ type VipJob = {
   url: string | null
 }
 
+/**
+ * Item do grid de vagas: ou uma vaga, ou um marcador de anúncio.
+ * O marcador carrega só uma `key` estável pro v-for.
+ */
+type AdItem = { __ad: true; key: string }
+type FeedItem = VipJob | AdItem
+
+/** Discrimina anúncio de vaga — usado no template pra escolher o que renderizar. */
+function isAd(item: FeedItem): item is AdItem {
+  return '__ad' in item
+}
+
 const { subscriber } = useAuth()
 const profile = ref<Profile | null>(null)
 const jobs = ref<VipJob[]>([])
 const loading = ref(true)
+
+// ============= FEED COM ANÚNCIOS =============
+/** A cada quantos cards de vaga inserir um anúncio no grid. */
+const AD_EVERY = 6
+
+/**
+ * Lista renderizada no grid: as vagas com um marcador de anúncio
+ * intercalado a cada AD_EVERY cards. Nunca insere um anúncio logo após
+ * o último card, pra não deixar um anúncio órfão no fim da lista.
+ */
+const feedItems = computed<FeedItem[]>(() => {
+  const out: FeedItem[] = []
+  jobs.value.forEach((job, i) => {
+    out.push(job)
+    const closesBlock = (i + 1) % AD_EVERY === 0
+    const isLast = i === jobs.value.length - 1
+    if (closesBlock && !isLast) out.push({ __ad: true, key: `ad-${i}` })
+  })
+  return out
+})
 
 // ============= PAREAMENTO DO WHATSAPP =============
 const waToken = ref<string | null>(null)
@@ -604,6 +643,21 @@ onMounted(async () => {
 @media (min-width: 640px)  { .djobs-list { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (min-width: 1040px) { .djobs-list { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (min-width: 1480px) { .djobs-list { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+
+/* Slot de anúncio — atravessa todas as colunas, separando blocos de cards.
+   Borda tracejada deixa claro que é publicidade, não uma vaga. */
+.djobs-ad {
+  grid-column: 1 / -1;
+  min-height: 100px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-3);
+  background: var(--color-surface);
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-card);
+  overflow: hidden;
+}
 
 .djobs-card {
   position: relative;
