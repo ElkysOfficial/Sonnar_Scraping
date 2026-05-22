@@ -140,4 +140,35 @@ const router = createRouter({
 // race conditions no refresh.
 router.beforeEach(globalAuthGuard)
 
+// Resiliência a deploy: as páginas são lazy-loaded por chunks com hash no
+// nome. Quando um deploy novo troca os hashes, uma aba já aberta ainda tem
+// em memória o index.html antigo e tenta importar chunks que não existem
+// mais (404 -> "Failed to fetch dynamically imported module"). Em vez de
+// deixar a navegação travada, recarregamos a página uma vez: como o
+// index.html é servido com no-cache, o reload traz os hashes atuais.
+const CHUNK_RELOAD_KEY = 'sonnar:chunk-reload'
+router.onError((error, to) => {
+  const msg = String(error && error.message)
+  const isChunkError =
+    /failed to fetch dynamically imported module/i.test(msg) ||
+    /error loading dynamically imported module/i.test(msg) ||
+    /importing a module script failed/i.test(msg)
+  if (!isChunkError) return
+
+  const target = (to && to.fullPath) || window.location.pathname
+  try {
+    // Guarda contra loop: se o reload já foi tentado pra este destino e o
+    // chunk ainda falha, é um problema real de deploy — não recarrega de novo.
+    if (sessionStorage.getItem(CHUNK_RELOAD_KEY) === target) return
+    sessionStorage.setItem(CHUNK_RELOAD_KEY, target)
+  } catch { /* sem sessionStorage: segue e recarrega mesmo assim */ }
+
+  window.location.assign(target)
+})
+
+router.afterEach(() => {
+  // Navegou com sucesso: libera nova tentativa de reload para o próximo deploy.
+  try { sessionStorage.removeItem(CHUNK_RELOAD_KEY) } catch { /* no-op */ }
+})
+
 export default router

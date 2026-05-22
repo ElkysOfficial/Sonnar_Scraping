@@ -5,6 +5,25 @@ Todas as mudanças relevantes deste projeto são documentadas neste arquivo.
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/)
 e o projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [2.4.2] - 2026-05-21
+
+### Corrigido
+
+- **Gráficos do painel do scraper travavam em loop de erro no console**: a
+  animação do ECharts no `TabChartCard.vue` disparava um `TypeError: Cannot
+  read properties of undefined (reading 'length')` a cada quadro
+  (`onframe`), inundando o console na página `/admin/scraper`. A animação foi
+  desabilitada no wrapper do gráfico — os gráficos renderizam estáticos e
+  estáveis, sem perda de informação.
+- **404 de chunk após deploy deixava a navegação travada**: as páginas são
+  lazy-loaded por chunks com hash no nome. Uma aba aberta antes de um deploy
+  ainda tinha o `index.html` antigo em memória e, ao navegar, tentava importar
+  chunks já substituídos (`Failed to fetch dynamically imported module`). O
+  router passa a detectar essa falha e recarregar a página uma única vez por
+  destino, buscando o `index.html` atual (servido com `no-cache`) e os hashes
+  vigentes. Há guarda contra loop caso o problema seja um deploy realmente
+  inconsistente.
+
 ## [2.4.1] - 2026-05-21
 
 ### Corrigido

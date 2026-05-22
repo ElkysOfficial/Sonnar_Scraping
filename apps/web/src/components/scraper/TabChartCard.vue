@@ -13,7 +13,7 @@
     <VChart
       v-if="hasData"
       class="tab-chart-card__chart"
-      :option="option"
+      :option="chartOption"
       :init-options="{ renderer: 'svg' }"
       autoresize
     />
@@ -24,6 +24,7 @@
 </template>
 
 <script setup>
+import { computed } from 'vue'
 import VChart from 'vue-echarts'
 import { use } from 'echarts/core'
 import { BarChart, PieChart, LineChart } from 'echarts/charts'
@@ -37,7 +38,7 @@ import { SVGRenderer } from 'echarts/renderers'
 
 use([BarChart, PieChart, LineChart, GridComponent, TooltipComponent, LegendComponent, DatasetComponent, SVGRenderer])
 
-defineProps({
+const props = defineProps({
   title:       { type: String, required: true },
   eyebrow:     { type: String, default: 'Visão geral' },
   tone:        { type: String, default: 'success' },
@@ -45,6 +46,12 @@ defineProps({
   hasData:     { type: Boolean, default: true },
   emptyLabel:  { type: String, default: '' },
 })
+
+// Animação do ECharts desabilitada de propósito: a interpolação de quadros
+// (onframe) com alguns formatos de dados deste painel dispara um TypeError
+// em loop, inundando o console. Sem animação o gráfico renderiza estático e
+// estável — o ganho visual da animação não compensa o crash.
+const chartOption = computed(() => ({ ...props.option, animation: false }))
 </script>
 
 <style scoped>
