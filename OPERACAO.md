@@ -84,9 +84,9 @@ Se a VPS reiniciar, os 4 serviços voltam sozinhos.
 
 ---
 
-## Memória — máquina de 4GB
+## Memória — máquina de 8GB
 
-A máquina tem **4GB de RAM**. O ecosystem tem `max_memory_restart` por processo:
+A máquina tem **8GB de RAM**. O ecosystem tem `max_memory_restart` por processo:
 **se um processo passar do teto, o PM2 reinicia só ele** — evita travar a máquina inteira (OOM).
 
 ### Orçamento
@@ -96,8 +96,8 @@ A máquina tem **4GB de RAM**. O ecosystem tem `max_memory_restart` por processo
 | `sonnar-core` | 512 MB | Faz `JSON.parse` do `jobs.json` inteiro (~18k vagas) por request; 250M reiniciava a cada ciclo VIP |
 | `sonnar-wa-formatter` | 400 MB | Canvas (geração de imagem) tem picos |
 | `sonnar-wa-sender` | 500 MB | Baileys cresce com o tempo (reinício limpa) |
-| `sonnar-scraper` | 1024 MB | Mais pesado — coleta + parsing |
-| **Total apps** | **~2,4 GB** | Sobra ~1 GB pro SO + ~0,6 GB de folga |
+| `sonnar-scraper` | 2048 MB | Mais pesado — coleta + parsing + modelos de tradução (Argos) na RAM |
+| **Total apps** | **~3,5 GB** | Sobra ~1 GB pro SO + bastante folga |
 
 ### Regras para não estourar / não dar gargalo
 
@@ -109,9 +109,10 @@ A máquina tem **4GB de RAM**. O ecosystem tem `max_memory_restart` por processo
    ```
    Se "free" cair perto de 0 e o "swap" subir → está no limite.
 3. **Reinícios frequentes por memória** (`pm2 status` mostra o contador `↺` subindo):
-   - **Scraper** estourando 1GB → o problema é concorrência da coleta, não o teto.
-     Reduza o paralelismo no scraper (`BATCH_INTERVAL_SECONDS` / nº de engines por lote)
-     em vez de só aumentar o limite.
+   - **Scraper** estourando 2GB → reduza o lote de países da engine careerjet
+     (`CAREERJET_COUNTRY_BATCH_SIZE` no `.env`) — menos idiomas por ciclo = menos
+     modelos de tradução carregados na RAM. Se persistir, reduza o paralelismo
+     (`BATCH_INTERVAL_SECONDS` / nº de engines por lote).
    - **Sender** estourando 500MB → normal o Baileys vazar com o tempo; o restart limpa.
      Se reiniciar muito rápido, suba o teto para 600M.
 4. **Atenção a navegadores no scraper:** se alguma engine usa Playwright/Selenium,
