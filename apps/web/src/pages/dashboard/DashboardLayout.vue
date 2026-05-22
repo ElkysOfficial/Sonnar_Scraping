@@ -204,10 +204,15 @@ onMounted(() => {
   // pra evitar race com o bootstrap reativo do useAuth singleton.
   checkViewport()
   window.addEventListener('resize', checkViewport, { passive: true })
+  // Trava a rolagem da janela: o dashboard rola só dentro do .dl-content.
+  // Sem isto, altura extra injetada pelo runtime do AdSense gera scroll de
+  // página e a sidebar descola do conteúdo.
+  document.body.style.overflow = 'hidden'
 })
 
 onUnmounted(() => {
   window.removeEventListener('resize', checkViewport)
+  document.body.style.overflow = ''
 })
 </script>
 
@@ -215,7 +220,13 @@ onUnmounted(() => {
 /* Dashboard Layout - alinhado ao Design System Sonnar v2.0 */
 
 .dl {
-  height: 100dvh;
+  /* Fixado na viewport. O runtime do AdSense pode injetar altura e forçar
+     rolagem no nível da janela; com o layout em fluxo normal, a sidebar
+     (só 100dvh de altura) rolava junto e descolava do topo, deixando um
+     vazio embaixo. Fixo, o shell inteiro fica preso à tela e apenas o
+     .dl-content rola. Espelha a sidebar fixa do AdminLayout. */
+  position: fixed;
+  inset: 0;
   background: var(--color-background);
   color: var(--color-text-primary);
   display: grid;

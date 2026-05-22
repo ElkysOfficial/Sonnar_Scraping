@@ -640,9 +640,53 @@ onMounted(async () => {
   grid-template-columns: 1fr;
   gap: var(--space-4);
 }
-@media (min-width: 640px)  { .djobs-list { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (min-width: 1040px) { .djobs-list { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-@media (min-width: 1480px) { .djobs-list { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+@media (min-width: 640px) { .djobs-list { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (min-width: 900px) { .djobs-list { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+/* A partir de ~1200px: 6 vagas por linha. Como o anúncio ocupa a linha
+   inteira (grid-column: 1 / -1) e é inserido a cada 6 cards (AD_EVERY),
+   ele vira um separador de linha cheia entre cada bloco de 6 vagas.
+
+   Nessa largura cada card fica estreito (~155–220px), então compactamos
+   sem perder legibilidade:
+   - título e nome da empresa um degrau menores (mais texto cabe antes
+     de cortar);
+   - faixa salarial empilhada — rótulo em cima, valor embaixo — pra o
+     valor nunca quebrar no meio da palavra ("A / combinar");
+   - espaçamentos e avatar reduzidos. */
+@media (min-width: 1200px) {
+  .djobs-list {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: var(--space-3);
+  }
+  .djobs-card {
+    gap: var(--space-3);
+    padding: var(--space-4);
+    padding-left: calc(var(--space-4) + 3px);
+  }
+  .djobs-card__head { gap: var(--space-2); }
+  .djobs-card__avatar {
+    width: 32px;
+    height: 32px;
+    font-size: var(--text-sm);
+  }
+  .djobs-card__title {
+    font-size: var(--text-base);
+    margin-bottom: 2px;
+  }
+  .djobs-card__company { font-size: var(--text-xs); }
+
+  /* Faixa salarial empilhada — sem o "A / combinar" quebrado */
+  .djobs-card__salary {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 3px;
+    padding: var(--space-2) var(--space-3);
+  }
+  .djobs-card__salary-value {
+    text-align: left;
+    font-size: var(--text-sm);
+  }
+}
 
 /* Slot de anúncio — atravessa todas as colunas, separando blocos de cards.
    Borda tracejada deixa claro que é publicidade, não uma vaga. */
@@ -657,6 +701,14 @@ onMounted(async () => {
   border: 1px dashed var(--color-border);
   border-radius: var(--radius-card);
   overflow: hidden;
+}
+
+/* O AdSense escreve data-ad-status="unfilled" no <ins> quando não tem
+   anúncio pra servir (conta/site novo, pouco tráfego, criativo fluid sem
+   estoque). Sem isto sobraria uma caixa pontilhada vazia no meio das
+   vagas — então colapsamos o slot inteiro quando o anúncio não preenche. */
+.djobs-ad:has(.adsbygoogle[data-ad-status="unfilled"]) {
+  display: none;
 }
 
 .djobs-card {
