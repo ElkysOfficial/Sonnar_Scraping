@@ -25,7 +25,8 @@
         attributes em runtime (impacto de XSS em CSS é baixo).
       connect-src: Supabase REST + Realtime + Stripe API + ViaCEP + telemetria
         do AdSense (beacons / ad traffic quality).
-      frame-src: Stripe Checkout + iframes de criativos do AdSense.
+      frame-src: Stripe Checkout + iframes de criativos do AdSense + diálogo
+        de consentimento da CMP do Google (fundingchoicesmessages).
       frame-ancestors NÃO funciona via meta - vive no .htaccess (X-Frame-Options DENY).
     -->
     <meta http-equiv="Content-Security-Policy" content="
@@ -35,7 +36,7 @@
       font-src 'self' https://fonts.gstatic.com data:;
       img-src 'self' data: blob: https:;
       connect-src 'self' https://*.supabase.co wss://*.supabase.co https://api.stripe.com https://viacep.com.br https://*.googlesyndication.com https://*.doubleclick.net https://*.google.com https://*.adtrafficquality.google;
-      frame-src https://js.stripe.com https://hooks.stripe.com https://checkout.stripe.com https://*.googlesyndication.com https://*.doubleclick.net https://www.google.com https://*.adtrafficquality.google;
+      frame-src https://js.stripe.com https://hooks.stripe.com https://checkout.stripe.com https://*.googlesyndication.com https://*.doubleclick.net https://www.google.com https://*.adtrafficquality.google https://fundingchoicesmessages.google.com;
       worker-src 'self' blob:;
       object-src 'none';
       base-uri 'self';

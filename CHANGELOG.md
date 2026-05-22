@@ -5,6 +5,25 @@ Todas as mudanças relevantes deste projeto são documentadas neste arquivo.
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/)
 e o projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [2.4.1] - 2026-05-21
+
+### Corrigido
+
+- **Banner de cookies próprio empilhava sobre o diálogo da CMP do Google**:
+  com os anúncios da 2.4.0, ao ativar a CMP do Google (mensagem de
+  consentimento GDPR do AdSense), um visitante do EEE / Reino Unido / Suíça
+  veria dois banners ao mesmo tempo — o `CookieBanner.vue` e o diálogo da CMP.
+  O `CookieBanner.vue` passa a consultar a API IAB TCF (`window.__tcfapi`):
+  quando a CMP do Google se aplica ao visitante (`gdprApplies`), o aviso de
+  LGPD fica oculto e a CMP cuida do consentimento; caso contrário, o aviso é
+  exibido como antes. Se a CMP ainda não estiver publicada no AdSense, o
+  polling expira e o comportamento é o atual — a mudança é segura mesmo antes
+  de configurar a mensagem.
+- **CSP não liberava o diálogo de consentimento da CMP**: a CMP do Google
+  carrega de `fundingchoicesmessages.google.com`. O `script-src` e o
+  `connect-src` já cobriam o domínio (`*.google.com`), mas o `frame-src` não —
+  adicionado para o diálogo de consentimento renderizar sem bloqueio.
+
 ## [2.4.0] - 2026-05-21
 
 ### Adicionado
