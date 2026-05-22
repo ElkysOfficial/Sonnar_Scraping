@@ -49,12 +49,74 @@ import { ref, onMounted } from 'vue'
 const STORAGE_KEY = 'sonnar.cookie-consent'
 const visible = ref(false)
 
-onMounted(() => {
+type TcfApi = (
+  command: string,
+  version: number,
+  callback: (
+    data: { gdprApplies?: boolean; eventStatus?: string } | undefined,
+    success: boolean,
+  ) => void,
+) => void
+
+/**
+ * A CMP do Google (mensagem de consentimento GDPR do AdSense) é certificada
+ * IAB TCF e instala `window.__tcfapi`. Ela só exibe o diálogo de
+ * consentimento para visitantes do EEE / Reino Unido / Suíça. Para esses, o
+ * consentimento é responsabilidade da CMP — então o nosso aviso de LGPD fica
+ * oculto, evitando dois banners empilhados.
+ *
+ * O `__tcfapi` é instalado de forma assíncrona (junto do adsbygoogle.js), por
+ * isso o polling curto. Se a CMP não estiver configurada no AdSense, o
+ * polling expira e caímos no comportamento padrão (exibir o aviso) — a
+ * mudança é segura mesmo antes de publicar a mensagem de consentimento.
+ *
+ * Resolve `true` quando a CMP do Google cobre o consentimento do visitante.
+ */
+function googleCmpHandlesConsent(): Promise<boolean> {
+  return new Promise((resolve) => {
+    let settled = false
+    const settle = (value: boolean) => {
+      if (!settled) {
+        settled = true
+        resolve(value)
+      }
+    }
+
+    // Rede de segurança: decide em até 3s, aconteça o que acontecer.
+    window.setTimeout(() => settle(false), 3000)
+
+    const poll = () => {
+      if (settled) return
+      const tcfapi = (window as unknown as { __tcfapi?: TcfApi }).__tcfapi
+      if (typeof tcfapi === 'function') {
+        tcfapi('addEventListener', 2, (data, success) => {
+          const ready =
+            data?.eventStatus === 'tcloaded' ||
+            data?.eventStatus === 'cmpuishown' ||
+            data?.eventStatus === 'useractioncomplete'
+          if (success && ready) settle(!!data?.gdprApplies)
+        })
+        return
+      }
+      window.setTimeout(poll, 200)
+    }
+
+    poll()
+  })
+}
+
+onMounted(async () => {
+  // Decisão já tomada numa visita anterior — não reabre o aviso.
   try {
-    if (!localStorage.getItem(STORAGE_KEY)) visible.value = true
+    if (localStorage.getItem(STORAGE_KEY)) return
   } catch {
     visible.value = true
+    return
   }
+
+  // Se a CMP do Google cobre o visitante (EEE/UK/Suíça), ela cuida do
+  // consentimento; caso contrário, exibimos o aviso de LGPD.
+  visible.value = !(await googleCmpHandlesConsent())
 })
 
 function persist(value: 'accepted' | 'declined' | 'dismissed') {
