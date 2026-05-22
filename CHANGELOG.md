@@ -5,6 +5,20 @@ Todas as mudanças relevantes deste projeto são documentadas neste arquivo.
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/)
 e o projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [2.5.1] - 2026-05-22
+
+### Corrigido
+
+- **Layout do painel do assinante quebrado pelos anúncios do AdSense**:
+  o runtime do AdSense injeta altura na página, o que gerava rolagem no
+  nível da janela e fazia a barra lateral descolar do topo. O shell do
+  dashboard passa a ficar fixo na viewport (`position: fixed`) com a
+  rolagem travada no `body` — só a área de conteúdo rola. A grade de
+  vagas passa a 6 colunas a partir de 1200px (alinhada ao anúncio, que
+  ocupa a linha inteira a cada 6 cards) e o slot de anúncio é colapsado
+  quando o AdSense não tem anúncio para servir
+  (`data-ad-status="unfilled"`), evitando uma caixa vazia entre as vagas.
+
 ## [2.5.0] - 2026-05-22
 
 ### Adicionado
