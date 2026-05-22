@@ -5,6 +5,23 @@ Todas as mudanças relevantes deste projeto são documentadas neste arquivo.
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/)
 e o projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [2.6.0] - 2026-05-22
+
+### Adicionado
+
+- **Card de comunidades no dashboard do plano free**: o plano Comunidade
+  (free) não recebe vagas personalizadas, mas tem acesso aos canais
+  públicos do Sonnar. O novo componente `CommunityCard.vue` exibe os links
+  oficiais de Discord e WhatsApp no `DashboardJobs.vue`, renderizado apenas
+  quando `subscriber.plan === 'free'`. Os links das comunidades ficam
+  centralizados no próprio componente, como fonte única.
+
+### Corrigido
+
+- **Link do grupo de WhatsApp na tela de sucesso**: o `SuccessScreen.vue`
+  apontava para um convite de grupo antigo. Atualizado para o convite
+  vigente da comunidade.
+
 ## [2.5.2] - 2026-05-22
 
 ### Corrigido

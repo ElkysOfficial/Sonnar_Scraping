@@ -94,7 +94,7 @@
           </a>
 
           <a
-            href="https://chat.whatsapp.com/DgwIqwqB24KJyDWCZA24TT"
+            href="https://chat.whatsapp.com/IcXxMiKwd4Z9bnsn9FsO4j"
             target="_blank"
             rel="noopener noreferrer"
             class="success-screen__link success-screen__link--whatsapp"

@@ -31,6 +31,9 @@
       <router-link to="/dashboard/assinatura" class="btn btn-primary">Fazer upgrade</router-link>
     </div>
 
+    <!-- Comunidades públicas (plano free) -->
+    <CommunityCard v-if="subscriber?.plan === 'free'" />
+
     <!-- Entrar no grupo de vagas (plano Pro) -->
     <div v-if="showProGroupCard" class="djobs-banner djobs-banner--wa">
       <div class="djobs-banner__icon">
@@ -250,6 +253,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useAuth } from '@/composables/useAuth'
 import AdSlot from '@/components/AdSlot.vue'
+import CommunityCard from '@/components/CommunityCard.vue'
 import { supabase } from '@/integrations/supabase/client'
 import type { Database } from '@/integrations/supabase/types'
 
