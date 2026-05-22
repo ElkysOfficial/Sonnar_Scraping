@@ -17,6 +17,11 @@ beautifulsoup4>=4.12.0
 # Browser Automation (for Google Enricher)
 playwright>=1.40.0
 
+# Traducao offline de vagas estrangeiras (engine careerjet multi-pais).
+# Roda modelos localmente, sem chamada de rede; baixa os modelos sob
+# demanda (~100-250MB por par de idiomas) no primeiro uso.
+argostranslate>=1.9.0
+
 # Env loading (.env)
 python-dotenv>=1.0.0
 

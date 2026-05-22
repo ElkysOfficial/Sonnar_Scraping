@@ -1,37 +1,45 @@
 """
-Engine Careerjet Brasil - API oficial de busca (search.api.careerjet.net/v4).
+Engine Careerjet - API oficial de busca (search.api.careerjet.net/v4),
+multi-pais com traducao automatica para portugues.
 
-Substitui o antigo scraping de HTML do site careerjet.com.br pela API v4
-autenticada. A API devolve as vagas ja estruturadas em JSON, entao nao ha
-fase de "fetch de detalhe": cada item do response e uma vaga completa.
+A API v4 e autenticada e devolve as vagas ja estruturadas em JSON, entao
+nao ha fase de "fetch de detalhe": cada item do response e uma vaga.
 
 Autenticacao
 ------------
 Basic Auth onde o *usuario* e a chave de API e a *senha* e uma string vazia.
-A chave esta vinculada a um IP autorizado (o IP do VPS) - chamadas de outro
-IP falham. Configure ``CAREERJET_API_KEY`` no .env.
+A chave esta vinculada a um IP autorizado - chamadas de outro IP falham.
+Configure ``CAREERJET_API_KEY`` no .env.
 
-Foco PT-BR
-----------
-* ``locale_code=pt_BR`` restringe ao indice brasileiro.
-* Cobertura geografica: para cada stack roda-se uma busca nacional (sem
-  ``location`` - captura as vagas marcadas como "Brasil"/remoto e o pais
-  inteiro) MAIS uma busca por cada uma das 27 UFs. Assim os estados de
-  baixo volume nao sao ofuscados pelos grandes (SP/RJ/MG) no ranking por
-  data. Vagas repetidas entre variantes sao unidas por dedup de URL. Ver
-  ``_LOCATION_VARIANTS``.
-* ``_looks_portuguese()`` descarta anuncios cujo conteudo esta claramente
-  em ingles (vagas remotas internacionais que vazam no indice BR).
+Cobertura multi-pais
+--------------------
+O Careerjet indexa ~68 ``locale_code`` (paises/idiomas). A engine cobre
+todos, mas em rodizio para nao explodir o volume de requests por ciclo:
+
+* ``pt_BR`` (Brasil) e processado SEMPRE - e o mercado principal do
+  produto. Para o Brasil roda-se a busca nacional + uma busca por cada
+  uma das 27 UFs (ver ``_BR_LOCATION_VARIANTS``).
+* Os outros 67 locales rotacionam em lotes ao longo dos ciclos (rotacao
+  baseada no relogio, sem arquivo de estado) - cada um faz so a busca
+  nacional. Ver ``_ROTATING_LOCALES`` / ``_rotating_batch()``.
+
+Traducao
+--------
+Vagas cujo locale nao e portugues sao traduzidas (titulo + descricao) via
+:mod:`src.utils.translator` (Argos Translate, offline) antes de emitir.
+O idioma de origem vem do proprio ``locale_code`` - nao precisa detectar.
 
 A API entrega ``description`` como *excerto* (parametro ``fragment_size``),
-nao o texto integral - por isso esta engine e listing-only (sem
+nao o texto integral - por isso a engine e listing-only (sem
 ``refetch_one``) e ``is_partial`` sempre devolve False, igual ao Jooble.
 """
 from __future__ import annotations
 
 import asyncio
+import math
 import os
 import sys
+import time
 from email.utils import parsedate_to_datetime
 
 import httpx
@@ -41,6 +49,8 @@ from variavel import get_active_stacks  # noqa: E402
 from src.persistence.extraction_tracker import tracker  # noqa: E402
 from src.utils.job_fallbacks import apply_description_fallbacks  # noqa: E402
 from src.utils.text_utils import extract_skills, strip_html  # noqa: E402
+from src.utils.translator import prepare as prepare_translation  # noqa: E402
+from src.utils.translator import translate_to_pt  # noqa: E402
 
 # Em modo standalone (python -m src.engines.careerjet) o .env ainda nao foi
 # carregado pelo scrapy.py - garante a chave de API tambem nesse cenario.
@@ -52,7 +62,7 @@ except Exception:
     pass
 
 
-PARSER_VERSION = "careerjet-api-2026.05.22"
+PARSER_VERSION = "careerjet-api-i18n-2026.05.22"
 
 
 # --- Configuracao --------------------------------------------------------
@@ -62,9 +72,6 @@ _API_URL = "https://search.api.careerjet.net/v4/query"
 # Chave de API (Basic Auth: usuario=chave, senha=vazia). Vinculada ao IP
 # autorizado do VPS - definir no .env como CAREERJET_API_KEY.
 _API_KEY = os.getenv("CAREERJET_API_KEY", "")
-
-# locale do indice. pt_BR = Brasil / portugues (foco atual do projeto).
-_LOCALE_CODE = os.getenv("CAREERJET_LOCALE", "pt_BR")
 
 # IP autorizado para a chave + user agent: ambos sao parametros GET
 # OBRIGATORIOS da API. O IP precisa ser o mesmo que a chave autoriza.
@@ -78,20 +85,47 @@ _USER_AGENT = (
 _REFERER = os.getenv("CAREERJET_REFERER", "https://elkys.com.br/find-jobs/")
 
 # Paginacao: a API devolve 20 vagas por pagina (o parametro page_size e
-# ignorado nesta chave) e aceita 'page' de 1 a 10. _MAX_PAGES define quantas
-# paginas buscar por stack/UF - cada pagina = +20 vagas, ordenadas por data.
-# Variantes de baixo volume (estados pequenos) param sozinhas na 1a pagina.
+# ignorado nesta chave) e aceita 'page' de 1 a 10. Brasil busca mais fundo;
+# os demais paises ficam mais rasos para conter o volume. Variantes de
+# baixo volume param sozinhas na 1a pagina (response vazio).
 _MAX_PAGES = int(os.getenv("CAREERJET_MAX_PAGES", "3"))
+_MAX_PAGES_FOREIGN = int(os.getenv("CAREERJET_MAX_PAGES_FOREIGN", "2"))
 # Tamanho do excerto da descricao (default da API e so 120 chars).
 _FRAGMENT_SIZE = int(os.getenv("CAREERJET_FRAGMENT_SIZE", "2000"))
+# Quantos locales estrangeiros entram por ciclo (rodizio).
+_COUNTRY_BATCH_SIZE = int(os.getenv("CAREERJET_COUNTRY_BATCH_SIZE", "5"))
 
-# Variantes de busca por localidade aplicadas a cada stack. A primeira
-# ("" = sem parametro 'location') e a busca NACIONAL: cobre o pais inteiro
-# e as vagas marcadas apenas como "Brasil" (remoto/nacional). As demais sao
-# as 27 UFs - garantem que estados de menor volume entrem na coleta mesmo
-# quando o ranking nacional por data e dominado por SP/RJ/MG. Estados sem
-# vagas para a stack simplesmente devolvem 0 (uma request barata).
-_LOCATION_VARIANTS = (
+# Retry para falhas transitorias (5xx / timeout).
+_MAX_RETRIES = 3
+
+# Locale principal: o Brasil e processado em todo ciclo.
+_PRIMARY_LOCALE = "pt_BR"
+
+# Demais locales suportados pelo Careerjet. Rotacionam em lotes ao longo
+# dos ciclos. O idioma de origem (para a traducao) sao os 2 primeiros
+# caracteres do locale_code.
+_ROTATING_LOCALES = (
+    "cs_CZ", "da_DK", "de_AT", "de_CH", "de_DE",
+    "en_AE", "en_AU", "en_BD", "en_CA", "en_CN", "en_HK", "en_IE",
+    "en_IN", "en_KW", "en_MY", "en_NZ", "en_OM", "en_PH", "en_PK",
+    "en_QA", "en_SG", "en_GB", "en_US", "en_ZA", "en_SA", "en_TW",
+    "en_VN",
+    "es_AR", "es_BO", "es_CL", "es_CO", "es_CR", "es_DO", "es_EC",
+    "es_ES", "es_GT", "es_MX", "es_PA", "es_PE", "es_PR", "es_PY",
+    "es_UY", "es_VE",
+    "fi_FI", "fr_CA", "fr_BE", "fr_CH", "fr_FR", "fr_LU", "fr_MA",
+    "hu_HU", "it_IT", "ja_JP", "ko_KR", "nl_BE", "nl_NL", "no_NO",
+    "pl_PL", "pt_PT", "ru_RU", "ru_UA", "sv_SE", "sk_SK", "tr_TR",
+    "uk_UA", "vi_VN", "zh_CN",
+)
+
+# Variantes de busca por localidade aplicadas APENAS ao Brasil. A primeira
+# ("" = sem 'location') e a busca nacional: cobre o pais inteiro e as vagas
+# marcadas apenas como "Brasil" (remoto/nacional). As demais sao as 27 UFs
+# - garantem que estados de menor volume entrem na coleta mesmo quando o
+# ranking nacional por data e dominado por SP/RJ/MG. Os outros paises usam
+# so a busca nacional. Vagas repetidas entre variantes caem no dedup de URL.
+_BR_LOCATION_VARIANTS = (
     "",  # busca nacional (inclui "Brasil"/remoto)
     "Acre", "Alagoas", "Amapá", "Amazonas", "Bahia", "Ceará",
     "Espírito Santo", "Goiás", "Maranhão", "Mato Grosso",
@@ -100,9 +134,6 @@ _LOCATION_VARIANTS = (
     "Rio Grande do Sul", "Rondônia", "Roraima", "Santa Catarina",
     "São Paulo", "Sergipe", "Tocantins", "Distrito Federal",
 )
-
-# Retry para falhas transitorias (5xx / timeout).
-_MAX_RETRIES = 3
 
 
 class _CareerjetConfigError(RuntimeError):
@@ -120,7 +151,41 @@ def is_partial(job_data: dict) -> bool:
     return False
 
 
-# --- Filtro de idioma (foco PT-BR) ---------------------------------------
+# --- Rodizio de paises ---------------------------------------------------
+
+def _rotating_batch() -> list:
+    """Lote de locales estrangeiros do ciclo atual.
+
+    A rotacao e baseada no relogio (sem arquivo de estado): a cada ~2h o
+    indice avanca um lote, cobrindo todos os ``_ROTATING_LOCALES`` ao longo
+    de aproximadamente um dia. Sobrevive a reinicios do processo.
+    """
+    n = len(_ROTATING_LOCALES)
+    if n == 0 or _COUNTRY_BATCH_SIZE <= 0:
+        return []
+    total_batches = math.ceil(n / _COUNTRY_BATCH_SIZE)
+    idx = int(time.time() // 7200) % total_batches
+    start = idx * _COUNTRY_BATCH_SIZE
+    return list(_ROTATING_LOCALES[start:start + _COUNTRY_BATCH_SIZE])
+
+
+def _active_locales() -> list:
+    """``pt_BR`` (sempre) + o lote rotativo de locales estrangeiros."""
+    return [_PRIMARY_LOCALE] + _rotating_batch()
+
+
+def _location_variants(locale: str) -> tuple:
+    """Variantes de localidade do locale: Brasil varre as 27 UFs, os demais
+    paises fazem apenas a busca nacional."""
+    return _BR_LOCATION_VARIANTS if locale == _PRIMARY_LOCALE else ("",)
+
+
+def _max_pages(locale: str) -> int:
+    """Profundidade de paginacao: o Brasil vai mais fundo que os demais."""
+    return _MAX_PAGES if locale == _PRIMARY_LOCALE else _MAX_PAGES_FOREIGN
+
+
+# --- Filtro de idioma ----------------------------------------------------
 
 # Marcadores de portugues: palavras funcionais entre espacos (para casar
 # como palavra inteira) e termos de conteudo tipicos de anuncios de vaga.
@@ -143,11 +208,12 @@ _PT_DIACRITICS = "ãõçáàâêéíóôú"
 
 
 def _looks_portuguese(text: str) -> bool:
-    """Heuristica: a vaga aparenta estar escrita em portugues?
+    """Heuristica: o texto aparenta estar escrito em portugues?
 
-    Conservadora de proposito - so devolve False quando o texto tem massa
-    clara de marcadores ingleses superando os portugueses. Texto curto ou
-    ambiguo cai em True (mantem), ja que ``locale_code`` ja e ``pt_BR``.
+    Conservadora: so devolve False quando o texto tem massa clara de
+    marcadores ingleses superando os portugueses. Usada apenas para os
+    locales pt_* - se uma vaga internacional vazou no indice BR/PT escrita
+    em ingles, ela e tratada como ingles e traduzida.
     """
     if not text:
         return True
@@ -156,16 +222,30 @@ def _looks_portuguese(text: str) -> bool:
     en = sum(low.count(m) for m in _EN_MARKERS)
     if any(ch in low for ch in _PT_DIACRITICS):
         pt += 3
-    # Ingles so "vence" com vantagem clara e massa minima de marcadores.
     if en >= 3 and en > pt:
         return False
     return True
 
 
+def _source_lang(locale_lang: str, title: str, description: str) -> str:
+    """Idioma de origem efetivo de uma vaga.
+
+    Para locales nao-portugueses, o idioma e o do proprio locale. Para os
+    locales pt_* (pt_BR/pt_PT), o conteudo costuma ser portugues - mas se
+    uma vaga internacional vazou em ingles, detecta e marca como ``en``
+    para que seja traduzida tambem.
+    """
+    if locale_lang != "pt":
+        return locale_lang
+    if not _looks_portuguese(f"{title} {description}"):
+        return "en"
+    return "pt"
+
+
 # --- Helpers de parsing --------------------------------------------------
 
 def _parse_date(raw: str) -> str:
-    """``'Wed,15 Nov 2025 19:13:43 GMT'`` -> ``'15/11/2025'``.
+    """``'Wed, 21 May 2026 07:53:29 GMT'`` -> ``'21/05/2026'``.
 
     Devolve string vazia se a data nao puder ser interpretada.
     """
@@ -201,9 +281,9 @@ def _build_salary(job: dict) -> str:
 def _build_location(raw: str) -> list:
     """``'São Paulo - SP'`` / ``'Recife, PE'`` -> ``['cidade', 'UF']``.
 
-    A API usa ``' - '`` (ou virgula) como separador cidade/UF.
-    ``'Brasil'`` (nivel pais) ou vazio -> lista vazia: nao e localidade
-    util e o ``apply_description_fallbacks`` pode minerar algo melhor.
+    A API usa ``' - '`` (ou virgula) como separador. Nivel pais ('Brasil',
+    'Brazil') ou vazio -> lista vazia. Nomes de cidade sao mantidos no
+    idioma original (sao nomes proprios, nao se traduzem).
     """
     if not raw:
         return []
@@ -231,12 +311,14 @@ def _work_type(title: str, location: list) -> str:
     return "Remoto"
 
 
-def _parse_job(job: dict, seen: set) -> list | None:
-    """Converte um item da API na lista canonica de 10 campos.
+def _extract_job(job: dict, seen: set) -> tuple | None:
+    """Extrai os campos crus de um item da API (sem traduzir/normalizar).
 
     Returns:
-        Lista canonica, ou ``None`` se for duplicata, faltar url/titulo, ou
-        o conteudo nao aparentar estar em portugues.
+        Tupla ``(url, title, company, location, salary, date, description)``
+        no idioma original, ou ``None`` se for duplicata ou faltar
+        url/titulo. A traducao, o ``work_type``, as skills e os fallbacks
+        sao aplicados depois, em ``get_careerjet_jobs``.
     """
     url = (job.get("url") or "").strip()
     if not url or url in seen:
@@ -246,37 +328,27 @@ def _parse_job(job: dict, seen: set) -> list | None:
     if not title:
         return None
 
-    description = strip_html(job.get("description") or "")
-
-    # Filtro PT-BR: descarta vagas cujo conteudo esta claramente em ingles.
-    if not _looks_portuguese(f"{title} {description}"):
-        return None
-
     seen.add(url)
 
+    description = strip_html(job.get("description") or "")
     company = (job.get("company") or "").strip()
     location = _build_location(job.get("locations") or "")
-    work_type = _work_type(title, location)
     salary = _build_salary(job)
     publication_date = _parse_date(job.get("date") or "")
-    skills = extract_skills(description) if description else []
 
-    return apply_description_fallbacks([
-        url, title, company, location, work_type,
-        "", salary, publication_date,
-        skills, description,
-    ])
+    return (url, title, company, location, salary, publication_date, description)
 
 
 # --- Chamada a API -------------------------------------------------------
 
 async def _fetch_page(
-    client: httpx.AsyncClient, stack: str, page: int, location: str,
+    client: httpx.AsyncClient, locale: str, stack: str, page: int, location: str,
 ) -> tuple:
-    """Faz uma chamada a API para ``stack``/``location``/``page``.
+    """Faz uma chamada a API para ``locale``/``stack``/``location``/``page``.
 
     Args:
-        location: UF a filtrar, ou string vazia para busca nacional.
+        locale: ``locale_code`` do pais/idioma (ex.: ``pt_BR``, ``de_DE``).
+        location: UF/regiao a filtrar, ou string vazia para busca nacional.
 
     Returns:
         Tupla ``(jobs, total_pages)``. ``jobs`` e ``None`` se a chamada
@@ -288,7 +360,7 @@ async def _fetch_page(
             ou parametros obrigatorios ausentes) - inutil continuar.
     """
     params = {
-        "locale_code": _LOCALE_CODE,
+        "locale_code": locale,
         "keywords": stack,
         "sort": "date",
         "page": page,
@@ -298,6 +370,7 @@ async def _fetch_page(
     }
     if location:
         params["location"] = location
+
     for attempt in range(1, _MAX_RETRIES + 1):
         try:
             resp = await client.get(
@@ -337,7 +410,11 @@ async def _fetch_page(
 # --- Funcao publica ------------------------------------------------------
 
 async def get_careerjet_jobs(on_job=None) -> list:
-    """Coleta vagas do Careerjet via API oficial, por stack do lote ativo.
+    """Coleta vagas do Careerjet via API oficial (multi-pais + traducao).
+
+    Para cada locale do ciclo (pt_BR sempre + o lote rotativo) e cada stack
+    do lote ativo, pagina a API; vagas de locales nao-portugueses tem
+    titulo e descricao traduzidos para portugues antes de emitir.
 
     Args:
         on_job: callback opcional ``async fn(parsed)`` invocado a cada vaga
@@ -352,44 +429,77 @@ async def get_careerjet_jobs(on_job=None) -> list:
 
     jobs: list = []
     seen: set[str] = set()
+    locales = _active_locales()
+
+    # Front-load do download dos modelos de traducao dos idiomas do ciclo.
+    langs = sorted({lc[:2] for lc in locales if lc[:2] != "pt"})
+    if langs:
+        try:
+            await asyncio.to_thread(prepare_translation, langs)
+        except Exception:
+            pass
+
     auth = httpx.BasicAuth(_API_KEY, "")
     timeout = httpx.Timeout(connect=10.0, read=30.0, write=10.0, pool=5.0)
 
+    async def _emit(raw: dict, locale_lang: str) -> None:
+        """Normaliza, traduz e emite uma vaga crua da API."""
+        base = _extract_job(raw, seen)
+        if base is None:
+            return
+        url, title, company, location, salary, publication_date, description = base
+
+        src = _source_lang(locale_lang, title, description)
+        if src != "pt":
+            title = await asyncio.to_thread(translate_to_pt, title, src)
+            description = await asyncio.to_thread(translate_to_pt, description, src)
+
+        work_type = _work_type(title, location)
+        skills = extract_skills(description) if description else []
+        parsed = apply_description_fallbacks([
+            url, title, company, location, work_type,
+            "", salary, publication_date,
+            skills, description,
+        ])
+        tracker.discover(parsed[0], engine="careerjet")
+        jobs.append(parsed)
+        if on_job is not None:
+            try:
+                await on_job(parsed)
+            except Exception:
+                pass
+
     async with httpx.AsyncClient(auth=auth, timeout=timeout) as client:
-        for stack in get_active_stacks():
-            for location in _LOCATION_VARIANTS:
-                total_pages = 1
-                page = 1
-                while page <= min(total_pages, _MAX_PAGES):
-                    try:
-                        page_jobs, total_pages = await _fetch_page(
-                            client, stack, page, location,
-                        )
-                    except _CareerjetConfigError as exc:
-                        print(f"[careerjet] erro de configuracao, abortando: {exc}")
-                        print(f"Foram obtidas {len(jobs)} vagas do site careerjet")
-                        return jobs
+        for locale in locales:
+            locale_lang = locale[:2]
+            variants = _location_variants(locale)
+            max_pages = _max_pages(locale)
 
-                    if not page_jobs:
-                        break
-
-                    for raw in page_jobs:
+            for stack in get_active_stacks():
+                for location in variants:
+                    total_pages = 1
+                    page = 1
+                    while page <= min(total_pages, max_pages):
                         try:
-                            parsed = _parse_job(raw, seen)
-                        except Exception:
-                            continue
-                        if parsed is None:
-                            continue
-                        tracker.discover(parsed[0], engine="careerjet")
-                        jobs.append(parsed)
-                        if on_job is not None:
-                            try:
-                                await on_job(parsed)
-                            except Exception:
-                                pass
+                            page_jobs, total_pages = await _fetch_page(
+                                client, locale, stack, page, location,
+                            )
+                        except _CareerjetConfigError as exc:
+                            print(f"[careerjet] erro de configuracao, abortando: {exc}")
+                            print(f"Foram obtidas {len(jobs)} vagas do site careerjet")
+                            return jobs
 
-                    page += 1
-                    await asyncio.sleep(0.25)
+                        if not page_jobs:
+                            break
+
+                        for raw in page_jobs:
+                            try:
+                                await _emit(raw, locale_lang)
+                            except Exception:
+                                continue
+
+                        page += 1
+                        await asyncio.sleep(0.25)
 
     print(f"Foram obtidas {len(jobs)} vagas do site careerjet")
     return jobs
