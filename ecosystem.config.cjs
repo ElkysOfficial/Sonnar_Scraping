@@ -9,9 +9,9 @@
 // Todos os 4 processos sao de longa duracao (rodam ate alguem parar).
 // Ordem do array = ordem de subida.
 //
-// MEMORIA: a maquina tem 4GB. `max_memory_restart` reinicia o processo se
+// MEMORIA: a maquina tem 8GB. `max_memory_restart` reinicia o processo se
 // ele passar do teto, evitando que a maquina inteira estoure (OOM).
-// Orcamento: ~2.4GB pros apps + ~1GB SO = ~0.6GB de folga. Ver OPERACAO.md.
+// Orcamento: ~3.5GB pros apps + ~1GB SO = bastante folga. Ver OPERACAO.md.
 // =====================================================
 
 // Interpretador Python do scraper. Ordem de prioridade:
@@ -85,7 +85,11 @@ module.exports = {
       // o ciclo, terminar um POST /jobs/batch em andamento e fechar o browser
       // (evita Chromium orfao). O padrao do PM2 (1.6s) era curto demais.
       kill_timeout: 10000,
-      max_memory_restart: "1024M",
+      // 2048M (era 1024M, teto da epoca da VPS de 4GB): a engine careerjet
+      // carrega modelos de traducao (Argos) na RAM. A VPS hoje tem 8GB —
+      // ha folga de sobra para o teto maior, e o de 1GB causava restart
+      // em loop assim que a traducao era inicializada.
+      max_memory_restart: "2048M",
       time: true,
     },
   ],
