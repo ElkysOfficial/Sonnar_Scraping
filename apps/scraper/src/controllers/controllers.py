@@ -32,6 +32,7 @@ from .job_getters import getters
 from ..persistence.extraction_tracker import tracker
 from ..persistence.jobs_repository import JobsRepository
 from ..persistence.progress_tracker import progress
+from ..persistence.revalidator import run_revalidator_loop
 from ..utils.jobsUtils import process_salary
 from ..utils.metrics import metrics
 from ..utils.structured_logging import setup_logging
@@ -497,6 +498,7 @@ async def scrape_jobs() -> None:
     tracker_task = asyncio.create_task(tracker.run_flusher())
     progress_task = asyncio.create_task(progress.run_flusher())
     core_flush_task = None
+    revalidator_task = None
 
     try:
         async with JobsRepository() as repo:
@@ -525,6 +527,11 @@ async def scrape_jobs() -> None:
             # Flusher de fundo: envia ao core (único escritor do jobs.json) as
             # vagas acumuladas, mantendo os bots com dados frescos durante o lote.
             core_flush_task = asyncio.create_task(_core_flush_loop(repo))
+
+            # Revalidator de fundo: 1x/dia varre vagas com idade entre 80 e 90
+            # dias, faz HTTP GET pra verificar se ainda estao no ar, e remove
+            # do jobs.json (via core) as que retornarem 404/410.
+            revalidator_task = asyncio.create_task(run_revalidator_loop(repo))
 
             while True:
                 batches = list(iter_batches(BATCH_SIZE))
@@ -572,7 +579,8 @@ async def scrape_jobs() -> None:
                 logger.info("cycle_complete")
                 set_active_batch(None)
     finally:
-        for t in (metrics_task, tracker_task, progress_task, core_flush_task):
+        for t in (metrics_task, tracker_task, progress_task,
+                  core_flush_task, revalidator_task):
             if t is None:
                 continue
             t.cancel()
