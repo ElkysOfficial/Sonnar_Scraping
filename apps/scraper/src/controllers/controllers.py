@@ -26,11 +26,12 @@ import logging
 import os
 from typing import Awaitable, Callable
 
-from variavel import iter_batches, set_active_batch
+from variavel import iter_batches, set_active_batch, set_active_batch_context
 
 from .job_getters import getters
 from ..persistence.extraction_tracker import tracker
 from ..persistence.jobs_repository import JobsRepository
+from ..persistence.progress_tracker import progress
 from ..utils.jobsUtils import process_salary
 from ..utils.metrics import metrics
 from ..utils.structured_logging import setup_logging
@@ -490,6 +491,7 @@ async def scrape_jobs() -> None:
     """
     metrics_task = asyncio.create_task(metrics.run_flusher(METRICS_FLUSH_INTERVAL_S))
     tracker_task = asyncio.create_task(tracker.run_flusher())
+    progress_task = asyncio.create_task(progress.run_flusher())
     core_flush_task = None
 
     try:
@@ -526,6 +528,7 @@ async def scrape_jobs() -> None:
 
                 for idx, (category, batch) in enumerate(batches, start=1):
                     set_active_batch(batch)
+                    set_active_batch_context(category, idx)
                     logger.info("batch_start", extra={
                         "batch_idx": idx, "batch_total": total,
                         "category": category, "stacks": batch,
@@ -565,7 +568,7 @@ async def scrape_jobs() -> None:
                 logger.info("cycle_complete")
                 set_active_batch(None)
     finally:
-        for t in (metrics_task, tracker_task, core_flush_task):
+        for t in (metrics_task, tracker_task, progress_task, core_flush_task):
             if t is None:
                 continue
             t.cancel()
