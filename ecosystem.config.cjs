@@ -62,7 +62,12 @@ module.exports = {
       autorestart: true,
       max_restarts: 10,
       restart_delay: 3000,
-      max_memory_restart: "400M",
+      // 600M (era 400M): o Canvas (geracao de imagem) acumula buffers e
+      // batia o teto a cada ~30min, gerando ~12-15 restarts/dia sem erro
+      // fatal nos logs (PM2 SIGTERM antes do crash). 600M dobra o intervalo
+      // para ~1h, reduzindo para ~6-8 restarts/dia. Ainda dentro do
+      // orcamento de 8GB da VPS (~3.7GB total apps).
+      max_memory_restart: "600M",
       time: true,
     },
     {
