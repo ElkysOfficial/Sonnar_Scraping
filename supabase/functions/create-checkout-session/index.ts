@@ -38,7 +38,7 @@ serve(async (req) => {
     // Carrega o subscriber existente do usuário autenticado.
     const { data: subscriber, error: subError } = await admin
       .from("subscribers")
-      .select("id, name, email, plan, status, stripe_customer_id")
+      .select("id, name, email, plan, status, stripe_customer_id, trial_used_at")
       .eq("user_id", user.id)
       .single();
 
@@ -96,8 +96,10 @@ serve(async (req) => {
       customer_update: { name: "auto", address: "auto" },
       metadata: { user_id: user.id, subscriber_id: subscriber.id, plan },
       subscription_data: {
-        // 7 dias gratis. Cliente cancela no periodo = nao paga nada.
-        trial_period_days: 7,
+        // Trial de 7 dias APENAS na 1a vez que a conta assina. Se ja usou
+        // trial em qualquer assinatura passada, cobramos imediatamente.
+        // Bloqueia trial-farming (cancelar antes do D+7 e reassinar).
+        ...(subscriber.trial_used_at ? {} : { trial_period_days: 7 }),
         metadata: { user_id: user.id, subscriber_id: subscriber.id, plan },
       },
     });

@@ -1,43 +1,138 @@
 <template>
   <div class="dset">
-    <!-- ====================== CONTA ====================== -->
-    <section class="dset-card">
+    <!-- ====================== TABS ====================== -->
+    <nav class="dset-tabs" role="tablist" aria-label="Seções de configuração">
+      <button
+        type="button"
+        role="tab"
+        :aria-selected="tab === 'conta'"
+        class="dset-tab"
+        :class="{ 'dset-tab--active': tab === 'conta' }"
+        @click="setTab('conta')"
+      >Conta</button>
+      <button
+        v-if="subscriber?.plan !== 'free'"
+        type="button"
+        role="tab"
+        :aria-selected="tab === 'perfil'"
+        class="dset-tab"
+        :class="{ 'dset-tab--active': tab === 'perfil' }"
+        @click="setTab('perfil')"
+      >Perfil de busca</button>
+      <button
+        type="button"
+        role="tab"
+        :aria-selected="tab === 'assinatura'"
+        class="dset-tab"
+        :class="{ 'dset-tab--active': tab === 'assinatura' }"
+        @click="setTab('assinatura')"
+      >Assinatura</button>
+    </nav>
+
+    <!-- ====================== ABA: CONTA ====================== -->
+    <section v-show="tab === 'conta'" class="dset-card">
       <header class="dset-card__head">
-        <div class="dset-card__heading">
-          <span class="dset-card__icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="12" cy="8" r="4" />
-              <path d="M4 21c0-4 3.6-7 8-7s8 3 8 7" />
-            </svg>
-          </span>
-          <div>
-            <h2>Conta</h2>
-            <p>Identidade e login. Esses dados ficam fora dos canais públicos.</p>
-          </div>
-        </div>
+        <h2>Conta</h2>
+        <p>Seus dados pessoais, contato e endereço.</p>
       </header>
 
       <form class="dset-form" novalidate @submit.prevent="saveAccount">
-        <div class="dset-grid">
-          <div class="form-group">
-            <label for="set-name" class="form-label">Nome</label>
-            <input
-              id="set-name"
-              v-model.trim="accountForm.name"
-              type="text"
-              class="form-input"
-              autocomplete="name"
-              :disabled="loadingAccount"
-            />
-            <p class="form-hint">Usamos para personalizar suas mensagens.</p>
+        <!-- Identidade -->
+        <fieldset class="dset-fieldset">
+          <legend class="dset-fieldset__legend">Identidade</legend>
+          <div class="dset-grid">
+            <div class="form-group">
+              <label for="set-name" class="form-label">Nome</label>
+              <input id="set-name" v-model.trim="accountForm.name" type="text" class="form-input" autocomplete="given-name" :disabled="loadingAccount" />
+            </div>
+            <div class="form-group">
+              <label for="set-surname" class="form-label">Sobrenome</label>
+              <input id="set-surname" v-model.trim="accountForm.surname" type="text" class="form-input" autocomplete="family-name" :disabled="loadingAccount" />
+            </div>
+            <div class="form-group">
+              <label for="set-email" class="form-label">E-mail</label>
+              <input id="set-email" :value="subscriber?.email" type="email" class="form-input" disabled readonly />
+              <p class="form-hint">É o seu login. Fale com o suporte para alterar.</p>
+            </div>
+            <div class="form-group">
+              <label for="set-birth" class="form-label">Data de nascimento</label>
+              <input id="set-birth" v-model="accountForm.birth_date" type="date" class="form-input" :disabled="loadingAccount" />
+            </div>
+            <div class="form-group">
+              <label for="set-phone" class="form-label">Telefone / WhatsApp</label>
+              <input id="set-phone" v-model="accountForm.phone" type="tel" class="form-input" placeholder="(11) 99999-9999" autocomplete="tel" :disabled="loadingAccount" />
+            </div>
           </div>
+        </fieldset>
 
-          <div class="form-group">
-            <label for="set-email" class="form-label">E-mail</label>
-            <input id="set-email" :value="subscriber?.email" type="email" class="form-input" disabled readonly />
-            <p class="form-hint">É o seu login — fale com o suporte para alterar.</p>
+        <!-- Documento -->
+        <fieldset class="dset-fieldset">
+          <legend class="dset-fieldset__legend">Documento</legend>
+          <div class="dset-grid">
+            <div class="form-group dset-grid__col-full">
+              <label class="form-label">Tipo</label>
+              <div class="chip-row">
+                <label class="chip-option" :class="{ 'chip-option--active': accountForm.person_type === 'fisica' }">
+                  <input v-model="accountForm.person_type" type="radio" value="fisica" :disabled="loadingAccount" />
+                  <span>Pessoa física</span>
+                </label>
+                <label class="chip-option" :class="{ 'chip-option--active': accountForm.person_type === 'juridica' }">
+                  <input v-model="accountForm.person_type" type="radio" value="juridica" :disabled="loadingAccount" />
+                  <span>Pessoa jurídica</span>
+                </label>
+              </div>
+            </div>
+            <div v-if="!isPJ" class="form-group">
+              <label for="set-cpf" class="form-label">CPF</label>
+              <input id="set-cpf" v-model="accountForm.cpf" type="text" class="form-input" placeholder="000.000.000-00" :disabled="loadingAccount" />
+            </div>
+            <template v-else>
+              <div class="form-group">
+                <label for="set-cnpj" class="form-label">CNPJ</label>
+                <input id="set-cnpj" v-model="accountForm.cnpj" type="text" class="form-input" placeholder="00.000.000/0000-00" :disabled="loadingAccount" />
+              </div>
+              <div class="form-group">
+                <label for="set-legal" class="form-label">Razão social</label>
+                <input id="set-legal" v-model.trim="accountForm.legal_name" type="text" class="form-input" :disabled="loadingAccount" />
+              </div>
+            </template>
           </div>
-        </div>
+        </fieldset>
+
+        <!-- Endereço -->
+        <fieldset class="dset-fieldset">
+          <legend class="dset-fieldset__legend">Endereço</legend>
+          <div class="dset-grid">
+            <div class="form-group">
+              <label for="set-cep" class="form-label">CEP</label>
+              <input id="set-cep" v-model="accountForm.cep" type="text" class="form-input" placeholder="00000-000" autocomplete="postal-code" :disabled="loadingAccount" />
+            </div>
+            <div class="form-group dset-grid__col-2">
+              <label for="set-street" class="form-label">Rua / Logradouro</label>
+              <input id="set-street" v-model.trim="accountForm.street" type="text" class="form-input" autocomplete="street-address" :disabled="loadingAccount" />
+            </div>
+            <div class="form-group">
+              <label for="set-num" class="form-label">Número</label>
+              <input id="set-num" v-model.trim="accountForm.street_number" type="text" class="form-input" :disabled="loadingAccount" />
+            </div>
+            <div class="form-group">
+              <label for="set-comp" class="form-label">Complemento</label>
+              <input id="set-comp" v-model.trim="accountForm.complement" type="text" class="form-input" placeholder="Apto, sala, etc." :disabled="loadingAccount" />
+            </div>
+            <div class="form-group">
+              <label for="set-bairro" class="form-label">Bairro</label>
+              <input id="set-bairro" v-model.trim="accountForm.neighborhood" type="text" class="form-input" :disabled="loadingAccount" />
+            </div>
+            <div class="form-group">
+              <label for="set-city" class="form-label">Cidade</label>
+              <input id="set-city" v-model.trim="accountForm.city" type="text" class="form-input" autocomplete="address-level2" :disabled="loadingAccount" />
+            </div>
+            <div class="form-group">
+              <label for="set-state" class="form-label">UF</label>
+              <input id="set-state" v-model="accountForm.state_code" type="text" maxlength="2" class="form-input form-input--centered" autocomplete="address-level1" :disabled="loadingAccount" />
+            </div>
+          </div>
+        </fieldset>
 
         <div class="dset-actions">
           <button type="submit" class="btn btn-primary" :disabled="loadingAccount || !accountChanged">
@@ -48,10 +143,20 @@
           </span>
         </div>
       </form>
+
+      <!-- Bloco senha -->
+      <div class="dset-divider"></div>
+      <div class="dset-password">
+        <div class="dset-password__info">
+          <h3>Senha</h3>
+          <p>Sua senha é o que mantém sua conta segura. Recomendamos trocar a cada 90 dias.</p>
+        </div>
+        <router-link to="/change-password" class="btn btn-secondary">Alterar senha</router-link>
+      </div>
     </section>
 
-    <!-- ====================== PERFIL DE BUSCA ====================== -->
-    <section v-if="subscriber?.plan !== 'free'" class="dset-card">
+    <!-- ====================== ABA: PERFIL DE BUSCA ====================== -->
+    <section v-show="tab === 'perfil'" v-if="subscriber?.plan !== 'free'" class="dset-card">
       <header class="dset-card__head">
         <div class="dset-card__heading">
           <span class="dset-card__icon" aria-hidden="true">
@@ -124,8 +229,8 @@
               />
             </div>
             <p class="form-hint">
-              Pressione <kbd>Enter</kbd> ou vírgula para adicionar. Até 12 tecnologias —
-              quanto mais específico, melhor o match.
+              Pressione <kbd>Enter</kbd> ou vírgula para adicionar. Até 12 tecnologias.
+              Quanto mais específico, melhor o match.
             </p>
             <p v-if="stepError && step === 1" class="dset-field-error">Adicione pelo menos uma tecnologia.</p>
           </div>
@@ -228,7 +333,7 @@
               </div>
               <div>
                 <dt>Tecnologias</dt>
-                <dd>{{ profileForm.stack.length ? profileForm.stack.join(', ') : '—' }}</dd>
+                <dd>{{ profileForm.stack.length ? profileForm.stack.join(', ') : 'Não informado' }}</dd>
               </div>
               <div>
                 <dt>Senioridade</dt>
@@ -240,7 +345,7 @@
               </div>
               <div v-if="needsLocation">
                 <dt>Localização</dt>
-                <dd>{{ profileForm.location || '—' }}</dd>
+                <dd>{{ profileForm.location || 'Não informado' }}</dd>
               </div>
             </dl>
           </div>
@@ -282,8 +387,8 @@
       </form>
     </section>
 
-    <!-- Plano free -->
-    <section v-else class="dset-card dset-card--upgrade">
+    <!-- Plano free: card de upgrade na aba de Perfil -->
+    <section v-show="tab === 'perfil'" v-if="subscriber?.plan === 'free'" class="dset-card dset-card--upgrade">
       <span class="dset-card__icon dset-card__icon--lg" aria-hidden="true">
         <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="12" cy="12" r="9" />
@@ -293,17 +398,43 @@
       </span>
       <h2>Perfil de busca personalizado</h2>
       <p>Disponível nos planos Pro e Plus. No plano Comunidade não há filtro personalizado.</p>
-      <router-link to="/dashboard/assinatura" class="btn btn-primary">Ver planos</router-link>
+      <button type="button" class="btn btn-primary" @click="setTab('assinatura')">Ver planos</button>
     </section>
+
+    <!-- ====================== ABA: ASSINATURA ====================== -->
+    <div v-show="tab === 'assinatura'">
+      <DashboardSubscription />
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { supabase } from '@/integrations/supabase/client'
 import { useAuth } from '@/composables/useAuth'
 import CountryPhoneInput from '@/components/CountryPhoneInput.vue'
+import DashboardSubscription from './DashboardSubscription.vue'
 import type { Database } from '@/integrations/supabase/types'
+
+// ============== TABS ==============
+type Tab = 'conta' | 'perfil' | 'assinatura'
+const route = useRoute()
+const router = useRouter()
+
+function isValidTab(v: unknown): v is Tab {
+  return v === 'conta' || v === 'perfil' || v === 'assinatura'
+}
+const tab = ref<Tab>(isValidTab(route.query.tab) ? route.query.tab : 'conta')
+
+watch(() => route.query.tab, (q) => {
+  if (isValidTab(q)) tab.value = q
+})
+
+function setTab(next: Tab) {
+  tab.value = next
+  router.replace({ query: { ...route.query, tab: next } })
+}
 
 type Profile = Database['public']['Tables']['subscriber_profiles']['Row'] & {
   edits_count?: number | null
@@ -318,20 +449,72 @@ const { subscriber, fetchUserRole } = useAuth()
 const EDIT_LIMIT = 3
 
 // =========== Conta ===========
-const accountForm = reactive({ name: '' })
-const accountInitial = ref('')
+type AccountForm = {
+  name: string
+  surname: string
+  birth_date: string
+  person_type: 'fisica' | 'juridica' | ''
+  cpf: string
+  cnpj: string
+  legal_name: string
+  phone: string
+  cep: string
+  street: string
+  street_number: string
+  complement: string
+  neighborhood: string
+  city: string
+  state_code: string
+}
+
+const blankAccount = (): AccountForm => ({
+  name: '', surname: '', birth_date: '', person_type: '',
+  cpf: '', cnpj: '', legal_name: '', phone: '',
+  cep: '', street: '', street_number: '', complement: '',
+  neighborhood: '', city: '', state_code: ''
+})
+
+const accountForm = reactive<AccountForm>(blankAccount())
+const accountSnapshot = ref('')
 const loadingAccount = ref(false)
 const accountAlert = reactive<{ text: string; type: 'error' | 'success' | '' }>({ text: '', type: '' })
 
 const accountChanged = computed(() =>
-  accountForm.name !== accountInitial.value && accountForm.name.trim().length >= 2
+  JSON.stringify(accountForm) !== accountSnapshot.value && accountForm.name.trim().length >= 2
 )
 
+const isPJ = computed(() => accountForm.person_type === 'juridica')
+
+async function loadAccount() {
+  if (!subscriber.value?.id) return
+  const { data, error } = await supabase
+    .from('subscribers')
+    .select('name, surname, birth_date, person_type, cpf, cnpj, legal_name, phone, cep, street, street_number, complement, neighborhood, city, state_code')
+    .eq('id', subscriber.value.id)
+    .maybeSingle()
+  if (error || !data) return
+  Object.assign(accountForm, {
+    name: data.name ?? '',
+    surname: data.surname ?? '',
+    birth_date: data.birth_date ?? '',
+    person_type: (data.person_type as AccountForm['person_type']) ?? '',
+    cpf: data.cpf ?? '',
+    cnpj: data.cnpj ?? '',
+    legal_name: data.legal_name ?? '',
+    phone: data.phone ?? '',
+    cep: data.cep ?? '',
+    street: data.street ?? '',
+    street_number: data.street_number ?? '',
+    complement: data.complement ?? '',
+    neighborhood: data.neighborhood ?? '',
+    city: data.city ?? '',
+    state_code: data.state_code ?? ''
+  })
+  accountSnapshot.value = JSON.stringify(accountForm)
+}
+
 watch(subscriber, (s) => {
-  if (s) {
-    accountForm.name = s.name
-    accountInitial.value = s.name
-  }
+  if (s) loadAccount()
 }, { immediate: true })
 
 async function saveAccount() {
@@ -339,12 +522,15 @@ async function saveAccount() {
   loadingAccount.value = true
   accountAlert.text = ''
   try {
+    const payload: Partial<AccountForm> = { ...accountForm }
+    // Limpa o documento que nao se aplica ao tipo
+    if (isPJ.value) { payload.cpf = '' } else { payload.cnpj = ''; payload.legal_name = '' }
     const { error } = await supabase
       .from('subscribers')
-      .update({ name: accountForm.name })
+      .update(payload as any)
       .eq('id', subscriber.value.id)
     if (error) throw error
-    accountInitial.value = accountForm.name
+    accountSnapshot.value = JSON.stringify(accountForm)
     accountAlert.type = 'success'
     accountAlert.text = 'Dados atualizados.'
     await fetchUserRole()
@@ -421,19 +607,19 @@ const needsLocation = computed(() =>
 )
 const whatsappValid = computed(() => profileForm.whatsapp.replace(/\D/g, '').length >= 10)
 const seniorityLabel = computed(() =>
-  seniorityOptions.find(o => o.value === profileForm.seniority)?.label || '—'
+  seniorityOptions.find(o => o.value === profileForm.seniority)?.label || 'Não informado'
 )
 const workModelsLabel = computed(() => {
   const labels = profileForm.workModels
     .map(v => workModelOptions.find(o => o.value === v)?.label)
     .filter(Boolean)
-  return labels.length ? labels.join(', ') : '—'
+  return labels.length ? labels.join(', ') : 'Não informado'
 })
 const areasLabel = computed(() => {
   const labels = profileForm.areas
     .map(v => areaOptions.find(o => o.value === v)?.label)
     .filter(Boolean)
-  return labels.length ? labels.join(', ') : '—'
+  return labels.length ? labels.join(', ') : 'Não informado'
 })
 
 const profileChanged = computed(() => snapshotOf() !== profileSnapshot.value)
@@ -579,15 +765,118 @@ onMounted(fetchProfile)
 .dset {
   display: flex;
   flex-direction: column;
-  gap: var(--space-5);
+  gap: var(--space-4);
+}
+
+/* ---------- Tabs (estilo hPanel: sem caixa, com underline no ativo) ---------- */
+.dset-tabs {
+  display: flex;
+  gap: var(--space-1);
+  border-bottom: 1px solid var(--color-border-subtle);
+  margin-bottom: var(--space-1);
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.dset-tab {
+  position: relative;
+  appearance: none;
+  background: transparent;
+  border: none;
+  padding: var(--space-3) var(--space-4);
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
+  transition: color var(--transition-fast), background var(--transition-fast);
+  white-space: nowrap;
+}
+.dset-tab:hover {
+  color: var(--color-text-primary);
+  background: var(--color-surface);
+}
+.dset-tab--active {
+  color: var(--color-text-primary);
+}
+.dset-tab--active::after {
+  content: '';
+  position: absolute;
+  left: var(--space-3);
+  right: var(--space-3);
+  bottom: -1px;
+  height: 2px;
+  background: var(--color-accent);
+  border-radius: 2px 2px 0 0;
 }
 
 /* ---------- Card ---------- */
 .dset-card {
   background: var(--color-background);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-card);
-  padding: var(--card-padding);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5) var(--space-6);
+}
+@media (max-width: 640px) {
+  .dset-card { padding: var(--space-4); }
+}
+
+/* Fieldset agrupador: sem borda, com label em destaque */
+.dset-fieldset {
+  border: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.dset-fieldset + .dset-fieldset {
+  margin-top: var(--space-2);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--color-border-subtle);
+}
+.dset-fieldset__legend {
+  font-size: 11px;
+  font-weight: var(--font-bold);
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: var(--ls-wide);
+  padding: 0;
+  margin-bottom: var(--space-2);
+}
+.dset-grid__col-2 { grid-column: span 2; }
+@media (max-width: 559px) {
+  .dset-grid__col-2 { grid-column: span 1; }
+}
+@media (min-width: 960px) {
+  .dset-grid__col-2 { grid-column: span 2; }
+}
+.form-input--centered { text-align: center; text-transform: uppercase; }
+
+/* Bloco senha */
+.dset-divider {
+  height: 1px;
+  background: var(--color-border-subtle);
+  margin: var(--space-5) 0 var(--space-4);
+}
+.dset-password {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+.dset-password__info { flex: 1; min-width: 240px; }
+.dset-password__info h3 {
+  margin: 0 0 2px;
+  font-size: var(--text-base);
+  font-weight: var(--font-semibold);
+  color: var(--color-text-primary);
+}
+.dset-password__info p {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+  line-height: var(--lh-body);
 }
 
 .dset-card__head {
@@ -595,27 +884,18 @@ onMounted(fetchProfile)
   align-items: flex-start;
   justify-content: space-between;
   flex-wrap: wrap;
-  gap: var(--space-3);
-  margin-bottom: var(--space-5);
-}
-.dset-card__heading { display: flex; gap: var(--space-3); align-items: flex-start; }
-.dset-card__icon {
-  flex-shrink: 0;
-  display: grid;
-  place-items: center;
-  width: 40px;
-  height: 40px;
-  border-radius: var(--radius-md);
-  background: var(--color-accent-soft);
-  border: 1px solid color-mix(in srgb, var(--color-accent) 18%, transparent);
-  color: var(--color-accent);
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--color-border-subtle);
 }
 .dset-card__head h2 {
   margin: 0 0 2px;
-  font-size: var(--text-xl);
+  font-size: var(--text-base);
   font-weight: var(--font-semibold);
   letter-spacing: var(--ls-tight);
   line-height: var(--lh-title);
+  color: var(--color-text-primary);
 }
 .dset-card__head p {
   margin: 0;
@@ -711,30 +991,63 @@ onMounted(fetchProfile)
 }
 
 /* ---------- Form ---------- */
-.dset-form { display: flex; flex-direction: column; gap: var(--space-5); }
+.dset-form { display: flex; flex-direction: column; gap: var(--space-4); }
 .dset-grid {
   display: grid;
   grid-template-columns: 1fr;
-  gap: var(--space-4);
+  gap: var(--space-3) var(--space-4);
 }
-@media (min-width: 640px) {
-  .dset-grid { grid-template-columns: 1fr 1fr; }
+@media (min-width: 560px) {
+  .dset-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
-.dset-pane { display: flex; flex-direction: column; gap: var(--space-5); }
+@media (min-width: 960px) {
+  .dset-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+.dset-pane { display: flex; flex-direction: column; gap: var(--space-4); }
 
-.form-input {
-  background: var(--color-surface);
-  border-radius: var(--radius-input);
-  padding: var(--space-3) var(--space-4);
+/* Form group local (ajustes finos do espaçamento) */
+.dset-form .form-group { margin-bottom: 0; }
+.dset-form .form-label {
+  font-size: 12px;
+  font-weight: var(--font-semibold);
+  color: var(--color-text-secondary);
+  margin-bottom: 4px;
+  line-height: 1.3;
 }
-.form-input:disabled { opacity: 0.5; cursor: not-allowed; }
-.form-input:focus:not(:disabled) { background: var(--color-surface-elevated); }
+
+/* Inputs compactos e profissionais (altura 36px, padding moderado) */
+.dset-form .form-input,
+.dset-form .form-select {
+  background: var(--color-background);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 0 var(--space-3);
+  height: 36px;
+  min-height: 36px;
+  font-size: var(--text-sm);
+  width: 100%;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+.dset-form .form-input:hover:not(:disabled) {
+  border-color: var(--color-text-muted);
+}
+.dset-form .form-input:focus:not(:disabled) {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px var(--color-accent-soft);
+  outline: none;
+}
+.dset-form .form-input:disabled {
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  cursor: not-allowed;
+  opacity: 1;
+}
 
 .form-hint {
-  font-size: var(--text-sm);
+  font-size: 11px;
   color: var(--color-text-muted);
-  margin-top: var(--space-1);
-  line-height: var(--lh-body);
+  margin-top: 4px;
+  line-height: 1.4;
 }
 .form-hint kbd {
   display: inline-block;

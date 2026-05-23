@@ -525,12 +525,12 @@ const newSubsOption = computed(() => {
 /* ===== Hero Card ===== */
 .hero-card {
   background: var(--color-background);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-xl);
-  padding: var(--space-6);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
   display: flex;
   flex-direction: column;
-  gap: var(--space-5);
+  gap: var(--space-4);
 }
 
 .hero-top {
@@ -608,9 +608,9 @@ const newSubsOption = computed(() => {
 
 .hero-subcard {
   background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
@@ -663,20 +663,20 @@ const newSubsOption = computed(() => {
 
 .kpi-card {
   background: var(--color-background);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-xl);
-  padding: var(--space-5);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
   position: relative;
   overflow: hidden;
-  transition: all var(--transition-fast);
+  transition: border-color var(--transition-fast);
 }
 
 /* Hover discreto - apenas a borda muda de tom. Nada se move. */
 .kpi-card:hover {
-  border-color: color-mix(in srgb, var(--color-text-muted) 35%, var(--color-border));
+  border-color: var(--color-border);
 }
 
 .kpi-label {
@@ -688,10 +688,11 @@ const newSubsOption = computed(() => {
 }
 
 .kpi-value {
-  font-size: var(--text-2xl);
+  font-size: var(--text-xl);
   font-weight: var(--font-bold);
   color: var(--color-text-primary);
-  line-height: 1;
+  line-height: 1.1;
+  letter-spacing: var(--ls-tight);
 }
 
 .kpi-value.success { color: var(--color-success); }
@@ -706,8 +707,8 @@ const newSubsOption = computed(() => {
 /* ===== Recent section (mantém parte do estilo anterior) ===== */
 .recent-section {
   background: var(--color-background);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-xl);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-lg);
   overflow: hidden;
 }
 
@@ -715,8 +716,8 @@ const newSubsOption = computed(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--space-5);
-  border-bottom: 1px solid var(--color-border);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--color-border-subtle);
 }
 
 .section-title {
@@ -746,7 +747,7 @@ const newSubsOption = computed(() => {
 
 .subscribers-table th,
 .subscribers-table td {
-  padding: var(--space-4) var(--space-5);
+  padding: var(--space-3) var(--space-4);
   text-align: left;
 }
 
@@ -762,7 +763,7 @@ const newSubsOption = computed(() => {
 .subscribers-table td {
   font-size: var(--text-sm);
   color: var(--color-text-primary);
-  border-top: 1px solid var(--color-border);
+  border-top: 1px solid var(--color-border-subtle);
 }
 
 .subscriber-info {

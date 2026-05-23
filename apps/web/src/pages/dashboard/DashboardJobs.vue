@@ -28,7 +28,7 @@
         <h2>Vagas filtradas pelo seu perfil</h2>
         <p>Disponível nos planos Pro e Plus. Faça upgrade para receber vagas do seu perfil.</p>
       </div>
-      <router-link to="/dashboard/assinatura" class="btn btn-primary">Fazer upgrade</router-link>
+      <router-link to="/dashboard/configuracoes?tab=assinatura" class="btn btn-primary">Fazer upgrade</router-link>
     </div>
 
     <!-- Comunidades públicas (plano free) -->
@@ -136,14 +136,11 @@
             { 'djobs-card--featured': (job.match_score ?? 0) >= 85 }
           ]"
         >
-        <span class="djobs-card__rail" aria-hidden="true"></span>
-
-        <!-- Cabeçalho: avatar + identidade + match (altura fixa) -->
+        <!-- Cabeçalho: identidade + match (sem avatar) -->
         <header class="djobs-card__head">
-          <span class="djobs-card__avatar" aria-hidden="true">{{ companyInitial(job.company) }}</span>
           <div class="djobs-card__ident">
-            <h3 class="djobs-card__title" :title="job.title">{{ job.title }}</h3>
-            <p class="djobs-card__company">{{ job.company || 'Empresa confidencial' }}</p>
+            <h3 v-fit-line="{ max: 18, min: 11, lines: 2 }" class="djobs-card__title" :title="job.title">{{ job.title }}</h3>
+            <p v-fit-line="{ max: 9, min: 6 }" class="djobs-card__company">{{ job.company || 'Empresa confidencial' }}</p>
           </div>
           <span
             v-if="job.match_score != null"
@@ -187,24 +184,13 @@
 
         <!-- Bloco inferior ancorado: fatos + rodapé + CTA sempre alinhados -->
         <div class="djobs-card__bottom">
-          <div class="djobs-card__facts">
-            <span class="djobs-fact djobs-fact--mode">{{ workLabel(job.work_type) || 'Modalidade n/d' }}</span>
-            <span v-if="job.hiring_regime" class="djobs-fact">{{ job.hiring_regime }}</span>
-            <span class="djobs-fact djobs-fact--loc">
-              <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
-                <circle cx="12" cy="10" r="3" />
-              </svg>
-              {{ formatLocation(job) || 'Local não informado' }}
-            </span>
-            <span v-if="formatPubDate(job.publication_date)" class="djobs-fact djobs-fact--loc">
-              <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <rect x="3" y="5" width="18" height="16" rx="2" />
-                <path d="M3 9h18M8 3v4M16 3v4" />
-              </svg>
-              Publicada {{ formatPubDate(job.publication_date) }}
-            </span>
-          </div>
+          <p class="djobs-card__meta" :title="metaTooltip(job)">
+            <span class="djobs-card__meta-mode">{{ workLabel(job.work_type) || 'Modalidade n/d' }}</span>
+            <template v-for="(part, i) in metaParts(job)" :key="i">
+              <span class="djobs-card__meta-sep" aria-hidden="true">·</span>
+              <span class="djobs-card__meta-part">{{ part }}</span>
+            </template>
+          </p>
 
           <div class="djobs-card__foot">
             <span v-if="isFresh(job.sent_at)" class="djobs-card__new">Novo</span>
@@ -215,7 +201,6 @@
               </svg>
               Recebida {{ formatRelative(job.sent_at) }}
             </span>
-            <span class="djobs-card__source">{{ sourceLabel(job.source) || 'via Sonnar' }}</span>
           </div>
 
           <a
@@ -295,6 +280,72 @@ type FeedItem = VipJob | AdItem
 /** Discrimina anúncio de vaga — usado no template pra escolher o que renderizar. */
 function isAd(item: FeedItem): item is AdItem {
   return '__ad' in item
+}
+
+/**
+ * Diretiva v-fit-line: escala a fonte do elemento até o texto caber em UMA linha
+ * sem ellipsis. Útil para títulos/nomes de tamanho variável em cards estreitos.
+ * Binding value opcional: { min: number, max: number } (em px).
+ */
+const FitLineEl = Symbol('fit-line')
+type FitLineBinding = { min?: number; max?: number; lines?: number }
+function runFit(el: HTMLElement, max: number, min: number, lines: number) {
+  const lh = 1.25
+  if (lines > 1) {
+    // Multi-linha: nunca quebra dentro de palavra; escala até caber em N linhas.
+    el.style.whiteSpace = 'normal'
+    el.style.wordBreak = 'normal'
+    el.style.overflowWrap = 'normal'
+    el.style.overflow = 'hidden'
+    el.style.lineHeight = String(lh)
+    el.style.display = 'block'
+    el.style.maxHeight = 'none'
+    let size = max
+    el.style.fontSize = `${size}px`
+    // Force reflow para que scrollHeight reflita o tamanho real
+    void el.offsetHeight
+    const fits = () => el.scrollHeight <= size * lh * lines + 0.5
+    let guard = 200
+    while (!fits() && size > min && guard-- > 0) {
+      size -= 0.25
+      el.style.fontSize = `${size}px`
+      void el.offsetHeight
+    }
+    el.style.maxHeight = `${size * lh * lines}px`
+  } else {
+    // 1 linha — escala largura.
+    el.style.whiteSpace = 'nowrap'
+    el.style.overflow = 'hidden'
+    el.style.textOverflow = 'clip'
+    let size = max
+    el.style.fontSize = `${size}px`
+    let guard = 200
+    while (el.scrollWidth > el.clientWidth + 0.5 && size > min && guard-- > 0) {
+      size -= 0.25
+      el.style.fontSize = `${size}px`
+    }
+  }
+}
+
+const vFitLine = {
+  mounted(el: HTMLElement & { [FitLineEl]?: ResizeObserver }, binding: { value?: FitLineBinding }) {
+    const max = binding.value?.max ?? 14
+    const min = binding.value?.min ?? 7
+    const lines = binding.value?.lines ?? 1
+    requestAnimationFrame(() => runFit(el, max, min, lines))
+    const ro = new ResizeObserver(() => runFit(el, max, min, lines))
+    ro.observe(el)
+    el[FitLineEl] = ro
+  },
+  updated(el: HTMLElement, binding: { value?: FitLineBinding }) {
+    const max = binding.value?.max ?? 14
+    const min = binding.value?.min ?? 7
+    const lines = binding.value?.lines ?? 1
+    requestAnimationFrame(() => runFit(el, max, min, lines))
+  },
+  unmounted(el: HTMLElement & { [FitLineEl]?: ResizeObserver }) {
+    el[FitLineEl]?.disconnect()
+  }
 }
 
 const { subscriber } = useAuth()
@@ -390,10 +441,6 @@ function matchClass(score: number | null) {
   return 'djobs-match--low'
 }
 
-function companyInitial(company: string | null) {
-  return (company || 'Sonnar').trim().charAt(0).toUpperCase()
-}
-
 function isFresh(iso: string) {
   return Date.now() - new Date(iso).getTime() < 24 * 3600 * 1000
 }
@@ -443,6 +490,23 @@ function formatPubDate(iso: string | null): string | null {
   const dt = new Date(`${iso}T00:00:00`)
   if (Number.isNaN(dt.getTime())) return null
   return dt.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' }).replace('.', '')
+}
+
+/** Partes do "meta" da vaga (regime, local) — sem a modalidade, que é renderizada
+   em destaque pelo template. A data de "Recebida há X" já vai no rodapé, então
+   não duplico publicação aqui. */
+function metaParts(job: VipJob): string[] {
+  const out: string[] = []
+  if (job.hiring_regime) out.push(job.hiring_regime)
+  const loc = formatLocation(job)
+  if (loc) out.push(loc)
+  return out
+}
+
+/** Tooltip completa (modalidade + resto), para hover. */
+function metaTooltip(job: VipJob): string {
+  const mode = workLabel(job.work_type) || 'Modalidade n/d'
+  return [mode, ...metaParts(job)].join(' · ')
 }
 
 function sourceLabel(source: string | null): string | null {
@@ -507,11 +571,11 @@ onMounted(async () => {
 .djobs-banner {
   display: flex;
   align-items: center;
-  gap: var(--space-4);
-  padding: var(--space-4) var(--space-5);
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
   background: var(--color-background);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-card);
+  border-radius: var(--radius-lg);
   transition: box-shadow var(--transition-base);
 }
 .djobs-banner:hover { box-shadow: var(--shadow-md); }
@@ -580,11 +644,11 @@ onMounted(async () => {
   align-items: center;
   gap: var(--space-3);
   min-width: 0;
-  min-height: 78px;
-  padding: var(--space-4);
+  min-height: 64px;
+  padding: var(--space-3) var(--space-4);
   background: var(--color-background);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-card);
+  border-radius: var(--radius-lg);
   transition: border-color var(--transition-fast);
 }
 .djobs-stat:hover { border-color: var(--color-accent-muted); }
@@ -593,11 +657,10 @@ onMounted(async () => {
   flex-shrink: 0;
   display: grid;
   place-items: center;
-  width: 40px;
-  height: 40px;
+  width: 32px;
+  height: 32px;
   border-radius: var(--radius-md);
   background: var(--color-accent-soft);
-  border: 1px solid color-mix(in srgb, var(--color-accent) 18%, transparent);
   color: var(--color-accent);
 }
 
@@ -611,7 +674,7 @@ onMounted(async () => {
 .djobs-stat__num {
   display: flex;
   align-items: baseline;
-  font-size: var(--text-3xl);
+  font-size: var(--text-2xl);
   font-weight: var(--font-bold);
   letter-spacing: var(--ls-tight);
   color: var(--color-text-primary);
@@ -658,38 +721,51 @@ onMounted(async () => {
      valor nunca quebrar no meio da palavra ("A / combinar");
    - espaçamentos e avatar reduzidos. */
 @media (min-width: 1200px) {
+  /* 5 cards por linha em desktop — cada card mais largo, comportando
+     títulos maiores. Em telas muito largas usa auto-fill, mas com 5 fixos
+     em 1200-1800px (faixa principal). */
   .djobs-list {
-    grid-template-columns: repeat(6, minmax(0, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
     gap: var(--space-3);
   }
   .djobs-card {
-    gap: var(--space-3);
-    padding: var(--space-4);
-    padding-left: calc(var(--space-4) + 3px);
+    gap: var(--space-2);
+    padding: var(--space-3);
   }
   .djobs-card__head { gap: var(--space-2); }
-  .djobs-card__avatar {
-    width: 32px;
-    height: 32px;
-    font-size: var(--text-sm);
-  }
-  .djobs-card__title {
-    font-size: var(--text-base);
-    margin-bottom: 2px;
-  }
-  .djobs-card__company { font-size: var(--text-xs); }
+  /* font-size, line-height, white-space são controlados pela diretiva v-fit-line */
 
-  /* Faixa salarial empilhada — sem o "A / combinar" quebrado */
+  /* Faixa salarial em linha única — label à esquerda, valor à direita */
   .djobs-card__salary {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 3px;
-    padding: var(--space-2) var(--space-3);
+    flex-direction: row;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-2);
+    padding: var(--space-1) var(--space-2);
   }
+  .djobs-card__salary-label { font-size: 9px; }
   .djobs-card__salary-value {
-    text-align: left;
-    font-size: var(--text-sm);
+    text-align: right;
+    font-size: 11px;
   }
+
+  /* Facts e tags ainda mais compactos */
+  .djobs-fact, .djobs-tag { font-size: 10px; padding: 2px 6px; }
+  .djobs-card__tags { max-height: 44px; }
+  .djobs-card__facts { max-height: 44px; }
+
+  /* CTA compacto */
+  .djobs-card__cta {
+    padding: var(--space-1) var(--space-2);
+    font-size: 11px;
+    min-height: 28px;
+  }
+
+  /* Match badge no compacto — visível, mas sem dominar */
+  .djobs-match { padding: 2px 7px; }
+  .djobs-match__num { font-size: 12.5px; }
+  .djobs-match__sym { font-size: 10.5px; }
+  .djobs-match__star { width: 9px; height: 9px; margin-right: 2px; }
 }
 
 /* Slot de anúncio — atravessa todas as colunas, separando blocos de cards.
@@ -719,15 +795,15 @@ onMounted(async () => {
   position: relative;
   background: var(--color-background);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-card);
-  padding: var(--space-5);
-  padding-left: calc(var(--space-5) + 3px);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
+  gap: var(--space-3);
   overflow: hidden;
   transition: box-shadow var(--transition-base), border-color var(--transition-fast);
   isolation: isolate;
+  min-width: 0;
 }
 
 .djobs-card::after {
@@ -761,20 +837,6 @@ onMounted(async () => {
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-success) 20%, transparent), var(--shadow-md);
 }
 
-/* Trilho lateral por match score */
-.djobs-card__rail {
-  position: absolute;
-  left: 0;
-  top: var(--space-4);
-  bottom: var(--space-4);
-  width: 3px;
-  border-radius: 0 3px 3px 0;
-  background: var(--color-border);
-}
-.djobs-card.djobs-match--high .djobs-card__rail { background: var(--color-success); }
-.djobs-card.djobs-match--mid  .djobs-card__rail { background: var(--color-accent); }
-.djobs-card.djobs-match--low  .djobs-card__rail { background: var(--color-warning); }
-
 /* Cabeçalho */
 .djobs-card__head {
   display: flex;
@@ -782,48 +844,24 @@ onMounted(async () => {
   gap: var(--space-3);
 }
 
-.djobs-card__avatar {
-  flex-shrink: 0;
-  display: grid;
-  place-items: center;
-  width: var(--control-height-sm);
-  height: var(--control-height-sm);
-  border-radius: var(--radius-md);
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  color: var(--color-text-primary);
-  font-weight: var(--font-bold);
-  font-size: var(--text-base);
-  letter-spacing: var(--ls-tight);
-}
-
 .djobs-card__ident { flex: 1; min-width: 0; }
 
-/* Título: reserva sempre 2 linhas — cards ficam idênticos independente do
-   tamanho do nome da vaga. Título completo no atributo title (tooltip). */
+/* Título e empresa: a diretiva v-fit-line controla white-space, overflow e fontSize. */
 .djobs-card__title {
-  font-size: var(--text-lg);
-  margin: 0 0 4px;
+  margin: 0 0 2px;
   font-weight: var(--font-bold);
   letter-spacing: var(--ls-tight);
-  line-height: 1.3;
   color: var(--color-text-primary);
-  overflow-wrap: anywhere;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  min-height: calc(1.3em * 2);
+  max-width: 100%;
 }
 
 .djobs-card__company {
   margin: 0;
   color: var(--color-text-secondary);
-  font-size: var(--text-sm);
   font-weight: var(--font-medium);
-  overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
+  overflow: hidden;
+  max-width: 100%;
 }
 
 /* Disco de match */
@@ -832,7 +870,7 @@ onMounted(async () => {
   display: inline-flex;
   align-items: baseline;
   gap: 1px;
-  padding: var(--space-1) var(--space-2);
+  padding: 3px 8px;
   border-radius: var(--radius-full);
   font-variant-numeric: tabular-nums;
   border: 1px solid transparent;
@@ -841,14 +879,16 @@ onMounted(async () => {
 .djobs-match__star {
   align-self: center;
   margin-right: 2px;
+  width: 10px;
+  height: 10px;
 }
 .djobs-match__num {
-  font-size: var(--text-base);
+  font-size: var(--text-sm);
   font-weight: var(--font-bold);
   letter-spacing: var(--ls-tight);
 }
 .djobs-match__sym {
-  font-size: var(--text-xs);
+  font-size: 11px;
   font-weight: var(--font-semibold);
   opacity: 0.75;
 }
@@ -868,25 +908,31 @@ onMounted(async () => {
   border-color: color-mix(in srgb, var(--color-warning) 30%, transparent);
 }
 
-/* Skills — zona flexível que absorve a variação de altura entre cards */
+/* Skills — zona flexível que absorve a variação de altura entre cards.
+   Altura máxima fixa garante que cards não estourem em vagas com muitas skills. */
 .djobs-card__tags {
   display: flex;
   flex-wrap: wrap;
   align-content: flex-start;
-  gap: 6px;
-  min-height: 26px;
+  gap: 4px;
+  min-height: 24px;
+  max-height: 56px;
+  overflow: hidden;
 }
 .djobs-tag {
   display: inline-flex;
   align-items: center;
-  padding: 3px var(--space-2);
+  max-width: 100%;
+  padding: 2px var(--space-2);
   border-radius: var(--radius-sm);
   background: var(--color-surface);
   border: 1px solid var(--color-border-subtle);
   color: var(--color-text-secondary);
-  font-size: 11px;
+  font-size: 10.5px;
   font-weight: var(--font-medium);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   transition: all var(--transition-fast);
 }
 .djobs-card:hover .djobs-tag { border-color: var(--color-border); }
@@ -913,10 +959,11 @@ onMounted(async () => {
   align-items: baseline;
   justify-content: space-between;
   gap: var(--space-2);
-  padding: var(--space-3) var(--space-4);
+  padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-md);
-  background: linear-gradient(135deg, var(--color-accent-soft), var(--color-surface));
-  border: 1px solid color-mix(in srgb, var(--color-accent) 18%, var(--color-border-subtle));
+  background: var(--color-accent-soft);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 15%, var(--color-border-subtle));
+  min-width: 0;
 }
 .djobs-card__salary-label {
   font-size: 10px;
@@ -927,11 +974,15 @@ onMounted(async () => {
   flex-shrink: 0;
 }
 .djobs-card__salary-value {
-  font-size: var(--text-base);
+  font-size: var(--text-sm);
   font-weight: var(--font-bold);
   color: var(--color-text-primary);
   letter-spacing: var(--ls-tight);
   text-align: right;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Bloco inferior ancorado — facts + rodapé + CTA sempre no mesmo lugar */
@@ -942,28 +993,42 @@ onMounted(async () => {
   gap: var(--space-3);
 }
 
-/* Fatos da vaga — altura fixa de 2 linhas: a linha de modalidade/regime/
-   local/data fica sempre na mesma posição, quebrando ou não. */
+/* Fatos da vaga — chips com truncamento individual, máximo 2 linhas. */
 .djobs-card__facts {
   display: flex;
   flex-wrap: wrap;
   align-content: flex-start;
-  gap: 6px;
-  min-height: 56px;
+  gap: 4px;
+  max-height: 50px;
+  overflow: hidden;
+  min-width: 0;
 }
 .djobs-fact {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 4px var(--space-2);
+  gap: 4px;
+  max-width: 100%;
+  padding: 3px var(--space-2);
   border-radius: var(--radius-sm);
   background: var(--color-surface);
   border: 1px solid var(--color-border-subtle);
   color: var(--color-text-secondary);
-  font-size: 11px;
+  font-size: 10.5px;
   font-weight: var(--font-semibold);
   letter-spacing: var(--ls-wide);
   text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+/* O texto dentro do fact precisa truncar — o SVG fica intacto. */
+.djobs-fact > svg { flex-shrink: 0; }
+.djobs-fact__text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
 }
 .djobs-fact--mode {
   background: var(--color-accent-soft);
@@ -974,23 +1039,58 @@ onMounted(async () => {
   text-transform: none;
   letter-spacing: normal;
   font-weight: var(--font-medium);
+  max-width: 100%;
 }
 
-/* Rodapé */
+/* Meta inline: modalidade (destaque) · regime · local — tudo na mesma frase,
+   o que garante alinhamento natural quando quebra de linha. */
+.djobs-card__meta {
+  margin: 0;
+  min-width: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 11px;
+  font-weight: var(--font-medium);
+  color: var(--color-text-secondary);
+  line-height: 1.4;
+  word-break: break-word;
+}
+.djobs-card__meta-mode {
+  color: var(--color-accent);
+  font-weight: var(--font-semibold);
+}
+.djobs-card__meta-sep {
+  margin: 0 4px;
+  color: var(--color-text-muted);
+  opacity: 0.6;
+}
+
+/* Rodapé — "Novo" à esquerda, "Recebida há X" à direita */
 .djobs-card__foot {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
+  justify-content: space-between;
+  flex-wrap: nowrap;
   gap: var(--space-2);
-  font-size: var(--text-xs);
+  font-size: 11px;
   color: var(--color-text-muted);
+  min-width: 0;
 }
 .djobs-card__foot-item {
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  margin-left: auto;
   font-weight: var(--font-medium);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
 }
+.djobs-card__foot-item svg { flex-shrink: 0; }
 .djobs-card__dot {
   width: 3px;
   height: 3px;
@@ -1002,6 +1102,11 @@ onMounted(async () => {
   margin-left: auto;
   font-weight: var(--font-semibold);
   color: var(--color-text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 50%;
+  flex-shrink: 0;
 }
 .djobs-card__new {
   display: inline-flex;

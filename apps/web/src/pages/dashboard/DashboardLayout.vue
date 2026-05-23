@@ -127,7 +127,7 @@ const route = useRoute()
 const router = useRouter()
 const { subscriber, signOut } = useAuth()
 
-const collapsed = ref(false)
+const collapsed = ref(true)
 const mobileOpen = ref(false)
 const isMobile = ref(false)
 
@@ -142,15 +142,6 @@ const navItems = [
       <circle cx="12" cy="12" r="3" opacity="0.3" />
       <line x1="12" y1="12" x2="18" y2="7" />
       <circle cx="17.2" cy="7.6" r="1.6" fill="currentColor" stroke="none" />
-    </svg>`
-  },
-  {
-    to: '/dashboard/assinatura',
-    label: 'Assinatura',
-    icon: `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-      <rect x="2" y="6" width="20" height="13" rx="2" />
-      <line x1="2" y1="10.5" x2="22" y2="10.5" />
-      <line x1="6" y1="15.5" x2="10" y2="15.5" />
     </svg>`
   },
   {
@@ -246,8 +237,8 @@ onUnmounted(() => {
 /* =========== SIDEBAR =========== */
 .dl-side {
   position: relative;
-  background: var(--color-surface);
-  border-right: 1px solid var(--color-border);
+  background: var(--color-background);
+  border-right: 1px solid var(--color-border-subtle);
   display: flex;
   flex-direction: column;
   height: 100dvh;
@@ -284,7 +275,6 @@ onUnmounted(() => {
   align-items: center;
   justify-content: space-between;
   padding: 0 var(--space-4);
-  border-bottom: 1px solid var(--color-border);
   flex-shrink: 0;
   height: var(--header-height);
   box-sizing: border-box;
@@ -345,7 +335,7 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding: var(--space-3) var(--space-2);
+  padding: var(--space-2) var(--space-3);
   overflow-y: auto;
   overflow-x: hidden;
 }
@@ -354,7 +344,7 @@ onUnmounted(() => {
   position: relative;
   display: flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: var(--space-3);
   padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-md);
   color: var(--color-text-secondary);
@@ -362,7 +352,7 @@ onUnmounted(() => {
   font-weight: var(--font-medium);
   line-height: 1.4;
   text-decoration: none;
-  transition: all var(--transition-fast);
+  transition: background var(--transition-fast), color var(--transition-fast);
   cursor: pointer;
   background: transparent;
   border: none;
@@ -370,29 +360,21 @@ onUnmounted(() => {
   width: 100%;
   white-space: nowrap;
   overflow: hidden;
+  min-height: 36px;
 }
 
 .dl-nav__link:hover {
-  background: var(--color-surface-elevated);
+  background: var(--color-surface);
   color: var(--color-text-primary);
 }
 
 .dl-nav__link--active {
-  background: var(--color-accent-soft);
-  color: var(--color-accent);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
   font-weight: var(--font-semibold);
 }
 
-.dl-nav__link--active::before {
-  content: '';
-  position: absolute;
-  left: calc(-1 * var(--space-2));
-  top: var(--space-2);
-  bottom: var(--space-2);
-  width: 3px;
-  background: var(--color-accent);
-  border-radius: 0 3px 3px 0;
-}
+.dl-nav__link--active .dl-nav__icon { color: var(--color-accent); }
 
 .dl-nav__icon {
   display: grid;
@@ -410,8 +392,8 @@ onUnmounted(() => {
 
 /* Footer */
 .dl-side__foot {
-  border-top: 1px solid var(--color-border);
-  padding: var(--space-3) var(--space-2);
+  border-top: 1px solid var(--color-border-subtle);
+  padding: var(--space-2) var(--space-3);
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
@@ -518,7 +500,7 @@ onUnmounted(() => {
   align-items: center;
   gap: var(--space-3);
   padding: 0 var(--space-6);
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-border-subtle);
   background: var(--color-background);
   z-index: var(--z-sticky);
   height: 56px;
@@ -583,13 +565,17 @@ onUnmounted(() => {
   .dl-content__inner { padding: var(--space-4); }
 }
 
-/* Scrollbar refinada (estilo Linear) */
+/* Scrollbar — fina e sem setas (Windows mostra setas no default; aqui escondemos) */
+.dl-nav, .dl-content {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border-subtle) transparent;
+}
 .dl-nav::-webkit-scrollbar,
-.dl-content::-webkit-scrollbar { width: 8px; height: 8px; }
+.dl-content::-webkit-scrollbar { width: 6px; height: 6px; }
 .dl-nav::-webkit-scrollbar-thumb,
 .dl-content::-webkit-scrollbar-thumb {
   background: var(--color-border);
-  border-radius: 4px;
+  border-radius: 3px;
 }
 .dl-nav::-webkit-scrollbar-thumb:hover,
 .dl-content::-webkit-scrollbar-thumb:hover {
@@ -597,6 +583,8 @@ onUnmounted(() => {
 }
 .dl-nav::-webkit-scrollbar-track,
 .dl-content::-webkit-scrollbar-track { background: transparent; }
+.dl-nav::-webkit-scrollbar-button,
+.dl-content::-webkit-scrollbar-button { display: none; height: 0; width: 0; }
 
 /* Transitions */
 .dl-fade-enter-active,

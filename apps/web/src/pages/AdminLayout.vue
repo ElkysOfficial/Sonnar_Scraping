@@ -130,7 +130,7 @@ const route = useRoute()
 const router = useRouter()
 const { signOut, user, isOwner, userRole } = useAuth()
 
-const collapsed = ref(false)
+const collapsed = ref(true)
 const mobileOpen = ref(false)
 const isMobile = ref(false)
 
@@ -294,8 +294,8 @@ onUnmounted(() => {
   top: 0;
   left: 0;
   width: var(--sidebar-width);
-  background: var(--color-surface);
-  border-right: 1px solid var(--color-border);
+  background: var(--color-background);
+  border-right: 1px solid var(--color-border-subtle);
   display: flex;
   flex-direction: column;
   height: 100dvh;
@@ -333,7 +333,6 @@ onUnmounted(() => {
   align-items: center;
   justify-content: space-between;
   padding: 0 var(--space-4);
-  border-bottom: 1px solid var(--color-border);
   flex-shrink: 0;
   height: var(--header-height);
   box-sizing: border-box;
@@ -392,16 +391,16 @@ onUnmounted(() => {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
-  padding: var(--space-3) var(--space-2);
+  gap: var(--space-4);
+  padding: var(--space-2) var(--space-3);
   overflow-y: auto;
   overflow-x: hidden;
 }
 
 .dl-nav-group { display: flex; flex-direction: column; gap: 2px; }
 .dl-nav-group__label {
-  font-size: var(--text-xs);
-  font-weight: var(--font-semibold);
+  font-size: 10px;
+  font-weight: var(--font-bold);
   color: var(--color-text-muted);
   text-transform: uppercase;
   letter-spacing: var(--ls-wide);
@@ -413,7 +412,7 @@ onUnmounted(() => {
   position: relative;
   display: flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: var(--space-3);
   padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-md);
   color: var(--color-text-secondary);
@@ -421,7 +420,7 @@ onUnmounted(() => {
   font-weight: var(--font-medium);
   line-height: 1.4;
   text-decoration: none;
-  transition: all var(--transition-fast);
+  transition: background var(--transition-fast), color var(--transition-fast);
   cursor: pointer;
   background: transparent;
   border: none;
@@ -429,29 +428,21 @@ onUnmounted(() => {
   width: 100%;
   white-space: nowrap;
   overflow: hidden;
+  min-height: 36px;
 }
 
 .dl-nav__link:hover {
-  background: var(--color-surface-elevated);
+  background: var(--color-surface);
   color: var(--color-text-primary);
 }
 
 .dl-nav__link--active {
-  background: var(--color-accent-soft);
-  color: var(--color-accent);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
   font-weight: var(--font-semibold);
 }
 
-.dl-nav__link--active::before {
-  content: '';
-  position: absolute;
-  left: calc(-1 * var(--space-2));
-  top: var(--space-2);
-  bottom: var(--space-2);
-  width: 3px;
-  background: var(--color-accent);
-  border-radius: 0 3px 3px 0;
-}
+.dl-nav__link--active .dl-nav__icon { color: var(--color-accent); }
 
 .dl-nav__icon {
   display: grid;
@@ -468,8 +459,8 @@ onUnmounted(() => {
 }
 
 .dl-side__foot {
-  border-top: 1px solid var(--color-border);
-  padding: var(--space-3) var(--space-2);
+  border-top: 1px solid var(--color-border-subtle);
+  padding: var(--space-2) var(--space-3);
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
@@ -643,24 +634,19 @@ onUnmounted(() => {
   .dl-content { padding: var(--space-4); }
 }
 
-/* Scrollbar interno da sidebar (quando muitos itens de menu) - discreto */
+/* Scrollbar interno da sidebar — fino, sem setas */
 .dl-nav {
   scrollbar-width: thin;
-  scrollbar-color: var(--color-secondary) transparent;
+  scrollbar-color: var(--color-border-subtle) transparent;
 }
-.dl-nav::-webkit-scrollbar { width: 8px; height: 8px; }
+.dl-nav::-webkit-scrollbar { width: 6px; height: 6px; }
 .dl-nav::-webkit-scrollbar-thumb {
-  background: var(--color-secondary);
-  border-radius: var(--radius-full);
-  border: 2px solid transparent;
-  background-clip: padding-box;
+  background: var(--color-border);
+  border-radius: 3px;
 }
-.dl-nav::-webkit-scrollbar-thumb:hover {
-  background: #0891b2;
-  background-clip: padding-box;
-  border: 2px solid transparent;
-}
+.dl-nav::-webkit-scrollbar-thumb:hover { background: var(--color-text-muted); }
 .dl-nav::-webkit-scrollbar-track { background: transparent; }
+.dl-nav::-webkit-scrollbar-button { display: none; height: 0; width: 0; }
 
 .dl-fade-enter-active,
 .dl-fade-leave-active {
