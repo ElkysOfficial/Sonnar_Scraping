@@ -5,6 +5,42 @@ Todas as mudanças relevantes deste projeto são documentadas neste arquivo.
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/)
 e o projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [2.12.0] - 2026-05-23
+
+### Modificado
+
+- **`BATCH_SIZE` default reduzido de 5 → 2 stacks por batch**
+  (`apps/scraper/src/controllers/controllers.py`). Prioriza qualidade da
+  varredura sobre velocidade — com menos stacks por lote, cada engine faz
+  menos requests por hora, ficando mais longe dos limites de rate-limit
+  dos sites. A cobertura completa de todas as stacks acontece ao longo do
+  dia (mais batches × 2h de pausa entre eles).
+
+- **Jooble: rotação por relógio dos 15 listing variants**
+  (`apps/scraper/src/engines/jooble.py`). Cada ciclo passa a varrer só
+  **5 variants** (em vez de todas as 15), e o lote avança a cada 2h
+  (mesmo padrão do Careerjet e LinkedIn). Reduz a pressão por ciclo —
+  o Jooble retornava HTTP 403 do Cloudflare quando 15 variants × 5
+  stacks viravam requests cascateados na mesma janela. Em ~6 ciclos
+  (~12h) todos os variants são cobertos. O jitter entre variants subiu
+  de 0.3s para 2-5s aleatório.
+
+- **InfoJobs: detail-fetch concurrency reduzida de 8 → 2 + jitter
+  explícito de 1-2s entre requests** (`apps/scraper/src/engines/infojobs.py`).
+  Com 8 em paralelo o Cloudflare derrubava a sessão em rajada e o
+  detail-fetch ficava em timeout. Com 2 + jitter, as vagas chegam sem
+  bloqueio (custo: ciclo um pouco mais lento; aceitável porque há 2h
+  de pausa entre batches).
+
+### Observações
+
+- **Indeed**: continua sob comportamento conhecido — o circuit breaker
+  pausa a engine após sequência de falhas (`wait_s: 1800` / `3600` nos
+  logs do servidor). Não é regressão; é proteção esperada.
+- **GeekHunter**: 1 chamada GraphQL única, sem alteração estrutural. O
+  timeout intermitente observado no smoke test não foi reproduzido em
+  diagnóstico focado.
+
 ## [2.11.0] - 2026-05-23
 
 ### Adicionado

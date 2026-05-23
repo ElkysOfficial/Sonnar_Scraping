@@ -73,7 +73,7 @@ def is_partial(job_data: dict) -> bool:
 #
 # date=7d e salary=* foram removidos pois nao filtravam (overlap completo
 # com baseline). w=fulltime, sort=date, remote=1 idem.
-_LISTING_VARIANTS = [
+_LISTING_VARIANTS_ALL = [
     "",                       # baseline
     "&date=1",                # ultimas 24h
     "&date=3",                # ultimos 3 dias
@@ -90,6 +90,40 @@ _LISTING_VARIANTS = [
     "&rgns=Ceara",
     "&rgns=Espirito%20Santo",
 ]
+
+
+# Tamanho do lote rotativo de variants por ciclo (default 5). Aplicamos
+# rotacao por relogio (igual Careerjet/LinkedIn) pra reduzir o numero de
+# requests por execucao e evitar o 403 do Cloudflare. Em ~6 ciclos
+# (~12h) cobrimos todos os variants.
+_JOOBLE_VARIANT_BATCH_SIZE = int(os.getenv("JOOBLE_VARIANT_BATCH_SIZE", "5"))
+_JOOBLE_VARIANT_ROTATION_INTERVAL_S = int(
+    os.getenv("JOOBLE_VARIANT_ROTATION_INTERVAL_S", "7200")
+)
+
+
+def _rotating_variants() -> list:
+    """Lote de variants do ciclo atual (baseado no relogio do sistema).
+
+    Sobrevive a reinicios do processo. Em ``ceil(N/SIZE)`` ciclos cobrimos
+    todos os variants.
+    """
+    import math
+    import time
+    n = len(_LISTING_VARIANTS_ALL)
+    if n == 0 or _JOOBLE_VARIANT_BATCH_SIZE <= 0:
+        return []
+    total_batches = math.ceil(n / _JOOBLE_VARIANT_BATCH_SIZE)
+    idx = int(time.time() // _JOOBLE_VARIANT_ROTATION_INTERVAL_S) % total_batches
+    start = idx * _JOOBLE_VARIANT_BATCH_SIZE
+    return list(
+        _LISTING_VARIANTS_ALL[start:start + _JOOBLE_VARIANT_BATCH_SIZE]
+    )
+
+
+def _active_variants() -> list:
+    """Variants a usar neste ciclo (lote rotativo por relogio)."""
+    return _rotating_variants()
 
 
 # --- Sessão ---------------------------------------------------------------
@@ -342,24 +376,43 @@ async def get_jooble_jobs(on_job=None) -> list:
     seen_ids: set[str] = set()
     session = get_session()
 
+    # Lote rotativo de variants (rotacao por relogio igual Careerjet/LinkedIn).
+    # Reduz pressao por ciclo — Jooble bloqueia (HTTP 403) quando 15 variants
+    # × 5 stacks viram requests cascateados na mesma janela.
+    variants = _active_variants()
+
     # ---- Checkpoint -----------------------------------------------------
     stacks_list = list(get_active_stacks())
     batch_key = get_active_batch_key()
     cursor = await progress.resume("jooble", batch_key) if batch_key else None
     resume_stack = (cursor or {}).get("stack")
-    resume_variant_idx = int((cursor or {}).get("variant_idx", 0))
+    resume_variant = (cursor or {}).get("variant")
     resume_stack_idx = 0
+    resume_variant_idx = 0
     if cursor:
         try:
             resume_stack_idx = stacks_list.index(resume_stack) if resume_stack else 0
         except ValueError:
             cursor = None
+    if cursor:
+        try:
+            resume_variant_idx = (
+                variants.index(resume_variant) if resume_variant else 0
+            )
+        except ValueError:
+            # Variant salvo nao esta no lote rotativo atual: descarta cursor
+            # (rotacao avancou entre o checkpoint e o restart).
+            cursor = None
+            resume_stack_idx = 0
             resume_variant_idx = 0
     if cursor:
         logger.info("jooble_resume", extra={
             "batch_key": batch_key, "stack": resume_stack,
-            "stack_idx": resume_stack_idx, "variant_idx": resume_variant_idx,
+            "stack_idx": resume_stack_idx,
+            "variant": resume_variant, "variant_idx": resume_variant_idx,
         })
+
+    import random as _random
 
     for stack_idx, stack in enumerate(stacks_list):
         if stack_idx < resume_stack_idx:
@@ -368,7 +421,7 @@ async def get_jooble_jobs(on_job=None) -> list:
         start_variant_idx = (
             resume_variant_idx if stack_idx == resume_stack_idx else 0
         )
-        for variant_idx, variant in enumerate(_LISTING_VARIANTS):
+        for variant_idx, variant in enumerate(variants):
             if variant_idx < start_variant_idx:
                 continue
             if batch_key:
@@ -376,6 +429,9 @@ async def get_jooble_jobs(on_job=None) -> list:
                     "stack_idx": stack_idx, "stack": stack,
                     "variant_idx": variant_idx, "variant": variant,
                 })
+            # Jitter alto entre variants (era 0.3s no fim do try, agora
+            # 2-5s no inicio) - reduz rajada que dispara o 403 Cloudflare.
+            await asyncio.sleep(_random.uniform(2.0, 5.0))
             try:
                 url = f"https://br.jooble.org/SearchResult?ukw={encoded}{variant}"
                 response = await fetch_sync(session, url, timeout=30)
@@ -416,8 +472,6 @@ async def get_jooble_jobs(on_job=None) -> list:
                             await on_job(parsed)
                         except Exception:
                             pass
-
-                await asyncio.sleep(0.3)
 
             except Exception:
                 continue
