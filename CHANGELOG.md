@@ -5,6 +5,31 @@ Todas as mudanças relevantes deste projeto são documentadas neste arquivo.
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/)
 e o projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [2.6.2] - 2026-05-22
+
+### Adicionado
+
+- **Rotação mensal automática do `job.csv` no scraper**: o sink CSV
+  append-only (`apps/scraper/src/persistence/csv_store.py`) cresce
+  indefinidamente, e o `CSVJobStore` carrega todas as URLs do arquivo num
+  set no startup pra dedup. Sem rotação, a cada mês o startup ficaria mais
+  pesado. Agora, no startup, se o `mtime` do `job.csv` é de um mês anterior,
+  o arquivo é renomeado para `job-YYYY-MM.csv` (mês da última modificação)
+  e um novo arquivo vazio é iniciado. A dedup mais ampla continua coberta
+  pelo `LocalJobStore` (`jobs.json`) e pelo `ExtractionTracker` (Supabase),
+  então a "perda" do set entre meses não causa duplicatas reais no
+  pipeline. Arquivos rotacionados ficam em `apps/scraper/src/data/` lado a
+  lado e prontos para análise offline (Excel, Pandas, BI).
+
+- **Restart diário do scraper documentado em `OPERACAO.md`**: o processo
+  Python sofre fragmentação de heap depois dos picos de coleta — mesmo
+  ocioso na pausa de 2h, segura ~1.3 GB porque o allocator do CPython
+  raramente devolve memória ao SO. A `OPERACAO.md` agora traz o comando
+  de cron pra reiniciar o scraper 1x/dia às 04:00 BRT (cai com alta
+  probabilidade na pausa de 2h entre lotes). Nenhuma vaga se perde: o
+  `ExtractionTracker` persiste o estado de cada URL no Supabase
+  (`extraction_jobs`), e o startup retoma de onde parou.
+
 ## [2.6.1] - 2026-05-22
 
 ### Corrigido
