@@ -429,10 +429,10 @@ const PLUS_OPTION = (action: 'checkout' | 'change', ctaLabel: string, sub: strin
   sub,
   ctaLabel,
   features: [
-    'Vagas no seu WhatsApp privado (DM individual)',
+    'Vagas direto no seu WhatsApp privado (DM)',
     'IA filtra cada vaga pelo seu perfil',
     'Match score 0–100 por vaga',
-    'Prioridade no recebimento'
+    'Prioridade no recebimento — sem ruído do grupo'
   ],
   action
 })

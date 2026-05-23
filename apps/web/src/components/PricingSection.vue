@@ -146,10 +146,16 @@ const plans = [
       {
         title: 'Entrega no privado',
         items: [
-          { highlight: 'DM individual', label: 'no seu WhatsApp (não no grupo)' },
+          { highlight: 'DM individual', label: 'no seu WhatsApp — sem ruído de grupo' },
           { highlight: 'IA analisa', label: 'cada vaga e calcula o match com seu perfil' },
           { highlight: 'Match score 0–100', label: 'em toda vaga recebida' },
-          { highlight: 'Tempo real', label: '— vagas chegam antes do grupo Pro' }
+          { highlight: 'Tempo real', label: '— vagas filtradas chegam direto pra você' }
+        ]
+      },
+      {
+        title: 'Não inclui',
+        items: [
+          { label: 'Acesso ao grupo Pro (canais são separados)', kind: 'off' }
         ]
       },
       {
