@@ -30,7 +30,13 @@ from bs4 import BeautifulSoup
 from curl_cffi import requests
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
-from variavel import get_active_stacks  # noqa: E402
+from variavel import get_active_batch_key, get_active_stacks  # noqa: E402
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+from src.persistence.progress_tracker import progress  # noqa: E402
+
+import logging
+logger = logging.getLogger("scraper.engine.jooble")
 from src.persistence.extraction_tracker import tracker  # noqa: E402
 from src.utils.http_session import fetch_sync  # noqa: E402
 from src.utils.job_fallbacks import apply_description_fallbacks  # noqa: E402
@@ -336,9 +342,40 @@ async def get_jooble_jobs(on_job=None) -> list:
     seen_ids: set[str] = set()
     session = get_session()
 
-    for stack in get_active_stacks():
+    # ---- Checkpoint -----------------------------------------------------
+    stacks_list = list(get_active_stacks())
+    batch_key = get_active_batch_key()
+    cursor = await progress.resume("jooble", batch_key) if batch_key else None
+    resume_stack = (cursor or {}).get("stack")
+    resume_variant_idx = int((cursor or {}).get("variant_idx", 0))
+    resume_stack_idx = 0
+    if cursor:
+        try:
+            resume_stack_idx = stacks_list.index(resume_stack) if resume_stack else 0
+        except ValueError:
+            cursor = None
+            resume_variant_idx = 0
+    if cursor:
+        logger.info("jooble_resume", extra={
+            "batch_key": batch_key, "stack": resume_stack,
+            "stack_idx": resume_stack_idx, "variant_idx": resume_variant_idx,
+        })
+
+    for stack_idx, stack in enumerate(stacks_list):
+        if stack_idx < resume_stack_idx:
+            continue
         encoded = urllib.parse.quote(stack)
-        for variant in _LISTING_VARIANTS:
+        start_variant_idx = (
+            resume_variant_idx if stack_idx == resume_stack_idx else 0
+        )
+        for variant_idx, variant in enumerate(_LISTING_VARIANTS):
+            if variant_idx < start_variant_idx:
+                continue
+            if batch_key:
+                progress.set_cursor("jooble", batch_key, {
+                    "stack_idx": stack_idx, "stack": stack,
+                    "variant_idx": variant_idx, "variant": variant,
+                })
             try:
                 url = f"https://br.jooble.org/SearchResult?ukw={encoded}{variant}"
                 response = await fetch_sync(session, url, timeout=30)
@@ -384,6 +421,9 @@ async def get_jooble_jobs(on_job=None) -> list:
 
             except Exception:
                 continue
+
+    if batch_key:
+        await progress.clear("jooble", batch_key)
 
     print(f"Foram obtidas {len(jobs)} vagas do site Jooble")
     return jobs

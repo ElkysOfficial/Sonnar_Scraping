@@ -20,9 +20,14 @@ from datetime import datetime
 from curl_cffi import requests
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+from variavel import get_active_batch_key  # noqa: E402
 from src.persistence.extraction_tracker import tracker  # noqa: E402
+from src.persistence.progress_tracker import progress  # noqa: E402
 from src.utils.http_session import fetch_sync  # noqa: E402
 from src.utils.job_fallbacks import apply_description_fallbacks  # noqa: E402
+
+import logging
+logger = logging.getLogger("scraper.engine.weworkremotely")
 from src.utils.text_utils import extract_skills, strip_html  # noqa: E402
 
 
@@ -164,7 +169,28 @@ async def get_weworkremotely_jobs(on_job=None) -> list:
     seen: set[str] = set()
     session = get_session()
 
-    for rss_url in RSS_FEEDS:
+    # ---- Checkpoint -----------------------------------------------------
+    batch_key = get_active_batch_key()
+    cursor = await progress.resume("weworkremotely", batch_key) if batch_key else None
+    resume_feed = (cursor or {}).get("feed")
+    resume_idx = 0
+    if cursor:
+        try:
+            resume_idx = RSS_FEEDS.index(resume_feed) if resume_feed else 0
+        except ValueError:
+            cursor = None
+    if cursor:
+        logger.info("weworkremotely_resume", extra={
+            "batch_key": batch_key, "feed": resume_feed, "feed_idx": resume_idx,
+        })
+
+    for feed_idx, rss_url in enumerate(RSS_FEEDS):
+        if feed_idx < resume_idx:
+            continue
+        if batch_key:
+            progress.set_cursor("weworkremotely", batch_key, {
+                "feed_idx": feed_idx, "feed": rss_url,
+            })
         response = await fetch_sync(session, rss_url, timeout=30)
         if response is None or response.status_code != 200:
             continue
@@ -195,6 +221,9 @@ async def get_weworkremotely_jobs(on_job=None) -> list:
                     pass
 
         await asyncio.sleep(0.3)
+
+    if batch_key:
+        await progress.clear("weworkremotely", batch_key)
 
     print(f"Foram obtidas {len(jobs)} vagas do site WeWorkRemotely")
     return jobs

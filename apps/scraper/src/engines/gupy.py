@@ -16,11 +16,17 @@ import urllib.parse
 from urllib.parse import urlparse, urlunparse
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-from variavel import get_active_stacks  # noqa: E402
+from variavel import get_active_batch_key, get_active_stacks  # noqa: E402
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 from src.persistence.extraction_tracker import tracker  # noqa: E402
+from src.persistence.progress_tracker import progress  # noqa: E402
 from src.utils.http_session import HttpSession, fetch  # noqa: E402
 from src.utils.job_fallbacks import apply_description_fallbacks  # noqa: E402
 from src.utils.text_utils import extract_skills, strip_html  # noqa: E402
+
+import logging
+logger = logging.getLogger("scraper.engine.gupy")
 
 
 PARSER_VERSION = "gupy-2026.05.08"
@@ -162,7 +168,31 @@ async def get_gupy_jobs(on_job=None) -> list:
     seen: set[str] = set()
 
     client = await get_session()
-    for stack in get_active_stacks():
+
+    # ---- Checkpoint -----------------------------------------------------
+    stacks_list = list(get_active_stacks())
+    batch_key = get_active_batch_key()
+    cursor = await progress.resume("gupy", batch_key) if batch_key else None
+    resume_stack = (cursor or {}).get("stack")
+    resume_stack_idx = 0
+    if cursor:
+        try:
+            resume_stack_idx = stacks_list.index(resume_stack) if resume_stack else 0
+        except ValueError:
+            cursor = None
+    if cursor:
+        logger.info("gupy_resume", extra={
+            "batch_key": batch_key, "stack": resume_stack,
+            "stack_idx": resume_stack_idx,
+        })
+
+    for stack_idx, stack in enumerate(stacks_list):
+        if stack_idx < resume_stack_idx:
+            continue
+        if batch_key:
+            progress.set_cursor("gupy", batch_key, {
+                "stack_idx": stack_idx, "stack": stack,
+            })
         encoded = urllib.parse.quote(stack)
         url = f"https://portal.api.gupy.io/api/v1/jobs?jobName={encoded}&limit=1000"
         response = await fetch(client, url)
@@ -182,6 +212,9 @@ async def get_gupy_jobs(on_job=None) -> list:
                     await on_job(parsed)
                 except Exception:
                     pass
+
+    if batch_key:
+        await progress.clear("gupy", batch_key)
 
     print(f"Foram obtidas {len(jobs)} vagas do site Gupy")
     return jobs

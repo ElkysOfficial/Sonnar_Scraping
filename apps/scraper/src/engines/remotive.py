@@ -14,11 +14,15 @@ import sys
 from curl_cffi import requests
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
-from variavel import stacks  # noqa: E402
+from variavel import get_active_batch_key, stacks  # noqa: E402
 from src.persistence.extraction_tracker import tracker  # noqa: E402
+from src.persistence.progress_tracker import progress  # noqa: E402
 from src.utils.http_session import fetch_sync  # noqa: E402
 from src.utils.job_fallbacks import apply_description_fallbacks  # noqa: E402
 from src.utils.text_utils import extract_skills, strip_html  # noqa: E402
+
+import logging
+logger = logging.getLogger("scraper.engine.remotive")
 
 
 PARSER_VERSION = "remotive-2026.05.07"
@@ -150,7 +154,31 @@ async def get_remotive_jobs(on_job=None) -> list:
     seen_ids = set()
     session = get_session()
 
-    for category in REMOTIVE_CATEGORIES:
+    # ---- Checkpoint -----------------------------------------------------
+    batch_key = get_active_batch_key()
+    cursor = await progress.resume("remotive", batch_key) if batch_key else None
+    resume_category = (cursor or {}).get("category")
+    resume_idx = 0
+    if cursor:
+        try:
+            resume_idx = (
+                REMOTIVE_CATEGORIES.index(resume_category) if resume_category else 0
+            )
+        except ValueError:
+            cursor = None
+    if cursor:
+        logger.info("remotive_resume", extra={
+            "batch_key": batch_key, "category": resume_category,
+            "category_idx": resume_idx,
+        })
+
+    for cat_idx, category in enumerate(REMOTIVE_CATEGORIES):
+        if cat_idx < resume_idx:
+            continue
+        if batch_key:
+            progress.set_cursor("remotive", batch_key, {
+                "category_idx": cat_idx, "category": category,
+            })
         try:
             url = f"https://remotive.com/api/remote-jobs?category={category}"
             response = await fetch_sync(session, url, timeout=30)
@@ -180,6 +208,9 @@ async def get_remotive_jobs(on_job=None) -> list:
 
         except Exception:
             continue
+
+    if batch_key:
+        await progress.clear("remotive", batch_key)
 
     print(f"Foram obtidas {len(jobs)} vagas do site Remotive")
     return jobs

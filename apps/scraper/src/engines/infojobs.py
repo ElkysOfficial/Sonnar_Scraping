@@ -19,7 +19,13 @@ import urllib.parse
 from bs4 import BeautifulSoup
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
-from variavel import get_active_stacks  # noqa: E402
+from variavel import get_active_batch_key, get_active_stacks  # noqa: E402
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+from src.persistence.progress_tracker import progress  # noqa: E402
+
+import logging
+logger = logging.getLogger("scraper.engine.infojobs")
 from src.persistence.extraction_tracker import tracker  # noqa: E402
 from src.utils.http_session import HttpSession, fetch  # noqa: E402
 
@@ -287,9 +293,36 @@ async def get_infojobs_links() -> list[str]:
     seen: set[str] = set()
 
     client = await get_session()
-    for stack in get_active_stacks():
+
+    # ---- Checkpoint -----------------------------------------------------
+    stacks_list = list(get_active_stacks())
+    batch_key = get_active_batch_key()
+    cursor = await progress.resume("infojobs", batch_key) if batch_key else None
+    resume_stack = (cursor or {}).get("stack")
+    resume_page = int((cursor or {}).get("page", 1))
+    resume_stack_idx = 0
+    if cursor:
+        try:
+            resume_stack_idx = stacks_list.index(resume_stack) if resume_stack else 0
+        except ValueError:
+            cursor = None
+            resume_page = 1
+    if cursor:
+        logger.info("infojobs_resume", extra={
+            "batch_key": batch_key, "stack": resume_stack,
+            "stack_idx": resume_stack_idx, "page": resume_page,
+        })
+
+    for stack_idx, stack in enumerate(stacks_list):
+        if stack_idx < resume_stack_idx:
+            continue
         encoded = urllib.parse.quote(stack)
-        for page in range(1, _LISTING_MAX_PAGES + 1):
+        start_page = resume_page if stack_idx == resume_stack_idx else 1
+        for page in range(start_page, _LISTING_MAX_PAGES + 1):
+            if batch_key:
+                progress.set_cursor("infojobs", batch_key, {
+                    "stack_idx": stack_idx, "stack": stack, "page": page,
+                })
             # ``Page`` com P maiusculo: o lowercase eh ignorado pelo backend.
             url = (
                 f"https://www.infojobs.com.br/empregos.aspx"
@@ -325,6 +358,9 @@ async def get_infojobs_links() -> list[str]:
                     new_count += 1
             if new_count == 0:
                 break  # pagina so com duplicatas - resultset esgotou
+
+    if batch_key:
+        await progress.clear("infojobs", batch_key)
 
     return links
 

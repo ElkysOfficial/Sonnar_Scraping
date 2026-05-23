@@ -19,8 +19,13 @@ import sys
 from bs4 import BeautifulSoup
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+from variavel import get_active_batch_key  # noqa: E402
 from src.persistence.extraction_tracker import tracker  # noqa: E402
+from src.persistence.progress_tracker import progress  # noqa: E402
 from src.utils.http_session import HttpSession, fetch  # noqa: E402
+
+import logging
+logger = logging.getLogger("scraper.engine.michaelpage")
 
 
 PARSER_VERSION = "michaelpage-2026.05.10.2"
@@ -280,7 +285,33 @@ async def get_michaelpage_jobs(on_job=None) -> list:
     seen_links = set()
 
     client = await get_session()
-    for category in MICHAELPAGE_CATEGORIES:
+
+    # ---- Checkpoint -----------------------------------------------------
+    batch_key = get_active_batch_key()
+    cursor = await progress.resume("michaelpage", batch_key) if batch_key else None
+    resume_category = (cursor or {}).get("category")
+    resume_idx = 0
+    if cursor:
+        try:
+            resume_idx = (
+                MICHAELPAGE_CATEGORIES.index(resume_category)
+                if resume_category else 0
+            )
+        except ValueError:
+            cursor = None
+    if cursor:
+        logger.info("michaelpage_resume", extra={
+            "batch_key": batch_key, "category": resume_category,
+            "category_idx": resume_idx,
+        })
+
+    for cat_idx, category in enumerate(MICHAELPAGE_CATEGORIES):
+        if cat_idx < resume_idx:
+            continue
+        if batch_key:
+            progress.set_cursor("michaelpage", batch_key, {
+                "category_idx": cat_idx, "category": category,
+            })
         try:
             url = f"https://www.michaelpage.com.br/jobs/{category}"
             response = await fetch(client, url)
@@ -426,6 +457,9 @@ async def get_michaelpage_jobs(on_job=None) -> list:
                 await on_job(j)
             except Exception:
                 pass
+
+    if batch_key:
+        await progress.clear("michaelpage", batch_key)
 
     print(f"Foram obtidas {len(jobs)} vagas do site MichaelPage")
     return jobs
