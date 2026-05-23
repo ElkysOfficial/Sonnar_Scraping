@@ -5,6 +5,35 @@ Todas as mudanças relevantes deste projeto são documentadas neste arquivo.
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/)
 e o projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [2.14.0] - 2026-05-23
+
+### Adicionado
+
+- **Início da família PR 4 (extração de "responsabilidades" + tradução
+  multi-idioma) — rumo a v3.0.0**:
+  - **Documento de design** em `docs/extraction-responsibilities.md` com a
+    análise de ~50 vagas por engine no banco, mapeamento dos cabeçalhos
+    PT/EN que sinalizam "o que a pessoa faz", marcadores a ignorar (sobre
+    empresa, requisitos, benefícios, etc.), estratégia de tradução por
+    engine, e roadmap das sub-PRs (v2.14 → v3.0.0).
+  - **Migration `jobs_responsibilities_and_lang`**: novas colunas opcionais
+    em `public.jobs`:
+    - `responsibilities TEXT` — texto extraído da description com apenas o
+      "o que a pessoa faz", já traduzido pra PT quando aplicável.
+    - `description_lang TEXT` — código ISO 639-1 do idioma detectado da
+      description original (`pt`, `en`, `es`, ...).
+  - Schema retrocompatível (campos opcionais) — código existente não quebra.
+
+### Próximos passos (v2.15 → v3.0.0)
+
+Conforme `docs/extraction-responsibilities.md`:
+- v2.15.0 — Módulo de extração por seções (regex de cabeçalhos)
+- v2.16.0 — Módulo de detecção de idioma centralizado
+- v2.17.0 → v2.21.0 — Aplicação engine por engine (LinkedIn, Dice, EN-only,
+  PT-only, Careerjet)
+- v2.22.0 — Formatter usa `responsibilities` (fallback `description`)
+- **v3.0.0** — marco oficial
+
 ## [2.13.1] - 2026-05-23
 
 ### Adicionado
