@@ -137,27 +137,27 @@ const plans = [
     tier: 'plus',
     name: 'Plus',
     price: 10,
-    tagline: 'A IA seleciona vagas alinhadas ao seu perfil. Para quem busca direcionamento.',
+    tagline: 'Vagas no seu WhatsApp privado, com IA filtrando pelo seu perfil.',
     ctaLabel: 'Começar 7 dias grátis',
     badge: 'Mais Popular',
     featured: true,
     trial: '7 dias grátis · cancele quando quiser',
     featureGroups: [
       {
-        title: 'Tudo do Pro',
+        title: 'Entrega no privado',
         items: [
-          { label: 'Tudo que está no plano Pro' }
+          { highlight: 'DM individual', label: 'no seu WhatsApp (não no grupo)' },
+          { highlight: 'IA analisa', label: 'cada vaga e calcula o match com seu perfil' },
+          { highlight: 'Match score 0–100', label: 'em toda vaga recebida' },
+          { highlight: 'Tempo real', label: '— vagas chegam antes do grupo Pro' }
         ]
       },
       {
-        title: 'IA + Curadoria',
+        title: 'Em breve',
         items: [
-          { highlight: 'IA analisa', label: 'cada vaga e calcula match com seu perfil' },
-          { highlight: 'Match score 0–100', label: 'em toda vaga recebida' },
-          { highlight: 'Tempo real', label: '- vagas chegam antes do canal Pro' },
           { highlight: 'Curadoria humana:', label: 'top 10 vagas semanais selecionadas', kind: 'soon' },
           { highlight: 'Relatório semanal', label: 'do mercado por stack e senioridade', kind: 'soon' },
-          { label: 'Suporte prioritário no WhatsApp' }
+          { label: 'Suporte prioritário no WhatsApp', kind: 'soon' }
         ]
       }
     ]
@@ -166,21 +166,22 @@ const plans = [
     tier: 'pro',
     name: 'Pro',
     price: 5,
-    tagline: 'Todas as vagas de TI no seu canal exclusivo do WhatsApp.',
+    tagline: 'Grupo exclusivo no WhatsApp com todas as vagas de TI.',
     ctaLabel: 'Começar 7 dias grátis',
     trial: '7 dias grátis · cancele quando quiser',
     featureGroups: [
       {
-        title: 'Vagas',
+        title: 'Entrega no grupo',
         items: [
-          { highlight: 'Canal exclusivo no WhatsApp', label: '(separado da comunidade)' },
-          { highlight: 'Todas as vagas de TI', label: 'coletadas das principais plataformas' },
+          { highlight: 'Grupo exclusivo Pro', label: 'no WhatsApp (separado da Comunidade)' },
+          { highlight: 'Todas as vagas de TI', label: 'das principais plataformas' },
           { label: 'Sem duplicatas, sem ruído' }
         ]
       },
       {
         title: 'Não inclui',
         items: [
+          { label: 'Entrega no WhatsApp privado (Plus)', kind: 'off' },
           { label: 'Filtro das vagas pelo seu perfil (Plus)', kind: 'off' },
           { label: 'Match score por IA (Plus)', kind: 'off' }
         ]

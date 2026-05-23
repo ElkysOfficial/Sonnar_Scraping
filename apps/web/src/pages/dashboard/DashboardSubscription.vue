@@ -160,7 +160,6 @@
       :subtitle="confirmDialog.subtitle"
       :tone="confirmDialog.tone"
       :bullets="confirmDialog.bullets"
-      :footnote="confirmDialog.footnote"
       :confirm-label="confirmDialog.confirmLabel"
       :cancel-label="confirmDialog.cancelLabel"
       :loading-label="confirmDialog.loadingLabel"
@@ -168,7 +167,7 @@
       @confirm="onConfirmDialog"
       @cancel="onCancelDialog"
     >
-      <p v-if="confirmDialog.lead">{{ confirmDialog.lead }}</p>
+      <p v-if="confirmDialog.lead" v-html="confirmDialog.lead" />
     </ConfirmDialog>
   </div>
 </template>
@@ -192,7 +191,6 @@ interface DialogState {
   tone: DialogTone
   lead: string
   bullets: string[]
-  footnote: string
   confirmLabel: string
   cancelLabel: string
   loadingLabel: string
@@ -206,7 +204,6 @@ const confirmDialog = reactive<DialogState>({
   tone: 'info',
   lead: '',
   bullets: [],
-  footnote: '',
   confirmLabel: 'Confirmar',
   cancelLabel: 'Voltar',
   loadingLabel: 'Aguarde...',
@@ -221,7 +218,6 @@ function askConfirmation(opts: Partial<Omit<DialogState, 'open' | 'resolve' | 'l
     confirmDialog.tone = opts.tone ?? 'info'
     confirmDialog.lead = opts.lead ?? ''
     confirmDialog.bullets = opts.bullets ?? []
-    confirmDialog.footnote = opts.footnote ?? ''
     confirmDialog.confirmLabel = opts.confirmLabel ?? 'Confirmar'
     confirmDialog.cancelLabel = opts.cancelLabel ?? 'Voltar'
     confirmDialog.loadingLabel = opts.loadingLabel ?? 'Aguarde...'
@@ -349,22 +345,26 @@ const canChangePlan = computed(() =>
 )
 
 // ----- O que o plano inclui -----
+// Fonte de verdade: apps/whatsapp/sender/src/utils/database.js
+//  - Plus: envio privado (DM) com filtro de IA pelo perfil
+//  - Pro:  acesso ao grupo exclusivo do WhatsApp, todas as vagas de TI
+//  - Free: nada do bot, só canais publicos da Comunidade
 const planFeatures = computed<string[]>(() => {
   const p = subscriber.value?.plan
   if (p === 'plus') {
     return [
-      'Vagas em tempo real direto no seu WhatsApp',
+      'Vagas no seu WhatsApp privado (DM individual)',
       'IA analisa e filtra cada vaga pelo seu perfil',
-      'Match score individual por vaga',
+      'Match score individual por vaga (0–100)',
       'Prioridade no recebimento das vagas novas',
       'Sem duplicatas e sem ruído'
     ]
   }
   if (p === 'pro') {
     return [
-      'Todas as vagas de TI no seu canal exclusivo do WhatsApp',
-      'Atualização contínua das principais plataformas',
-      'Sem duplicatas e sem ruído'
+      'Acesso ao grupo exclusivo Pro no WhatsApp',
+      'Todas as vagas de TI das principais plataformas',
+      'Atualização contínua, sem duplicatas'
     ]
   }
   return [
@@ -375,9 +375,9 @@ const planFeatures = computed<string[]>(() => {
 
 const includesCopy = computed(() => {
   const p = subscriber.value?.plan
-  if (p === 'plus') return 'Seu plano usa IA para entregar só o que combina com você.'
-  if (p === 'pro') return 'Todas as vagas de TI no seu canal exclusivo, sem ruído.'
-  return 'Faça upgrade para receber vagas personalizadas.'
+  if (p === 'plus') return 'Você recebe no privado, com curadoria por IA do que combina com seu perfil.'
+  if (p === 'pro') return 'Todas as vagas de TI no grupo exclusivo Pro, sem filtro personalizado.'
+  return 'Faça upgrade para receber vagas direto no WhatsApp.'
 })
 
 // ----- Opcoes de mudanca de plano -----
@@ -415,7 +415,7 @@ const PRO_OPTION = (action: 'checkout' | 'change', ctaLabel: string, sub: string
   sub,
   ctaLabel,
   features: [
-    'Canal exclusivo de vagas no WhatsApp',
+    'Grupo exclusivo Pro no WhatsApp',
     'Todas as vagas de TI, em tempo real',
     'Sem duplicatas, sem ruído'
   ],
@@ -429,10 +429,10 @@ const PLUS_OPTION = (action: 'checkout' | 'change', ctaLabel: string, sub: strin
   sub,
   ctaLabel,
   features: [
-    'Tudo do Pro',
-    'IA filtra vagas pelo seu perfil',
-    'Match score por vaga',
-    'Prioridade nas vagas novas'
+    'Vagas no seu WhatsApp privado (DM individual)',
+    'IA filtra cada vaga pelo seu perfil',
+    'Match score 0–100 por vaga',
+    'Prioridade no recebimento'
   ],
   action
 })
@@ -476,21 +476,38 @@ async function onChoose(option: PlanOption) {
     await startCheckout(option.tier)
     return
   }
-  // Downgrade Plus -> Pro: confirma o agendamento via modal.
+  // Upgrade Pro -> Plus: confirma o ganho de canal privado + IA.
+  if (option.tier === 'plus' && subscriber.value?.plan === 'pro') {
+    const ok = await askConfirmation({
+      title: 'Fazer upgrade para o Plus?',
+      subtitle: 'A mudança é imediata.',
+      tone: 'info',
+      lead: 'Você sai do <strong>grupo Pro</strong> e passa a receber as vagas no <strong>seu WhatsApp privado</strong>, filtradas pela IA conforme seu perfil.',
+      bullets: [
+        'Vagas filtradas pelo seu perfil, com match score 0–100',
+        'Recebimento no seu WhatsApp privado (não no grupo)',
+        'Você paga só a diferença prorateada do mês atual'
+      ],
+      confirmLabel: 'Sim, fazer upgrade',
+      cancelLabel: 'Continuar no Pro',
+      loadingLabel: 'Aplicando upgrade...'
+    })
+    if (!ok) return
+  }
+  // Downgrade Plus -> Pro: explica que sai do privado e vai pro grupo.
   if (option.tier === 'pro' && subscriber.value?.plan === 'plus') {
     const when = formatDate(subscriber.value?.current_period_end || '')
     const ok = await askConfirmation({
       title: 'Trocar para o plano Pro?',
       subtitle: `A mudança vira efetiva em ${when}.`,
       tone: 'warning',
-      lead: 'Você está fazendo um downgrade do Plus para o Pro. A mudança só vale a partir do fim do período já pago — não há cobrança extra agora nem reembolso.',
+      lead: 'Você está fazendo um downgrade. <strong>Você deixa de receber as vagas no seu WhatsApp privado e passa a receber no grupo exclusivo Pro</strong> — todas as vagas de TI, sem filtro pelo seu perfil e sem match score por IA.',
       bullets: [
-        `Você continua recebendo Plus até ${when}`,
-        'A partir dessa data você passa a receber só vagas Pro',
-        'Você pode reverter o agendamento a qualquer momento antes dessa data'
+        `Você continua no Plus (privado + IA) até ${when}`,
+        'A partir dessa data você entra no grupo Pro do WhatsApp',
+        'Pode reverter a qualquer momento antes da data'
       ],
-      footnote: 'Você pode mudar de ideia clicando em "Manter Plus" no painel.',
-      confirmLabel: 'Sim, agendar mudança',
+      confirmLabel: 'Sim, agendar downgrade',
       cancelLabel: 'Continuar no Plus',
       loadingLabel: 'Agendando...'
     })
@@ -499,6 +516,7 @@ async function onChoose(option: PlanOption) {
   confirmDialog.loading = true
   try {
     await changePlan(option.tier)
+    closeDialog(true)
   } finally {
     confirmDialog.loading = false
   }
@@ -509,9 +527,9 @@ async function onRevert() {
   const targetFriendly = scheduledPlanLabel.value
   const ok = await askConfirmation({
     title: `Manter o ${planFriendly}?`,
-    subtitle: `Cancelar a mudança agendada para ${targetFriendly}.`,
+    subtitle: `Vamos cancelar a mudança agendada para ${targetFriendly}.`,
     tone: 'info',
-    lead: `Sua assinatura volta ao estado normal e continua no ${planFriendly} com renovação automática. Nada será cobrado a mais.`,
+    lead: `Sua assinatura volta ao estado normal e continua no <strong>${planFriendly}</strong> com renovação automática. Nada será cobrado a mais.`,
     confirmLabel: `Sim, manter ${planFriendly}`,
     cancelLabel: 'Voltar',
     loadingLabel: 'Cancelando agendamento...'
@@ -562,17 +580,20 @@ async function goManage() {
 async function onCancel() {
   const when = formatDate(subscriber.value?.current_period_end || '')
   const planFriendly = planLabel.value
+  const isPlus = subscriber.value?.plan === 'plus'
+  const channelNow = isPlus
+    ? 'no seu WhatsApp privado, com IA filtrando pelo seu perfil'
+    : 'no grupo Pro do WhatsApp, com todas as vagas de TI'
   const ok = await askConfirmation({
     title: 'Cancelar sua assinatura?',
     subtitle: `Você continua com o ${planFriendly} até ${when}.`,
     tone: 'danger',
-    lead: 'Você não será cobrado novamente. Sua assinatura segue ativa até o fim do período já pago — depois disso sua conta volta para o plano Comunidade (gratuito).',
+    lead: `Sem cobrança extra, sem reembolso. Hoje você recebe vagas <strong>${channelNow}</strong>. Depois do fim do período, você <strong>sai do canal pago</strong> e volta para a Comunidade (apenas canais públicos do Discord e WhatsApp).`,
     bullets: [
       `Acesso ao ${planFriendly} mantido até ${when}`,
-      'Depois você continua nos canais públicos da Comunidade',
-      'Você pode reverter o cancelamento a qualquer momento antes dessa data'
+      'Depois sua conta vira Comunidade (gratuita)',
+      'Pode reverter o cancelamento a qualquer momento antes dessa data'
     ],
-    footnote: 'Sem cobrança extra, sem reembolso.',
     confirmLabel: 'Sim, cancelar',
     cancelLabel: 'Continuar assinando',
     loadingLabel: 'Cancelando...'
