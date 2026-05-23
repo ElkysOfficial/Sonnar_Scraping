@@ -46,12 +46,16 @@ from email.utils import parsedate_to_datetime
 import httpx
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
-from variavel import get_active_stacks  # noqa: E402
+from variavel import get_active_batch_key, get_active_stacks  # noqa: E402
 from src.persistence.extraction_tracker import tracker  # noqa: E402
+from src.persistence.progress_tracker import progress  # noqa: E402
 from src.utils.job_fallbacks import apply_description_fallbacks  # noqa: E402
 from src.utils.text_utils import extract_skills, strip_html  # noqa: E402
 from src.utils.translator import prepare as prepare_translation  # noqa: E402
 from src.utils.translator import translate_to_pt  # noqa: E402
+
+import logging
+logger = logging.getLogger("scraper.engine.careerjet")
 
 # Em modo standalone (python -m src.engines.careerjet) o .env ainda nao foi
 # carregado pelo scrapy.py - garante a chave de API tambem nesse cenario.
@@ -485,14 +489,87 @@ async def get_careerjet_jobs(on_job=None) -> list:
             except Exception:
                 pass
 
+    # ---- Checkpoint: retomada do ponto exato apos restart -----------------
+    #
+    # Granularidade: por combinacao (locale, stack, variant). A pagina
+    # interna nao eh checkpointada — perda max no restart eh ~3 paginas.
+    # Retomada por LABEL (nao indice) porque o lote rotativo de locales
+    # pode mudar entre o checkpoint e o restart. Se algum label salvo nao
+    # existir mais no contexto atual, descarta o cursor.
+    stacks_list = list(get_active_stacks())
+    batch_key = get_active_batch_key()
+    cursor = await progress.resume("careerjet", batch_key) if batch_key else None
+
+    resume_locale = (cursor or {}).get("locale")
+    resume_stack = (cursor or {}).get("stack")
+    resume_variant = (cursor or {}).get("variant")
+
+    resume_locale_idx = 0
+    resume_stack_idx = 0
+    resume_variant_idx = 0
+    if cursor:
+        try:
+            resume_locale_idx = locales.index(resume_locale) if resume_locale else 0
+        except ValueError:
+            cursor = None  # locale salvo fora do lote rotativo atual
+
+    if cursor:
+        try:
+            resume_stack_idx = (
+                stacks_list.index(resume_stack) if resume_stack else 0
+            )
+        except ValueError:
+            cursor = None
+            resume_locale_idx = 0
+
+    if cursor:
+        # variant depende do locale onde paramos — resolve no contexto
+        # daquele locale especifico
+        variants_at_resume = _location_variants(locales[resume_locale_idx])
+        try:
+            resume_variant_idx = (
+                variants_at_resume.index(resume_variant)
+                if resume_variant is not None else 0
+            )
+        except ValueError:
+            resume_variant_idx = 0
+
+    if cursor:
+        logger.info("careerjet_resume", extra={
+            "batch_key": batch_key,
+            "locale": resume_locale, "locale_idx": resume_locale_idx,
+            "stack": resume_stack, "stack_idx": resume_stack_idx,
+            "variant": resume_variant, "variant_idx": resume_variant_idx,
+        })
+
     async with httpx.AsyncClient(auth=auth, timeout=timeout) as client:
-        for locale in locales:
+        for locale_idx, locale in enumerate(locales):
+            if locale_idx < resume_locale_idx:
+                continue
             locale_lang = locale[:2]
             variants = _location_variants(locale)
             max_pages = _max_pages(locale)
 
-            for stack in get_active_stacks():
-                for location in variants:
+            for stack_idx, stack in enumerate(stacks_list):
+                if locale_idx == resume_locale_idx and stack_idx < resume_stack_idx:
+                    continue
+                for variant_idx, location in enumerate(variants):
+                    if (locale_idx == resume_locale_idx
+                            and stack_idx == resume_stack_idx
+                            and variant_idx < resume_variant_idx):
+                        continue
+
+                    # Salva o cursor APONTANDO PRA ESTA combinacao antes
+                    # de executa-la. Se o processo cair durante, ao
+                    # reiniciar refazemos so esta combinacao (max ~3
+                    # paginas), nao o batch inteiro.
+                    if batch_key:
+                        progress.set_cursor("careerjet", batch_key, {
+                            "locale_idx": locale_idx, "locale": locale,
+                            "stack_idx": stack_idx, "stack": stack,
+                            "variant_idx": variant_idx, "variant": location,
+                        })
+
                     total_pages = 1
                     page = 1
                     while page <= min(total_pages, max_pages):
@@ -503,6 +580,8 @@ async def get_careerjet_jobs(on_job=None) -> list:
                         except _CareerjetConfigError as exc:
                             print(f"[careerjet] erro de configuracao, abortando: {exc}")
                             print(f"Foram obtidas {len(jobs)} vagas do site careerjet")
+                            if batch_key:
+                                await progress.clear("careerjet", batch_key)
                             return jobs
 
                         if not page_jobs:
@@ -516,6 +595,10 @@ async def get_careerjet_jobs(on_job=None) -> list:
 
                         page += 1
                         await asyncio.sleep(0.25)
+
+    # Ciclo completo: limpa o cursor pra o proximo batch comecar do zero.
+    if batch_key:
+        await progress.clear("careerjet", batch_key)
 
     print(f"Foram obtidas {len(jobs)} vagas do site careerjet")
     return jobs

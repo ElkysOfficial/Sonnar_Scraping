@@ -5,6 +5,23 @@ Todas as mudanças relevantes deste projeto são documentadas neste arquivo.
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/)
 e o projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [2.8.0] - 2026-05-23
+
+### Adicionado
+
+- **Engine Careerjet agora retoma a varredura após restart**. Em
+  `apps/scraper/src/engines/careerjet.py`:
+  - **Checkpoint fino** por combinação `(locale, stack, variant)`. Antes de
+    cada combinação chama `progress.set_cursor("careerjet", batch_key, {...})`;
+    ao reiniciar, `progress.resume` devolve a posição salva e o loop pula
+    direto pra ela. A retomada é por **label** (não índice), então sobrevive
+    a mudanças no lote rotativo de locales — se o `locale` salvo não está no
+    `_active_locales()` atual, o cursor é descartado e o batch reinicia do
+    zero. Ao concluir o ciclo, `progress.clear` apaga o cursor.
+  - O Careerjet já tinha rotação por relógio dos 140 locales estrangeiros
+    (10 por ciclo, cobertura em ~28h) e varredura completa das 27 UFs do
+    Brasil — agora ganha persistência de posição entre restarts.
+
 ## [2.7.0] - 2026-05-23
 
 ### Adicionado
