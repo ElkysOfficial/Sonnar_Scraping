@@ -36,6 +36,18 @@ function asString(v: unknown): string | null {
   return typeof v === "string" ? v : null;
 }
 
+// Resolve plano a partir do price id do item da subscription. Cobre o caso
+// de upgrade Pro -> Plus feito via subscriptions.update (o metadata.plan
+// pode estar atualizado, mas o price e a fonte de verdade ultima).
+function planFromPriceId(priceId: string | null): string | null {
+  if (!priceId) return null;
+  const pro = Deno.env.get("STRIPE_PRICE_PRO");
+  const plus = Deno.env.get("STRIPE_PRICE_PLUS");
+  if (priceId === pro) return "pro";
+  if (priceId === plus) return "plus";
+  return null;
+}
+
 // Atualiza um subscriber localizando-o por subscription_id, customer_id ou
 // user_id (em ordem de preferência). Garante que activations via subscription.*
 // e invoice.paid funcionem mesmo que checkout.session.completed nunca chegue.
@@ -47,6 +59,8 @@ async function upsertSubscriberFromSubscription(
   const customerId = asString(sub.customer);
   const userId = asString(sub.metadata?.user_id);
   const planFromMeta = asString(sub.metadata?.plan);
+  const itemPriceId = asString(sub.items?.data?.[0]?.price?.id);
+  const resolvedPlan = planFromMeta ?? planFromPriceId(itemPriceId);
   const status = STATUS_MAP[sub.status] ?? "pending";
   const periodEnd = isoFromUnix(sub.current_period_end);
 
@@ -56,7 +70,15 @@ async function upsertSubscriberFromSubscription(
     current_period_end: periodEnd,
   };
   if (customerId) updatePayload.stripe_customer_id = customerId;
-  if (planFromMeta) updatePayload.plan = planFromMeta;
+  if (resolvedPlan) updatePayload.plan = resolvedPlan;
+
+  // Sincronizacao de agendamento de Pro/Plus -> Free via cancel_at_period_end.
+  // O caso Plus -> Pro NAO passa por aqui (so dispara subscription_schedule.*),
+  // entao nao mexemos em registros que ja tenham stripe_schedule_id.
+  if (sub.cancel_at_period_end) {
+    updatePayload.scheduled_plan = "free";
+    updatePayload.scheduled_change_at = periodEnd;
+  }
 
   // 1) Tenta por subscription_id (caso mais comum em renovações)
   const bySub = await supabase
@@ -93,6 +115,23 @@ async function upsertSubscriberFromSubscription(
   }
 
   return { matched: false, userId };
+}
+
+// Se o cliente reverteu o cancelamento (cancel_at_period_end == false) e
+// nosso banco ainda tinha scheduled_plan='free' pendurado, limpa. Nao mexe
+// em scheduled_plan='pro' que tem schedule_id - esses sao geridos pelos
+// eventos subscription_schedule.*.
+async function clearScheduledFreeIfReverted(
+  supabase: SupabaseClient,
+  sub: Stripe.Subscription
+): Promise<void> {
+  if (sub.cancel_at_period_end) return;
+  await supabase
+    .from("subscribers")
+    .update({ scheduled_plan: null, scheduled_change_at: null })
+    .eq("stripe_subscription_id", sub.id)
+    .eq("scheduled_plan", "free")
+    .is("stripe_schedule_id", null);
 }
 
 // =====================================================
@@ -441,6 +480,7 @@ serve(async (req) => {
     ) {
       const subscription = event.data.object as Stripe.Subscription;
       const result = await upsertSubscriberFromSubscription(supabase, subscription);
+      await clearScheduledFreeIfReverted(supabase, subscription);
 
       await supabase.from("stripe_events").insert({
         event_id: event.id,
@@ -531,11 +571,24 @@ serve(async (req) => {
     }
 
     // ---- customer.subscription.deleted ----
+    // Assinatura encerrada (cancel_at_period_end virou efetivo, ou cancelamento
+    // imediato). Em vez de marcar 'canceled', rebaixamos a conta para o plano
+    // Comunidade (free, active) - ela continua valida no portal e nos canais
+    // publicos da comunidade. Sem assinatura no Stripe, sem agendamento
+    // pendente.
     if (event.type === "customer.subscription.deleted") {
       const subscription = event.data.object as Stripe.Subscription;
       await supabase
         .from("subscribers")
-        .update({ status: "canceled" })
+        .update({
+          plan: "free",
+          status: "active",
+          stripe_subscription_id: null,
+          current_period_end: null,
+          scheduled_plan: null,
+          scheduled_change_at: null,
+          stripe_schedule_id: null,
+        })
         .eq("stripe_subscription_id", subscription.id);
 
       await supabase.from("stripe_events").insert({
@@ -545,7 +598,46 @@ serve(async (req) => {
         error: null,
       });
 
-      return jsonResponse({ received: true, status: "subscription_deleted" });
+      return jsonResponse({ received: true, status: "downgraded_to_free" });
+    }
+
+    // ---- subscription_schedule.released / .completed / .canceled ----
+    // Eventos do schedule criado em change-plan para Plus -> Pro:
+    //  - completed: a fase 2 (Pro) entrou em vigor e o schedule terminou.
+    //               A subscription continua viva, agora no price Pro - o
+    //               evento customer.subscription.updated subsequente atualiza
+    //               subscribers.plan via planFromPriceId.
+    //  - released : cliente desistiu do downgrade (revert-scheduled-change).
+    //               A subscription volta ao estado livre.
+    //  - canceled : caso raro - schedule foi cancelado antes de entrar em
+    //               vigor. Tratamos igual a released.
+    // Em todos os casos limpamos scheduled_* do subscriber.
+    if (
+      event.type === "subscription_schedule.released" ||
+      event.type === "subscription_schedule.completed" ||
+      event.type === "subscription_schedule.canceled"
+    ) {
+      const schedule = event.data.object as Stripe.SubscriptionSchedule;
+      await supabase
+        .from("subscribers")
+        .update({
+          scheduled_plan: null,
+          scheduled_change_at: null,
+          stripe_schedule_id: null,
+        })
+        .eq("stripe_schedule_id", schedule.id);
+
+      await supabase.from("stripe_events").insert({
+        event_id: event.id,
+        event_type: event.type,
+        payload: schedule,
+        error: null,
+      });
+
+      return jsonResponse({
+        received: true,
+        status: `schedule_${event.type.split(".")[1]}`,
+      });
     }
 
     // Outros eventos: só loga

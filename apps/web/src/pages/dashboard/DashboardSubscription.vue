@@ -18,7 +18,23 @@
           </span>
         </div>
 
-        <p class="dsub-hero__msg" :class="`dsub-hero__msg--${msgTone}`">{{ statusCopy }}</p>
+        <!-- Banner de mudanca agendada -->
+        <div v-if="hasScheduledChange" class="dsub-scheduled" role="status">
+          <div class="dsub-scheduled__text">
+            <strong>Mudanca agendada</strong>
+            <p>Sua assinatura mudara para <strong>{{ scheduledPlanLabel }}</strong> em <strong>{{ formatDate(subscriber.scheduled_change_at) }}</strong>. Voce continua com o {{ planLabel }} ate la.</p>
+          </div>
+          <button
+            type="button"
+            class="btn btn-ghost btn-sm"
+            :disabled="loadingRevert"
+            @click="onRevert"
+          >
+            {{ loadingRevert ? 'Cancelando...' : `Manter ${planLabel}` }}
+          </button>
+        </div>
+
+        <p v-else class="dsub-hero__msg" :class="`dsub-hero__msg--${msgTone}`">{{ statusCopy }}</p>
 
         <dl class="dsub-meta">
           <div>
@@ -91,16 +107,16 @@
       </aside>
     </div>
 
-    <!-- ============ UPGRADE ============ -->
-    <section v-if="subscriber?.plan !== 'plus'" class="dsub-upgrade">
+    <!-- ============ MUDAR DE PLANO ============ -->
+    <section v-if="canChangePlan && changeOptions.length > 0" class="dsub-upgrade">
       <header class="dsub-upgrade__head">
-        <h3>{{ upgradeHeading }}</h3>
-        <p>{{ upgradeCopy }}</p>
+        <h3>{{ changeHeading }}</h3>
+        <p>{{ changeCopy }}</p>
       </header>
 
       <div class="dsub-plans">
         <article
-          v-for="p in upgradeOptions"
+          v-for="p in changeOptions"
           :key="p.tier"
           class="dsub-plan-card"
           :class="{ 'dsub-plan-card--featured': p.featured }"
@@ -109,6 +125,7 @@
             <span class="dsub-plan-card__eyebrow">{{ p.label }}</span>
             <span class="dsub-plan-card__price">{{ p.price }}<small>/mês</small></span>
           </header>
+          <p class="dsub-plan-card__sub">{{ p.sub }}</p>
           <ul class="dsub-plan-card__features">
             <li v-for="f in p.features" :key="f">
               <span class="dsub-check" aria-hidden="true">
@@ -119,8 +136,13 @@
               <span>{{ f }}</span>
             </li>
           </ul>
-          <button class="btn" :class="p.featured ? 'btn-primary' : 'btn-secondary'" @click="upgrade(p.tier)">
-            Escolher {{ p.label }}
+          <button
+            class="btn"
+            :class="p.featured ? 'btn-primary' : 'btn-secondary'"
+            :disabled="loadingChange === p.tier"
+            @click="onChoose(p)"
+          >
+            {{ loadingChange === p.tier ? 'Aguarde...' : p.ctaLabel }}
           </button>
         </article>
       </div>
@@ -138,11 +160,15 @@ import { computed, ref } from 'vue'
 import { supabase } from '@/integrations/supabase/client'
 import { useAuth } from '@/composables/useAuth'
 
-const { subscriber } = useAuth()
+const { subscriber, fetchUserRole } = useAuth()
+
+type Plan = 'free' | 'pro' | 'plus'
 
 const loadingCheckout = ref(false)
 const loadingManage = ref(false)
 const loadingCancel = ref(false)
+const loadingRevert = ref(false)
+const loadingChange = ref<Plan | null>(null)
 const errorMessage = ref('')
 
 async function startCheckout(plan: 'pro' | 'plus') {
@@ -157,6 +183,25 @@ async function startCheckout(plan: 'pro' | 'plus') {
     console.error('Checkout error:', err)
     errorMessage.value = err instanceof Error ? err.message : 'Não foi possível iniciar o pagamento.'
     loadingCheckout.value = false
+  }
+}
+
+// Cliente ja pagante muda de plano (upgrade imediato ou downgrade agendado).
+async function changePlan(targetPlan: Plan) {
+  errorMessage.value = ''
+  loadingChange.value = targetPlan
+  try {
+    const { data, error } = await supabase.functions.invoke('change-plan', { body: { targetPlan } })
+    if (error) {
+      const msg = (data as { error?: string })?.error
+        ?? (error instanceof Error ? error.message : 'Não foi possível mudar de plano agora.')
+      throw new Error(msg)
+    }
+    await fetchUserRole()
+  } catch (err) {
+    errorMessage.value = err instanceof Error ? err.message : 'Não foi possível mudar de plano agora.'
+  } finally {
+    loadingChange.value = null
   }
 }
 
@@ -204,8 +249,24 @@ const canManage = computed(() =>
   subscriber.value?.status === 'active' && subscriber.value?.plan !== 'free'
 )
 const canCancel = computed(() =>
-  ['active', 'past_due'].includes(subscriber.value?.status || '') &&
-  subscriber.value?.plan !== 'free'
+  // 'Cancelar assinatura' so faz sentido para Pro/Plus active sem
+  // agendamento ja em curso. past_due usa o Customer Portal.
+  subscriber.value?.status === 'active'
+  && subscriber.value?.plan !== 'free'
+  && !subscriber.value?.scheduled_plan
+)
+
+const hasScheduledChange = computed(() => Boolean(subscriber.value?.scheduled_plan))
+const scheduledPlanLabel = computed(() => ({
+  free: 'Comunidade (Grátis)',
+  pro: 'Pro',
+  plus: 'Plus'
+}[(subscriber.value?.scheduled_plan as Plan) || 'free']))
+
+// Mudancas de plano so liberadas para clientes 'active' sem agendamento.
+// past_due, pending e canceled precisam regularizar antes (Customer Portal).
+const canChangePlan = computed(() =>
+  subscriber.value?.status === 'active' && !subscriber.value?.scheduled_plan
 )
 
 // ----- O que o plano inclui -----
@@ -240,48 +301,127 @@ const includesCopy = computed(() => {
   return 'Faça upgrade para receber vagas personalizadas.'
 })
 
-// ----- Upgrade -----
-const upgradeHeading = computed(() => {
-  if (subscriber.value?.plan === 'free') return 'Receba vagas direto no seu WhatsApp'
-  if (subscriber.value?.plan === 'pro') return 'Faça upgrade para o Plus'
-  return 'Conheça os planos pagos'
+// ----- Opcoes de mudanca de plano -----
+type PlanOption = {
+  tier: Plan
+  label: string
+  price: string
+  featured: boolean
+  sub: string
+  ctaLabel: string
+  features: string[]
+  action: 'checkout' | 'change'
+}
+
+const changeHeading = computed(() => {
+  const p = subscriber.value?.plan
+  if (p === 'free') return 'Receba vagas direto no seu WhatsApp'
+  if (p === 'pro') return 'Quer mudar de plano?'
+  if (p === 'plus') return 'Quer mudar de plano?'
+  return ''
 })
-const upgradeCopy = computed(() => {
-  if (subscriber.value?.plan === 'free') return 'Os planos pagos entregam vagas curadas para o seu perfil, em tempo real.'
-  if (subscriber.value?.plan === 'pro') return 'No Plus, a IA analisa cada vaga e calcula o match com o seu perfil.'
+const changeCopy = computed(() => {
+  const p = subscriber.value?.plan
+  if (p === 'free') return 'Os planos pagos entregam vagas curadas para o seu perfil, em tempo real. 7 dias grátis em qualquer um.'
+  if (p === 'pro') return 'Upgrade pro Plus é imediato: você só paga a diferença prorateada. Downgrade pra Comunidade só acontece no fim do período já pago.'
+  if (p === 'plus') return 'Downgrade pra Pro ou Comunidade acontece só no fim do período já pago. Sem reembolso, sem cobrança extra.'
   return ''
 })
 
-const upgradeOptions = computed(() => {
-  const p = subscriber.value?.plan
-  const all = [
-    {
-      tier: 'pro' as const,
-      label: 'Pro',
-      price: 'R$ 5',
-      featured: false,
-      features: [
-        'Canal exclusivo de vagas no WhatsApp',
-        'Todas as vagas de TI, em tempo real',
-        'Sem duplicatas, sem ruído'
-      ]
-    },
-    {
-      tier: 'plus' as const,
-      label: 'Plus',
-      price: 'R$ 10',
-      featured: true,
-      features: [
-        'Tudo do Pro',
-        'IA filtra vagas pelo seu perfil',
-        'Match score por vaga',
-        'Prioridade nas vagas novas'
-      ]
-    }
-  ]
-  if (p === 'pro') return all.filter(o => o.tier === 'plus')
-  return all
+const PRO_OPTION = (action: 'checkout' | 'change', ctaLabel: string, sub: string, featured = false): PlanOption => ({
+  tier: 'pro',
+  label: 'Pro',
+  price: 'R$ 5',
+  featured,
+  sub,
+  ctaLabel,
+  features: [
+    'Canal exclusivo de vagas no WhatsApp',
+    'Todas as vagas de TI, em tempo real',
+    'Sem duplicatas, sem ruído'
+  ],
+  action
 })
+const PLUS_OPTION = (action: 'checkout' | 'change', ctaLabel: string, sub: string, featured = true): PlanOption => ({
+  tier: 'plus',
+  label: 'Plus',
+  price: 'R$ 10',
+  featured,
+  sub,
+  ctaLabel,
+  features: [
+    'Tudo do Pro',
+    'IA filtra vagas pelo seu perfil',
+    'Match score por vaga',
+    'Prioridade nas vagas novas'
+  ],
+  action
+})
+const FREE_OPTION = (sub: string): PlanOption => ({
+  tier: 'free',
+  label: 'Comunidade',
+  price: 'Grátis',
+  featured: false,
+  sub,
+  ctaLabel: 'Voltar pra Comunidade no fim do período',
+  features: [
+    'Canais públicos da comunidade',
+    'Vagas gerais sem filtro personalizado'
+  ],
+  action: 'change'
+})
+
+const changeOptions = computed<PlanOption[]>(() => {
+  const p = subscriber.value?.plan
+  if (p === 'free') {
+    return [
+      PRO_OPTION('checkout', 'Assinar Pro', '7 dias grátis. Cancele quando quiser.'),
+      PLUS_OPTION('checkout', 'Assinar Plus', '7 dias grátis. Cancele quando quiser.', true)
+    ]
+  }
+  if (p === 'pro') {
+    return [
+      PLUS_OPTION('change', 'Fazer upgrade agora', 'Imediato. Você paga só a diferença prorateada.', true)
+    ]
+  }
+  if (p === 'plus') {
+    return [
+      PRO_OPTION('change', 'Trocar pro Pro no fim do período', 'A mudança vira efetiva em ' + formatDate(subscriber.value?.current_period_end || '') + '.', true)
+    ]
+  }
+  return []
+})
+
+async function onChoose(option: PlanOption) {
+  if (option.action === 'checkout' && (option.tier === 'pro' || option.tier === 'plus')) {
+    await startCheckout(option.tier)
+    return
+  }
+  // Downgrade Plus -> Pro: confirma o agendamento.
+  if (option.tier === 'pro' && subscriber.value?.plan === 'plus') {
+    const when = formatDate(subscriber.value?.current_period_end || '')
+    const ok = confirm(
+      `Voce vai trocar para o Pro a partir de ${when}.\n\n`
+      + 'Voce continua com o Plus ate la. Sem reembolso, sem cobranca extra.\n\nConfirma?'
+    )
+    if (!ok) return
+  }
+  await changePlan(option.tier)
+}
+
+async function onRevert() {
+  errorMessage.value = ''
+  loadingRevert.value = true
+  try {
+    const { error } = await supabase.functions.invoke('revert-scheduled-change')
+    if (error) throw error
+    await fetchUserRole()
+  } catch (err) {
+    errorMessage.value = err instanceof Error ? err.message : 'Não foi possível cancelar o agendamento.'
+  } finally {
+    loadingRevert.value = false
+  }
+}
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' })
@@ -309,23 +449,29 @@ async function goManage() {
 }
 
 async function onCancel() {
-  if (!confirm('Tem certeza que deseja cancelar? Você continua recebendo vagas até o fim do período já pago.')) return
+  const when = formatDate(subscriber.value?.current_period_end || '')
+  const ok = confirm(
+    `Voce continua recebendo vagas ate ${when}. Depois sua conta volta pra Comunidade gratuita (canais publicos do Discord e WhatsApp).\n\nConfirma o cancelamento?`
+  )
+  if (!ok) return
   errorMessage.value = ''
   loadingCancel.value = true
   try {
-    const { error } = await supabase.functions.invoke('cancel-own-subscription')
-    if (error) throw error
-    window.location.reload()
+    const { data, error } = await supabase.functions.invoke('change-plan', { body: { targetPlan: 'free' } })
+    if (error) {
+      const msg = (data as { error?: string })?.error
+        ?? (error instanceof Error ? error.message : 'Não foi possível cancelar agora.')
+      throw new Error(msg)
+    }
+    await fetchUserRole()
   } catch (err) {
     console.error('Cancel error:', err)
     errorMessage.value = err instanceof Error ? err.message : 'Não foi possível cancelar agora.'
+  } finally {
     loadingCancel.value = false
   }
 }
 
-function upgrade(tier: 'pro' | 'plus') {
-  startCheckout(tier)
-}
 </script>
 
 <style scoped>
@@ -440,6 +586,26 @@ function upgrade(tier: 'pro' | 'plus') {
 .dsub-hero__msg--ok     { border-left-color: var(--color-success); }
 .dsub-hero__msg--warn   { border-left-color: var(--color-warning); }
 .dsub-hero__msg--danger { border-left-color: var(--color-error); }
+
+.dsub-scheduled {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-warning-soft);
+  border: 1px solid color-mix(in srgb, var(--color-warning) 30%, transparent);
+  border-radius: var(--radius-md);
+}
+.dsub-scheduled__text { flex: 1 1 240px; min-width: 0; }
+.dsub-scheduled__text strong { color: var(--color-warning); }
+.dsub-scheduled__text p {
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-sm);
+  line-height: var(--lh-body);
+  color: var(--color-text-primary);
+}
 
 /* Meta */
 .dsub-meta {
@@ -618,6 +784,12 @@ function upgrade(tier: 'pro' | 'plus') {
   font-weight: var(--font-bold);
   letter-spacing: var(--ls-tight);
   color: var(--color-text-primary);
+}
+.dsub-plan-card__sub {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+  line-height: var(--lh-body);
 }
 .dsub-plan-card__price small {
   font-size: var(--text-sm);

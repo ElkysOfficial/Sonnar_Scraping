@@ -5,6 +5,58 @@ Todas as mudanças relevantes deste projeto são documentadas neste arquivo.
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/)
 e o projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [2.16.0] - 2026-05-23
+
+### Adicionado
+
+- **Mudança de plano pelo portal** (DashboardSubscription):
+  - **Pro → Plus**: upgrade imediato. Stripe troca o price item e prorateia
+    a diferença (`proration_behavior='always_invoice'`). Em trial, o
+    `trial_end` é preservado e nada é cobrado até o fim do trial.
+  - **Plus → Pro**: downgrade agendado para o fim do período via
+    `subscription_schedule` com 2 fases (Plus até `current_period_end`,
+    depois Pro por 1 iteração). Sem reembolso, sem crédito.
+  - **Pro/Plus → Free**: cancelamento agendado via `cancel_at_period_end`.
+    Quando vira efetivo, a conta é rebaixada para `plan='free'`,
+    `status='active'` (continua válida na Comunidade) em vez de `canceled`.
+  - **Banner de agendamento** no hero com botão "Manter plano atual" que
+    libera o schedule (Plus→Pro) ou desfaz `cancel_at_period_end`.
+- **Novas edge functions**:
+  - `change-plan`: dispatcher de upgrade/downgrade com guards (status
+    diferente de active bloqueia, plano igual ao atual bloqueia,
+    agendamento existente bloqueia).
+  - `revert-scheduled-change`: libera schedule ou desfaz
+    `cancel_at_period_end`.
+- **Webhook stripe-webhook**:
+  - Resolve o plano também via `price.id` (não só metadata), garantindo
+    sincronia quando upgrade é feito por `subscriptions.update`.
+  - Sincroniza `scheduled_plan='free'` + `scheduled_change_at` quando
+    `cancel_at_period_end=true` chega.
+  - Limpa `scheduled_*` quando o cliente reverte (apenas para
+    `scheduled_plan='free'` sem schedule_id — não pisa em Plus→Pro).
+  - Novos handlers para `subscription_schedule.released|completed|canceled`
+    que limpam `stripe_schedule_id` e `scheduled_*`.
+- **Migration `subscribers_scheduled_plan_change`** adicionando
+  `scheduled_plan`, `scheduled_change_at` e `stripe_schedule_id` com
+  CHECK de consistência e índice parcial por `stripe_schedule_id`.
+- **Matriz de testes** em `docs/billing-plan-changes-test-matrix.md`
+  com 11 cenários a validar no Stripe test mode antes do merge.
+
+### Modificado
+
+- `customer.subscription.deleted` agora rebaixa para Comunidade ativa
+  em vez de marcar `status='canceled'`. A semântica antiga produzia
+  contas inacessíveis no portal sem motivo claro.
+- `DashboardSubscription.onCancel` migra de `cancel-own-subscription`
+  para `change-plan` com `targetPlan='free'`, consolidando o fluxo.
+
+### Stripe — exigências externas
+
+- Endpoint de webhook precisa receber também os 3 eventos
+  `subscription_schedule.released|completed|canceled`.
+- Customer Portal: desabilitar "Customers can switch plans" para forçar
+  swap pela UI (preserva a regra de downgrade só no fim do período).
+
 ## [2.14.0] - 2026-05-23
 
 ### Adicionado
