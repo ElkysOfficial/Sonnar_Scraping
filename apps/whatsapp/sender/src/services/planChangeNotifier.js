@@ -20,7 +20,7 @@
 import { supabase } from "./database.js"
 import { getCurrentSocket, isCurrentSocketReady } from "../utils/socketManager.js"
 import { JOB_GROUP_LINK } from "../config.js"
-import { infoLog, successLog, warningLog, errorLog } from "../utils/logger.js"
+import { infoLog, infoLogAlways, successLog, warningLog, errorLog } from "../utils/logger.js"
 
 // Intervalo entre tentativas de drenagem. Curto o suficiente pra que a
 // notificacao chegue logo apos o webhook gravar, longo o suficiente pra
@@ -165,7 +165,9 @@ async function drainPending(socket) {
  * Inicia o worker. Chamado pelo loader.
  */
 export function startPlanChangeNotifier(socket) {
-  infoLog("[PLAN-NOTIFY] worker iniciado")
+  // infoLogAlways - precisa aparecer no boot em prod (LOG_LEVEL=success
+  // suprime infoLog regular).
+  infoLogAlways("[PLAN-NOTIFY] worker iniciado (polling " + (POLL_INTERVAL_MS / 1000) + "s)")
 
   // Drena imediatamente caso ja haja itens pendentes na inicializacao.
   drainPending(socket).catch((e) =>
