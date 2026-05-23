@@ -138,6 +138,56 @@ Edite `max_memory_restart` no `ecosystem.config.cjs` e aplique:
 pm2 restart ecosystem.config.cjs --update-env
 ```
 
+### Restart diário do scraper (devolver RAM ao SO)
+
+O `sonnar-scraper` (Python) sofre **fragmentação de heap** depois dos picos de
+coleta: mesmo ocioso na pausa de 2h entre lotes, o processo segura ~1,3 GB
+porque o allocator do Python raramente devolve memória ao SO. Não é vazamento —
+é comportamento normal do CPython.
+
+Solução: reiniciar o scraper **1x por dia, às 04:00 BRT**, via cron. A janela
+foi escolhida porque cai com alta probabilidade na pausa de 2h entre lotes, e
+porque nenhuma vaga "se perde": o `ExtractionTracker` persiste o estado de cada
+URL no Supabase (`extraction_jobs`), e o startup do scraper:
+
+1. carrega URLs `completed` do banco (não reprocessa);
+2. desbloqueia URLs presas em `running` há >15min (zumbis de restart anterior);
+3. retoma de onde parou em `discovered`/`failed`.
+
+**Configurar no servidor** (uma vez):
+```bash
+( crontab -l 2>/dev/null; echo "0 4 * * * /usr/bin/pm2 restart sonnar-scraper >> /root/.pm2/logs/scraper-daily-restart.log 2>&1" ) | crontab -
+```
+
+Conferir:
+```bash
+crontab -l
+```
+
+Remover (se preferir voltar a deixar só o `max_memory_restart` cuidar):
+```bash
+crontab -l | grep -v 'pm2 restart sonnar-scraper' | crontab -
+```
+
+### Rotação mensal do `job.csv`
+
+O `apps/scraper/src/data/job.csv` é **append-only** (histórico imutável para
+analytics). O `CSVJobStore` carrega todas as URLs do arquivo num set no startup
+para dedup — sem rotação, a cada mês o startup ficaria mais pesado.
+
+**Como funciona** (implementado em `csv_store.py:_rotate_monthly_if_needed`):
+no startup, se o `mtime` do `job.csv` é de um mês anterior ao atual, o arquivo
+é renomeado para `job-YYYY-MM.csv` (mês da última modificação) e um novo
+arquivo vazio é iniciado. A dedup mais ampla continua coberta pelo
+`LocalJobStore` (`jobs.json`) e pelo `ExtractionTracker` (Supabase), então a
+"perda" do set entre meses não causa duplicatas reais no pipeline.
+
+Arquivos rotacionados ficam em `apps/scraper/src/data/` lado a lado e estão
+prontos para análise offline (Excel, Pandas, BI). Se múltiplos meses se
+passarem sem o scraper subir, na primeira inicialização ele rotaciona usando
+o mês do `mtime` do arquivo (só um arquivo rotacionado por subida — o ciclo
+seguinte do scraper cuida do mês atual).
+
 ---
 
 ## Troubleshooting

@@ -1,5 +1,7 @@
 """Testes para CSVJobStore (sink CSV append-only)."""
 import csv
+import os
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -127,3 +129,96 @@ class TestCSVJobStore:
         with csv_path.open(encoding="utf-8") as f:
             rows = list(csv.reader(f))
         assert len(rows) == 3  # header + linha original + nova
+
+
+class TestMonthlyRotation:
+    """Rotação mensal do job.csv: arquivos de meses anteriores são renomeados."""
+
+    def _set_mtime(self, path: Path, when: datetime) -> None:
+        ts = when.timestamp()
+        os.utime(path, (ts, ts))
+
+    def test_does_not_rotate_when_file_is_current_month(self, csv_path):
+        # Cria arquivo populado e seta mtime para "agora" (mesmo mês)
+        store = CSVJobStore(path=str(csv_path))
+        store.append(_make_payload(job_url="https://x/1"))
+        self._set_mtime(csv_path, datetime.now())
+
+        # Re-instanciar não deve rotacionar
+        CSVJobStore(path=str(csv_path))
+        assert csv_path.exists()
+        # Não deve haver arquivos rotacionados no diretório
+        rotated = list(csv_path.parent.glob("job-*.csv"))
+        assert rotated == []
+
+    def test_rotates_when_file_is_previous_month(self, csv_path):
+        # Cria arquivo populado e seta mtime para 40 dias atrás
+        store = CSVJobStore(path=str(csv_path))
+        store.append(_make_payload(job_url="https://x/old"))
+        old_dt = datetime.now() - timedelta(days=40)
+        self._set_mtime(csv_path, old_dt)
+
+        # Re-instanciar deve rotacionar
+        CSVJobStore(path=str(csv_path))
+
+        suffix = f"{old_dt.year:04d}-{old_dt.month:02d}"
+        rotated_path = csv_path.with_name(f"{csv_path.stem}-{suffix}.csv")
+        assert rotated_path.exists(), "Arquivo do mês anterior deveria ter sido rotacionado"
+
+        # job.csv novo deve existir com apenas o header
+        assert csv_path.exists()
+        with csv_path.open(encoding="utf-8") as f:
+            rows = list(csv.reader(f))
+        assert len(rows) == 1  # só header
+
+        # E o arquivo rotacionado preserva a vaga antiga
+        with rotated_path.open(encoding="utf-8") as f:
+            rotated_rows = list(csv.reader(f))
+        assert len(rotated_rows) == 2  # header + 1 vaga
+
+    def test_dedup_after_rotation_loads_only_current_month(self, csv_path):
+        # Gera arquivo do mês anterior com uma URL "https://x/old"
+        store = CSVJobStore(path=str(csv_path))
+        store.append(_make_payload(job_url="https://x/old"))
+        self._set_mtime(csv_path, datetime.now() - timedelta(days=40))
+
+        # Após rotação, a URL "antiga" não está no set do novo store —
+        # ou seja, se a engine reportar a mesma URL agora, é aceita.
+        # (A dedup mais ampla é feita pelo LocalJobStore/tracker, não aqui.)
+        new_store = CSVJobStore(path=str(csv_path))
+        assert new_store.append(_make_payload(job_url="https://x/old")) is True
+
+    def test_rotation_avoids_overwriting_existing_rotated_file(self, csv_path):
+        # Cria primeiro arquivo rotacionado manualmente
+        old_dt = datetime.now() - timedelta(days=40)
+        suffix = f"{old_dt.year:04d}-{old_dt.month:02d}"
+        existing_rotated = csv_path.with_name(f"{csv_path.stem}-{suffix}.csv")
+        existing_rotated.write_text("preexisting\n", encoding="utf-8")
+
+        # Cria job.csv com mtime do mesmo mês "antigo"
+        store = CSVJobStore(path=str(csv_path))
+        store.append(_make_payload(job_url="https://x/conflict"))
+        self._set_mtime(csv_path, old_dt)
+
+        # Re-instancia: como o arquivo rotacionado JÁ existe, deve criar
+        # uma variante com sufixo .1 (não sobrescreve o preexistente).
+        CSVJobStore(path=str(csv_path))
+        assert existing_rotated.exists()
+        assert existing_rotated.read_text(encoding="utf-8") == "preexisting\n"
+
+        variant = csv_path.with_name(f"{csv_path.stem}-{suffix}.csv.1")
+        assert variant.exists()
+
+    def test_rotation_skips_when_file_missing_or_empty(self, csv_path):
+        # Arquivo inexistente: rotação não deve falhar
+        store = CSVJobStore(path=str(csv_path))
+        # Foi criado pelo store com apenas o header
+        assert csv_path.exists()
+
+        # Arquivo vazio (tamanho zero): também não rotaciona
+        csv_path.write_bytes(b"")
+        CSVJobStore(path=str(csv_path))
+        # Deve haver apenas o header agora
+        with csv_path.open(encoding="utf-8") as f:
+            rows = list(csv.reader(f))
+        assert rows == [CSV_COLUMNS]

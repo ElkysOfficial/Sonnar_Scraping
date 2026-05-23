@@ -10,6 +10,16 @@ são carregadas em memória; ``append`` retorna False (sem gravar) se a URL
 já estiver no conjunto. Garante que cada URL aparece **uma única vez** no
 arquivo, mesmo entre runs.
 
+Rotação mensal
+--------------
+No startup, se ``job.csv`` foi modificado num mês anterior ao atual, ele
+é renomeado para ``job-YYYY-MM.csv`` (mês da última modificação) e um
+novo arquivo vazio é iniciado. Mantém o set de dedup enxuto à medida que
+o histórico cresce — só URLs do mês corrente são carregadas no startup.
+A dedup mais ampla continua coberta pelo ``LocalJobStore`` (jobs.json) e
+pelo ``ExtractionTracker`` (Supabase). Arquivos rotacionados ficam
+disponíveis para análise offline em ``src/data/``.
+
 Formato (cabeçalho gerado na criação do arquivo):
     job_url, job_title, company, location_raw, state_code, country_code,
     work_type, hiring_regime, salary_raw, salary_min, salary_max,
@@ -24,6 +34,7 @@ import csv
 import logging
 import os
 import threading
+from datetime import datetime
 from typing import Optional
 
 
@@ -70,8 +81,46 @@ class CSVJobStore:
         self.path = path or DEFAULT_CSV_PATH
         self._lock = threading.Lock()
         self._seen_urls: set = set()
+        self._rotate_monthly_if_needed()
         self._ensure_header()
         self._load_seen_urls()
+
+    def _rotate_monthly_if_needed(self) -> None:
+        """Se o ``job.csv`` foi modificado num mês anterior, renomeia para
+        ``job-YYYY-MM.csv`` (mês da última modificação) e deixa o caminho
+        original livre para um arquivo novo.
+
+        Usa ``mtime`` em vez de inspecionar linhas do CSV — o scraper roda
+        continuamente, então o mtime reflete a última escrita real. Se o
+        arquivo não existe ou está vazio, não faz nada.
+        """
+        if not os.path.exists(self.path):
+            return
+        try:
+            if os.path.getsize(self.path) == 0:
+                return
+            mtime = os.path.getmtime(self.path)
+        except OSError as exc:
+            logger.error("Falha ao inspecionar job.csv para rotação: %s", exc)
+            return
+
+        file_dt = datetime.fromtimestamp(mtime)
+        now = datetime.now()
+        if file_dt.year == now.year and file_dt.month == now.month:
+            return
+
+        base, ext = os.path.splitext(self.path)
+        rotated_path = f"{base}-{file_dt.year:04d}-{file_dt.month:02d}{ext}"
+        if os.path.exists(rotated_path):
+            n = 1
+            while os.path.exists(f"{rotated_path}.{n}"):
+                n += 1
+            rotated_path = f"{rotated_path}.{n}"
+        try:
+            os.rename(self.path, rotated_path)
+            logger.info("job.csv rotacionado: %s -> %s", self.path, rotated_path)
+        except OSError as exc:
+            logger.error("Falha ao rotacionar job.csv: %s", exc)
 
     def _load_seen_urls(self) -> None:
         """Pré-carrega todas as ``job_url``s já gravadas (para dedup append)."""
