@@ -45,7 +45,11 @@ logger = logging.getLogger("scraper.controller")
 # Configuração (lê do ambiente, com defaults sensatos)
 # ---------------------------------------------------------------------------
 
-BATCH_SIZE = int(os.getenv("BATCH_SIZE", "5"))
+# 2 stacks por batch (era 5): prioriza qualidade da varredura sobre velocidade.
+# Com menos stacks por lote, cada engine faz menos requests por hora, ficando
+# mais longe dos limites de rate-limit dos sites. A cobertura completa de
+# todas as stacks acontece ao longo do dia (104 batches × 2h pausa).
+BATCH_SIZE = int(os.getenv("BATCH_SIZE", "2"))
 BATCH_INTERVAL_SECONDS = int(os.getenv("BATCH_INTERVAL_SECONDS", "7200"))  # 2h
 # 2 vCPUs => 2 engines paralelas. Atual default era 3 e levava à contenção.
 MAX_CONCURRENT_ENGINES = int(os.getenv("MAX_CONCURRENT_ENGINES", "2"))

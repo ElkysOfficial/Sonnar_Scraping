@@ -73,7 +73,13 @@ def reset_session() -> None:
 
 # --- Configuração --------------------------------------------------------
 
-_FETCH_CONCURRENCY = 8
+# Concorrencia do detail-fetch reduzida de 8 -> 2 (mai/2026): com 8 em
+# paralelo, o Cloudflare do InfoJobs derruba a sessao em rajada e o smoke
+# test daquela engine ficava em timeout >5min. Com 2 + jitter explicito de
+# 1-2s entre requests, o detail-fetch entrega vagas sem ser bloqueado.
+# Trade-off: ciclo um pouco mais lento, mas como o scraper roda 24/7 e ha
+# pausa de 2h entre batches, e folgado.
+_FETCH_CONCURRENCY = 2
 
 # Paginacao do listing. InfoJobs usa ``Page=N`` (case-sensitive!) - lowercase
 # ``page=N`` e silenciosamente ignorado e devolve sempre a primeira pagina.
@@ -384,9 +390,17 @@ async def get_infojobs_jobs(on_job=None) -> list:
 
     semaphore = asyncio.Semaphore(_FETCH_CONCURRENCY)
 
+    import random as _random
+
     async def _fetch(link: str) -> list | None:
-        """Fetch + parse de uma URL, respeitando o semáforo."""
+        """Fetch + parse de uma URL, respeitando o semáforo.
+
+        Jitter explicito entre requests pra diluir o padrao e nao acionar
+        o Cloudflare por rajada — necessario apos reduzir
+        ``_FETCH_CONCURRENCY`` pra 2.
+        """
         async with semaphore:
+            await asyncio.sleep(_random.uniform(1.0, 2.0))
             client = await get_session()
             response = await fetch(client, link)
             if response is None or response.status_code != 200:
