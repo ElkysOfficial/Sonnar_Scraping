@@ -5,6 +5,39 @@ Todas as mudanças relevantes deste projeto são documentadas neste arquivo.
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/)
 e o projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [2.11.0] - 2026-05-23
+
+### Adicionado
+
+- **Checkpoint nas 9 engines restantes — todas as 14 engines do scraper
+  agora retomam a varredura após restart.** Mesmo padrão das anteriores
+  (resume por label, set_cursor antes de cada unidade, clear no fim),
+  com granularidade ajustada pra estrutura de iteração de cada uma:
+  - **Gupy** — cursor `{stack}`. 1 chamada API por stack.
+  - **Jooble** — cursor `{stack, variant_idx}`. Multiplos filtros por stack.
+  - **ZipRecruiter** — cursor `{stack, page}`. Paginação 1..10.
+  - **SimplyHired** — cursor `{stack, page}`. Paginação até `SH_MAX_PAGES`.
+  - **InfoJobs** — cursor `{stack, page}` na Fase 1 (`get_infojobs_links`).
+    Paginação até `_LISTING_MAX_PAGES`.
+  - **ProgramaThor** — cursor `{page}`. Sem stacks (catálogo já é tech).
+  - **MichaelPage** — cursor `{category_idx, category}`. Itera 8 categorias
+    pré-definidas.
+  - **Remotive** — cursor `{category_idx, category}`. Itera 13 categorias
+    da API.
+  - **WeWorkRemotely** — cursor `{feed_idx, feed}`. Itera 9 feeds RSS.
+
+  GeekHunter e RemoteOK ficam sem checkpoint propositalmente — fazem uma
+  única chamada API (GraphQL e REST respectivamente) que devolve até 1000
+  vagas de uma vez, então não há ponto intermediário que valha persistir.
+
+### Resultado consolidado da família PR 3.x
+
+Toda a varredura do scraper agora sobrevive a restarts: o `pm2 restart`
+diário (04:00 BRT) e qualquer queda inesperada do processo retomam do
+ponto exato em **todas as engines com loops de iteração**. As tabelas de
+controle (`extraction_jobs` + `scraper_progress` no Supabase) preservam
+estado completo entre execuções.
+
 ## [2.10.0] - 2026-05-23
 
 ### Adicionado

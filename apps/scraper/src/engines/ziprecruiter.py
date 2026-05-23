@@ -18,9 +18,13 @@ from bs4 import BeautifulSoup
 from curl_cffi import requests
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
-from variavel import get_active_stacks  # noqa: E402
+from variavel import get_active_batch_key, get_active_stacks  # noqa: E402
 from src.persistence.extraction_tracker import tracker  # noqa: E402
+from src.persistence.progress_tracker import progress  # noqa: E402
 from src.utils.http_session import fetch_sync  # noqa: E402
+
+import logging
+logger = logging.getLogger("scraper.engine.ziprecruiter")
 
 
 PARSER_VERSION = "ziprecruiter-2026.05.07"
@@ -133,9 +137,35 @@ async def get_ziprecruiter_jobs(on_job=None) -> list:
     seen_links = set()
     session = get_session()
 
-    for stack in get_active_stacks():
+    # ---- Checkpoint -----------------------------------------------------
+    stacks_list = list(get_active_stacks())
+    batch_key = get_active_batch_key()
+    cursor = await progress.resume("ziprecruiter", batch_key) if batch_key else None
+    resume_stack = (cursor or {}).get("stack")
+    resume_page = int((cursor or {}).get("page", 1))
+    resume_stack_idx = 0
+    if cursor:
+        try:
+            resume_stack_idx = stacks_list.index(resume_stack) if resume_stack else 0
+        except ValueError:
+            cursor = None
+            resume_page = 1
+    if cursor:
+        logger.info("ziprecruiter_resume", extra={
+            "batch_key": batch_key, "stack": resume_stack,
+            "stack_idx": resume_stack_idx, "page": resume_page,
+        })
+
+    for stack_idx, stack in enumerate(stacks_list):
+        if stack_idx < resume_stack_idx:
+            continue
         encoded = urllib.parse.quote(stack)
-        for page in range(1, 11):
+        start_page = resume_page if stack_idx == resume_stack_idx else 1
+        for page in range(start_page, 11):
+            if batch_key:
+                progress.set_cursor("ziprecruiter", batch_key, {
+                    "stack_idx": stack_idx, "stack": stack, "page": page,
+                })
             try:
                 url = f"https://www.ziprecruiter.co.uk/jobs/search?q={encoded}&l=&page={page}"
                 response = await fetch_sync(session, url, timeout=30)
@@ -229,6 +259,9 @@ async def get_ziprecruiter_jobs(on_job=None) -> list:
 
             except Exception:
                 break
+
+    if batch_key:
+        await progress.clear("ziprecruiter", batch_key)
 
     print(f"Foram obtidas {len(jobs)} vagas do site ZipRecruiter")
     return jobs

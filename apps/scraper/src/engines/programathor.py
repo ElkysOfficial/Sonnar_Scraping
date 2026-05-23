@@ -17,10 +17,18 @@ import re
 
 from bs4 import BeautifulSoup
 
+import sys
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+from variavel import get_active_batch_key  # noqa: E402
+
 from ..persistence.extraction_tracker import tracker
+from ..persistence.progress_tracker import progress
 from ..utils.job_fallbacks import apply_description_fallbacks
 from ..utils.text_utils import extract_skills, strip_html
 from ..utils.http_session import HttpSession, fetch
+
+import logging
+logger = logging.getLogger("scraper.engine.programathor")
 
 
 PARSER_VERSION = "programathor-2026.05.07"
@@ -65,10 +73,21 @@ async def get_programathor_links() -> list:
 
     max_pages = int(os.getenv("PROGRAMATHOR_MAX_PAGES", "20"))
     max_empty_pages = int(os.getenv("PROGRAMATHOR_MAX_EMPTY_PAGES", "1"))
-    page = 1
+
+    # ---- Checkpoint -----------------------------------------------------
+    batch_key = get_active_batch_key()
+    cursor = await progress.resume("programathor", batch_key) if batch_key else None
+    page = int((cursor or {}).get("page", 1)) if cursor else 1
+    if cursor:
+        logger.info("programathor_resume", extra={
+            "batch_key": batch_key, "page": page,
+        })
+
     empty_pages = 0
     client = await get_session()
     while page <= max_pages and empty_pages < max_empty_pages:
+        if batch_key:
+            progress.set_cursor("programathor", batch_key, {"page": page})
         try:
             response = await fetch(client, f"https://programathor.com.br/jobs/page/{page}")
 
@@ -101,6 +120,9 @@ async def get_programathor_links() -> list:
         except Exception:
             empty_pages += 1
             page += 1
+
+    if batch_key:
+        await progress.clear("programathor", batch_key)
 
     return links
 
