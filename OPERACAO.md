@@ -94,7 +94,7 @@ A máquina tem **8GB de RAM**. O ecosystem tem `max_memory_restart` por processo
 | Processo | Teto (`max_memory_restart`) | Observação |
 | --- | --- | --- |
 | `sonnar-core` | 512 MB | Faz `JSON.parse` do `jobs.json` inteiro (~18k vagas) por request; 250M reiniciava a cada ciclo VIP |
-| `sonnar-wa-formatter` | 400 MB | Canvas (geração de imagem) tem picos |
+| `sonnar-wa-formatter` | 600 MB | Canvas (geração de imagem) tem picos; 400M reiniciava a cada ~30min |
 | `sonnar-wa-sender` | 500 MB | Baileys cresce com o tempo (reinício limpa) |
 | `sonnar-scraper` | 2048 MB | Mais pesado — coleta + parsing + modelos de tradução (Argos) na RAM |
 | **Total apps** | **~3,5 GB** | Sobra ~1 GB pro SO + bastante folga |

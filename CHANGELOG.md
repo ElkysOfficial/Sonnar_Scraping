@@ -5,6 +5,18 @@ Todas as mudanças relevantes deste projeto são documentadas neste arquivo.
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/)
 e o projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [2.12.1] - 2026-05-23
+
+### Corrigido
+
+- **Formatter reiniciando ~12-15x/dia por estourar 400M do `max_memory_restart`**
+  (`ecosystem.config.cjs`). O Canvas (geração de imagem dos cards) acumula
+  buffers entre requests; com 400M de teto, o PM2 derrubava o processo via
+  SIGTERM a cada ~30min (sem traceback nos logs porque o Node não chegava
+  a crashar). Subo o teto para **600M** — o intervalo entre restarts deve
+  dobrar para ~1h e o número diário cair pra ~6-8. Ainda dentro do
+  orçamento de 8GB da VPS (~3.7GB total apps).
+
 ## [2.12.0] - 2026-05-23
 
 ### Modificado
