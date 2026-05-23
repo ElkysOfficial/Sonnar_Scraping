@@ -39,7 +39,7 @@
         <dl class="dsub-meta">
           <div>
             <dt>E-mail de cobrança</dt>
-            <dd>{{ subscriber?.email || '—' }}</dd>
+            <dd>{{ subscriber?.email || 'Não informado' }}</dd>
           </div>
           <div>
             <dt>{{ subscriber?.current_period_end ? 'Próxima cobrança' : 'Renovação' }}</dt>
@@ -403,7 +403,7 @@ const changeCopy = computed(() => {
   const p = subscriber.value?.plan
   if (p === 'free') return 'Os planos pagos entregam vagas direto no WhatsApp. 7 dias grátis em qualquer um.'
   if (p === 'pro') return 'Upgrade pro Plus é imediato e cobra só a diferença prorateada. Downgrade pra Comunidade encerra a assinatura no fim do período pago.'
-  if (p === 'plus') return 'Você pode ir pro Pro ou direto pra Comunidade. Os dois efetivam no fim do período já pago — sem reembolso e sem cobrança extra.'
+  if (p === 'plus') return 'Você pode ir pro Pro ou direto pra Comunidade. Os dois efetivam no fim do período já pago, sem reembolso e sem cobrança extra.'
   return ''
 })
 
@@ -432,7 +432,7 @@ const PLUS_OPTION = (action: 'checkout' | 'change', ctaLabel: string, sub: strin
     'Vagas direto no seu WhatsApp privado (DM)',
     'IA filtra cada vaga pelo seu perfil',
     'Match score 0–100 por vaga',
-    'Prioridade no recebimento — sem ruído do grupo'
+    'Prioridade no recebimento, sem ruído do grupo'
   ],
   action
 })
@@ -454,10 +454,16 @@ const FREE_OPTION = (sub: string, ctaLabel = 'Voltar pra Comunidade no fim do pe
 const changeOptions = computed<PlanOption[]>(() => {
   const p = subscriber.value?.plan
   const when = formatDate(subscriber.value?.current_period_end || '')
+  // Reincidentes (ja usaram trial em assinatura anterior) nao recebem
+  // mais o trial - cobranca imediata. UI deixa explicito nos cards.
+  const eligibleToTrial = !subscriber.value?.trial_used_at
+  const checkoutSub = eligibleToTrial
+    ? '7 dias grátis. Cancele quando quiser.'
+    : 'Cobrança imediata — você já usou seu trial nesta conta.'
   if (p === 'free') {
     return [
-      PRO_OPTION('checkout', 'Assinar Pro', '7 dias grátis. Cancele quando quiser.'),
-      PLUS_OPTION('checkout', 'Assinar Plus', '7 dias grátis. Cancele quando quiser.', true)
+      PRO_OPTION('checkout', eligibleToTrial ? 'Assinar Pro' : 'Reassinar Pro', checkoutSub),
+      PLUS_OPTION('checkout', eligibleToTrial ? 'Assinar Plus' : 'Reassinar Plus', checkoutSub, true)
     ]
   }
   if (p === 'pro') {
@@ -511,7 +517,7 @@ async function onChoose(option: PlanOption) {
       title: 'Trocar para o plano Pro?',
       subtitle: `A mudança vira efetiva em ${when}.`,
       tone: 'warning',
-      lead: 'Você está fazendo um downgrade. <strong>Você deixa de receber as vagas no seu WhatsApp privado e passa a receber no grupo exclusivo Pro</strong> — todas as vagas de TI, sem filtro pelo seu perfil e sem match score por IA.',
+      lead: 'Você está fazendo um downgrade. <strong>Você deixa de receber as vagas no seu WhatsApp privado e passa a receber no grupo exclusivo Pro</strong>, com todas as vagas de TI, sem filtro pelo seu perfil e sem match score por IA.',
       bullets: [
         `Você continua no Plus (privado + IA) até ${when}`,
         'A partir dessa data você entra no grupo Pro do WhatsApp',
@@ -637,13 +643,13 @@ async function onCancel() {
 .dsub {
   display: flex;
   flex-direction: column;
-  gap: var(--space-5);
+  gap: var(--space-4);
 }
 
 .dsub-top {
   display: grid;
   grid-template-columns: 1fr;
-  gap: var(--space-5);
+  gap: var(--space-4);
   align-items: stretch;
 }
 @media (min-width: 960px) {
@@ -653,27 +659,18 @@ async function onCancel() {
 .dsub-card {
   position: relative;
   background: var(--color-background);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-card);
-  padding: var(--card-padding);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
   overflow: hidden;
   isolation: isolate;
 }
 
 /* ---------- Hero ---------- */
 .dsub-hero {
-  border-color: color-mix(in srgb, var(--color-accent) 20%, var(--color-border));
   display: flex;
   flex-direction: column;
-  gap: var(--space-5);
-}
-.dsub-hero::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: radial-gradient(70% 55% at 100% 0%, var(--color-accent-soft), transparent 65%);
-  pointer-events: none;
-  z-index: -1;
+  gap: var(--space-4);
 }
 
 .dsub-hero__top {
@@ -692,7 +689,7 @@ async function onCancel() {
   margin: 0;
 }
 .dsub-plan {
-  font-size: var(--text-4xl);
+  font-size: var(--text-2xl);
   letter-spacing: var(--ls-tight);
   font-weight: var(--font-bold);
   line-height: var(--lh-tight);
@@ -898,37 +895,36 @@ async function onCancel() {
 
 .dsub-plan-card {
   background: var(--color-background);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-card);
-  padding: var(--card-padding);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
-  transition: box-shadow var(--transition-base);
+  gap: var(--space-3);
+  transition: border-color var(--transition-fast);
 }
-.dsub-plan-card:hover { box-shadow: var(--shadow-md); }
+.dsub-plan-card:hover { border-color: var(--color-border); }
 
 .dsub-plan-card--featured {
   position: relative;
   border-color: var(--color-accent);
-  box-shadow: 0 0 0 1px var(--color-accent) inset, var(--shadow-lg);
-  background: linear-gradient(180deg, var(--color-accent-soft), transparent 50%), var(--color-background);
+  background: var(--color-background);
 }
 .dsub-plan-card--featured::before {
   content: 'Recomendado';
   position: absolute;
   top: var(--space-3);
   right: var(--space-3);
-  padding: 3px var(--space-2);
+  padding: 2px var(--space-2);
   border-radius: var(--radius-sm);
   background: var(--color-accent);
   color: var(--color-text-inverse);
-  font-size: 10px;
+  font-size: 9px;
   font-weight: var(--font-bold);
   text-transform: uppercase;
   letter-spacing: var(--ls-wide);
 }
-.dsub-plan-card--featured:hover { box-shadow: 0 0 0 1px var(--color-accent) inset, var(--shadow-xl); }
+.dsub-plan-card--featured:hover { border-color: var(--color-accent-hover); }
 
 .dsub-plan-card__head { display: flex; flex-direction: column; gap: var(--space-1); }
 .dsub-plan-card__eyebrow {

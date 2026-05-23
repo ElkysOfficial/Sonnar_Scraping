@@ -384,7 +384,7 @@
             </div>
 
             <div class="form-group">
-              <label for="su-complement" class="form-label">Complemento <span class="form-label-meta">(opcional)</span></label>
+              <label for="su-complement" class="form-label">Complemento</label>
               <input
                 id="su-complement"
                 v-model.trim="form.complement"
@@ -393,8 +393,11 @@
                 autocomplete="address-line2"
                 placeholder="Apto, bloco, sala…"
                 maxlength="60"
+                required
                 :disabled="loading"
+                @input="errors.complement = ''"
               />
+              <p v-if="errors.complement" class="form-error">{{ errors.complement }}</p>
             </div>
 
             <div class="form-grid form-grid--2-1">
@@ -972,7 +975,7 @@ const errors = reactive({
   email: '', password: '',
   name: '', surname: '', birthDate: '', phone: '',
   cpf: '', cnpj: '', legalName: '',
-  cep: '', street: '', streetNumber: '', neighborhood: '', city: '', stateCode: '',
+  cep: '', street: '', streetNumber: '', complement: '', neighborhood: '', city: '', stateCode: '',
   areas: '', stack: '', seniority: '', jobLocation: ''
 })
 
@@ -1180,6 +1183,7 @@ function validatePersonal() {
   if (!validateCEP(form.cep))           { errors.cep = 'CEP inválido.'; ok = false }
   if (!form.street.trim())              { errors.street = 'Logradouro obrigatório.'; ok = false }
   if (!form.streetNumber.trim())        { errors.streetNumber = 'Número obrigatório.'; ok = false }
+  if (!form.complement.trim())          { errors.complement = 'Complemento obrigatório.'; ok = false }
   if (!form.neighborhood.trim())        { errors.neighborhood = 'Bairro obrigatório.'; ok = false }
   if (!form.city.trim())                { errors.city = 'Cidade obrigatória.'; ok = false }
   if (!/^[A-Z]{2}$/.test(form.stateCode)) { errors.stateCode = 'UF inválida.'; ok = false }

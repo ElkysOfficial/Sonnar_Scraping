@@ -146,10 +146,10 @@ const plans = [
       {
         title: 'Entrega no privado',
         items: [
-          { highlight: 'DM individual', label: 'no seu WhatsApp — sem ruído de grupo' },
+          { highlight: 'DM individual', label: 'no seu WhatsApp, sem ruído de grupo' },
           { highlight: 'IA analisa', label: 'cada vaga e calcula o match com seu perfil' },
           { highlight: 'Match score 0–100', label: 'em toda vaga recebida' },
-          { highlight: 'Tempo real', label: '— vagas filtradas chegam direto pra você' }
+          { highlight: 'Tempo real', label: 'vagas filtradas chegam direto pra você' }
         ]
       },
       {

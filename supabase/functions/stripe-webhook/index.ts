@@ -126,6 +126,12 @@ async function upsertSubscriberFromSubscription(
   const resolvedPlan = planFromMeta ?? planFromPriceId(itemPriceId);
   const status = STATUS_MAP[sub.status] ?? "pending";
   const periodEnd = isoFromUnix(subscriptionPeriodEnd(sub));
+  // Marca consumo do trial: setamos quando a subscription esta em trial
+  // (status='trialing' no Stripe, mapeado pra 'active' aqui via STATUS_MAP).
+  // Importante: usamos sub.status ORIGINAL, nao o mapeado, porque o mapa
+  // achata trialing -> active.
+  const isTrialing = sub.status === "trialing";
+  const trialUsedAt = isTrialing ? new Date().toISOString() : null;
 
   const updatePayload: Record<string, unknown> = {
     status,
@@ -143,6 +149,17 @@ async function upsertSubscriberFromSubscription(
     updatePayload.scheduled_change_at = periodEnd;
   }
 
+  // Marca trial_used_at de forma idempotente: so atualiza se a coluna estiver
+  // NULL no banco. Roda como UPDATE adicional condicional apos o match.
+  async function markTrialUsedOnce(subscriberKey: { col: string; val: string }) {
+    if (!trialUsedAt) return;
+    await supabase
+      .from("subscribers")
+      .update({ trial_used_at: trialUsedAt })
+      .eq(subscriberKey.col, subscriberKey.val)
+      .is("trial_used_at", null);
+  }
+
   // 1) Tenta por subscription_id (caso mais comum em renovações)
   const bySub = await supabase
     .from("subscribers")
@@ -150,6 +167,7 @@ async function upsertSubscriberFromSubscription(
     .eq("stripe_subscription_id", subscriptionId)
     .select("user_id");
   if (bySub.data && bySub.data.length > 0) {
+    await markTrialUsedOnce({ col: "stripe_subscription_id", val: subscriptionId });
     return { matched: true, userId: bySub.data[0].user_id ?? null };
   }
 
@@ -161,6 +179,7 @@ async function upsertSubscriberFromSubscription(
       .eq("stripe_customer_id", customerId)
       .select("user_id");
     if (byCust.data && byCust.data.length > 0) {
+      await markTrialUsedOnce({ col: "stripe_customer_id", val: customerId });
       return { matched: true, userId: byCust.data[0].user_id ?? null };
     }
   }
@@ -173,6 +192,7 @@ async function upsertSubscriberFromSubscription(
       .eq("user_id", userId)
       .select("user_id");
     if (byUser.data && byUser.data.length > 0) {
+      await markTrialUsedOnce({ col: "user_id", val: userId });
       return { matched: true, userId };
     }
   }

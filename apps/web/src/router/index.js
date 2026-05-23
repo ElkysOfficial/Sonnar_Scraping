@@ -11,7 +11,6 @@ const PaymentPendingPage = () => import('../pages/PaymentPendingPage.vue')
 const PaymentConfirmingPage = () => import('../pages/PaymentConfirmingPage.vue')
 const DashboardLayout = () => import('../pages/dashboard/DashboardLayout.vue')
 const DashboardJobs = () => import('../pages/dashboard/DashboardJobs.vue')
-const DashboardSubscription = () => import('../pages/dashboard/DashboardSubscription.vue')
 const DashboardSettings = () => import('../pages/dashboard/DashboardSettings.vue')
 const AdminLayout = () => import('../pages/AdminLayout.vue')
 const AdminDashboard = () => import('../pages/AdminDashboard.vue')
@@ -67,15 +66,13 @@ const routes = [
       },
       {
         path: 'assinatura',
-        name: 'DashboardSubscription',
-        component: DashboardSubscription,
-        meta: { title: 'Assinatura', subtitle: 'Gerencie seu plano e cobrança.' }
+        redirect: '/dashboard/configuracoes?tab=assinatura'
       },
       {
         path: 'configuracoes',
         name: 'DashboardSettings',
         component: DashboardSettings,
-        meta: { title: 'Configurações', subtitle: 'Ajuste sua conta e perfil de busca.' }
+        meta: { title: 'Configurações', subtitle: 'Conta, perfil de busca e assinatura.' }
       }
     ]
   },

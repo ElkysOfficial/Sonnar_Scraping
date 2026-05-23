@@ -6,7 +6,7 @@
       <h2>Entre nas comunidades</h2>
       <p>
         Seu plano Comunidade dá acesso aos canais públicos do Sonnar. Troque
-        vagas e dicas com outros devs — entre uma vez e fique por dentro.
+        vagas e dicas com outros devs. Entre uma vez e fique por dentro.
       </p>
     </header>
 
