@@ -140,18 +140,22 @@ def extract_responsibilities(description: str, lang: str) -> str | None:
 
 ## Roadmap de sub-PRs (rumo a v3.0.0)
 
-| Sub-PR | Versão | Entrega |
-|---|---|---|
-| 4.0 | **v2.14.0** | **Este documento + schema** (migration `responsibilities` + `description_lang`) |
-| 4.1 | v2.15.0 | Módulo `src/utils/section_extractor.py` (regex de cabeçalhos PT/EN + algoritmo) + testes unitários |
-| 4.2 | v2.16.0 | Módulo `src/utils/lang_detect.py` (extraído do careerjet) + integração com pipeline central |
-| 4.3 | v2.17.0 | **LinkedIn**: aplica extração + tradução |
-| 4.4 | v2.18.0 | **Dice**: aplica extração + tradução (EN sempre) |
-| 4.5 | v2.19.0 | **Engines remotas EN** (RemoteOK, Remotive, WeWorkRemotely, ZipRecruiter) |
-| 4.6 | v2.20.0 | **Engines PT** (Indeed, Catho, InfoJobs, BNE, GeekHunter, Jooble, MichaelPage, ProgramaThor, SimplyHired, Gupy) — só extração |
-| 4.7 | v2.21.0 | **Careerjet** — reusar pipeline central (manter compatibilidade com tradução já existente) |
-| 4.8 | v2.22.0 | **Formatter** atualizado pra usar `responsibilities` (com fallback pra `description`) |
-| 4.9 | **v3.0.0** | **Marco oficial** — release consolidado com changelog e doc no `OPERACAO.md` |
+> **Nota de versionamento:** as versões v2.15.0–v2.17.x foram usadas para
+> a entrega de billing/mudança de plano (PRs #61 a #67). O roadmap do épico
+> retomou em v2.18.0 logo abaixo. Os números seguem só pra ordenar.
+
+| Sub-PR | Versão | Entrega | Status |
+|---|---|---|---|
+| 4.0 | v2.14.0 | Este documento + schema (migration `responsibilities` + `description_lang`) | ✅ |
+| 4.1 | **v2.18.0** | Módulo `src/utils/section_extractor.py` (regex de cabeçalhos PT/EN + algoritmo) + testes unitários | ✅ |
+| 4.2 | v2.19.0 | Módulo `src/utils/lang_detect.py` (extraído do careerjet) + integração com pipeline central | ⏳ |
+| 4.3 | v2.20.0 | **LinkedIn**: aplica extração + tradução | ⏳ |
+| 4.4 | v2.21.0 | **Dice**: aplica extração + tradução (EN sempre) | ⏳ |
+| 4.5 | v2.22.0 | **Engines remotas EN** (RemoteOK, Remotive, WeWorkRemotely, ZipRecruiter) | ⏳ |
+| 4.6 | v2.23.0 | **Engines PT** (Indeed, Catho, InfoJobs, BNE, GeekHunter, Jooble, MichaelPage, ProgramaThor, SimplyHired, Gupy) — só extração | ⏳ |
+| 4.7 | v2.24.0 | **Careerjet** — reusar pipeline central (manter compatibilidade com tradução já existente) | ⏳ |
+| 4.8 | v2.25.0 | **Formatter** atualizado pra usar `responsibilities` (com fallback pra `description`) | ⏳ |
+| 4.9 | **v3.0.0** | **Marco oficial** — release consolidado com changelog e doc no `OPERACAO.md` | ⏳ |
 
 ## Métricas de sucesso
 
