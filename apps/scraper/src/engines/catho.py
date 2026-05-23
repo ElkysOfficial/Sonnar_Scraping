@@ -39,11 +39,15 @@ from bs4 import BeautifulSoup
 from curl_cffi import requests
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
-from variavel import get_active_stacks  # noqa: E402
+from variavel import get_active_batch_key, get_active_stacks  # noqa: E402
 from src.persistence.extraction_tracker import tracker  # noqa: E402
+from src.persistence.progress_tracker import progress  # noqa: E402
 from src.utils.http_session import fetch_sync  # noqa: E402
 from src.utils.job_fallbacks import apply_description_fallbacks  # noqa: E402
 from src.utils.text_utils import extract_skills  # noqa: E402
+
+import logging
+logger = logging.getLogger("scraper.engine.catho")
 
 
 PARSER_VERSION = "catho-2026.05.08"
@@ -461,13 +465,48 @@ async def get_catho_jobs(on_job=None) -> list:
     softblock_streak = 0  # detail fetches consecutivos sem dados estruturados
     max_pages = 5
 
-    for stack in get_active_stacks():
+    # ---- Checkpoint: retomada do ponto exato apos restart -----------------
+    #
+    # Granularidade: por (stack, page) — mesmo padrao do Dice. Cada stack
+    # pode varrer ate 5 paginas; sem checkpoint de pagina, refariamos todas
+    # no restart. Retomada por LABEL da stack: descarta cursor se a stack
+    # salva nao esta no batch atual.
+    stacks_list = list(get_active_stacks())
+    batch_key = get_active_batch_key()
+    cursor = await progress.resume("catho", batch_key) if batch_key else None
+
+    resume_stack = (cursor or {}).get("stack")
+    resume_page = int((cursor or {}).get("page", 1))
+    resume_stack_idx = 0
+    if cursor:
+        try:
+            resume_stack_idx = stacks_list.index(resume_stack) if resume_stack else 0
+        except ValueError:
+            cursor = None
+            resume_page = 1
+
+    if cursor:
+        logger.info("catho_resume", extra={
+            "batch_key": batch_key,
+            "stack": resume_stack, "stack_idx": resume_stack_idx,
+            "page": resume_page,
+        })
+
+    for stack_idx, stack in enumerate(stacks_list):
+        if stack_idx < resume_stack_idx:
+            continue
         encoded = urllib.parse.quote(stack)
-        page = 1
+        page = resume_page if stack_idx == resume_stack_idx else 1
         consecutive_empty_pages = 0
         added_for_stack = 0
 
         while page <= max_pages and consecutive_empty_pages < 2:
+            # Salva cursor APONTANDO PRA ESTA pagina antes de executa-la.
+            if batch_key:
+                progress.set_cursor("catho", batch_key, {
+                    "stack_idx": stack_idx, "stack": stack,
+                    "page": page,
+                })
             try:
                 if page > 1:
                     await asyncio.sleep(random.uniform(0.5, 1.2))
@@ -564,6 +603,10 @@ async def get_catho_jobs(on_job=None) -> list:
             empty_stack_streak = 0
 
         await asyncio.sleep(random.uniform(0.8, 1.5))
+
+    # Ciclo completo: limpa o cursor pra o proximo batch comecar do zero.
+    if batch_key:
+        await progress.clear("catho", batch_key)
 
     print(f"Foram obtidas {len(jobs)} vagas do site Catho")
     return jobs
