@@ -32,10 +32,18 @@ import re
 import cloudscraper
 from bs4 import BeautifulSoup
 
+import sys
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+from variavel import get_active_batch_key  # noqa: E402
+
 from ..persistence.extraction_tracker import tracker
+from ..persistence.progress_tracker import progress
 from ..utils.http_session import fetch_sync
 from ..utils.job_fallbacks import apply_description_fallbacks
 from ..utils.text_utils import extract_skills, strip_html
+
+import logging
+logger = logging.getLogger("scraper.engine.bne")
 
 
 PARSER_VERSION = "bne-2026.05.08"
@@ -297,12 +305,30 @@ async def _scan_area(area: str, scraper, max_pages: int = BNE_MAX_PAGES) -> set:
 
     Returns:
         Set de ``job_id`` únicos coletados (sem o prefixo ``"job-"``).
+
+    Checkpoint
+    ----------
+    Persiste a pagina atual via ``progress_tracker`` quando ha um batch_key
+    ativo. No restart, retoma exatamente da pagina onde parou (ate 50 paginas
+    sem checkpoint = ate 50 paginas refeitas; com checkpoint = max 1 pagina).
     """
     found: set[str] = set()
-    page = 1
+
+    batch_key = get_active_batch_key()
+    cursor = await progress.resume("bne", batch_key) if batch_key else None
+    start_page = int((cursor or {}).get("page", 1)) if cursor else 1
+    if cursor:
+        logger.info("bne_resume", extra={
+            "batch_key": batch_key, "page": start_page,
+        })
+
+    page = start_page
     consecutive_empty = 0
 
     while page <= max_pages and consecutive_empty < 2:
+        # Salva cursor APONTANDO PRA ESTA pagina antes de executa-la.
+        if batch_key:
+            progress.set_cursor("bne", batch_key, {"page": page, "area": area})
         try:
             if page > 1:
                 await asyncio.sleep(random.uniform(0.3, 0.8))
@@ -340,6 +366,10 @@ async def _scan_area(area: str, scraper, max_pages: int = BNE_MAX_PAGES) -> set:
         except Exception:
             consecutive_empty += 1
             page += 1
+
+    # Ciclo completo: limpa o cursor pra o proximo batch comecar da pagina 1.
+    if batch_key:
+        await progress.clear("bne", batch_key)
 
     return found
 

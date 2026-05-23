@@ -5,6 +5,36 @@ Todas as mudanças relevantes deste projeto são documentadas neste arquivo.
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/)
 e o projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [2.10.0] - 2026-05-23
+
+### Adicionado
+
+- **Engines BNE, Catho e Indeed agora retomam a varredura após restart**.
+  Cada uma ganha checkpoint com a granularidade que faz sentido pra sua
+  estrutura de iteração:
+  - **BNE** (`apps/scraper/src/engines/bne.py`): área tech fixa
+    (`informatica`), sem stacks. Cursor: `{page, area}`. Salvo dentro de
+    `_scan_area` antes de cada página. No restart, retoma exatamente da
+    página onde parou (até 50 páginas sem checkpoint = até 50 páginas
+    refeitas; com checkpoint = 1 página max).
+  - **Catho** (`apps/scraper/src/engines/catho.py`): cursor `{stack, page}`
+    — mesma granularidade do Dice. Salvo antes de cada página.
+  - **Indeed** (`apps/scraper/src/engines/indeed.py`): cursor
+    `{stack, variant_idx}` — Indeed não tem paginação interna (só 1 página
+    por variant), então o cursor reflete o índice do filtro em
+    `_LISTING_VARIANTS`. Salvo antes de cada combinação.
+  - Em todas as três, retomada por **label da stack/área** (não índice) —
+    cursor é descartado se a stack salva não está no batch atual. Ao
+    concluir o ciclo, `progress.clear` apaga o cursor.
+
+### Corrigido
+
+- **Indeed: clear de cursor no caminho de zero vagas**. Quando o filtro
+  tech descartava todas as vagas relevantes (early return em
+  `get_indeed_jobs`), o cursor ficava no banco — o próximo batch
+  começaria do checkpoint anterior em vez de zero. Agora o `progress.clear`
+  é chamado também nesse caminho.
+
 ## [2.9.0] - 2026-05-23
 
 ### Adicionado
