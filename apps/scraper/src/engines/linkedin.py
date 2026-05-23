@@ -23,18 +23,21 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import math
 import os
 import re
 import sys
+import time
 import urllib.parse
 
 from bs4 import BeautifulSoup
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-from variavel import get_active_stacks  # noqa: E402
+from variavel import get_active_batch_key, get_active_stacks  # noqa: E402
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 from src.persistence.extraction_tracker import tracker  # noqa: E402
+from src.persistence.progress_tracker import progress  # noqa: E402
 from src.utils.http_session import HttpSession, fetch  # noqa: E402
 from src.utils.job_fallbacks import apply_description_fallbacks  # noqa: E402
 from src.utils.metrics import metrics  # noqa: E402
@@ -120,24 +123,107 @@ _DETAIL_CONCURRENCY = int(os.getenv("LINKEDIN_DETAIL_CONCURRENCY", "4"))
 
 # Paginacao do listing. LinkedIn pagina em 25, e aceita ate ~start=1000.
 # Se a stack esgotar antes (zero novos numa pagina), o loop quebra.
-_LISTING_MAX_START = int(os.getenv("LINKEDIN_LISTING_MAX_START", "500"))
+# 250 / 25 = 10 paginas — equilibrio entre cobertura e pressao no host.
+_LISTING_MAX_START = int(os.getenv("LINKEDIN_LISTING_MAX_START", "250"))
 _LISTING_STEP = int(os.getenv("LINKEDIN_LISTING_STEP", "25"))
 
-# Regioes a varrer alem do filtro nacional. Pegamos vagas indexadas por
-# estado/cidade que nao aparecem no geoId nacional. ``geo_id=None`` faz
-# o LinkedIn auto-resolver pela string ``location``.
-_LISTING_REGIONS: list[tuple[str, str | None]] = [
-    ("Brasil", "106057199"),                     # nacional (alvo principal)
-    ("São Paulo, Brasil", None),                 # estado SP
-    ("Rio de Janeiro, Brasil", None),
-    ("Minas Gerais, Brasil", None),
-    ("Rio Grande do Sul, Brasil", None),
-    ("Paraná, Brasil", None),
-    ("Santa Catarina, Brasil", None),
-    ("Distrito Federal, Brasil", None),
+# Regiao "base" sempre incluida — busca nacional Brasil. As demais regioes
+# entram via lote rotativo (ver ``_rotating_regions``).
+_PRIMARY_REGION: tuple[str, str | None] = ("Brasil", "106057199")
+
+# Pool completo de regioes rotativas: todos os 27 estados brasileiros + um
+# subset de paises com mercado tech relevante. ``geo_id=None`` faz o LinkedIn
+# auto-resolver pela string ``location``. Em um ciclo so um lote eh varrido
+# (ver ``_LISTING_REGION_BATCH_SIZE``); ao longo de varios ciclos cobrimos
+# o pool inteiro sem saturar a sessao do LinkedIn em uma unica rodada.
+_ROTATING_REGIONS: list[tuple[str, str | None]] = [
+    # --- 27 UFs do Brasil ---
+    ("Acre, Brasil", None),
+    ("Alagoas, Brasil", None),
+    ("Amapá, Brasil", None),
+    ("Amazonas, Brasil", None),
     ("Bahia, Brasil", None),
+    ("Ceará, Brasil", None),
+    ("Distrito Federal, Brasil", None),
+    ("Espírito Santo, Brasil", None),
+    ("Goiás, Brasil", None),
+    ("Maranhão, Brasil", None),
+    ("Mato Grosso, Brasil", None),
+    ("Mato Grosso do Sul, Brasil", None),
+    ("Minas Gerais, Brasil", None),
+    ("Pará, Brasil", None),
+    ("Paraíba, Brasil", None),
+    ("Paraná, Brasil", None),
     ("Pernambuco, Brasil", None),
+    ("Piauí, Brasil", None),
+    ("Rio de Janeiro, Brasil", None),
+    ("Rio Grande do Norte, Brasil", None),
+    ("Rio Grande do Sul, Brasil", None),
+    ("Rondônia, Brasil", None),
+    ("Roraima, Brasil", None),
+    ("Santa Catarina, Brasil", None),
+    ("São Paulo, Brasil", None),
+    ("Sergipe, Brasil", None),
+    ("Tocantins, Brasil", None),
+    # --- Paises com tech relevante ---
+    ("United States", None),
+    ("United Kingdom", None),
+    ("Portugal", None),
+    ("Spain", None),
+    ("France", None),
+    ("Germany", None),
+    ("Netherlands", None),
+    ("Ireland", None),
+    ("Italy", None),
+    ("Sweden", None),
+    ("Belgium", None),
+    ("Switzerland", None),
+    ("Canada", None),
+    ("Mexico", None),
+    ("Argentina", None),
+    ("Chile", None),
+    ("Colombia", None),
+    ("Australia", None),
+    ("Singapore", None),
+    ("Japan", None),
 ]
+
+# Tamanho do lote rotativo por ciclo. 5 regioes/ciclo × ~47 regioes total =
+# ~10 lotes; em ~20 horas de ciclos (10min cada × 2h pausa) cobrimos o pool
+# inteiro. Cada ciclo individual mantem 5 (rotativas) + Brasil (primary) =
+# 6 regioes — pressao por ciclo equivalente a antiga (era 10 regioes fixas).
+_LISTING_REGION_BATCH_SIZE = int(os.getenv("LINKEDIN_REGION_BATCH_SIZE", "5"))
+
+# Janela de rotacao em segundos. O indice avanca 1 lote a cada essa janela.
+# 2h casa com BATCH_INTERVAL_SECONDS do controller — cada execucao do
+# LinkedIn dentro de um batch pega o mesmo lote rotativo, evitando saltos
+# no meio do batch.
+_LISTING_ROTATION_INTERVAL_S = int(
+    os.getenv("LINKEDIN_REGION_ROTATION_INTERVAL_S", "7200")
+)
+
+
+def _rotating_regions() -> list[tuple[str, str | None]]:
+    """Lote de regioes estrangeiras + estados BR do ciclo atual.
+
+    Igual ao Careerjet: o indice avanca a cada janela de rotacao (default
+    2h), cobrindo o pool inteiro de ``_ROTATING_REGIONS`` ao longo de
+    aproximadamente um dia. Baseado no relogio (sem arquivo de estado) —
+    sobrevive a reinicios do processo.
+    """
+    n = len(_ROTATING_REGIONS)
+    if n == 0 or _LISTING_REGION_BATCH_SIZE <= 0:
+        return []
+    total_batches = math.ceil(n / _LISTING_REGION_BATCH_SIZE)
+    idx = int(time.time() // _LISTING_ROTATION_INTERVAL_S) % total_batches
+    start = idx * _LISTING_REGION_BATCH_SIZE
+    return list(_ROTATING_REGIONS[start:start + _LISTING_REGION_BATCH_SIZE])
+
+
+def _active_regions() -> list[tuple[str, str | None]]:
+    """Regioes a varrer neste ciclo: ``Brasil`` (sempre) + lote rotativo."""
+    return [_PRIMARY_REGION] + _rotating_regions()
+
 
 # Ordenacoes a rodar por (stack, regiao). LinkedIn nao retorna o mesmo set
 # por relevancia e por data: vagas recem-postadas que ainda nao ranquearam
@@ -341,12 +427,31 @@ async def get_linkedin_links() -> list[dict]:
       A. Paginacao profunda (ate ``_LISTING_MAX_START``, step 25),
          com cutoff adaptativo quando a stack esgota.
       B. Multi-ordenacao: relevance + date (``sortBy=DD``).
-      C. Multi-regiao: filtro nacional + estados grandes - vagas indexadas
-         regionalmente nem sempre aparecem no geoId nacional.
+      C. Multi-regiao rotativa: ``Brasil`` (sempre) + lote rotativo de
+         ``_LISTING_REGION_BATCH_SIZE`` regioes vindo do pool global
+         (27 UFs + paises com mercado tech). O indice avanca por relogio
+         (igual Careerjet) — sobrevive a reinicios e cobre o pool inteiro
+         ao longo de ~1 dia de ciclos.
 
     Dedup por URL canonica via ``seen``: combinacoes posteriores so somam
     vagas inéditas. ``fetch`` (policy wrapper) cuida de rate-limit, retry
     e circuit breaker - sem isso o volume de requests dispararia 429.
+
+    Checkpoint (sobrevive a restart)
+    --------------------------------
+    Antes de cada combinacao ``(stack, region, sort)`` salva o cursor no
+    ``progress_tracker``. No restart, ``progress.resume`` devolve a
+    posicao salva e o loop pula direto pra ela, evitando refazer os
+    listings das combinacoes ja varridas no batch corrente. A retomada eh
+    feita por **label** (``region_label`` no cursor), nao por indice,
+    porque o lote rotativo pode mudar entre o checkpoint e o restart.
+    Se o label salvo nao existe no lote atual, ignora o cursor e comeca
+    do zero — pior caso: refaz o batch atual desde o inicio.
+
+    Granularidade: por combinacao — perda maxima no restart e ~10 paginas
+    (uma combinacao interrompida). O dedup mais amplo via ``sent_jobs`` no
+    controller continua filtrando vagas conhecidas, entao perder o ``seen``
+    local nao causa reprocessamento.
     """
     seeds: list[dict] = []
     seen: set[str] = set()
@@ -354,9 +459,88 @@ async def get_linkedin_links() -> list[dict]:
     await _warmup_session()
 
     stacks_list = list(get_active_stacks())
+    regions_list = _active_regions()
+
+    # Tenta retomar do ponto salvo. None = sem cursor (comeca do zero ou
+    # rodando sem controller/batch ativo). ``batch_key`` mudou desde o
+    # checkpoint => ``resume`` ja devolve None (proximo batch, posicao zero).
+    batch_key = get_active_batch_key()
+    cursor = await progress.resume("linkedin", batch_key) if batch_key else None
+
+    resume_stack = (cursor or {}).get("stack")
+    resume_region_label = (cursor or {}).get("region")
+    resume_sort = (cursor or {}).get("sort")
+
+    # Resolve labels -> indices no contexto ATUAL. Se o label nao existe
+    # mais (lote rotativo virou), descarta o cursor inteiro.
+    resume_stack_idx = 0
+    resume_region_idx = 0
+    resume_sort_idx = 0
+    if cursor:
+        try:
+            resume_stack_idx = stacks_list.index(resume_stack) if resume_stack else 0
+        except ValueError:
+            resume_stack_idx = 0
+            cursor = None  # stack salva nao esta no batch atual
+
+    if cursor:
+        region_labels = [r[0] for r in regions_list]
+        try:
+            resume_region_idx = (
+                region_labels.index(resume_region_label) if resume_region_label else 0
+            )
+        except ValueError:
+            # Regiao salva nao esta no lote rotativo atual: descarta cursor.
+            # Refazemos o batch desde o inicio — aceitavel.
+            cursor = None
+            resume_stack_idx = 0
+            resume_region_idx = 0
+
+    if cursor:
+        sort_labels = [(s or "rel") for s in _LISTING_SORTS]
+        try:
+            resume_sort_idx = (
+                sort_labels.index(resume_sort) if resume_sort else 0
+            )
+        except ValueError:
+            resume_sort_idx = 0
+
+    if cursor:
+        logger.info("linkedin_resume", extra={
+            "batch_key": batch_key,
+            "stack": resume_stack, "stack_idx": resume_stack_idx,
+            "region": resume_region_label, "region_idx": resume_region_idx,
+            "sort": resume_sort, "sort_idx": resume_sort_idx,
+        })
+
     for stack_idx, stack in enumerate(stacks_list):
-        for region_label, geo_id in _LISTING_REGIONS:
-            for sort in _LISTING_SORTS:
+        if stack_idx < resume_stack_idx:
+            continue
+        for region_idx, (region_label, geo_id) in enumerate(regions_list):
+            # Region index so eh respeitado para a stack onde paramos.
+            if stack_idx == resume_stack_idx and region_idx < resume_region_idx:
+                continue
+            for sort_idx, sort in enumerate(_LISTING_SORTS):
+                # Sort index so eh respeitado para (stack, region) onde paramos.
+                if (stack_idx == resume_stack_idx
+                        and region_idx == resume_region_idx
+                        and sort_idx < resume_sort_idx):
+                    continue
+
+                # Salva o cursor APONTANDO PRA ESTA combinacao antes de
+                # executa-la. Se o processo cair durante, ao reiniciar
+                # refazemos so esta combinacao (max ~10 paginas), nao o
+                # batch inteiro.
+                if batch_key:
+                    progress.set_cursor("linkedin", batch_key, {
+                        "stack_idx": stack_idx,
+                        "stack": stack,
+                        "region_idx": region_idx,
+                        "region": region_label,
+                        "sort_idx": sort_idx,
+                        "sort": sort or "rel",
+                    })
+
                 added = await _scan_listing(
                     client, stack, region_label, geo_id, sort, seen, seeds,
                 )
@@ -369,6 +553,11 @@ async def get_linkedin_links() -> list[dict]:
         # LinkedIn impoe limite por sessao (nao apenas por taxa).
         if stack_idx < len(stacks_list) - 1:
             await asyncio.sleep(10.0)
+
+    # Ciclo completo: limpa o cursor pra que o proximo batch comece do zero
+    # (proximo batch tera batch_key diferente — esse clear so eh defensivo).
+    if batch_key:
+        await progress.clear("linkedin", batch_key)
 
     metrics.set_gauge("listing.seeds", len(seeds), domain="br.linkedin.com")
     return seeds

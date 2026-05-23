@@ -5,6 +5,39 @@ Todas as mudanças relevantes deste projeto são documentadas neste arquivo.
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/)
 e o projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [2.7.0] - 2026-05-23
+
+### Adicionado
+
+- **Engine LinkedIn agora retoma a varredura após restart, e cobre o mundo
+  todo + os 27 estados brasileiros via rotação por relógio**. Em
+  `apps/scraper/src/engines/linkedin.py`:
+  - **Checkpoint fino**: antes de cada combinação `(stack, region, sort)`
+    chama `progress.set_cursor("linkedin", batch_key, {...})`; ao reiniciar,
+    `progress.resume` devolve a posição salva e o loop pula direto pra ela.
+    A retomada é por **label** (não índice), então sobrevive a mudanças no
+    lote rotativo de regiões. Se o label salvo não está no lote atual, o
+    cursor é descartado e o batch reinicia do zero. Ao concluir o ciclo,
+    `progress.clear` apaga o cursor.
+  - **Pool de regiões expandido pra ~47**: 27 UFs do Brasil (Acre →
+    Tocantins) + ~20 países com mercado tech relevante (US, UK, Portugal,
+    Espanha, França, Alemanha, Países Baixos, Irlanda, Itália, Suécia,
+    Bélgica, Suíça, Canadá, México, Argentina, Chile, Colômbia, Austrália,
+    Singapura, Japão).
+  - **Rotação por relógio** (mesmo padrão do Careerjet): `Brasil` é sempre
+    incluído (busca nacional, base do tráfego); o restante é um lote
+    rotativo de tamanho `LINKEDIN_REGION_BATCH_SIZE` (default **5**) que
+    avança a cada `LINKEDIN_REGION_ROTATION_INTERVAL_S` (default **2h**,
+    casa com `BATCH_INTERVAL_SECONDS`). Em ~20h de ciclos, o pool inteiro
+    é coberto.
+
+### Modificado
+
+- **LinkedIn: paginação por combinação reduzida de 20 → 10 páginas**
+  (`LINKEDIN_LISTING_MAX_START` de 500 → 250, mantendo step 25). A
+  cobertura geográfica ampliada compensa a paginação mais rasa, e a
+  pressão por combinação cai pela metade — menos risco de bloqueio.
+
 ## [2.6.3] - 2026-05-22
 
 ### Adicionado
