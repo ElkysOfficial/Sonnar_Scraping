@@ -5,6 +5,29 @@ Todas as mudanças relevantes deste projeto são documentadas neste arquivo.
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/)
 e o projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [2.6.3] - 2026-05-22
+
+### Adicionado
+
+- **Infraestrutura de checkpoint pra retomar a varredura após restart**:
+  nova tabela `public.scraper_progress` no Supabase (migration
+  `20260522…_scraper_progress`) com chave primária `(engine, batch_key)`
+  e `cursor` JSONB de shape livre. Novo módulo
+  `apps/scraper/src/persistence/progress_tracker.py` expõe a API que cada
+  engine vai consumir: `set_cursor(engine, batch_key, cursor)` (buffer
+  in-memory, não bloqueia), `resume(engine, batch_key)` (lê do banco no
+  startup; devolve `None` se o batch mudou), `clear(engine, batch_key)`
+  (DELETE imediato ao concluir o batch). Flusher de fundo faz upsert em
+  batch a cada 5s, então engines podem chamar `set_cursor` a vontade sem
+  custo de I/O. Em `apps/scraper/variavel.py` adiciono
+  `set_active_batch_context` / `get_active_batch_key` pra que cada engine
+  saiba qual `batch_key` (`cat=<categoria>|idx=<n>`) usar; o
+  `controllers.py` seta o contexto antes de cada lote e sobe o flusher do
+  progress junto com os outros. **Esta entrega não modifica nenhuma
+  engine** — só prepara a infra. As engines serão instrumentadas em PRs
+  separados (LinkedIn primeiro, depois Careerjet, Dice, BNE/Catho/Indeed
+  e o restante).
+
 ## [2.6.2] - 2026-05-22
 
 ### Adicionado
