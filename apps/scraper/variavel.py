@@ -174,6 +174,8 @@ def iter_batches(batch_size: int = 5) -> Iterator[Tuple[str, List[str]]]:
 # ---------------------------------------------------------------------------
 
 _active_batch: Optional[Set[str]] = None
+_active_batch_category: Optional[str] = None
+_active_batch_idx: Optional[int] = None
 
 
 def get_active_stacks() -> Set[str]:
@@ -199,3 +201,26 @@ def set_active_batch(batch: Optional[Iterable[str]]) -> None:
     """
     global _active_batch
     _active_batch = set(batch) if batch is not None else None
+
+
+def set_active_batch_context(category: Optional[str], idx: Optional[int]) -> None:
+    """Define o contexto do batch ativo (categoria + índice). Usado pelas
+    engines para gerar o ``batch_key`` do ``ProgressTracker``.
+
+    Chamado pelo controller junto com ``set_active_batch``.
+    """
+    global _active_batch_category, _active_batch_idx
+    _active_batch_category = category
+    _active_batch_idx = idx
+
+
+def get_active_batch_key() -> Optional[str]:
+    """Identificador estável do batch atual, no formato ``cat=<categoria>|idx=<n>``.
+
+    Devolve ``None`` em modo standalone (sem batch ativo). Engines que rodam
+    isoladas (sem controller) não fazem checkpoint — o ``progress_tracker``
+    ignora chamadas com ``batch_key=None``.
+    """
+    if _active_batch_category is None or _active_batch_idx is None:
+        return None
+    return f"cat={_active_batch_category}|idx={_active_batch_idx}"
