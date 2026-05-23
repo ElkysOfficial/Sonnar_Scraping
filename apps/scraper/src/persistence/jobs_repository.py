@@ -143,6 +143,8 @@ def build_job_payload(job_data: dict, source: Optional[str] = None) -> dict:
         skills = None
 
     description = (job_data.get('description') or '').strip() or None
+    description_lang = (job_data.get('description_lang') or '').strip() or None
+    responsibilities = (job_data.get('responsibilities') or '').strip() or None
 
     payload = {
         'job_url': job_data.get('job_url'),
@@ -161,6 +163,8 @@ def build_job_payload(job_data: dict, source: Optional[str] = None) -> dict:
         'source': source,
         'skills': skills,
         'description': description,
+        'description_lang': description_lang,
+        'responsibilities': responsibilities,
         'scraped_at': datetime.now(timezone.utc).isoformat(),
     }
     # Remove chaves com None para nao sobrescrever defaults na tabela

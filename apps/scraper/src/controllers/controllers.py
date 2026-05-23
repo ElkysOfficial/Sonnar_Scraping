@@ -237,11 +237,13 @@ def normalize_job_result(result: list) -> dict:
     Formato esperado das engines (lista posicional):
         [job_url, job_title, company, location, work_type,
          hiring_regime, salary, publication_date,
-         skills?, description?]
+         skills?, description?, description_lang?, responsibilities?]
 
     `location` pode vir como str ou list - normalizamos para str ('SP - São Paulo').
-    Os campos `skills` (list) e `description` (str) são opcionais - engines
-    legadas que devolvem 8 elementos continuam funcionando.
+    Os campos a partir do indice 8 sao opcionais - engines legadas que
+    devolvem 8 ou 10 elementos continuam funcionando. Os campos
+    `description_lang` (indice 10) e `responsibilities` (indice 11) sao
+    novos no epico v3.0.0 e so vem preenchidos pelas engines integradas.
     """
     location = result[3] if len(result) > 3 else ""
     if isinstance(location, list):
@@ -250,6 +252,14 @@ def normalize_job_result(result: list) -> dict:
     skills = result[8] if len(result) > 8 else []
     if not isinstance(skills, list):
         skills = []
+
+    # Novos campos opcionais do epico v3.0.0 - so engines integradas preenchem
+    description_lang = result[10] if len(result) > 10 else None
+    if description_lang is not None and not isinstance(description_lang, str):
+        description_lang = str(description_lang)
+    responsibilities = result[11] if len(result) > 11 else None
+    if responsibilities is not None and not isinstance(responsibilities, str):
+        responsibilities = str(responsibilities)
 
     return {
         "job_url": str(result[0]) if len(result) > 0 else "",
@@ -262,6 +272,8 @@ def normalize_job_result(result: list) -> dict:
         "publication_date": str(result[7]) if len(result) > 7 else "",
         "skills": skills,
         "description": str(result[9]) if len(result) > 9 else "",
+        "description_lang": description_lang,
+        "responsibilities": responsibilities,
     }
 
 

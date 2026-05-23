@@ -39,6 +39,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 from src.persistence.extraction_tracker import tracker  # noqa: E402
 from src.persistence.progress_tracker import progress  # noqa: E402
 from src.utils.http_session import HttpSession, fetch  # noqa: E402
+from src.utils.job_enrichment import enrich_async  # noqa: E402
 from src.utils.job_fallbacks import apply_description_fallbacks  # noqa: E402
 from src.utils.metrics import metrics  # noqa: E402
 from src.utils.text_utils import extract_skills, strip_html  # noqa: E402
@@ -47,7 +48,9 @@ from src.utils.text_utils import extract_skills, strip_html  # noqa: E402
 logger = logging.getLogger("scraper.engine.linkedin")
 
 # Versão do parser - bump quando mudar selectors. Permite reenrichment futuro.
-PARSER_VERSION = "linkedin-2026.05.10.1"
+# 2026.05.23 (v2.20.0): adicao de description_lang + responsibilities via
+# pipeline central (lang_detect + translator + section_extractor).
+PARSER_VERSION = "linkedin-2026.05.23.1"
 
 
 # --- Sessao (httpx compartilhado) ----------------------------------------
@@ -742,6 +745,8 @@ async def _fetch_detail(seed: dict, sem: asyncio.Semaphore, client) -> dict:
         "title": "",
         "company": "",
         "description": "",
+        "description_lang": None,
+        "responsibilities": None,
         "skills": [],
         "salary": "",
         "publication_date": "",
@@ -849,11 +854,30 @@ async def _fetch_detail(seed: dict, sem: asyncio.Semaphore, client) -> dict:
                 out["description"] = description
                 out["skills"] = extract_skills(description) if description else []
 
+    # Pipeline de enriquecimento (epico v3.0.0):
+    # detect_lang -> translate (se !=pt) -> extract_responsibilities. Falha
+    # nao bloqueia a vaga - so deixa os campos vazios.
+    if out["description"]:
+        try:
+            lang, resp = await enrich_async(
+                title=out["title"], description=out["description"]
+            )
+            out["description_lang"] = lang
+            out["responsibilities"] = resp
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "enrich_failed url=%s err=%s", seed.get("link"), exc
+            )
+
     return out
 
 
 def _merge_detail_over_seed(seed: dict, detail: dict) -> list:
-    """Monta a lista canonica de 10 campos preferindo detail sobre seed."""
+    """Monta a lista canonica de 12 campos preferindo detail sobre seed.
+
+    Indices 10 e 11 (description_lang, responsibilities) sao novos no
+    epico v3.0.0 - preenchidos por enrich_async no _fetch_detail.
+    """
     return [
         seed["link"],
         # Title e company: detail-first agora. Seed pode estar vazio quando
@@ -867,6 +891,8 @@ def _merge_detail_over_seed(seed: dict, detail: dict) -> list:
         detail.get("publication_date") or seed["publication_date"],
         detail.get("skills") or [],
         detail.get("description") or "",
+        detail.get("description_lang"),
+        detail.get("responsibilities"),
     ]
 
 
