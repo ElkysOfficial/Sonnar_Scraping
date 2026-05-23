@@ -246,8 +246,34 @@ const loadingRevert = ref(false)
 const loadingChange = ref<Plan | null>(null)
 const errorMessage = ref('')
 
+// Garante que a sessao tem token valido antes de chamar uma edge function.
+// Em SPAs abertas por muito tempo o autoRefresh pode silenciosamente falhar
+// (rede instavel, refresh token rotacionado) e o supabase-js manda a request
+// sem Authorization -> 401 UNAUTHORIZED_NO_AUTH_HEADER. Aqui forcamos o
+// refresh e abortamos com mensagem amigavel se nao houver sessao.
+async function ensureFreshSession(): Promise<boolean> {
+  try {
+    const { data } = await supabase.auth.getSession()
+    if (!data.session) {
+      errorMessage.value = 'Sua sessão expirou. Faça login novamente para continuar.'
+      return false
+    }
+    // Refresh proativo - so falha se o refresh token estiver invalido.
+    const refreshed = await supabase.auth.refreshSession()
+    if (refreshed.error || !refreshed.data.session) {
+      errorMessage.value = 'Sua sessão expirou. Faça login novamente para continuar.'
+      return false
+    }
+    return true
+  } catch {
+    errorMessage.value = 'Sua sessão expirou. Faça login novamente para continuar.'
+    return false
+  }
+}
+
 async function startCheckout(plan: 'pro' | 'plus') {
   errorMessage.value = ''
+  if (!(await ensureFreshSession())) return
   loadingCheckout.value = true
   try {
     const { data, error } = await supabase.functions.invoke('create-checkout-session', { body: { plan } })
@@ -264,6 +290,7 @@ async function startCheckout(plan: 'pro' | 'plus') {
 // Cliente ja pagante muda de plano (upgrade imediato ou downgrade agendado).
 async function changePlan(targetPlan: Plan) {
   errorMessage.value = ''
+  if (!(await ensureFreshSession())) { loadingChange.value = null; return }
   loadingChange.value = targetPlan
   try {
     const { data, error } = await supabase.functions.invoke('change-plan', { body: { targetPlan } })
@@ -554,6 +581,7 @@ async function onRevert() {
 
   confirmDialog.loading = true
   errorMessage.value = ''
+  if (!(await ensureFreshSession())) { confirmDialog.loading = false; loadingRevert.value = false; return }
   loadingRevert.value = true
   try {
     const { error } = await supabase.functions.invoke('revert-scheduled-change')
@@ -580,6 +608,7 @@ function goCheckout() {
 
 async function goManage() {
   errorMessage.value = ''
+  if (!(await ensureFreshSession())) return
   loadingManage.value = true
   try {
     const { data, error } = await supabase.functions.invoke('create-portal-session')
@@ -618,6 +647,7 @@ async function onCancel() {
 
   confirmDialog.loading = true
   errorMessage.value = ''
+  if (!(await ensureFreshSession())) { confirmDialog.loading = false; loadingCancel.value = false; return }
   loadingCancel.value = true
   try {
     const { data, error } = await supabase.functions.invoke('change-plan', { body: { targetPlan: 'free' } })
