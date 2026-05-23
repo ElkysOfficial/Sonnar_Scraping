@@ -106,6 +106,22 @@ class LocalJobStore:
             entry['sent_to'] = sorted(sent)
             self._dirty.add(job_url)
 
+    def delete_url(self, job_url: str) -> bool:
+        """Remove uma vaga especifica do buffer in-memory.
+
+        Usado pelo revalidator quando uma vaga expirou na origem (HTTP 404)
+        — o core ja foi instruido a remover do arquivo via ``DELETE /jobs/:id``;
+        este metodo apenas sincroniza o cache local. Devolve True se a entry
+        existia e foi removida, False se nao estava no buffer.
+        """
+        if not job_url:
+            return False
+        with self._lock:
+            existed = job_url in self._data
+            self._data.pop(job_url, None)
+            self._dirty.discard(job_url)
+            return existed
+
     def delete_older_than(self, cutoff_iso: str) -> int:
         """Remove do buffer em memória vagas com publication_date < cutoff.
 

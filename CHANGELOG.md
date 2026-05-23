@@ -5,6 +5,44 @@ Todas as mudanças relevantes deste projeto são documentadas neste arquivo.
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/)
 e o projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [2.13.0] - 2026-05-23
+
+### Adicionado
+
+- **Revalidador automático de vagas próximas de 90 dias**. Novo módulo
+  `apps/scraper/src/persistence/revalidator.py` que roda em background no
+  scraper (task assíncrona, intervalo de 24h, primeira execução 5min após
+  o startup pra não atrasar o boot). A cada ciclo:
+  - Filtra vagas do `LocalJobStore` com `publication_date` entre **80 e
+    90 dias atrás** (próximas do purge automático).
+  - Faz HTTP GET na URL de cada uma (concorrência 3, timeout 20s,
+    `follow_redirects=False` pra detectar redirects suspeitos).
+  - Classifica: `expired` (HTTP 404/410), `active` (200), `unknown`
+    (timeout, 5xx, redirect, erro de rede).
+  - **Remove apenas as `expired`** via `DELETE /jobs/:id` no core (único
+    escritor do `jobs.json`). Casos `unknown` ficam — preferimos manter
+    vaga válida em rate-limit transitório do que apagar por engano.
+  - Sincroniza o buffer in-memory do `LocalJobStore` via novo método
+    público `delete_url(job_url)`.
+- **Novo endpoint no `CoreJobsSink`**: `delete_job_by_url(url)` que
+  calcula `md5(url)` (mesmo `deriveId` do core) e chama
+  `DELETE /jobs/:id`. Trata 404 como sucesso (vaga já não estava no
+  arquivo).
+- Tunáveis via env (todos opcionais):
+  - `REVALIDATE_AGE_MIN_DAYS` (default 80)
+  - `REVALIDATE_AGE_MAX_DAYS` (default 90)
+  - `REVALIDATE_INTERVAL_S` (default 86400 = 24h)
+  - `REVALIDATE_STARTUP_DELAY_S` (default 300 = 5min)
+  - `REVALIDATE_CONCURRENCY` (default 3)
+  - `REVALIDATE_HTTP_TIMEOUT_S` (default 20)
+
+### Motivação
+
+Sem revalidação, vagas inativas (encerradas pelo anunciante antes dos 90
+dias do purge) ficavam no `jobs.json` e eram enviadas pros assinantes
+como se estivessem abertas — gerando ruído e candidaturas inúteis. Agora
+saem do arquivo assim que o site marca como inexistente.
+
 ## [2.12.1] - 2026-05-23
 
 ### Corrigido

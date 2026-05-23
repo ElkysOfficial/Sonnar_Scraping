@@ -20,6 +20,7 @@ Variável de ambiente:
 """
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 from typing import List, Optional
@@ -115,4 +116,37 @@ class CoreJobsSink:
             return False
         except httpx.HTTPError as exc:
             logger.error("Core /jobs/batch erro de rede: %s", exc)
+            return False
+
+    async def delete_job_by_url(self, job_url: str) -> bool:
+        """Remove a vaga ``job_url`` do ``jobs.json`` via ``DELETE /jobs/:id``.
+
+        O core deriva o id como ``md5(job_url)`` (ver ``deriveId`` no core),
+        entao calculamos a mesma hash e chamamos o endpoint. Retorna ``True``
+        em sucesso (200), ``False`` em erro real, e ``True`` tambem em 404 —
+        a vaga ja nao estava no arquivo, o objetivo do delete foi atingido.
+
+        Usado pelo revalidator para remover vagas que expiraram (HTTP 404 na
+        URL de origem) antes do purge automatico de 90 dias.
+        """
+        if not job_url:
+            return False
+        if not self._client:
+            logger.error("CoreJobsSink usado sem __aenter__ — delete descartado.")
+            return False
+        job_id = hashlib.md5(job_url.encode("utf-8")).hexdigest()
+        try:
+            response = await self._client.delete(f"/jobs/{job_id}")
+            if response.status_code == 200:
+                return True
+            if response.status_code == 404:
+                # Vaga ja nao estava no arquivo — objetivo atingido.
+                return True
+            logger.warning(
+                "Core DELETE /jobs/%s status=%s body=%s",
+                job_id, response.status_code, response.text[:200],
+            )
+            return False
+        except httpx.HTTPError as exc:
+            logger.error("Core DELETE /jobs erro de rede: %s", exc)
             return False
