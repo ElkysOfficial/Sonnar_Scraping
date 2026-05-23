@@ -208,11 +208,14 @@ export type Database = {
           person_type: Database["public"]["Enums"]["person_type"] | null
           phone: string | null
           plan: Database["public"]["Enums"]["plan_tier"]
+          scheduled_change_at: string | null
+          scheduled_plan: string | null
           state_code: string | null
           status: Database["public"]["Enums"]["subscription_status"]
           street: string | null
           street_number: string | null
           stripe_customer_id: string | null
+          stripe_schedule_id: string | null
           stripe_subscription_id: string | null
           surname: string | null
           updated_at: string
@@ -235,11 +238,14 @@ export type Database = {
           person_type?: Database["public"]["Enums"]["person_type"] | null
           phone?: string | null
           plan?: Database["public"]["Enums"]["plan_tier"]
+          scheduled_change_at?: string | null
+          scheduled_plan?: string | null
           state_code?: string | null
           status?: Database["public"]["Enums"]["subscription_status"]
           street?: string | null
           street_number?: string | null
           stripe_customer_id?: string | null
+          stripe_schedule_id?: string | null
           stripe_subscription_id?: string | null
           surname?: string | null
           updated_at?: string
@@ -262,11 +268,14 @@ export type Database = {
           person_type?: Database["public"]["Enums"]["person_type"] | null
           phone?: string | null
           plan?: Database["public"]["Enums"]["plan_tier"]
+          scheduled_change_at?: string | null
+          scheduled_plan?: string | null
           state_code?: string | null
           status?: Database["public"]["Enums"]["subscription_status"]
           street?: string | null
           street_number?: string | null
           stripe_customer_id?: string | null
+          stripe_schedule_id?: string | null
           stripe_subscription_id?: string | null
           surname?: string | null
           updated_at?: string
