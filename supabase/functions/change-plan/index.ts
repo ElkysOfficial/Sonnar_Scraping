@@ -6,24 +6,19 @@ import { authorize, corsHeaders, jsonResponse } from "../_shared/auth.ts";
 // Mudanca de plano para assinante ja pagante (Fluxo A - portal web).
 //
 // Regras:
-//  - Pro -> Plus  : upgrade IMEDIATO. Stripe troca o price item e prorateia
-//                   a diferenca (cobrada na proxima fatura). Em trial, o
-//                   trial_end e preservado automaticamente.
-//  - Plus -> Pro  : downgrade AGENDADO pro fim do ciclo. Usa
-//                   subscription_schedule (precisa trocar o price, nao da
-//                   pra usar cancel_at_period_end).
-//  - Pro  -> Free : downgrade AGENDADO pro fim do ciclo via
-//                   cancel_at_period_end. Quando vira efetivo, o webhook
-//                   marca o subscriber como plan='free', status='active'.
-//  - Plus -> Free : idem acima.
-//  - Free -> *    : NAO atendido aqui. Usa create-checkout-session (precisa
-//                   coletar cartao e dados fiscais).
+//  - Pro -> Plus  : upgrade IMEDIATO com proracao. Stripe troca o price
+//                   item e preserva trial_end quando aplicavel.
+//  - Plus -> Pro  : downgrade AGENDADO pro fim do periodo PAGO via
+//                   subscription_schedule. Em trial, a fase 1 estende-se
+//                   ate periodEnd (= fim do trial + 1 ciclo pago) e nao
+//                   ate o fim do trial - garante que cliente nao perde
+//                   o Plus durante o trial recem-contratado.
+//  - Pro  -> Free : cancel_at_period_end.
+//  - Plus -> Free : idem.
+//  - Free -> *    : NAO atendido aqui. Usa create-checkout-session.
 //
-// Guards:
-//  - status != 'active' bloqueia (past_due, pending, canceled). Cliente em
-//    apuros tem que regularizar pelo Customer Portal antes.
-//  - plano atual == target -> 400.
-//  - ja existe um agendamento pendente -> 409. Exige reverter primeiro.
+// API Stripe 2024-09-30: current_period_end vive em items.data[0], NAO
+// no root da Subscription. periodEndFromSubscription cobre os dois locais.
 // =====================================================
 
 type Plan = "free" | "pro" | "plus";
@@ -43,6 +38,20 @@ function getPriceId(plan: "pro" | "plus"): string {
     throw new Error(`STRIPE_PRICE_${plan.toUpperCase()} not configured`);
   }
   return id;
+}
+
+function periodEndFromSubscription(sub: Stripe.Subscription): number | null {
+  const itemEnd = sub.items?.data?.[0]?.current_period_end;
+  if (typeof itemEnd === "number") return itemEnd;
+  // deno-lint-ignore no-explicit-any
+  const rootEnd = (sub as any).current_period_end;
+  if (typeof rootEnd === "number") return rootEnd;
+  return null;
+}
+
+function tsToIso(ts: number | null): string | null {
+  if (!ts) return null;
+  return new Date(ts * 1000).toISOString();
 }
 
 serve(async (req) => {
@@ -69,7 +78,7 @@ serve(async (req) => {
     const { data: subscriber, error: subError } = await admin
       .from("subscribers")
       .select(
-        "id, plan, status, stripe_subscription_id, stripe_customer_id, current_period_end, scheduled_plan, stripe_schedule_id"
+        "id, plan, status, stripe_subscription_id, stripe_customer_id, scheduled_plan, stripe_schedule_id"
       )
       .eq("user_id", user.id)
       .single();
@@ -130,30 +139,53 @@ serve(async (req) => {
       httpClient: Stripe.createFetchHttpClient(),
     });
 
+    // Sempre lemos a subscription do Stripe - o banco pode estar desatualizado
+    // (visto em prod com current_period_end NULL).
+    const sub = await stripe.subscriptions.retrieve(
+      subscriber.stripe_subscription_id
+    );
+    const item = sub.items.data[0];
+    if (!item) {
+      return jsonResponse({ error: "Subscription sem itens" }, 500);
+    }
+
+    // Detecta schedule orfao no Stripe que nao chegou no nosso banco.
+    if (sub.schedule && !subscriber.stripe_schedule_id) {
+      const scheduleId =
+        typeof sub.schedule === "string" ? sub.schedule : sub.schedule.id;
+      return jsonResponse(
+        {
+          error:
+            "Detectamos um agendamento pendente na sua conta. Entre em contato com o suporte.",
+          code: "orphan_schedule",
+          scheduleId,
+        },
+        409
+      );
+    }
+
+    const periodEnd = periodEndFromSubscription(sub);
+    if (!periodEnd) {
+      return jsonResponse(
+        {
+          error:
+            "Nao foi possivel determinar o fim do periodo atual. Tente em alguns minutos.",
+        },
+        500
+      );
+    }
+
     const isUpgrade = PLAN_RANK[targetPlan] > PLAN_RANK[currentPlan];
 
     // -----------------------------------------------------------------
-    // UPGRADE Pro -> Plus: troca o item da subscription com proracao.
+    // UPGRADE Pro -> Plus
     // -----------------------------------------------------------------
     if (isUpgrade) {
-      const sub = await stripe.subscriptions.retrieve(
-        subscriber.stripe_subscription_id
-      );
-      const item = sub.items.data[0];
-      if (!item) {
-        return jsonResponse({ error: "Subscription sem itens" }, 500);
-      }
-
-      // 'always_invoice' cobra a diferenca prorateada imediatamente.
-      // Em trial, Stripe respeita trial_end e a invoice so fecha no fim
-      // do trial - cliente nao paga nada extra durante o periodo gratis.
       await stripe.subscriptions.update(subscriber.stripe_subscription_id, {
         items: [{ id: item.id, price: getPriceId(targetPlan as "plus") }],
         proration_behavior: "always_invoice",
         metadata: { ...sub.metadata, plan: targetPlan },
       });
-
-      // O webhook customer.subscription.updated sincroniza subscribers.plan.
       return jsonResponse({
         success: true,
         mode: "immediate",
@@ -164,7 +196,7 @@ serve(async (req) => {
     }
 
     // -----------------------------------------------------------------
-    // DOWNGRADE para Free: cancel_at_period_end.
+    // DOWNGRADE para Free
     // -----------------------------------------------------------------
     if (targetPlan === "free") {
       await stripe.subscriptions.update(subscriber.stripe_subscription_id, {
@@ -175,8 +207,9 @@ serve(async (req) => {
         .from("subscribers")
         .update({
           scheduled_plan: "free",
-          scheduled_change_at: subscriber.current_period_end,
+          scheduled_change_at: tsToIso(periodEnd),
           stripe_schedule_id: null,
+          current_period_end: tsToIso(periodEnd),
         })
         .eq("id", subscriber.id);
 
@@ -184,73 +217,81 @@ serve(async (req) => {
         success: true,
         mode: "scheduled_at_period_end",
         targetPlan: "free",
-        effectiveAt: subscriber.current_period_end,
+        effectiveAt: tsToIso(periodEnd),
       });
     }
 
     // -----------------------------------------------------------------
-    // DOWNGRADE Plus -> Pro: subscription_schedule com 2 fases.
-    //  fase 1: replica o estado atual ate o fim do periodo
-    //  fase 2: 1 iteracao no price Pro (depois disso o schedule "release"
-    //          e a subscription continua livre, podendo ser cancelada,
-    //          renovada ou modificada de novo).
+    // DOWNGRADE Plus -> Pro (schedule com 2 fases)
     // -----------------------------------------------------------------
-    const sub = await stripe.subscriptions.retrieve(
-      subscriber.stripe_subscription_id
-    );
-    const item = sub.items.data[0];
-    if (!item) {
-      return jsonResponse({ error: "Subscription sem itens" }, 500);
-    }
-
-    // Cria o schedule espelhando a subscription. Stripe gera 1 fase.
     const schedule = await stripe.subscriptionSchedules.create({
       from_subscription: subscriber.stripe_subscription_id,
     });
+
     const currentPhase = schedule.phases[0];
     if (!currentPhase) {
+      try { await stripe.subscriptionSchedules.release(schedule.id); } catch (_) { /* ignore */ }
       return jsonResponse({ error: "Schedule sem fase inicial" }, 500);
     }
 
     const currentPrice =
       typeof item.price === "string" ? item.price : item.price.id;
+    const nowSec = Math.floor(Date.now() / 1000);
+    const trialStillActive =
+      typeof sub.trial_end === "number" && sub.trial_end > nowSec;
 
-    await stripe.subscriptionSchedules.update(schedule.id, {
-      end_behavior: "release",
-      phases: [
-        {
-          items: [{ price: currentPrice, quantity: item.quantity ?? 1 }],
-          start_date: currentPhase.start_date,
-          end_date: currentPhase.end_date,
-          proration_behavior: "none",
+    try {
+      await stripe.subscriptionSchedules.update(schedule.id, {
+        end_behavior: "release",
+        phases: [
+          {
+            items: [{ price: currentPrice, quantity: item.quantity ?? 1 }],
+            start_date: currentPhase.start_date,
+            end_date: periodEnd,
+            ...(trialStillActive ? { trial_end: sub.trial_end as number } : {}),
+            proration_behavior: "none",
+          },
+          {
+            items: [{ price: getPriceId("pro"), quantity: 1 }],
+            iterations: 1,
+            proration_behavior: "none",
+          },
+        ],
+        metadata: {
+          user_id: user.id,
+          subscriber_id: subscriber.id,
+          target_plan: "pro",
         },
-        {
-          items: [{ price: getPriceId("pro"), quantity: 1 }],
-          iterations: 1,
-          proration_behavior: "none",
-        },
-      ],
-      metadata: {
-        user_id: user.id,
-        subscriber_id: subscriber.id,
-        target_plan: "pro",
-      },
-    });
+      });
+    } catch (e) {
+      try { await stripe.subscriptionSchedules.release(schedule.id); } catch (_) { /* ignore */ }
+      throw e;
+    }
 
-    await admin
+    const { error: dbError } = await admin
       .from("subscribers")
       .update({
         scheduled_plan: "pro",
-        scheduled_change_at: subscriber.current_period_end,
+        scheduled_change_at: tsToIso(periodEnd),
         stripe_schedule_id: schedule.id,
+        current_period_end: tsToIso(periodEnd),
       })
       .eq("id", subscriber.id);
+
+    if (dbError) {
+      try { await stripe.subscriptionSchedules.release(schedule.id); } catch (_) { /* ignore */ }
+      console.error("change-plan db update failed:", dbError);
+      return jsonResponse(
+        { error: "Falha ao registrar agendamento. Tente novamente." },
+        500
+      );
+    }
 
     return jsonResponse({
       success: true,
       mode: "scheduled_at_period_end",
       targetPlan: "pro",
-      effectiveAt: subscriber.current_period_end,
+      effectiveAt: tsToIso(periodEnd),
     });
   } catch (error) {
     console.error("change-plan error:", error);

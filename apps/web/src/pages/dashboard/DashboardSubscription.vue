@@ -152,15 +152,94 @@
     <p class="dsub-support">
       Cobrança processada com segurança via Stripe. Dúvidas sobre pagamento? Fale com o suporte.
     </p>
+
+    <!-- ============ MODAL DE CONFIRMAÇÃO ============ -->
+    <ConfirmDialog
+      :open="confirmDialog.open"
+      :title="confirmDialog.title"
+      :subtitle="confirmDialog.subtitle"
+      :tone="confirmDialog.tone"
+      :bullets="confirmDialog.bullets"
+      :footnote="confirmDialog.footnote"
+      :confirm-label="confirmDialog.confirmLabel"
+      :cancel-label="confirmDialog.cancelLabel"
+      :loading-label="confirmDialog.loadingLabel"
+      :loading="confirmDialog.loading"
+      @confirm="onConfirmDialog"
+      @cancel="onCancelDialog"
+    >
+      <p v-if="confirmDialog.lead">{{ confirmDialog.lead }}</p>
+    </ConfirmDialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import { supabase } from '@/integrations/supabase/client'
 import { useAuth } from '@/composables/useAuth'
+import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 
 const { subscriber, fetchUserRole } = useAuth()
+
+// =====================================================
+// Estado do modal de confirmacao (substitui window.confirm)
+// =====================================================
+type DialogTone = 'info' | 'warning' | 'danger'
+interface DialogState {
+  open: boolean
+  title: string
+  subtitle: string
+  tone: DialogTone
+  lead: string
+  bullets: string[]
+  footnote: string
+  confirmLabel: string
+  cancelLabel: string
+  loadingLabel: string
+  loading: boolean
+  resolve: ((v: boolean) => void) | null
+}
+const confirmDialog = reactive<DialogState>({
+  open: false,
+  title: '',
+  subtitle: '',
+  tone: 'info',
+  lead: '',
+  bullets: [],
+  footnote: '',
+  confirmLabel: 'Confirmar',
+  cancelLabel: 'Voltar',
+  loadingLabel: 'Aguarde...',
+  loading: false,
+  resolve: null
+})
+
+function askConfirmation(opts: Partial<Omit<DialogState, 'open' | 'resolve' | 'loading'>>): Promise<boolean> {
+  return new Promise((resolve) => {
+    confirmDialog.title = opts.title ?? ''
+    confirmDialog.subtitle = opts.subtitle ?? ''
+    confirmDialog.tone = opts.tone ?? 'info'
+    confirmDialog.lead = opts.lead ?? ''
+    confirmDialog.bullets = opts.bullets ?? []
+    confirmDialog.footnote = opts.footnote ?? ''
+    confirmDialog.confirmLabel = opts.confirmLabel ?? 'Confirmar'
+    confirmDialog.cancelLabel = opts.cancelLabel ?? 'Voltar'
+    confirmDialog.loadingLabel = opts.loadingLabel ?? 'Aguarde...'
+    confirmDialog.loading = false
+    confirmDialog.resolve = resolve
+    confirmDialog.open = true
+  })
+}
+
+function closeDialog(answer: boolean) {
+  if (confirmDialog.resolve) confirmDialog.resolve(answer)
+  confirmDialog.resolve = null
+  confirmDialog.open = false
+  confirmDialog.loading = false
+}
+
+function onConfirmDialog() { closeDialog(true) }
+function onCancelDialog()  { closeDialog(false) }
 
 type Plan = 'free' | 'pro' | 'plus'
 
@@ -397,27 +476,59 @@ async function onChoose(option: PlanOption) {
     await startCheckout(option.tier)
     return
   }
-  // Downgrade Plus -> Pro: confirma o agendamento.
+  // Downgrade Plus -> Pro: confirma o agendamento via modal.
   if (option.tier === 'pro' && subscriber.value?.plan === 'plus') {
     const when = formatDate(subscriber.value?.current_period_end || '')
-    const ok = confirm(
-      `Voce vai trocar para o Pro a partir de ${when}.\n\n`
-      + 'Voce continua com o Plus ate la. Sem reembolso, sem cobranca extra.\n\nConfirma?'
-    )
+    const ok = await askConfirmation({
+      title: 'Trocar para o plano Pro?',
+      subtitle: `A mudança vira efetiva em ${when}.`,
+      tone: 'warning',
+      lead: 'Você está fazendo um downgrade do Plus para o Pro. A mudança só vale a partir do fim do período já pago — não há cobrança extra agora nem reembolso.',
+      bullets: [
+        `Você continua recebendo Plus até ${when}`,
+        'A partir dessa data você passa a receber só vagas Pro',
+        'Você pode reverter o agendamento a qualquer momento antes dessa data'
+      ],
+      footnote: 'Você pode mudar de ideia clicando em "Manter Plus" no painel.',
+      confirmLabel: 'Sim, agendar mudança',
+      cancelLabel: 'Continuar no Plus',
+      loadingLabel: 'Agendando...'
+    })
     if (!ok) return
   }
-  await changePlan(option.tier)
+  confirmDialog.loading = true
+  try {
+    await changePlan(option.tier)
+  } finally {
+    confirmDialog.loading = false
+  }
 }
 
 async function onRevert() {
+  const planFriendly = planLabel.value
+  const targetFriendly = scheduledPlanLabel.value
+  const ok = await askConfirmation({
+    title: `Manter o ${planFriendly}?`,
+    subtitle: `Cancelar a mudança agendada para ${targetFriendly}.`,
+    tone: 'info',
+    lead: `Sua assinatura volta ao estado normal e continua no ${planFriendly} com renovação automática. Nada será cobrado a mais.`,
+    confirmLabel: `Sim, manter ${planFriendly}`,
+    cancelLabel: 'Voltar',
+    loadingLabel: 'Cancelando agendamento...'
+  })
+  if (!ok) return
+
+  confirmDialog.loading = true
   errorMessage.value = ''
   loadingRevert.value = true
   try {
     const { error } = await supabase.functions.invoke('revert-scheduled-change')
     if (error) throw error
     await fetchUserRole()
+    closeDialog(true)
   } catch (err) {
     errorMessage.value = err instanceof Error ? err.message : 'Não foi possível cancelar o agendamento.'
+    confirmDialog.loading = false
   } finally {
     loadingRevert.value = false
   }
@@ -450,10 +561,25 @@ async function goManage() {
 
 async function onCancel() {
   const when = formatDate(subscriber.value?.current_period_end || '')
-  const ok = confirm(
-    `Voce continua recebendo vagas ate ${when}. Depois sua conta volta pra Comunidade gratuita (canais publicos do Discord e WhatsApp).\n\nConfirma o cancelamento?`
-  )
+  const planFriendly = planLabel.value
+  const ok = await askConfirmation({
+    title: 'Cancelar sua assinatura?',
+    subtitle: `Você continua com o ${planFriendly} até ${when}.`,
+    tone: 'danger',
+    lead: 'Você não será cobrado novamente. Sua assinatura segue ativa até o fim do período já pago — depois disso sua conta volta para o plano Comunidade (gratuito).',
+    bullets: [
+      `Acesso ao ${planFriendly} mantido até ${when}`,
+      'Depois você continua nos canais públicos da Comunidade',
+      'Você pode reverter o cancelamento a qualquer momento antes dessa data'
+    ],
+    footnote: 'Sem cobrança extra, sem reembolso.',
+    confirmLabel: 'Sim, cancelar',
+    cancelLabel: 'Continuar assinando',
+    loadingLabel: 'Cancelando...'
+  })
   if (!ok) return
+
+  confirmDialog.loading = true
   errorMessage.value = ''
   loadingCancel.value = true
   try {
@@ -464,9 +590,11 @@ async function onCancel() {
       throw new Error(msg)
     }
     await fetchUserRole()
+    closeDialog(true)
   } catch (err) {
     console.error('Cancel error:', err)
     errorMessage.value = err instanceof Error ? err.message : 'Não foi possível cancelar agora.'
+    confirmDialog.loading = false
   } finally {
     loadingCancel.value = false
   }
