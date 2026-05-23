@@ -5,6 +5,30 @@ Todas as mudanças relevantes deste projeto são documentadas neste arquivo.
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/)
 e o projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [2.13.1] - 2026-05-23
+
+### Adicionado
+
+- **Marcação explícita `expired_at` em `extraction_jobs`** (Supabase). Nova
+  coluna `TIMESTAMPTZ` criada via migration `20260523…_extraction_jobs_expired_at`,
+  com índice parcial (`WHERE expired_at IS NOT NULL`) pra queries
+  observacionais. O revalidator agora, ao remover uma vaga do `jobs.json`,
+  faz `PATCH /extraction_jobs?job_url=eq.<url>` setando `expired_at=NOW()`
+  via novo método `tracker.mark_expired(url)`.
+
+### Por quê
+
+A proteção contra re-coleta já existia (via `state=completed` no
+`tracker_known` carregado no startup). A marca `expired_at` adiciona:
+
+1. **Observabilidade**: queries SQL tipo
+   `SELECT engine, COUNT(*) FROM extraction_jobs WHERE expired_at IS NOT NULL GROUP BY engine`
+   listam quais sites têm mais churn de vagas.
+2. **Defesa em profundidade**: separa "vaga já coletada" (state=completed +
+   expired_at IS NULL) de "vaga expirada e removida" (expired_at SET).
+3. **Auditoria**: `expired_at` é timestamp do momento exato da remoção —
+   útil pra debugar reclamações tipo "essa vaga sumiu, e antes?".
+
 ## [2.13.0] - 2026-05-23
 
 ### Adicionado

@@ -138,6 +138,9 @@ class TestRevalidateAgingJobs:
             "https://x.com/c": 500,
         }
         repo, _ = self._make_repo(jobs, responses)
+        # Mock do tracker.mark_expired
+        mark_expired_mock = AsyncMock(return_value=True)
+        monkeypatch.setattr(r.tracker, "mark_expired", mark_expired_mock)
 
         # Mock AsyncClient pra retornar status conforme URL chamada
         class FakeClient:
@@ -161,6 +164,8 @@ class TestRevalidateAgingJobs:
         # Apenas a vaga 404 foi deletada
         repo.core.delete_job_by_url.assert_called_once_with("https://x.com/a")
         repo.local.delete_url.assert_called_once_with("https://x.com/a")
+        # E marcada como expirada no tracker
+        mark_expired_mock.assert_called_once_with("https://x.com/a")
 
     @pytest.mark.asyncio
     async def test_skips_jobs_outside_window(self, monkeypatch):
@@ -213,6 +218,8 @@ class TestRevalidateAgingJobs:
         repo, _ = self._make_repo(jobs, {"https://x.com/a": 404})
         # Simula falha no core
         repo.core.delete_job_by_url = AsyncMock(return_value=False)
+        mark_expired_mock = AsyncMock(return_value=True)
+        monkeypatch.setattr(r.tracker, "mark_expired", mark_expired_mock)
 
         class FakeClient:
             async def __aenter__(self): return self
@@ -227,3 +234,5 @@ class TestRevalidateAgingJobs:
         assert stats["failed"] == 1    # mas marcamos a falha do delete
         # local.delete_url NÃO foi chamado pq o core falhou
         repo.local.delete_url.assert_not_called()
+        # mark_expired tambem NÃO foi chamado (so se o delete do core passou)
+        mark_expired_mock.assert_not_called()

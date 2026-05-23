@@ -299,6 +299,40 @@ class ExtractionTracker:
     def known_completed(self) -> set:
         return set(self._completed)
 
+    async def mark_expired(self, job_url: str) -> bool:
+        """Marca a vaga como expirada em ``extraction_jobs`` (coluna ``expired_at``).
+
+        Chamada pelo revalidator quando a URL retorna 404/410 e foi removida
+        do ``jobs.json``. Apenas seta o timestamp — nao altera ``state``, que
+        continua como ``completed`` (mantem o bloqueio existente contra
+        re-coleta via ``tracker_known``). A coluna ``expired_at`` adiciona
+        observabilidade: queries do tipo "quantas vagas expiraram hoje" ou
+        "quais vagas o site removeu antes dos 90d" ficam triviais.
+
+        Returns:
+            True se o PATCH foi aceito (200/204) OU se o tracker esta desabilitado
+            (no-op). False em erro real de rede ou status >= 400.
+        """
+        if not self.enabled or not job_url:
+            return True
+        try:
+            async with self._client() as cli:
+                r = await cli.patch(
+                    "/extraction_jobs",
+                    params={"job_url": f"eq.{job_url}"},
+                    json={"expired_at": _now_iso()},
+                )
+                if r.status_code >= 400:
+                    logger.warning(
+                        "mark_expired status=%s url=%s body=%s",
+                        r.status_code, job_url, r.text[:200],
+                    )
+                    return False
+                return True
+        except Exception as exc:
+            logger.warning("mark_expired erro: %s (%s)", exc, type(exc).__name__)
+            return False
+
     # ---------------- API de transição ----------------
 
     def discover(self, job_url: str, *, engine: str) -> None:
