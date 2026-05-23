@@ -48,6 +48,17 @@ function planFromPriceId(priceId: string | null): string | null {
   return null;
 }
 
+// API Stripe 2024-09-30: current_period_end migrou para items[0]. Lemos
+// com fallback no root da Subscription pra cobrir versoes antigas.
+function subscriptionPeriodEnd(sub: Stripe.Subscription): number | null {
+  const itemEnd = sub.items?.data?.[0]?.current_period_end;
+  if (typeof itemEnd === "number") return itemEnd;
+  // deno-lint-ignore no-explicit-any
+  const rootEnd = (sub as any).current_period_end;
+  if (typeof rootEnd === "number") return rootEnd;
+  return null;
+}
+
 // Atualiza um subscriber localizando-o por subscription_id, customer_id ou
 // user_id (em ordem de preferência). Garante que activations via subscription.*
 // e invoice.paid funcionem mesmo que checkout.session.completed nunca chegue.
@@ -59,10 +70,11 @@ async function upsertSubscriberFromSubscription(
   const customerId = asString(sub.customer);
   const userId = asString(sub.metadata?.user_id);
   const planFromMeta = asString(sub.metadata?.plan);
-  const itemPriceId = asString(sub.items?.data?.[0]?.price?.id);
+  const item = sub.items?.data?.[0];
+  const itemPriceId = asString(item?.price?.id);
   const resolvedPlan = planFromMeta ?? planFromPriceId(itemPriceId);
   const status = STATUS_MAP[sub.status] ?? "pending";
-  const periodEnd = isoFromUnix(sub.current_period_end);
+  const periodEnd = isoFromUnix(subscriptionPeriodEnd(sub));
 
   const updatePayload: Record<string, unknown> = {
     status,
@@ -287,7 +299,7 @@ async function handleVipEvent(
         status,
         stripe_subscription_id: sub.id,
         stripe_customer_id: asString(sub.customer),
-        current_period_end: isoFromUnix(sub.current_period_end),
+        current_period_end: isoFromUnix(subscriptionPeriodEnd(sub)),
         updated_at: new Date().toISOString(),
       })
       .eq("lid", lid);
@@ -312,7 +324,7 @@ async function handleVipEvent(
       let periodEnd: string | null = null;
       try {
         const sub = await stripe.subscriptions.retrieve(subscriptionId);
-        periodEnd = isoFromUnix(sub.current_period_end);
+        periodEnd = isoFromUnix(subscriptionPeriodEnd(sub));
       } catch (_e) {
         // mantem current_period_end como esta se o retrieve falhar
       }
