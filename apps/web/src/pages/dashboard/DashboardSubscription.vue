@@ -401,9 +401,9 @@ const changeHeading = computed(() => {
 })
 const changeCopy = computed(() => {
   const p = subscriber.value?.plan
-  if (p === 'free') return 'Os planos pagos entregam vagas curadas para o seu perfil, em tempo real. 7 dias grátis em qualquer um.'
-  if (p === 'pro') return 'Upgrade pro Plus é imediato: você só paga a diferença prorateada. Downgrade pra Comunidade só acontece no fim do período já pago.'
-  if (p === 'plus') return 'Downgrade pra Pro ou Comunidade acontece só no fim do período já pago. Sem reembolso, sem cobrança extra.'
+  if (p === 'free') return 'Os planos pagos entregam vagas direto no WhatsApp. 7 dias grátis em qualquer um.'
+  if (p === 'pro') return 'Upgrade pro Plus é imediato e cobra só a diferença prorateada. Downgrade pra Comunidade encerra a assinatura no fim do período pago.'
+  if (p === 'plus') return 'Você pode ir pro Pro ou direto pra Comunidade. Os dois efetivam no fim do período já pago — sem reembolso e sem cobrança extra.'
   return ''
 })
 
@@ -436,22 +436,24 @@ const PLUS_OPTION = (action: 'checkout' | 'change', ctaLabel: string, sub: strin
   ],
   action
 })
-const FREE_OPTION = (sub: string): PlanOption => ({
+const FREE_OPTION = (sub: string, ctaLabel = 'Voltar pra Comunidade no fim do período'): PlanOption => ({
   tier: 'free',
   label: 'Comunidade',
   price: 'Grátis',
   featured: false,
   sub,
-  ctaLabel: 'Voltar pra Comunidade no fim do período',
+  ctaLabel,
   features: [
-    'Canais públicos da comunidade',
-    'Vagas gerais sem filtro personalizado'
+    'Canais públicos do Discord e WhatsApp',
+    'Sem cobrança recorrente',
+    'Você não recebe vagas no privado nem no grupo Pro'
   ],
   action: 'change'
 })
 
 const changeOptions = computed<PlanOption[]>(() => {
   const p = subscriber.value?.plan
+  const when = formatDate(subscriber.value?.current_period_end || '')
   if (p === 'free') {
     return [
       PRO_OPTION('checkout', 'Assinar Pro', '7 dias grátis. Cancele quando quiser.'),
@@ -460,12 +462,14 @@ const changeOptions = computed<PlanOption[]>(() => {
   }
   if (p === 'pro') {
     return [
-      PLUS_OPTION('change', 'Fazer upgrade agora', 'Imediato. Você paga só a diferença prorateada.', true)
+      PLUS_OPTION('change', 'Fazer upgrade agora', 'Imediato. Você paga só a diferença prorateada.', true),
+      FREE_OPTION(`Sua assinatura encerra em ${when}. Sem reembolso, sem cobrança extra.`)
     ]
   }
   if (p === 'plus') {
     return [
-      PRO_OPTION('change', 'Trocar pro Pro no fim do período', 'A mudança vira efetiva em ' + formatDate(subscriber.value?.current_period_end || '') + '.', true)
+      PRO_OPTION('change', 'Trocar pro Pro no fim do período', `A mudança vira efetiva em ${when}.`, true),
+      FREE_OPTION(`Sua assinatura encerra em ${when}. Sem reembolso, sem cobrança extra.`)
     ]
   }
   return []
@@ -474,6 +478,12 @@ const changeOptions = computed<PlanOption[]>(() => {
 async function onChoose(option: PlanOption) {
   if (option.action === 'checkout' && (option.tier === 'pro' || option.tier === 'plus')) {
     await startCheckout(option.tier)
+    return
+  }
+  // Downgrade direto Pro/Plus -> Free pelo card: reaproveita o fluxo do
+  // botao "Cancelar assinatura" (mesmo modal, mesma copy contextual).
+  if (option.tier === 'free') {
+    await onCancel()
     return
   }
   // Upgrade Pro -> Plus: confirma o ganho de canal privado + IA.
