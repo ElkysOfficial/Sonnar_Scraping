@@ -38,6 +38,8 @@ from typing import Optional
 
 import httpx
 
+from .extraction_tracker import tracker
+
 
 logger = logging.getLogger("scraper.revalidator")
 
@@ -179,9 +181,12 @@ async def revalidate_aging_jobs(repo) -> dict:
                 stats["failed"] += 1
                 logger.warning("revalidate_delete_failed", extra={"url": url})
             else:
-                # Tambem sincroniza o buffer in-memory do LocalJobStore (o
+                # Sincroniza o buffer in-memory do LocalJobStore (o
                 # core ja escreveu no arquivo; aqui limpa o cache local).
                 repo.local.delete_url(url)
+                # Marca expired_at em extraction_jobs (observabilidade +
+                # defesa em profundidade). Best-effort — falha so loga.
+                await tracker.mark_expired(url)
                 logger.info("revalidate_deleted", extra={
                     "url": url, "engine": entry.get("source"),
                 })
