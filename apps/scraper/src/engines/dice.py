@@ -27,11 +27,15 @@ from bs4 import BeautifulSoup
 from curl_cffi import requests
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-from variavel import get_active_stacks  # noqa: E402
+from variavel import get_active_batch_key, get_active_stacks  # noqa: E402
 from src.persistence.extraction_tracker import tracker  # noqa: E402
+from src.persistence.progress_tracker import progress  # noqa: E402
 from src.utils.http_session import fetch_sync  # noqa: E402
 from src.utils.job_fallbacks import apply_description_fallbacks  # noqa: E402
 from src.utils.text_utils import extract_skills  # noqa: E402
+
+import logging
+logger = logging.getLogger("scraper.engine.dice")
 
 
 PARSER_VERSION = "dice-2026.05.08"
@@ -535,15 +539,55 @@ async def get_dice_jobs(on_job=None) -> list:
     session = get_session()
     fetch_detail = os.getenv("DICE_FETCH_DETAIL", "1") == "1"
 
-    for stack in get_active_stacks():
+    # ---- Checkpoint: retomada do ponto exato apos restart -----------------
+    #
+    # Granularidade: por (stack, page). Diferente do LinkedIn/Careerjet, no
+    # Dice cada stack pode varrer ate 50 paginas (DICE_MAX_PAGES) — entao
+    # vale checkpointar a pagina tambem pra evitar refazer 50 paginas no
+    # restart. Retomada por LABEL (stack name): se o cursor aponta pra uma
+    # stack que nao esta no batch atual, descarta.
+    stacks_list = list(get_active_stacks())
+    batch_key = get_active_batch_key()
+    cursor = await progress.resume("dice", batch_key) if batch_key else None
+
+    resume_stack = (cursor or {}).get("stack")
+    resume_page = int((cursor or {}).get("page", 1))
+
+    resume_stack_idx = 0
+    if cursor:
+        try:
+            resume_stack_idx = stacks_list.index(resume_stack) if resume_stack else 0
+        except ValueError:
+            cursor = None
+            resume_page = 1
+
+    if cursor:
+        logger.info("dice_resume", extra={
+            "batch_key": batch_key,
+            "stack": resume_stack, "stack_idx": resume_stack_idx,
+            "page": resume_page,
+        })
+
+    max_pages = int(os.getenv("DICE_MAX_PAGES", "50"))
+    max_empty_pages = int(os.getenv("DICE_MAX_EMPTY_PAGES", "2"))
+
+    for stack_idx, stack in enumerate(stacks_list):
+        if stack_idx < resume_stack_idx:
+            continue
         stack_query = urllib.parse.quote(stack.replace('_', ' '))
 
-        page = 1
+        # Stack onde retomamos comeca da pagina salva; outras comecam da 1.
+        page = resume_page if stack_idx == resume_stack_idx else 1
         consecutive_empty = 0
-        max_pages = int(os.getenv("DICE_MAX_PAGES", "50"))
-        max_empty_pages = int(os.getenv("DICE_MAX_EMPTY_PAGES", "2"))
 
         while page <= max_pages:
+            # Salva o cursor APONTANDO PRA ESTA pagina antes de executa-la.
+            # No restart, refazemos so esta pagina, nao a stack inteira.
+            if batch_key:
+                progress.set_cursor("dice", batch_key, {
+                    "stack_idx": stack_idx, "stack": stack,
+                    "page": page,
+                })
             try:
                 url = f'https://www.dice.com/jobs?q={stack_query}&radius=30&radiusUnit=mi&page={page}'
                 response = await fetch_sync(session, url, timeout=30)
@@ -707,6 +751,10 @@ async def get_dice_jobs(on_job=None) -> list:
 
             except Exception:
                 break
+
+    # Ciclo completo: limpa o cursor pra o proximo batch comecar do zero.
+    if batch_key:
+        await progress.clear("dice", batch_key)
 
     print(f'Foram obtidas {len(jobs)} vagas do site Dice')
     return jobs

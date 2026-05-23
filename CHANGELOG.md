@@ -5,6 +5,22 @@ Todas as mudanças relevantes deste projeto são documentadas neste arquivo.
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/)
 e o projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [2.9.0] - 2026-05-23
+
+### Adicionado
+
+- **Engine Dice agora retoma a varredura após restart**. Em
+  `apps/scraper/src/engines/dice.py`:
+  - **Checkpoint por `(stack, page)`**. Diferente do LinkedIn/Careerjet
+    (que checkpointam só por combinação), no Dice cada stack pode varrer
+    até 50 páginas (`DICE_MAX_PAGES`) — então a página atual também é
+    persistida pra evitar refazer dezenas de páginas no restart. Antes
+    de cada página, `progress.set_cursor("dice", batch_key, {...})` grava
+    a posição; ao reiniciar, `progress.resume` devolve a página exata e o
+    loop pula direto pra ela. A retomada é por **label da stack** (não
+    índice) — se a stack salva não está mais no batch atual, o cursor é
+    descartado. Ao concluir o ciclo, `progress.clear` apaga o cursor.
+
 ## [2.8.0] - 2026-05-23
 
 ### Adicionado
