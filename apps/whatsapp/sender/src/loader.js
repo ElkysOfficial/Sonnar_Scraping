@@ -15,6 +15,7 @@ import { startVipJobSender } from "./services/vipJobSender.js";
 import { startVipBillingWatcher } from "./services/vipBilling.js";
 import { startCardSender } from "./services/cardJobSender.js";
 import { startApiReceiver } from "./services/apiReceiver.js";
+import { startPlanChangeNotifier } from "./services/planChangeNotifier.js";
 
 export function load(socket) {
   const safeEventHandler = async (callback, data, eventName) => {
@@ -81,4 +82,7 @@ export function load(socket) {
     infoLog("API receiver enabled, starting server...");
     startApiReceiver();
   }
+
+  // Inicia o notificador de mudanca de plano (consome wa_plan_notifications)
+  startPlanChangeNotifier(socket);
 }

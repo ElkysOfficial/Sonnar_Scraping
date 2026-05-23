@@ -59,6 +59,57 @@ function subscriptionPeriodEnd(sub: Stripe.Subscription): number | null {
   return null;
 }
 
+// =====================================================
+// Enfileiramento de notificacoes do bot WhatsApp.
+// Inserimos em wa_plan_notifications - o bot wa-sender pollla a tabela e
+// envia DM. (stripe_event_id, event_type) e unique - reenvios do webhook
+// nao geram mensagem duplicada.
+// =====================================================
+type WaNotificationType =
+  | "plan_upgraded_to_plus"
+  | "plan_downgraded_to_pro"
+  | "plan_canceled_to_free";
+
+async function enqueuePlanNotification(
+  supabase: SupabaseClient,
+  params: {
+    subscriberId: string;
+    eventType: WaNotificationType;
+    stripeEventId: string;
+    payload?: Record<string, unknown>;
+  }
+): Promise<void> {
+  // Busca o lid do assinante (wa_lid em subscriber_profiles). Sem lid, nao
+  // ha como o bot enviar - registra skipped pra observabilidade.
+  const { data: profile } = await supabase
+    .from("subscriber_profiles")
+    .select("wa_lid")
+    .eq("subscriber_id", params.subscriberId)
+    .maybeSingle();
+
+  const lid = profile?.wa_lid ?? null;
+  if (!lid) {
+    console.log(
+      `enqueuePlanNotification: subscriber ${params.subscriberId} sem wa_lid; skip`
+    );
+    return;
+  }
+
+  const { error } = await supabase.from("wa_plan_notifications").insert({
+    subscriber_id: params.subscriberId,
+    lid,
+    event_type: params.eventType,
+    stripe_event_id: params.stripeEventId,
+    payload: params.payload ?? {},
+  });
+
+  // 23505 = unique_violation: ja existe (idempotencia), ignora.
+  // deno-lint-ignore no-explicit-any
+  if (error && (error as any).code !== "23505") {
+    console.error("enqueuePlanNotification insert error:", error);
+  }
+}
+
 // Atualiza um subscriber localizando-o por subscription_id, customer_id ou
 // user_id (em ordem de preferência). Garante que activations via subscription.*
 // e invoice.paid funcionem mesmo que checkout.session.completed nunca chegue.
@@ -491,8 +542,45 @@ serve(async (req) => {
       event.type === "customer.subscription.updated"
     ) {
       const subscription = event.data.object as Stripe.Subscription;
+
+      // Le o plano anterior antes do upsert pra detectar transicao.
+      let oldPlan: string | null = null;
+      let subscriberId: string | null = null;
+      {
+        const { data } = await supabase
+          .from("subscribers")
+          .select("id, plan")
+          .eq("stripe_subscription_id", subscription.id)
+          .maybeSingle();
+        oldPlan = data?.plan ?? null;
+        subscriberId = data?.id ?? null;
+      }
+
       const result = await upsertSubscriberFromSubscription(supabase, subscription);
       await clearScheduledFreeIfReverted(supabase, subscription);
+
+      // Detecta transicao efetiva e enfileira notificacao do bot.
+      if (subscriberId && oldPlan) {
+        const itemPriceId = subscription.items?.data?.[0]?.price?.id ?? null;
+        const newPlan = planFromPriceId(itemPriceId);
+        if (newPlan && newPlan !== oldPlan) {
+          if (oldPlan === "pro" && newPlan === "plus") {
+            await enqueuePlanNotification(supabase, {
+              subscriberId,
+              eventType: "plan_upgraded_to_plus",
+              stripeEventId: event.id,
+              payload: { from: "pro", to: "plus", subscriptionId: subscription.id },
+            });
+          } else if (oldPlan === "plus" && newPlan === "pro") {
+            await enqueuePlanNotification(supabase, {
+              subscriberId,
+              eventType: "plan_downgraded_to_pro",
+              stripeEventId: event.id,
+              payload: { from: "plus", to: "pro", subscriptionId: subscription.id },
+            });
+          }
+        }
+      }
 
       await supabase.from("stripe_events").insert({
         event_id: event.id,
@@ -590,6 +678,20 @@ serve(async (req) => {
     // pendente.
     if (event.type === "customer.subscription.deleted") {
       const subscription = event.data.object as Stripe.Subscription;
+
+      // Le o subscriber pra capturar o plano anterior antes do downgrade.
+      let prevPlan: string | null = null;
+      let subscriberId: string | null = null;
+      {
+        const { data } = await supabase
+          .from("subscribers")
+          .select("id, plan")
+          .eq("stripe_subscription_id", subscription.id)
+          .maybeSingle();
+        prevPlan = data?.plan ?? null;
+        subscriberId = data?.id ?? null;
+      }
+
       await supabase
         .from("subscribers")
         .update({
@@ -602,6 +704,15 @@ serve(async (req) => {
           stripe_schedule_id: null,
         })
         .eq("stripe_subscription_id", subscription.id);
+
+      if (subscriberId && (prevPlan === "pro" || prevPlan === "plus")) {
+        await enqueuePlanNotification(supabase, {
+          subscriberId,
+          eventType: "plan_canceled_to_free",
+          stripeEventId: event.id,
+          payload: { from: prevPlan, to: "free", subscriptionId: subscription.id },
+        });
+      }
 
       await supabase.from("stripe_events").insert({
         event_id: event.id,
