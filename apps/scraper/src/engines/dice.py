@@ -737,11 +737,19 @@ async def get_dice_jobs(on_job=None) -> list:
                             responsibilities = None
                             if description:
                                 try:
-                                    description_lang, responsibilities = await enrich_async(
+                                    (
+                                        description_lang,
+                                        responsibilities,
+                                        description_pt,
+                                    ) = await enrich_async(
                                         title=job_title,
                                         description=description,
                                         hint_lang="en",
                                     )
+                                    # Dice e EN sempre - substitui a description pela
+                                    # versao traduzida (cliente recebe PT)
+                                    if description_pt:
+                                        description = description_pt
                                 except Exception as exc:
                                     logger.warning(
                                         "dice_enrich_failed url=%s err=%s",

@@ -548,7 +548,11 @@ export function extractJobDataFromEmbed(embed) {
     // skills = lista completa (a legenda usa toda; o card so os 5 primeiros).
     workType,
     skills,
-    description: embed.description || ""
+    description: embed.description || "",
+    // v3.0.0: campo pre-extraido pelo scraper. Vem do banco/embed.
+    // Quando vazio/null, o formatter omite o bloco "Responsabilidades"
+    // (politica: nao inventar conteudo).
+    responsibilities: embed.responsibilities || ""
   }
 }
 

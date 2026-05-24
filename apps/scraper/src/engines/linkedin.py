@@ -855,15 +855,21 @@ async def _fetch_detail(seed: dict, sem: asyncio.Semaphore, client) -> dict:
                 out["skills"] = extract_skills(description) if description else []
 
     # Pipeline de enriquecimento (epico v3.0.0):
-    # detect_lang -> translate (se !=pt) -> extract_responsibilities. Falha
-    # nao bloqueia a vaga - so deixa os campos vazios.
+    # detect_lang -> translate (se !=pt) -> extract_responsibilities.
+    # description e SUBSTITUIDA pela versao em PT quando idioma original
+    # nao for portugues (regra de produto: cliente sempre recebe PT).
     if out["description"]:
         try:
-            lang, resp = await enrich_async(
+            lang, resp, description_pt = await enrich_async(
                 title=out["title"], description=out["description"]
             )
             out["description_lang"] = lang
             out["responsibilities"] = resp
+            if description_pt and lang and lang not in ("pt", "unknown"):
+                out["description"] = description_pt
+                # Recalcula skills no texto traduzido (catalogo PT esta
+                # ajustado pro portugues; ingles tambem casa via overlap)
+                out["skills"] = extract_skills(description_pt)
         except Exception as exc:  # noqa: BLE001
             logger.warning(
                 "enrich_failed url=%s err=%s", seed.get("link"), exc

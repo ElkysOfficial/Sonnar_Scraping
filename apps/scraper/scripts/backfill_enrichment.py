@@ -99,6 +99,7 @@ def update_job(
     job_id: str,
     description_lang: str | None,
     responsibilities: str | None,
+    description_pt: str | None = None,
 ) -> bool:
     """Atualiza 1 vaga. Devolve True em sucesso."""
     headers = {
@@ -108,11 +109,13 @@ def update_job(
         "Prefer": "return=minimal",
     }
     payload: dict[str, object] = {}
-    # Sempre seta description_lang (mesmo unknown ou None) pra evitar
-    # reprocessar a mesma vaga em runs futuros.
     payload["description_lang"] = description_lang or "unknown"
     if responsibilities is not None:
         payload["responsibilities"] = responsibilities
+    # Quando a description foi traduzida pra PT (idioma original != pt),
+    # sobrescreve a description original. Cliente sempre recebe PT.
+    if description_pt and description_lang and description_lang not in ("pt", "unknown"):
+        payload["description"] = description_pt
     resp = client.patch(
         f"{url}/rest/v1/jobs",
         params={"id": f"eq.{job_id}"},
@@ -144,7 +147,7 @@ def process_chunk(
         title = job.get("job_title") or ""
         desc = job.get("description") or ""
         try:
-            lang, resp = enrich_sync(title, desc)
+            lang, resp, description_pt = enrich_sync(title, desc)
         except Exception as exc:  # noqa: BLE001
             print(f"  ERRO enrich job={job.get('id')} url={job.get('job_url')}: {exc}")
             stats["errors"] += 1
@@ -158,7 +161,9 @@ def process_chunk(
             stats["without_resp"] += 1
 
         if not dry_run:
-            ok = update_job(client, url, key, job["id"], lang, resp)
+            ok = update_job(
+                client, url, key, job["id"], lang, resp, description_pt,
+            )
             if not ok:
                 stats["errors"] += 1
     return stats
