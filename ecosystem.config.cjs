@@ -103,36 +103,20 @@ module.exports = {
       max_memory_restart: "2048M",
       time: true,
     },
-    {
-      // Backfill automatico do epico v3.0.0:
-      //   1) Le do banco vagas com description_lang OU responsibilities NULL
-      //   2) Detecta idioma, traduz description pra PT (se != pt), extrai
-      //      responsibilities, UPDATE no banco.
-      //   3) Modo --daemon: roda 24/7. Quando fila esvazia, dorme 10min e
-      //      re-checa - vagas novas que entrarem ficam tratadas.
-      // Pode consumir CPU em rajadas (Argos e CPU-bound). 1G de teto da
-      // folga pros modelos de traducao.
-      name: "sonnar-backfill",
-      cwd: "./apps/scraper",
-      script: "scripts/backfill_enrichment.py",
-      // chunk-size 50 (era 100): reduz quanto Argos/Stanza acumulam
-      // entre passes do GC manual. Junto com gc.collect() apos cada
-      // chunk no codigo, mantem RAM estavel <1.5GB.
-      args: "--all --daemon --idle-sleep 600 --chunk-size 50",
-      interpreter: PYTHON,
-      autorestart: true,
-      max_restarts: 10,
-      restart_delay: 30000,
-      // 2048M (era 1536M): mesmo com gc.collect() + chunk-size 50, em
-      // vagas estrangeiras (en/ja/zh) o footprint do Argos sobe pra
-      // ~1.2-1.4GB. 2GB da folga real e evita restart loop. VPS tem
-      // 8GB - orcamento total fica em ~5GB (sobra ~3GB).
-      max_memory_restart: "2048M",
-      // Aumenta kill_timeout: ao reiniciar, Argos pode estar no meio
-      // de uma traducao que demora alguns segundos. 1.6s default era
-      // curto demais e gerava 'failed to kill' em loop.
-      kill_timeout: 8000,
-      time: true,
-    },
+    // NOTA: o servico `sonnar-backfill` foi removido do VPS.
+    // O backfill so existe para tratar vagas LEGADO (anteriores ao v3.0.0)
+    // que entraram no banco sem `description_lang`/`responsibilities`.
+    // Vagas novas ja saem das engines com esses campos preenchidos via
+    // `enrich_canonical` em `src/utils/job_enrichment.py`, entao nao ha
+    // motivo para manter o daemon rodando 24/7 na VPS competindo por
+    // CPU/RAM com o scraper e o core (Argos e CPU-bound e custou caro:
+    // ~67% de CPU sustentado, alem de ter gerado processo orfao quando
+    // PM2 nao conseguiu reciclar).
+    //
+    // Para processar o legado, rodar localmente (uma maquina mais
+    // potente que a VPS):
+    //   cd apps/scraper
+    //   python scripts/backfill_enrichment.py --all --chunk-size 50
+    // (sem --daemon: termina quando a fila esvazia).
   ],
 };
