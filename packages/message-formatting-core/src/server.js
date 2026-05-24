@@ -5,16 +5,24 @@ import crypto from "node:crypto"
 import fs from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
+import { openDb, JobsRepository } from "./db/jobsRepo.js"
+import { migrateJsonToSqlite } from "./db/migrate.js"
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
 const PORT = process.env.MESSAGE_FORMATTING_CORE_PORT || 3100
 
-// Source-of-truth: jobs.json. O core é o ÚNICO processo que grava este
-// arquivo (single-writer); o scraper envia as vagas via POST /jobs/batch.
-// Estrutura: { [job_url]: { job_title, job_url, company, ..., sent_to: ["discord", ...] } }
-const DEFAULT_JOBS_PATH = path.resolve(__dirname, "..", "..", "..", "apps", "scraper", "src", "data", "jobs.json")
+// Source-of-truth: SQLite (apps/scraper/src/data/jobs.db). Substituiu o
+// jobs.json legado em v3.1.0 - cada POST /jobs/batch agora vira INSERT/UPDATE
+// pontuais, sem re-serializar o arquivo inteiro a cada escrita.
+//
+// O jobs.json antigo, se existir, e importado automaticamente no boot pela
+// migrate.js e renomeado para .bak-<timestamp> (preservado em disco).
+const DATA_DIR = path.resolve(__dirname, "..", "..", "..", "apps", "scraper", "src", "data")
+const DEFAULT_DB_PATH = path.join(DATA_DIR, "jobs.db")
+const DEFAULT_JOBS_PATH = path.join(DATA_DIR, "jobs.json")
+const JOBS_DB_PATH = process.env.JOBS_DB_PATH || DEFAULT_DB_PATH
 const JOBS_JSON_PATH = process.env.JOBS_JSON_PATH || DEFAULT_JOBS_PATH
 
 const SUPPORTED_CHANNELS = ["discord", "whatsapp", "telegram"]
@@ -31,113 +39,28 @@ function normalizeChannel(channel) {
   return CHANNEL_ALIASES[key] || key
 }
 
-// ID determinístico (md5 da URL). Permite que requisições do bot referenciem
-// uma vaga sem precisar persistir um UUID em jobs.json.
+// ID deterministico (md5 da URL).
 function deriveId(jobUrl) {
   return crypto.createHash("md5").update(jobUrl).digest("hex")
 }
 
 // ---------------- storage ----------------
 
-// Fila de escrita: TODA mutação do jobs.json (ler → modificar → gravar) roda
-// serializada aqui dentro. Serializar só a gravação não bastava — dois
-// handlers podiam ler a mesma versão, modificar e gravar, e o último
-// sobrescrevia o outro (lost update). Agora o ciclo inteiro é transacional.
-let writeQueue = Promise.resolve()
+const db = openDb(JOBS_DB_PATH)
+const repo = new JobsRepository(db)
 
-// Sentinela: um mutator pode devolvê-la para indicar "nada mudou, não grave".
-const SKIP_WRITE = Symbol("skip-write")
-
-// Leitura tolerante: usada pelos endpoints GET. Em erro devolve {} (degrada
-// para "vazio" em vez de derrubar a request).
-function readJobsFile() {
-  try {
-    if (!fs.existsSync(JOBS_JSON_PATH)) return {}
-    const raw = fs.readFileSync(JOBS_JSON_PATH, "utf8").trim()
-    if (!raw) return {}
-    return JSON.parse(raw)
-  } catch (err) {
-    console.error("[core] falha ao ler jobs.json:", err.message)
-    return {}
-  }
+// Migracao automatica no boot. Idempotente: se o banco ja tem vagas ou
+// nao existe jobs.json, nao faz nada.
+try {
+  migrateJsonToSqlite({ jobsJsonPath: JOBS_JSON_PATH, repo })
+} catch (err) {
+  console.error("[core] migrate: falhou criticamente, abortando boot:", err.message)
+  process.exit(1)
 }
 
-// Leitura estrita: usada DENTRO de uma transação de escrita. Se o arquivo
-// existe mas não pode ser lido/parseado, LANÇA — abortar é mais seguro do que
-// gravar {} por cima e apagar todas as vagas. Arquivo ausente => {} (1ª escrita).
-function readJobsFileStrict() {
-  if (!fs.existsSync(JOBS_JSON_PATH)) return {}
-  const raw = fs.readFileSync(JOBS_JSON_PATH, "utf8").trim()
-  if (!raw) return {}
-  return JSON.parse(raw)
-}
-
-// Renomeia tmp -> destino com retentativas. No Windows o rename pode falhar
-// (EBUSY/EPERM/EACCES) se outro processo tiver o arquivo aberto naquele
-// instante — tentar de novo algumas vezes resolve.
-const RENAME_ATTEMPTS = 12
-const RENAME_DELAY_MS = 200
-
-async function renameWithRetry(tmp, dest) {
-  for (let attempt = 0; attempt < RENAME_ATTEMPTS; attempt++) {
-    try {
-      fs.renameSync(tmp, dest)
-      return
-    } catch (err) {
-      const transient = ["EBUSY", "EPERM", "EACCES"].includes(err.code)
-      if (!transient || attempt === RENAME_ATTEMPTS - 1) throw err
-      await new Promise((r) => setTimeout(r, RENAME_DELAY_MS))
-    }
-  }
-}
-
-// Aplica uma mutação ao jobs.json de forma TRANSACIONAL: o ciclo ler →
-// mutator(data) → gravar inteiro roda dentro da fila, serializado. Assim dois
-// handlers concorrentes nunca leem a mesma versão e sobrescrevem um ao outro.
-//
-// `mutator(data)` recebe o dict atual, modifica-o in-place e devolve o valor a
-// repassar ao chamador — ou `SKIP_WRITE` para pular a gravação. Quando pula, o
-// chamador recebe o próprio `SKIP_WRITE` de volta: um sinal explícito, sem
-// ambiguidade com um mutator que (por engano) retorne `undefined`. Se a
-// leitura/escrita falhar, a promise é rejeitada — o endpoint deve responder
-// erro para o cliente poder reenviar (nada de sucesso silencioso).
-//
-// O PID no nome do tmp é defesa extra: duas instâncias do core no mesmo
-// diretório nunca colidem no arquivo temporário.
-function updateJobsFile(mutator) {
-  const run = writeQueue.then(async () => {
-    const data = readJobsFileStrict()
-    const result = await mutator(data)
-    if (result === SKIP_WRITE) return SKIP_WRITE
-
-    const tmp = `${JOBS_JSON_PATH}.${process.pid}.tmp`
-    try {
-      fs.mkdirSync(path.dirname(JOBS_JSON_PATH), { recursive: true })
-      fs.writeFileSync(tmp, JSON.stringify(data, null, 2), "utf8")
-      await renameWithRetry(tmp, JOBS_JSON_PATH)
-    } catch (err) {
-      try {
-        if (fs.existsSync(tmp)) fs.unlinkSync(tmp)
-      } catch {
-        /* tmp já removido ou inacessível — ignora */
-      }
-      throw err
-    }
-    return result
-  })
-  // A fila não pode travar se uma transação falhar: o próximo updateJobsFile
-  // encadeia na versão "engolida". O chamador recebe o erro real via `run`.
-  writeQueue = run.then(
-    () => {},
-    () => {}
-  )
-  return run
-}
-
-// Janela de retenção: vagas com publication_date mais antigo que isto são
-// removidas do jobs.json (não devem ser enviadas pelos bots). Com o
-// single-writer, o purge é responsabilidade do core (único escritor).
-// Valor inválido (não-finito ou < 1) cai no default de 90 dias.
+// Janela de retencao: vagas com publication_date mais antigo que isto sao
+// removidas no purge periodico. Default 90 dias. Com SQLite o purge e um
+// DELETE indexado - quase instantaneo mesmo com 100k+ vagas.
 const JOBS_MAX_AGE_DAYS = (() => {
   const n = Number(process.env.JOBS_MAX_AGE_DAYS)
   return Number.isFinite(n) && n >= 1 ? n : 90
@@ -150,21 +73,10 @@ function cutoffDate(days) {
   return d.toISOString().slice(0, 10)
 }
 
-async function purgeStaleJobs() {
+function purgeStaleJobs() {
   try {
-    const removed = await updateJobsFile((data) => {
-      const cutoff = cutoffDate(JOBS_MAX_AGE_DAYS)
-      let n = 0
-      for (const url of Object.keys(data)) {
-        const pub = data[url].publication_date
-        if (pub && pub < cutoff) {
-          delete data[url]
-          n++
-        }
-      }
-      return n > 0 ? n : SKIP_WRITE
-    })
-    if (removed !== SKIP_WRITE && removed > 0) {
+    const removed = repo.purgeOlderThan(cutoffDate(JOBS_MAX_AGE_DAYS))
+    if (removed > 0) {
       console.log(`[core] purge: ${removed} vaga(s) antiga(s) removida(s)`)
     }
   } catch (err) {
@@ -200,7 +112,7 @@ function normalizeSkills(raw) {
   return []
 }
 
-// Converte uma entrada do dict jobs.json em job no formato esperado pelos bots.
+// Converte um entry persistido em job no formato esperado pelos bots.
 function entryToApiJob(entry) {
   const url = entry.job_url || ""
   return {
@@ -208,7 +120,6 @@ function entryToApiJob(entry) {
     job_title: entry.job_title || "",
     job_url: url,
     company: entry.company || "",
-    // jobs.json (scraper) usa sufixo *_raw; fallback p/ formatos legados.
     location: entry.location || entry.location_raw || "",
     work_type: entry.work_type || "",
     hiring_regime: entry.hiring_regime || "",
@@ -223,20 +134,11 @@ function entryToApiJob(entry) {
   }
 }
 
-function findEntryById(data, id) {
-  for (const url of Object.keys(data)) {
-    const entry = data[url]
-    const entryId = entry.id || deriveId(url)
-    if (entryId === id) return { url, entry }
-  }
-  return null
-}
-
 function buildIncoming(payload) {
   const title = (payload.job_title || payload.title || payload.jobTitle || "").toString().trim()
   const url = (payload.job_url || payload.url || payload.jobUrl || "").toString().trim()
   if (!title || !url) {
-    throw new Error("Os campos 'job_title' e 'job_url' são obrigatórios.")
+    throw new Error("Os campos 'job_title' e 'job_url' sao obrigatorios.")
   }
 
   const now = new Date().toISOString()
@@ -248,23 +150,20 @@ function buildIncoming(payload) {
   }
 
   return {
-    url,
-    entry: {
-      job_title: title,
-      job_url: url,
-      company: (payload.company || "").toString().trim(),
-      location: (payload.location || "").toString().trim(),
-      work_type: (payload.work_type || payload.workType || "").toString().trim(),
-      hiring_regime: (payload.hiring_regime || payload.regime || "").toString().trim(),
-      salary: (payload.salary || "").toString().trim(),
-      publication_date: (payload.publication_date || payload.publicationDate || "").toString().trim(),
-      source: (payload.source || "").toString().trim(),
-      skills: normalizeSkills(payload.skills),
-      description: (payload.description || "").toString().trim(),
-      created_at: payload.created_at || now,
-      updated_at: now,
-      sent_to: sentTo
-    }
+    job_title: title,
+    job_url: url,
+    company: (payload.company || "").toString().trim(),
+    location: (payload.location || "").toString().trim(),
+    work_type: (payload.work_type || payload.workType || "").toString().trim(),
+    hiring_regime: (payload.hiring_regime || payload.regime || "").toString().trim(),
+    salary: (payload.salary || "").toString().trim(),
+    publication_date: (payload.publication_date || payload.publicationDate || "").toString().trim(),
+    source: (payload.source || "").toString().trim(),
+    skills: normalizeSkills(payload.skills),
+    description: (payload.description || "").toString().trim(),
+    created_at: payload.created_at || now,
+    updated_at: now,
+    sent_to: sentTo
   }
 }
 
@@ -273,15 +172,14 @@ function buildIncoming(payload) {
 const app = express()
 app.use(cors())
 
-// Limites de corpo por rota: o POST /jobs/batch recebe lotes grandes do
-// scraper; os demais endpoints de escrita lidam com uma vaga só. Aplicar o
-// limite grande apenas onde é preciso reduz a superfície de memória/DoS do
-// parser JSON (o body inteiro é materializado em memória).
+// Limites de corpo por rota: POST /jobs/batch recebe lotes grandes do scraper;
+// os demais lidam com uma vaga so.
 const jsonSmall = express.json({ limit: "1mb" })
 const jsonBatch = express.json({ limit: "25mb" })
 
-// POST /jobs - upsert por job_url
-app.post("/jobs", jsonSmall, async (req, res) => {
+// POST /jobs - upsert por job_url. sent_to vem do proprio payload (este
+// endpoint e usado quando o cliente quer explicitamente registrar envio).
+app.post("/jobs", jsonSmall, (req, res) => {
   let incoming
   try {
     incoming = buildIncoming(req.body || {})
@@ -289,20 +187,10 @@ app.post("/jobs", jsonSmall, async (req, res) => {
     return res.status(400).json({ success: false, message: err.message })
   }
   try {
-    const merged = await updateJobsFile((data) => {
-      const existing = data[incoming.url] || {}
-      const mergedSent = Array.from(
-        new Set([...(existing.sent_to || []), ...incoming.entry.sent_to])
-      )
-      const m = {
-        ...existing,
-        ...incoming.entry,
-        sent_to: mergedSent,
-        created_at: existing.created_at || incoming.entry.created_at
-      }
-      data[incoming.url] = m
-      return m
-    })
+    const merged = repo.upsertOne(incoming, { preserveSentTo: false })
+    if (!merged) {
+      return res.status(400).json({ success: false, message: "Vaga invalida." })
+    }
     res.status(201).json({ success: true, job: entryToApiJob(merged) })
   } catch (err) {
     console.error("[core] POST /jobs falhou:", err.message)
@@ -312,143 +200,91 @@ app.post("/jobs", jsonSmall, async (req, res) => {
 
 // POST /jobs/batch - upsert em lote, usado pelo scraper.
 //
-// SINGLE-WRITER: o core é o ÚNICO processo que grava o jobs.json. O scraper
-// não escreve mais o arquivo — coleta as vagas e envia para cá. Isso elimina
-// a corrida de dois escritores sobre o mesmo arquivo (que causava ENOENT no
-// rename). A leitura+merge+gravação roda dentro de updateJobsFile (fila), então
-// um PUT /jobs/status concorrente nunca é sobrescrito por este batch.
-//
-// sent_to NUNCA é sobrescrito pelo que o scraper manda: ele é autoridade do
-// core (são os bots que marcam envio). Sempre preservamos o sent_to em disco.
-app.post("/jobs/batch", jsonBatch, async (req, res) => {
+// sent_to NUNCA e sobrescrito pelo que o scraper manda: e autoridade do core
+// (sao os bots que marcam envio). O repo.upsertBatch ja preserva.
+app.post("/jobs/batch", jsonBatch, (req, res) => {
   const incoming = Array.isArray(req.body?.jobs) ? req.body.jobs : null
   if (!incoming) {
-    return res.status(400).json({ success: false, message: "Campo 'jobs' (array) é obrigatório." })
+    return res.status(400).json({ success: false, message: "Campo 'jobs' (array) e obrigatorio." })
   }
   try {
-    const counts = await updateJobsFile((data) => {
-      const now = new Date().toISOString()
-      let upserted = 0
-      let skipped = 0
-      for (const job of incoming) {
-        const url = (job?.job_url || "").toString().trim()
-        if (!url || !job.job_title) {
-          skipped++
-          continue
-        }
-        const existing = data[url] || {}
-        data[url] = {
-          ...existing,
-          ...job,
-          // sent_to é autoridade do core — ignora o que o scraper enviou.
-          sent_to: existing.sent_to || [],
-          created_at: existing.created_at || job.created_at || job.scraped_at || now,
-          updated_at: now
-        }
-        upserted++
-      }
-      return upserted > 0 ? { upserted, skipped } : SKIP_WRITE
-    })
-    if (counts === SKIP_WRITE) {
-      // Nenhuma vaga válida no lote — nada gravado.
-      return res.json({ success: true, upserted: 0, skipped: incoming.length })
-    }
-    res.json({ success: true, ...counts })
+    const { upserted, skipped } = repo.upsertBatch(incoming)
+    res.json({ success: true, upserted, skipped })
   } catch (err) {
     console.error("[core] POST /jobs/batch falhou:", err.message)
     res.status(500).json({ success: false, message: err.message })
   }
 })
 
-// GET /jobs - todas as vagas (mais novas primeiro)
-app.get("/jobs", (req, res) => {
-  const data = readJobsFile()
-  const jobs = Object.values(data)
-    .map(entryToApiJob)
-    .sort((a, b) => (b.created_at || "").localeCompare(a.created_at || ""))
-  res.json(jobs)
+// GET /jobs - todas as vagas (mais novas primeiro - ordem do listAll do repo).
+app.get("/jobs", (_req, res) => {
+  try {
+    const jobs = repo.listAll().map(entryToApiJob)
+    res.json(jobs)
+  } catch (err) {
+    console.error("[core] GET /jobs falhou:", err.message)
+    res.status(500).json({ success: false, message: err.message })
+  }
 })
 
-// GET /jobs/pending?channel=X - vagas ainda não enviadas no canal
+// GET /jobs/pending?channel=X - vagas ainda nao enviadas no canal.
+//
+// ORDEM (v3.1.0): mais antigas primeiro (ORDER BY publication_date ASC).
+// Decisao de produto: bot envia primeiro a vaga mais proxima de expirar.
 app.get("/jobs/pending", (req, res) => {
   const channel = normalizeChannel(req.query.channel)
-  const data = readJobsFile()
-  const jobs = Object.values(data)
-    .filter((entry) => !(entry.sent_to || []).includes(channel))
-    .map(entryToApiJob)
-    .sort((a, b) => (b.created_at || "").localeCompare(a.created_at || ""))
-  res.json(jobs)
+  try {
+    const jobs = repo.listPending(channel).map(entryToApiJob)
+    res.json(jobs)
+  } catch (err) {
+    console.error("[core] GET /jobs/pending falhou:", err.message)
+    res.status(500).json({ success: false, message: err.message })
+  }
 })
 
 // GET /jobs/check-url - existe vaga com essa URL?
 app.get("/jobs/check-url", (req, res) => {
   const url = req.query.url
-  if (!url) return res.status(400).json({ success: false, message: "URL é obrigatória" })
-  const data = readJobsFile()
-  const entry = data[url]
-  if (!entry) return res.json({ exists: false, id: null })
-  res.json({ exists: true, id: entry.id || deriveId(url) })
-})
-
-// GET /stats - contagens por canal e por source
-app.get("/stats", (req, res) => {
-  const data = readJobsFile()
-  const jobs = Object.values(data)
-  const sent = { discord: 0, whatsapp: 0, telegram: 0 }
-  const bySource = {}
-
-  for (const entry of jobs) {
-    const sentSet = new Set(entry.sent_to || [])
-    for (const ch of SUPPORTED_CHANNELS) {
-      if (sentSet.has(ch)) sent[ch]++
-    }
-    const source = entry.source || "unknown"
-    bySource[source] = (bySource[source] || 0) + 1
+  if (!url) return res.status(400).json({ success: false, message: "URL e obrigatoria" })
+  try {
+    res.json(repo.checkUrl(url))
+  } catch (err) {
+    console.error("[core] GET /jobs/check-url falhou:", err.message)
+    res.status(500).json({ success: false, message: err.message })
   }
-
-  res.json({
-    total: jobs.length,
-    pending: {
-      discord: jobs.length - sent.discord,
-      whatsapp: jobs.length - sent.whatsapp,
-      telegram: jobs.length - sent.telegram
-    },
-    sent,
-    bySource
-  })
 })
 
-// GET /jobs/:id - busca por id derivado
+// GET /stats - contagens por canal e por source.
+app.get("/stats", (_req, res) => {
+  try {
+    res.json(repo.stats())
+  } catch (err) {
+    console.error("[core] GET /stats falhou:", err.message)
+    res.status(500).json({ success: false, message: err.message })
+  }
+})
+
+// GET /jobs/:id - busca por id derivado.
 app.get("/jobs/:id", (req, res) => {
-  const data = readJobsFile()
-  const hit = findEntryById(data, req.params.id)
-  if (!hit) return res.status(404).json({ success: false, message: "Vaga não encontrada" })
-  res.json(entryToApiJob(hit.entry))
+  try {
+    const entry = repo.getById(req.params.id)
+    if (!entry) return res.status(404).json({ success: false, message: "Vaga nao encontrada" })
+    res.json(entryToApiJob(entry))
+  } catch (err) {
+    console.error("[core] GET /jobs/:id falhou:", err.message)
+    res.status(500).json({ success: false, message: err.message })
+  }
 })
 
-// PUT /jobs/status - marca status de envio para um canal
-app.put("/jobs/status", jsonSmall, async (req, res) => {
+// PUT /jobs/status - marca status de envio para um canal.
+app.put("/jobs/status", jsonSmall, (req, res) => {
   const { id, channel, status } = req.body || {}
-  if (!id) return res.status(400).json({ success: false, message: "ID é obrigatório" })
+  if (!id) return res.status(400).json({ success: false, message: "ID e obrigatorio" })
 
   const targetChannel = normalizeChannel(channel)
   try {
-    const entry = await updateJobsFile((data) => {
-      const hit = findEntryById(data, id)
-      if (!hit) return SKIP_WRITE
-
-      const sentSet = new Set(hit.entry.sent_to || [])
-      if (status) sentSet.add(targetChannel)
-      else sentSet.delete(targetChannel)
-
-      hit.entry.sent_to = Array.from(sentSet).sort()
-      hit.entry.updated_at = new Date().toISOString()
-      data[hit.url] = hit.entry
-      return hit.entry
-    })
-    if (entry === SKIP_WRITE) {
-      return res.status(404).json({ success: false, message: "Vaga não encontrada" })
-    }
+    const entry = repo.setChannelStatus(id, targetChannel, !!status)
+    if (!entry) return res.status(404).json({ success: false, message: "Vaga nao encontrada" })
     res.json({ success: true, job: entryToApiJob(entry) })
   } catch (err) {
     console.error("[core] PUT /jobs/status falhou:", err.message)
@@ -456,18 +292,11 @@ app.put("/jobs/status", jsonSmall, async (req, res) => {
   }
 })
 
-// DELETE /jobs/:id - remove vaga
-app.delete("/jobs/:id", async (req, res) => {
+// DELETE /jobs/:id - remove vaga.
+app.delete("/jobs/:id", (req, res) => {
   try {
-    const removed = await updateJobsFile((data) => {
-      const hit = findEntryById(data, req.params.id)
-      if (!hit) return SKIP_WRITE
-      delete data[hit.url]
-      return true
-    })
-    if (removed === SKIP_WRITE) {
-      return res.status(404).json({ success: false, message: "Vaga não encontrada" })
-    }
+    const ok = repo.deleteById(req.params.id)
+    if (!ok) return res.status(404).json({ success: false, message: "Vaga nao encontrada" })
     res.json({ success: true })
   } catch (err) {
     console.error("[core] DELETE /jobs falhou:", err.message)
@@ -475,37 +304,50 @@ app.delete("/jobs/:id", async (req, res) => {
   }
 })
 
-// Health
-app.get("/health", (req, res) => {
-  res.json({
-    status: "ok",
-    timestamp: new Date().toISOString(),
-    jobsPath: JOBS_JSON_PATH,
-    jobsExists: fs.existsSync(JOBS_JSON_PATH)
-  })
+// Health - inclui contagem do banco (util pra monitoramento).
+app.get("/health", (_req, res) => {
+  try {
+    const total = repo.count()
+    res.json({
+      status: "ok",
+      timestamp: new Date().toISOString(),
+      backend: "sqlite",
+      dbPath: JOBS_DB_PATH,
+      jobs: total
+    })
+  } catch (err) {
+    res.status(500).json({ status: "degraded", message: err.message })
+  }
 })
 
-// Normaliza erros não capturados nas rotas. Sem isto, um corpo JSON malformado
-// (erro do body-parser) cairia no handler padrão do Express — resposta HTML e
-// stack trace no log. Middleware de erro tem de ter 4 argumentos e vir por último.
+// Normaliza erros nao capturados.
 // eslint-disable-next-line no-unused-vars
-app.use((err, req, res, next) => {
+app.use((err, req, res, _next) => {
   if (err?.type === "entity.parse.failed" || err instanceof SyntaxError) {
-    return res.status(400).json({ success: false, message: "Corpo JSON inválido." })
+    return res.status(400).json({ success: false, message: "Corpo JSON invalido." })
   }
-  console.error("[core] erro não tratado:", err?.message || err)
+  console.error("[core] erro nao tratado:", err?.message || err)
   res.status(500).json({ success: false, message: "Erro interno." })
 })
 
+// Shutdown limpo: fecha o handle do SQLite pra garantir flush do WAL.
+function shutdown(signal) {
+  console.log(`[core] recebido ${signal}, fechando banco...`)
+  try { db.close() } catch { /* ja fechado */ }
+  process.exit(0)
+}
+process.on("SIGINT", () => shutdown("SIGINT"))
+process.on("SIGTERM", () => shutdown("SIGTERM"))
+
 app.listen(PORT, () => {
   console.log(`[core] message-formatting-core ouvindo em http://localhost:${PORT}`)
-  console.log(`[core] fonte de dados: ${JOBS_JSON_PATH}`)
-  if (!fs.existsSync(JOBS_JSON_PATH)) {
-    console.warn("[core] AVISO: jobs.json ainda não existe — será criado quando o scraper enviar o 1º lote.")
-  }
-  // Purge de vagas antigas: no boot e a cada 6h (o core é o único escritor).
+  console.log(`[core] fonte de dados: ${JOBS_DB_PATH} (${repo.count()} vagas)`)
+  // Purge no boot + a cada 6h. Com SQLite o purge e instantaneo.
   purgeStaleJobs()
   setInterval(purgeStaleJobs, PURGE_INTERVAL_MS)
 })
+
+// Para nao causar quebra silenciosa nos testes/dev que importam o app.
+fs.mkdirSync(path.dirname(JOBS_DB_PATH), { recursive: true })
 
 export default app

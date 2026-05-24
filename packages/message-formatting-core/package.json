@@ -1,6 +1,6 @@
 {
   "name": "message-formatting-core",
-  "version": "2.0.0",
+  "version": "3.1.0",
   "description": "Core job formatting service shared by every channel",
   "type": "module",
   "main": "src/server.js",
@@ -9,6 +9,7 @@
     "dev": "node --watch src/server.js"
   },
   "dependencies": {
+    "better-sqlite3": "^11.7.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
     "express": "^4.19.2"

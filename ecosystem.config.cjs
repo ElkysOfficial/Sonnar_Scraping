@@ -48,15 +48,14 @@ module.exports = {
       autorestart: true,
       max_restarts: 10,
       restart_delay: 3000,
-      // O core le+parseia o jobs.json (~50MB, 52k vagas) e re-serializa o
-      // dict inteiro (~80MB) a cada POST /jobs/batch do scraper. Em rajadas
-      // de batch + GETs concorrentes a heap V8 passou de 1024M (observado
-      // ~1.25-1.45GB) e o PM2 reciclava o core a cada ~30-60s, derrubando
-      // o pipeline: scraper acumulava "Server disconnected" e reenfileirava
-      // lotes em loop. 2048M cobre o pico real com folga. Fix arquitetural
-      // (parar de re-serializar 80MB por batch — migrar jobs.json p/ SQLite
-      // ou usar escrita incremental) fica como follow-up (issue v3.1.x).
-      max_memory_restart: "2048M",
+      // v3.1.0: o core migrou de jobs.json para SQLite (better-sqlite3).
+      // Cada POST /jobs/batch agora vira INSERT/UPDATE pontual dentro de
+      // uma transacao, sem re-serializar o dict inteiro. Footprint real
+      // observado em testes: ~80-150MB de heap (vs ~700MB-1.4GB do JSON).
+      // 512M da folga > 3x acima do pico, evita falsos restarts.
+      // Em produçao, monitorar /health (campo "jobs") e elevar se passar
+      // de ~300MB sustentado.
+      max_memory_restart: "512M",
       time: true,
     },
     {

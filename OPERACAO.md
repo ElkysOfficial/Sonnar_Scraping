@@ -6,7 +6,7 @@ Guia de operação dos serviços do Sonnar via **PM2**. Tudo sobe/para com um co
 
 | Processo (PM2) | App | Porta | O que faz |
 | --- | --- | --- | --- |
-| `sonnar-core` | `packages/message-formatting-core` | 3100 | API HTTP — **único processo que grava o `jobs.json`** + serve as vagas |
+| `sonnar-core` | `packages/message-formatting-core` | 3100 | API HTTP — **único processo que grava o banco de vagas (SQLite: `jobs.db`)** + serve as vagas |
 | `sonnar-wa-formatter` | `apps/whatsapp/formatter` | 3001 | Gera os cards (imagem) das vagas |
 | `sonnar-wa-sender` | `apps/whatsapp/sender` | 3002 | Bot do WhatsApp (Baileys) |
 | `sonnar-scraper` | `apps/scraper` | — | Coleta vagas das engines em loop (`while True`) |
@@ -24,15 +24,26 @@ O Discord (`apps/discord/*`) **não** está no ecosystem ainda.
 
 Fluxo de dados:
 ```
-scraper ──POST /jobs/batch──▶ core (3100) ──grava──▶ jobs.json
+scraper ──POST /jobs/batch──▶ core (3100) ──INSERT/UPDATE──▶ jobs.db (SQLite)
                                    └──serve──▶ formatter (3001) ──▶ sender (3002 / WhatsApp)
 ```
 
-> **Single-writer:** o `jobs.json` tem **um único escritor — o core**. O scraper
-> não grava o arquivo: coleta as vagas e as envia ao core via HTTP. Isso elimina
-> a corrida de dois processos gravando o mesmo arquivo (que causava o erro
-> `Falha ao gravar jobs.json` e a perda de marcações de envio). Se o core estiver
-> fora do ar, o scraper segura as vagas em memória e reenvia quando ele voltar.
+> **Single-writer:** o `jobs.db` (SQLite) tem **um único escritor — o core**. O
+> scraper não toca no banco: coleta as vagas e as envia ao core via HTTP. Se o
+> core estiver fora do ar, o scraper segura as vagas em memória e reenvia quando
+> ele voltar.
+
+> **Persistência (v3.1.0):** o core substituiu o `jobs.json` (re-serialização do
+> arquivo inteiro a cada batch, que travava o event loop com 50k+ vagas) por
+> SQLite com `better-sqlite3`. Cada batch agora é um `INSERT/UPDATE` indexado.
+> Heap do core caiu de ~700MB-1.4GB para ~80-150MB, e o `POST /jobs/batch`
+> passou de >30s para <50ms. A migração do `jobs.json` antigo para o banco
+> roda **automaticamente no boot** do core (idempotente); o arquivo original
+> é renomeado para `jobs.json.bak-<timestamp>` como backup.
+
+> **Ordem de envio (v3.1.0):** `GET /jobs/pending` devolve vagas **mais antigas
+> primeiro** (`ORDER BY publication_date ASC`). Decisão de produto: garantir que
+> vagas próximas de expirar sejam enviadas antes das recém-coletadas.
 
 ## Pré-requisitos
 
@@ -45,6 +56,13 @@ Cada app precisa do seu `.env` e dependências instaladas:
 - `apps/scraper/.env` — `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `CORE_API_URL` (opcional — default `http://localhost:3100`)
 - `apps/scraper`: `pip install -r requirements.txt`
 - Node apps: `npm install` em cada um (já feito)
+
+> **Deploy v3.1.0 (cutover SQLite):** após `git pull`, rodar
+> `cd packages/message-formatting-core && npm install` para compilar o
+> `better-sqlite3` (módulo nativo C++, build automático com `build-essential`
+> já presente no Ubuntu 24.04). Depois `pm2 restart sonnar-core` — a migração
+> do `jobs.json` para `jobs.db` roda no primeiro boot e renomeia o original
+> para `.bak-<timestamp>`. `pm2 logs sonnar-core --lines 50` mostra o progresso.
 
 ## Subir
 
