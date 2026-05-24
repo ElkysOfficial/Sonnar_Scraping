@@ -24,6 +24,7 @@ from variavel import get_active_batch_key  # noqa: E402
 from src.persistence.extraction_tracker import tracker  # noqa: E402
 from src.persistence.progress_tracker import progress  # noqa: E402
 from src.utils.http_session import fetch_sync  # noqa: E402
+from src.utils.job_enrichment import enrich_canonical  # noqa: E402
 from src.utils.job_fallbacks import apply_description_fallbacks  # noqa: E402
 
 import logging
@@ -31,7 +32,8 @@ logger = logging.getLogger("scraper.engine.weworkremotely")
 from src.utils.text_utils import extract_skills, strip_html  # noqa: E402
 
 
-PARSER_VERSION = "weworkremotely-2026.05.07"
+# 2026-05-23 (v2.22.0): pipeline central de enriquecimento. WWR e EN.
+PARSER_VERSION = "weworkremotely-2026.05.23"
 
 
 # --- Sessão ---------------------------------------------------------------
@@ -213,6 +215,10 @@ async def get_weworkremotely_jobs(on_job=None) -> list:
             seen.add(link)
             tracker.discover(link, engine="weworkremotely")
             parsed = apply_description_fallbacks(parsed)
+            try:
+                parsed = await enrich_canonical(parsed, hint_lang="en")
+            except Exception:
+                pass
             jobs.append(parsed)
             if on_job is not None:
                 try:

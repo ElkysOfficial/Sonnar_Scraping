@@ -123,3 +123,40 @@ async def enrich_async(
     return await asyncio.to_thread(
         enrich_sync, title, description, hint_lang
     )
+
+
+async def enrich_canonical(
+    canonical: list,
+    hint_lang: Optional[str] = None,
+) -> list:
+    """Expande lista canonica de 10 -> 12 campos aplicando enrich nos
+    indices 1 (title) e 9 (description).
+
+    Util pras engines que constroem a lista canonica em codigo sync e
+    so precisam plugar o enrichment depois. Devolve a propria lista
+    (mutada in-place) ou estendida em 2 elementos.
+
+    Args:
+        canonical: lista de 10+ elementos (formato emitido pelas engines).
+        hint_lang: se conhecido (ex: 'en' pra engines EN-only), pula
+            deteccao automatica.
+
+    Returns:
+        Lista de 12 elementos. Se a lista de entrada ja tiver 12+,
+        mantemos o tamanho e sobrescrevemos as posicoes 10 e 11.
+    """
+    if len(canonical) < 10:
+        return canonical
+    title = canonical[1] or ""
+    description = canonical[9] or ""
+    lang, resp = await enrich_async(title, description, hint_lang=hint_lang)
+    if len(canonical) >= 12:
+        canonical[10] = lang
+        canonical[11] = resp
+        return canonical
+    # Pad: 10 -> 12 (preserva index correto)
+    extra = [None] * (12 - len(canonical))
+    canonical = list(canonical) + extra
+    canonical[10] = lang
+    canonical[11] = resp
+    return canonical

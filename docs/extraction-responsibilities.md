@@ -151,7 +151,7 @@ def extract_responsibilities(description: str, lang: str) -> str | None:
 | 4.2 | **v2.19.0** | Módulo `src/utils/lang_detect.py` + scripts `validate_engine`/`validate_engines` | ✅ |
 | 4.3 | **v2.20.0** | **LinkedIn** + helper central `job_enrichment` + tupla canônica 10→12 campos | ✅ |
 | 4.4 | **v2.21.0** | **Dice** (EN sempre, hint_lang='en') + script `backfill_enrichment.py` | ✅ |
-| 4.5 | v2.22.0 | **Engines remotas EN** (RemoteOK, Remotive, WeWorkRemotely, ZipRecruiter) | ⏳ |
+| 4.5 | **v2.22.0** | **Engines remotas EN** (RemoteOK, Remotive, WeWorkRemotely, ZipRecruiter) + helper `enrich_canonical` | ✅ |
 | 4.6 | v2.23.0 | **Engines PT** (Indeed, Catho, InfoJobs, BNE, GeekHunter, Jooble, MichaelPage, ProgramaThor, SimplyHired, Gupy) — só extração | ⏳ |
 | 4.7 | v2.24.0 | **Careerjet** — reusar pipeline central (manter compatibilidade com tradução já existente) | ⏳ |
 | 4.8 | v2.25.0 | **Formatter** atualizado pra usar `responsibilities` (com fallback pra `description`) | ⏳ |

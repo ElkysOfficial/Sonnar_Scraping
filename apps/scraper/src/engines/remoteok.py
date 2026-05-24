@@ -17,11 +17,14 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 from variavel import stacks  # noqa: E402
 from src.persistence.extraction_tracker import tracker  # noqa: E402
 from src.utils.http_session import fetch_sync  # noqa: E402
+from src.utils.job_enrichment import enrich_canonical  # noqa: E402
 from src.utils.job_fallbacks import apply_description_fallbacks  # noqa: E402
 from src.utils.text_utils import extract_skills, strip_html  # noqa: E402
 
 
-PARSER_VERSION = "remoteok-2026.05.07"
+# 2026-05-23 (v2.22.0): pipeline central de enriquecimento
+# (description_lang + responsibilities). RemoteOK e sempre EN.
+PARSER_VERSION = "remoteok-2026.05.23"
 
 
 # --- Sessão ---------------------------------------------------------------
@@ -182,6 +185,11 @@ async def get_remoteok_jobs(on_job=None) -> list:
             parsed = _parse_job_item(item, stacks_lower)
             if parsed is None:
                 continue
+            # Pipeline de enriquecimento (epico v3.0.0). RemoteOK e EN-only.
+            try:
+                parsed = await enrich_canonical(parsed, hint_lang="en")
+            except Exception:
+                pass  # fallback: continua com 10 campos sem lang/resp
             seen_ids.add(job_id)
             tracker.discover(parsed[0], engine="remoteok")
             jobs.append(parsed)

@@ -22,12 +22,17 @@ from variavel import get_active_batch_key, get_active_stacks  # noqa: E402
 from src.persistence.extraction_tracker import tracker  # noqa: E402
 from src.persistence.progress_tracker import progress  # noqa: E402
 from src.utils.http_session import fetch_sync  # noqa: E402
+from src.utils.job_enrichment import enrich_canonical  # noqa: E402
 
 import logging
 logger = logging.getLogger("scraper.engine.ziprecruiter")
 
 
-PARSER_VERSION = "ziprecruiter-2026.05.07"
+# 2026-05-23 (v2.22.0): pipeline central de enriquecimento. ZipRecruiter
+# nao faz fetch de detalhe atualmente, entao description vem vazia e o
+# enrich vira no-op (lang=None, resp=None). Mantemos a chamada pra que
+# eventuais melhorias futuras (description-fetch) sejam beneficiadas.
+PARSER_VERSION = "ziprecruiter-2026.05.23"
 
 
 # --- Sessão ---------------------------------------------------------------
@@ -245,6 +250,10 @@ async def get_ziprecruiter_jobs(on_job=None) -> list:
 
                         job = [link, job_title, company, location, work_type,
                                hiring_regime, salary, publication_date]
+                        try:
+                            job = await enrich_canonical(job, hint_lang="en")
+                        except Exception:
+                            pass
                         jobs.append(job)
                         if on_job is not None:
                             try:

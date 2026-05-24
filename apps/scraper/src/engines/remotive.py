@@ -18,6 +18,7 @@ from variavel import get_active_batch_key, stacks  # noqa: E402
 from src.persistence.extraction_tracker import tracker  # noqa: E402
 from src.persistence.progress_tracker import progress  # noqa: E402
 from src.utils.http_session import fetch_sync  # noqa: E402
+from src.utils.job_enrichment import enrich_canonical  # noqa: E402
 from src.utils.job_fallbacks import apply_description_fallbacks  # noqa: E402
 from src.utils.text_utils import extract_skills, strip_html  # noqa: E402
 
@@ -25,7 +26,8 @@ import logging
 logger = logging.getLogger("scraper.engine.remotive")
 
 
-PARSER_VERSION = "remotive-2026.05.07"
+# 2026-05-23 (v2.22.0): pipeline central de enriquecimento. Remotive e EN.
+PARSER_VERSION = "remotive-2026.05.23"
 
 
 # --- Sessão ---------------------------------------------------------------
@@ -193,6 +195,10 @@ async def get_remotive_jobs(on_job=None) -> list:
                     parsed = _parse_job_item(item)
                     if parsed is None:
                         continue
+                    try:
+                        parsed = await enrich_canonical(parsed, hint_lang="en")
+                    except Exception:
+                        pass
                     seen_ids.add(job_id)
                     tracker.discover(parsed[0], engine="remotive")
                     jobs.append(parsed)
