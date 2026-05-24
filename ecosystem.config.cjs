@@ -48,11 +48,15 @@ module.exports = {
       autorestart: true,
       max_restarts: 10,
       restart_delay: 3000,
-      // O core faz JSON.parse do jobs.json inteiro a cada request. 250M era
-      // apertado; 512M passou a estourar (~624M) depois que a careerjet
-      // voltou a coletar e o jobs.json cresceu. 1024M da folga — a VPS tem
-      // 8GB e o orcamento total fica em ~3.95GB.
-      max_memory_restart: "1024M",
+      // O core le+parseia o jobs.json (~50MB, 52k vagas) e re-serializa o
+      // dict inteiro (~80MB) a cada POST /jobs/batch do scraper. Em rajadas
+      // de batch + GETs concorrentes a heap V8 passou de 1024M (observado
+      // ~1.25-1.45GB) e o PM2 reciclava o core a cada ~30-60s, derrubando
+      // o pipeline: scraper acumulava "Server disconnected" e reenfileirava
+      // lotes em loop. 2048M cobre o pico real com folga. Fix arquitetural
+      // (parar de re-serializar 80MB por batch — migrar jobs.json p/ SQLite
+      // ou usar escrita incremental) fica como follow-up (issue v3.1.x).
+      max_memory_restart: "2048M",
       time: true,
     },
     {
