@@ -43,6 +43,19 @@ try:
 except AttributeError:
     pass
 
+# Carrega .env do scraper (SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY).
+# Quando rodado via PM2, o cwd e apps/scraper - load_dotenv() resolve o
+# .env relativo. Fallback explicito pelo path absoluto pra cobrir o caso
+# de o script ser invocado de outro diretorio.
+try:
+    from dotenv import load_dotenv  # type: ignore[import-not-found]
+    load_dotenv()
+    load_dotenv(os.path.join(SCRAPER_ROOT, ".env"))
+except ImportError:
+    # python-dotenv ausente nao e fatal - se as envvars vierem do shell
+    # ou do PM2 env_file, seguimos sem ele.
+    pass
+
 import httpx  # noqa: E402
 
 from src.utils.job_enrichment import enrich_sync  # noqa: E402
