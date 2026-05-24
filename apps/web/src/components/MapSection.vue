@@ -260,13 +260,17 @@ export default {
         IT: 765, PL: 432, AE: 432, SG: 543, KR: 456, NZ: 345,
         CN: 234, RU: 123, ZA: 187, EG: 98, NG: 76
       },
+      // Regra de produto: mais vagas = cor MAIS ESCURA/saturada;
+      // menos vagas = cor mais clara. Vale pros dois temas (light e dark).
       colorScale: {
         min: '#dbeafe',
         max: '#1e40af'
       },
       colorScaleDark: {
-        min: '#1e3a8a',
-        max: '#93c5fd'
+        // Mesma direcao do light: claro -> escuro. Ajustados pra ficarem
+        // bem visiveis em fundo escuro (#10131a).
+        min: '#bfdbfe',
+        max: '#1d4ed8'
       },
       defaultColor: '#e2e8f0',
       defaultColorDark: '#475569'
@@ -709,13 +713,13 @@ export default {
 
 /* Dark theme overrides for map section */
 [data-theme="dark"] .coverage-section {
-  --legend-gradient: linear-gradient(to right, #1e3a8a, #3b82f6, #93c5fd);
+  --legend-gradient: linear-gradient(to right, #bfdbfe, #60a5fa, #1d4ed8);
   --c-bg-glow: color-mix(in srgb, var(--color-accent) 18%, transparent);
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) .coverage-section {
-    --legend-gradient: linear-gradient(to right, #1e3a8a, #3b82f6, #93c5fd);
+    --legend-gradient: linear-gradient(to right, #bfdbfe, #60a5fa, #1d4ed8);
     --c-bg-glow: color-mix(in srgb, var(--color-accent) 18%, transparent);
   }
 }
