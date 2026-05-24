@@ -30,7 +30,8 @@ from src.persistence.extraction_tracker import tracker  # noqa: E402
 from src.utils.http_session import HttpSession, fetch  # noqa: E402
 
 
-PARSER_VERSION = "infojobs-2026.05.08"
+# 2026-05-23 (v2.23.0): pipeline central. InfoJobs e sempre PT.
+PARSER_VERSION = "infojobs-2026.05.23"
 
 
 _MIN_USEFUL_DESCRIPTION = 200
@@ -54,6 +55,7 @@ def is_partial(job_data: dict) -> bool:
     """
     description = (job_data.get("description") or "").strip()
     return len(description) < _MIN_USEFUL_DESCRIPTION
+from src.utils.job_enrichment import enrich_canonical  # noqa: E402
 from src.utils.job_fallbacks import apply_description_fallbacks  # noqa: E402
 from src.utils.text_utils import extract_skills, strip_html  # noqa: E402
 
@@ -406,6 +408,11 @@ async def get_infojobs_jobs(on_job=None) -> list:
             if response is None or response.status_code != 200:
                 return None
             parsed = _parse_job_detail(response.text, link)
+            if parsed is not None:
+                try:
+                    parsed = await enrich_canonical(parsed, hint_lang="pt")
+                except Exception:
+                    pass
             if parsed is not None and on_job is not None:
                 try:
                     await on_job(parsed)

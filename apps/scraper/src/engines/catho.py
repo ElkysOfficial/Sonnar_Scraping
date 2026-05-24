@@ -43,6 +43,7 @@ from variavel import get_active_batch_key, get_active_stacks  # noqa: E402
 from src.persistence.extraction_tracker import tracker  # noqa: E402
 from src.persistence.progress_tracker import progress  # noqa: E402
 from src.utils.http_session import fetch_sync  # noqa: E402
+from src.utils.job_enrichment import enrich_canonical  # noqa: E402
 from src.utils.job_fallbacks import apply_description_fallbacks  # noqa: E402
 from src.utils.text_utils import extract_skills  # noqa: E402
 
@@ -50,7 +51,8 @@ import logging
 logger = logging.getLogger("scraper.engine.catho")
 
 
-PARSER_VERSION = "catho-2026.05.08"
+# 2026-05-23 (v2.23.0): pipeline central. Catho e sempre PT.
+PARSER_VERSION = "catho-2026.05.23"
 
 
 _MIN_USEFUL_DESCRIPTION = 200
@@ -576,6 +578,10 @@ async def get_catho_jobs(on_job=None) -> list:
                         await asyncio.sleep(random.uniform(1.0, 2.0))
 
                     parsed_full = apply_description_fallbacks(parsed + [skills, description])
+                    try:
+                        parsed_full = await enrich_canonical(parsed_full, hint_lang="pt")
+                    except Exception:
+                        pass
                     jobs.append(parsed_full)
                     added_this_page += 1
                     added_for_stack += 1

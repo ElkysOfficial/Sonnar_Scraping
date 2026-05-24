@@ -22,6 +22,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 from src.persistence.extraction_tracker import tracker  # noqa: E402
 from src.persistence.progress_tracker import progress  # noqa: E402
 from src.utils.http_session import HttpSession, fetch  # noqa: E402
+from src.utils.job_enrichment import enrich_canonical  # noqa: E402
 from src.utils.job_fallbacks import apply_description_fallbacks  # noqa: E402
 from src.utils.text_utils import extract_skills, strip_html  # noqa: E402
 
@@ -29,7 +30,8 @@ import logging
 logger = logging.getLogger("scraper.engine.gupy")
 
 
-PARSER_VERSION = "gupy-2026.05.08"
+# 2026-05-23 (v2.23.0): pipeline central. Gupy e sempre PT.
+PARSER_VERSION = "gupy-2026.05.23"
 
 # A API do Gupy lista apenas vagas com applicationDeadline futuro (status ativo),
 # mas devolve publishedDate como a data de criacao original — frequentemente
@@ -206,6 +208,10 @@ async def get_gupy_jobs(on_job=None) -> list:
                 continue
             seen.add(job_url)
             tracker.discover(job_url, engine="gupy")
+            try:
+                parsed = await enrich_canonical(parsed, hint_lang="pt")
+            except Exception:
+                pass
             jobs.append(parsed)
             if on_job is not None:
                 try:
