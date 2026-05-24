@@ -178,6 +178,63 @@ def merge_stats(grand: dict, chunk: dict) -> None:
         grand["by_lang"][lang] = grand["by_lang"].get(lang, 0) + cnt
 
 
+def run_until_empty(
+    client: httpx.Client,
+    url: str,
+    key: str,
+    engine_filter: str | None,
+    chunk_size: int,
+    limit: int | None,
+    dry_run: bool,
+    sleep_between_chunks: float,
+) -> dict:
+    """Processa chunks ate a fila pendentes esvaziar (ou atingir --limit)."""
+    grand = {"total": 0, "with_resp": 0, "without_resp": 0, "errors": 0, "by_lang": {}}
+    chunk_no = 0
+    while True:
+        chunk_no += 1
+        try:
+            jobs = fetch_pending(client, url, key, engine_filter, chunk_size)
+        except Exception as exc:  # noqa: BLE001
+            print(f"ERRO buscar chunk {chunk_no}: {exc}", flush=True)
+            return grand
+
+        if not jobs:
+            break
+
+        print(
+            f"chunk {chunk_no}: {len(jobs)} vagas "
+            f"(engine={engine_filter or 'all'}, dry_run={dry_run})",
+            flush=True,
+        )
+
+        if limit is not None:
+            remaining = limit - grand["total"]
+            if remaining <= 0:
+                break
+            if len(jobs) > remaining:
+                jobs = jobs[:remaining]
+
+        t0 = time.time()
+        stats = process_chunk(client, url, key, jobs, dry_run)
+        merge_stats(grand, stats)
+        elapsed = time.time() - t0
+        print(
+            f"  -> processadas {stats['total']} em {elapsed:.1f}s "
+            f"(with_resp={stats['with_resp']}, lang={stats['by_lang']}, err={stats['errors']})",
+            flush=True,
+        )
+
+        if limit is not None and grand["total"] >= limit:
+            break
+        if dry_run:
+            # Dry-run nao "drena" a fila - sair apos 1 chunk
+            break
+        if sleep_between_chunks > 0:
+            time.sleep(sleep_between_chunks)
+    return grand
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Backfill description_lang + responsibilities")
     group = parser.add_mutually_exclusive_group(required=True)
@@ -191,69 +248,80 @@ def main(argv: list[str] | None = None) -> int:
         "--limit", type=int, default=None,
         help="Para apos N vagas no total (default: roda ate esgotar)",
     )
+    parser.add_argument(
+        "--sleep-between-chunks", type=float, default=0.5,
+        help="Segundos entre chunks (default 0.5) - evita martelar o banco",
+    )
+    parser.add_argument(
+        "--daemon", action="store_true",
+        help="Apos esvaziar a fila, dorme --idle-sleep e tenta de novo. "
+             "Modo PM2: roda 24/7 processando vagas novas conforme chegam.",
+    )
+    parser.add_argument(
+        "--idle-sleep", type=float, default=600.0,
+        help="Em modo --daemon, quantos segundos dormir quando fila esvazia "
+             "(default 600s = 10min). Ignorado fora do daemon.",
+    )
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args(argv)
 
     url, key = _supabase_creds()
     engine_filter = None if args.all else args.engine
 
-    grand = {"total": 0, "with_resp": 0, "without_resp": 0, "errors": 0, "by_lang": {}}
     started = time.time()
-    chunk_no = 0
+    grand_total = {"total": 0, "with_resp": 0, "without_resp": 0, "errors": 0, "by_lang": {}}
+    pass_no = 0
 
     with httpx.Client(timeout=30.0) as client:
         while True:
-            chunk_no += 1
-            try:
-                jobs = fetch_pending(client, url, key, engine_filter, args.chunk_size)
-            except Exception as exc:  # noqa: BLE001
-                print(f"ERRO buscar chunk {chunk_no}: {exc}")
-                return 2
+            pass_no += 1
+            if args.daemon:
+                print(f"\n=== pass #{pass_no} iniciado ===", flush=True)
+            grand = run_until_empty(
+                client, url, key,
+                engine_filter=engine_filter,
+                chunk_size=args.chunk_size,
+                limit=args.limit,
+                dry_run=args.dry_run,
+                sleep_between_chunks=args.sleep_between_chunks,
+            )
+            # Acumula totals do pass no grand_total
+            grand_total["total"] += grand["total"]
+            grand_total["with_resp"] += grand["with_resp"]
+            grand_total["without_resp"] += grand["without_resp"]
+            grand_total["errors"] += grand["errors"]
+            for lang, cnt in grand["by_lang"].items():
+                grand_total["by_lang"][lang] = grand_total["by_lang"].get(lang, 0) + cnt
 
-            if not jobs:
-                break
-
+            elapsed_total = time.time() - started
             print(
-                f"chunk {chunk_no}: {len(jobs)} vagas "
-                f"(engine={engine_filter or 'all'}, dry_run={args.dry_run})",
+                f"=== pass #{pass_no} terminou: processadas {grand['total']} "
+                f"(acumulado {grand_total['total']}, runtime {elapsed_total:.0f}s) ===",
                 flush=True,
             )
 
-            # Limita ao --limit total se setado
-            if args.limit is not None:
-                remaining = args.limit - grand["total"]
-                if remaining <= 0:
-                    break
-                if len(jobs) > remaining:
-                    jobs = jobs[:remaining]
-
-            t0 = time.time()
-            stats = process_chunk(client, url, key, jobs, args.dry_run)
-            merge_stats(grand, stats)
-            elapsed = time.time() - t0
+            if not args.daemon:
+                break
+            # Limite global respeitado tambem em daemon
+            if args.limit is not None and grand_total["total"] >= args.limit:
+                break
+            # Fila vazia em daemon -> dorme e retoma
             print(
-                f"  -> processadas {stats['total']} em {elapsed:.1f}s "
-                f"(with_resp={stats['with_resp']}, lang={stats['by_lang']}, err={stats['errors']})",
+                f"  dormindo {args.idle_sleep:.0f}s ate o proximo pass...",
                 flush=True,
             )
+            time.sleep(args.idle_sleep)
 
-            if args.limit is not None and grand["total"] >= args.limit:
-                break
-            # Se nao estamos atualizando, a query nao "drena" - precisa parar
-            # apos 1 chunk pra nao iterar infinitamente.
-            if args.dry_run:
-                break
-
-    total_time = time.time() - started
     print("\n" + "=" * 60)
     print("RESUMO BACKFILL")
     print("=" * 60)
-    print(f"  Total processado:   {grand['total']}")
-    print(f"  Com responsibilities: {grand['with_resp']}")
-    print(f"  Sem responsibilities: {grand['without_resp']} (ficam NULL)")
-    print(f"  Erros:              {grand['errors']}")
-    print(f"  Idiomas detectados: {grand['by_lang']}")
-    print(f"  Tempo total:        {total_time:.1f}s")
+    print(f"  Passes:             {pass_no}")
+    print(f"  Total processado:   {grand_total['total']}")
+    print(f"  Com responsibilities: {grand_total['with_resp']}")
+    print(f"  Sem responsibilities: {grand_total['without_resp']} (ficam NULL)")
+    print(f"  Erros:              {grand_total['errors']}")
+    print(f"  Idiomas detectados: {grand_total['by_lang']}")
+    print(f"  Tempo total:        {time.time()-started:.1f}s")
     return 0
 
 

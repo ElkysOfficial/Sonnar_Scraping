@@ -10,9 +10,17 @@ Guia de operação dos serviços do Sonnar via **PM2**. Tudo sobe/para com um co
 | `sonnar-wa-formatter` | `apps/whatsapp/formatter` | 3001 | Gera os cards (imagem) das vagas |
 | `sonnar-wa-sender` | `apps/whatsapp/sender` | 3002 | Bot do WhatsApp (Baileys) |
 | `sonnar-scraper` | `apps/scraper` | — | Coleta vagas das engines em loop (`while True`) |
+| `sonnar-backfill` | `apps/scraper` | — | **Daemon do épico v3.0.0**: traduz pra PT + extrai `responsibilities` de vagas no banco. Roda 24/7 (10min idle quando fila vazia). |
 
-Os 4 são processos **de longa duração** — rodam até alguém parar.
+Os 5 são processos **de longa duração** — rodam até alguém parar.
 O Discord (`apps/discord/*`) **não** está no ecosystem ainda.
+
+> **sonnar-backfill**: garante que toda vaga no Supabase tenha
+> `description` em **português** e `responsibilities` extraído. Quando o
+> scraper grava uma vaga nova (em qualquer idioma), o daemon detecta na
+> próxima passada e traduz + extrai. Em modo `--daemon --idle-sleep 600`:
+> processa em chunks de 100, dorme 10min quando a fila esvazia, retoma
+> automático quando entram novas. Não precisa intervenção manual.
 
 Fluxo de dados:
 ```
