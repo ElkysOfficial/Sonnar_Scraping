@@ -10,6 +10,14 @@ import path from "node:path"
 import { infoLog, successLog, warningLog, errorLog } from "../utils/logger.js"
 import { VIP_CACHE_DIR, VIP_CACHE_TTL } from "../config.js"
 
+// TTL reduzido aplicado a caches "vazios suspeitos" (totalCompatible=0).
+// Cache vazio normalmente significa que no momento da geracao o banco de
+// vagas estava vazio ou houve falha transiente — sem essa protecao, o
+// cache normal de 24h prendia o VIP em "0 vagas" por um dia inteiro mesmo
+// que o banco voltasse a popular minutos depois. 5min e curto o bastante
+// pra recuperar rapido e longo o bastante pra nao thrashar I/O.
+const EMPTY_CACHE_TTL_MS = 5 * 60 * 1000
+
 // Garante que o diretório existe
 function ensureCacheDir() {
   if (!fs.existsSync(VIP_CACHE_DIR)) {
@@ -50,8 +58,24 @@ export function isVipCacheValid(cacheData) {
     return false
   }
 
-  const expiresAt = new Date(cacheData.expiresAt).getTime()
   const now = Date.now()
+  const expiresAt = new Date(cacheData.expiresAt).getTime()
+
+  // Cache "vazio suspeito": gerado com 0 vagas compativeis. Aplicamos TTL
+  // curto de EMPTY_CACHE_TTL_MS (5min) em vez dos 24h normais, pra que a
+  // proxima passada regenere com vagas reais assim que o banco populadar.
+  // Cenario tipico: limpeza geral do banco enquanto o sender estava rodando,
+  // ou erro transiente no Supabase no momento da geracao.
+  const empty = cacheData.totalCompatible === 0
+    || !Array.isArray(cacheData.jobs)
+    || cacheData.jobs.length === 0
+  if (empty) {
+    const generatedAt = cacheData.generatedAt
+      ? new Date(cacheData.generatedAt).getTime()
+      : 0
+    if (!generatedAt) return false
+    return (now - generatedAt) < EMPTY_CACHE_TTL_MS
+  }
 
   return now < expiresAt
 }
