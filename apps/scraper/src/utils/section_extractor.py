@@ -38,37 +38,87 @@ Lang = str  # 'pt' | 'en'
 # Cabecalhos que sinalizam INICIO da secao desejada.
 INCLUDE_MARKERS: dict[Lang, list[str]] = {
     "pt": [
+        # Variantes de "responsabilidades"
+        "você assumirá as seguintes responsabilidades",
+        "voce assumira as seguintes responsabilidades",
+        "suas principais responsabilidades",
+        "principais responsabilidades",
+        "suas responsabilidades",
         "responsabilidades e atribuições",
         "responsabilidades e atribuicoes",
         "responsabilidades",
+        # Variantes de "atividades"
         "principais atividades",
+        "atividades a serem realizadas",
+        "atividades do cargo",
+        "suas atividades",
         "atividades",
+        # Variantes de "atribuições"
+        "principais atribuições",
+        "principais atribuicoes",
         "atribuições",
         "atribuicoes",
+        # Variantes de "funções"
+        "principais funções",
+        "principais funcoes",
+        "funções",
+        "funcoes",
+        "função",
+        "funcao",
+        # Tarefas / rotinas
+        "principais tarefas",
+        "tarefas",
+        "rotinas",
+        # Sobre/descrição da vaga
         "sobre a vaga",
-        "o que você vai fazer",
-        "o que voce vai fazer",
-        "suas atividades",
+        "sobre a posição",
+        "sobre a posicao",
         "descrição da vaga",
         "descricao da vaga",
+        "descrição e responsabilidades",
+        "descricao e responsabilidades",
+        # O que vai fazer
+        "o que você vai fazer",
+        "o que voce vai fazer",
+        "o que você fará",
+        "o que voce fara",
+        "o que esperamos de você",
+        "o que esperamos de voce",
         "o que você vai encontrar",
         "o que voce vai encontrar",
+        # Outros
         "atuação",
         "atuacao",
+        "objetivo da vaga",
+        "papel do profissional",
     ],
     "en": [
         "key responsibilities",
         "main responsibilities",
         "position responsibilities",
+        "your responsibilities",
         "responsibilities",
         "what you'll do",
         "what you will do",
         "what you’ll do",  # apostrofe tipografico
+        "what you'll be doing",
+        "what you will be doing",
+        "what you'll own",
+        "what you will own",
+        "what you’ll own",
+        "you'll be responsible for",
+        "you will be responsible for",
+        "you’ll be responsible for",
+        "you'll work on",
+        "you will work on",
         "job description",
-        "duties",
+        "the role",
         "your role",
         "in this role",
-        "the role",
+        "duties",
+        "day to day",
+        "day-to-day",
+        "the job",
     ],
 }
 
@@ -171,8 +221,20 @@ def _compile_heading_pattern(markers: list[str]) -> re.Pattern[str]:
     """
     escaped = [re.escape(m) for m in sorted(markers, key=len, reverse=True)]
     body = "|".join(escaped)
-    # Prefixo: inicio-de-linha (com markdown leve) OU lookbehind pra pontuacao+espaco
-    prefix = r"(?:^[\s>#\*\-•]{0,4}|(?<=[.!?:;])\s*)"
+    # Prefixo: aceita varias formas de "isolamento" do cabecalho:
+    #   - inicio de linha (com markdown leve)
+    #   - apos pontuacao de fim de sentenca (.!?:;|)
+    #   - 2+ espacos seguidos (sinal de quebra "implicita" em textos
+    #     condensados como InfoJobs "REQUISITOS: ...  ATIVIDADES DO CARGO:")
+    #   - lookbehind por word-boundary (cobre cabecalho colado em palavra
+    #     anterior por hifen, parenteses, etc - raro mas seguro)
+    prefix = (
+        r"(?:"
+        r"^[\s>#\*\-•]{0,4}"          # inicio de linha
+        r"|(?<=[.!?:;|])\s*"           # apos pontuacao
+        r"|(?<=\s)"                    # apos 1+ whitespace (cobre tudo)
+        r")"
+    )
     pattern = r"(?im)" + prefix + r"(?P<heading>(?:" + body + r"))" + _HEADING_TAIL
     return re.compile(pattern)
 
@@ -204,6 +266,140 @@ def is_mostly_bullets(text: str | None) -> bool:
     return bullets / len(lines) >= 0.5
 
 
+# =====================================================================
+# Heuristicas adicionais (camadas 3 e 4) - aumentam taxa de extracao
+# em descriptions PT sem cabecalho claro
+# =====================================================================
+
+# Verbos de acao no infinitivo (PT) - tipicos de inicio de bullet de
+# responsabilidade. Lista enxuta dos mais frequentes em vagas BR.
+_PT_ACTION_VERBS_RE = re.compile(
+    r"^(?:[ \t]*[-•*●▪]\s*)?"
+    r"(desenvolver|manter|atuar|liderar|criar|gerenciar|coordenar|auxiliar|"
+    r"realizar|garantir|implementar|analisar|executar|acompanhar|monitorar|"
+    r"supervisionar|projetar|elaborar|construir|integrar|automatizar|"
+    r"colaborar|conduzir|operar|otimizar|planejar|prestar|propor|"
+    r"administrar|aplicar|apoiar|articular|assegurar|atender|definir|"
+    r"diagnosticar|escrever|fazer|identificar|inspecionar|instalar|"
+    r"mapear|mediar|negociar|organizar|participar|pesquisar|preparar|"
+    r"produzir|programar|promover|propor|prover|realizar|receber|"
+    r"resolver|responder|reunir|revisar|sustentar|testar|traduzir|"
+    r"transmitir|treinar|validar|verificar|zelar)\b",
+    re.IGNORECASE | re.MULTILINE,
+)
+
+# Substantivos de acao (-cao, -mento, -ncia, -agem) tipicos de descricoes
+# BR em texto corrido. [çc]? e [ãa]? - aceita variantes sem cedilha/til
+# (que vem corrompidas de algumas engines como BNE/Careerjet).
+_PT_ACTION_NOUNS_RE = re.compile(
+    r"\b(?:"
+    r"comercializa[çc]?[ãa]?o|prospec[çc]?[ãa]?o|elabora[çc]?[ãa]?o|"
+    r"cria[çc]?[ãa]?o|manuten[çc]?[ãa]?o|desenvolvimento|"
+    r"integra[çc]?[ãa]?o|an[áa]?lise|gest[ãa]?o|"
+    r"coordena[çc]?[ãa]?o|supervis[ãa]?o|monitoramento|"
+    r"administra[çc]?[ãa]?o|planejamento|atendimento|"
+    r"configura[çc]?[ãa]?o|implementa[çc]?[ãa]?o|"
+    r"implanta[çc]?[ãa]?o|opera[çc]?[ãa]?o|automa[çc]?[ãa]?o|"
+    r"negocia[çc]?[ãa]?o|presta[çc]?[ãa]?o|execu[çc]?[ãa]?o|"
+    r"condu[çc]?[ãa]?o|organiza[çc]?[ãa]?o|revis[ãa]?o|"
+    r"valida[çc]?[ãa]?o|otimiza[çc]?[ãa]?o|forma[çc]?[ãa]?o|"
+    r"emiss[ãa]?o|recep[çc]?[ãa]?o|reten[çc]?[ãa]?o|"
+    r"distribui[çc]?[ãa]?o|fabrica[çc]?[ãa]?o|montagem|"
+    r"limpeza|manuseio|consultoria|treinamento|"
+    r"capacita[çc]?[ãa]?o|remunera[çc]?[ãa]?o"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+# Prefixos comuns que aparecem antes do conteudo util e devem ser removidos
+# do body extraido. Aplicados pos-extracao pra nao poluir o card do bot.
+_BODY_PREFIX_NOISE_RE = re.compile(
+    r"^(?:"
+    r"descri[çc][ãa]o\s+geral|"
+    r"descri[çc][ãa]o\s+da\s+vaga|"
+    r"descri[çc][ãa]o\s+detalhada|"
+    r"descri[çc][ãa]o\s*[:\-]|"
+    r"detalhes\s+da\s+vaga|"
+    r"informa[çc][õo]es\s+da\s+vaga|"
+    r"confira\s+abaixo[^.!?]*[.!?]|"
+    r"sobre\s+a\s+empresa|"
+    r"job\s+overview|"
+    r"about\s+the\s+role|"
+    r"about\s+the\s+position"
+    r")\s*[:\-–—]?\s*",
+    re.IGNORECASE | re.MULTILINE,
+)
+
+
+def _strip_noise_prefix(body: str) -> str:
+    """Remove cabecalhos genericos do inicio do texto extraido. Aplicado
+    repetidamente pra cobrir 2-3 niveis (ex: 'Descrição Geral\\nDetalhes da Vaga')."""
+    if not body:
+        return body
+    prev = None
+    cur = body
+    for _ in range(3):  # max 3 strips
+        prev = cur
+        cur = _BODY_PREFIX_NOISE_RE.sub("", cur, count=1).lstrip()
+        if cur == prev:
+            break
+    return cur
+
+
+def _extract_before_first_exclude(
+    text: str, exclude_markers: list[str], min_chars: int = 40
+) -> str | None:
+    """Camada 3: quando NENHUM include marker bate mas existe um EXCLUDE
+    marker (Requisitos, Beneficios...), considera tudo ANTES do exclude
+    como responsibilities. Filtra "Sobre nos/empresa" do inicio.
+    """
+    stopper_re = _compile_heading_pattern(exclude_markers)
+    stop = stopper_re.search(text)
+    if not stop:
+        return None
+    body = text[: stop.start()].strip()
+    # Remove intro de empresa: se primeira frase comeca com "Somos/Sobre/A [Empresa]",
+    # pula essa frase
+    body = re.sub(
+        r"^\s*(?:somos|sobre n[óo]s|a empresa\b|quem somos)[^.!?]*[.!?]\s*",
+        "",
+        body,
+        count=1,
+        flags=re.IGNORECASE,
+    )
+    body = body.strip()
+    return body if len(body) >= min_chars else None
+
+
+def _starts_with_action_verb(text: str) -> bool:
+    """Camada 4: texto comeca com verbo de acao no infinitivo
+    (`Desenvolver...`, `Manter...`). Sinal forte de que descreve
+    atividades direto, sem cabecalho.
+    """
+    if not text:
+        return False
+    # Olha so as primeiras 200 chars (primeiras linhas)
+    head = text[:200]
+    match = _PT_ACTION_VERBS_RE.search(head)
+    if not match:
+        return False
+    # Verbo precisa aparecer perto do inicio (primeira metade do head)
+    return match.start() <= len(head) // 2
+
+
+def _has_action_noun_density(text: str, min_count: int = 3) -> bool:
+    """Camada 4.5: texto tem N+ substantivos de acao distintos
+    (comercializacao, prospeccao, elaboracao, ...). Sinal de que e
+    descricao narrativa listando atividades.
+    """
+    if not text or len(text) < 80:
+        return False
+    matches = _PT_ACTION_NOUNS_RE.findall(text.lower())
+    # Conta DISTINTOS pra evitar repeticao boba
+    return len(set(m.lower() for m in matches)) >= min_count
+
+
 def extract_responsibilities(
     description: str | None, lang: Lang = "pt"
 ) -> str | None:
@@ -227,17 +423,37 @@ def extract_responsibilities(
     if not cleaned:
         return None
 
-    # 1) Secao marcada
+    # 1) Secao marcada por cabecalho conhecido
     body = _find_section(
         cleaned, INCLUDE_MARKERS[lang], EXCLUDE_MARKERS[lang]
     )
-    # Exige conteudo minimo - evita devolver "Responsabilidades\n" vazio
     if body and len(body) >= 20:
-        return body
+        return _strip_noise_prefix(body) or None
 
     # 2) Bullets dominantes
     if is_mostly_bullets(cleaned):
-        return cleaned
+        return _strip_noise_prefix(cleaned) or None
 
-    # 3) Fallback
+    # 3) Texto antes do primeiro EXCLUDE marker
+    # Pega tudo antes de 'Requisitos:'/'Benefícios:' filtrando intro de empresa.
+    body = _extract_before_first_exclude(cleaned, EXCLUDE_MARKERS[lang])
+    if body:
+        return _strip_noise_prefix(body) or None
+
+    # 4) Verbo de acao no inicio (apenas PT - lista de verbos so existe pra PT)
+    if lang == "pt" and _starts_with_action_verb(cleaned):
+        # Toda a description parece descrever atividades direto. Retorna tudo
+        # se for relativamente curta (proxima da realidade BR de description
+        # narrativa direta). Acima de 1500 chars provavelmente tem requisitos
+        # misturados - melhor None.
+        if len(cleaned) <= 1500:
+            return _strip_noise_prefix(cleaned) or None
+
+    # 4.5) Densidade de substantivos de acao (PT). Texto narrativo BR
+    # com 3+ termos como 'comercializacao', 'prospeccao', 'elaboracao'
+    # quase sempre descreve atividades em prosa.
+    if lang == "pt" and len(cleaned) <= 1200 and _has_action_noun_density(cleaned):
+        return _strip_noise_prefix(cleaned) or None
+
+    # 5) Fallback: nada bate -> None
     return None
