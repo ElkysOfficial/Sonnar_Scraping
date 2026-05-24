@@ -28,7 +28,9 @@ import logging
 logger = logging.getLogger("scraper.engine.michaelpage")
 
 
-PARSER_VERSION = "michaelpage-2026.05.10.2"
+# 2026-05-23 (v2.23.0): pipeline central. MichaelPage e sempre PT.
+PARSER_VERSION = "michaelpage-2026.05.23"
+from src.utils.job_enrichment import enrich_canonical  # noqa: E402
 from src.utils.job_fallbacks import apply_description_fallbacks  # noqa: E402
 from src.utils.text_utils import extract_skills, strip_html  # noqa: E402
 
@@ -442,6 +444,16 @@ async def get_michaelpage_jobs(on_job=None) -> list:
                 job[9] = extra["description"]
             # Pos-processamento: minera campos vazios da descricao.
             apply_description_fallbacks(job)
+            try:
+                # enrich_canonical mutaria; aqui job ja e referencia da lista
+                # original em jobs[]. Reatribuicao explicita pra cobrir o
+                # caso de extensao 10->12.
+                enriched = await enrich_canonical(job, hint_lang="pt")
+                if enriched is not job:
+                    job.clear()
+                    job.extend(enriched)
+            except Exception:
+                pass
             if on_job is not None:
                 try:
                     await on_job(job)

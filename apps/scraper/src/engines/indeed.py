@@ -32,6 +32,7 @@ from variavel import get_active_batch_key, get_active_stacks  # noqa: E402
 from src.persistence.extraction_tracker import tracker  # noqa: E402
 from src.persistence.progress_tracker import progress  # noqa: E402
 from src.utils.http_session import fetch_sync  # noqa: E402
+from src.utils.job_enrichment import enrich_canonical  # noqa: E402
 from src.utils.job_fallbacks import apply_description_fallbacks  # noqa: E402
 from src.utils.text_utils import extract_skills, strip_html  # noqa: E402
 
@@ -39,7 +40,8 @@ import logging
 logger = logging.getLogger("scraper.engine.indeed")
 
 
-PARSER_VERSION = "indeed-2026.05.08"
+# 2026-05-23 (v2.23.0): pipeline central. Indeed BR e sempre PT (so extracao).
+PARSER_VERSION = "indeed-2026.05.23"
 
 
 _MIN_USEFUL_DESCRIPTION = 200
@@ -1196,6 +1198,10 @@ async def get_indeed_jobs(on_job=None) -> list:
             # descricao (salary, location, hiring_regime, work_type).
             # Trata "a combinar" como vazio e roda os fallbacks compartilhados.
             parsed = apply_description_fallbacks(parsed)
+            try:
+                parsed = await enrich_canonical(parsed, hint_lang="pt")
+            except Exception:
+                pass
 
             jobs.append(parsed)
             if on_job is not None:

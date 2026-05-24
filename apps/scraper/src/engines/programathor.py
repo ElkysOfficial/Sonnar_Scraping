@@ -23,6 +23,7 @@ from variavel import get_active_batch_key  # noqa: E402
 
 from ..persistence.extraction_tracker import tracker
 from ..persistence.progress_tracker import progress
+from ..utils.job_enrichment import enrich_canonical
 from ..utils.job_fallbacks import apply_description_fallbacks
 from ..utils.text_utils import extract_skills, strip_html
 from ..utils.http_session import HttpSession, fetch
@@ -31,7 +32,8 @@ import logging
 logger = logging.getLogger("scraper.engine.programathor")
 
 
-PARSER_VERSION = "programathor-2026.05.07"
+# 2026-05-23 (v2.23.0): pipeline central. ProgramaThor e sempre PT.
+PARSER_VERSION = "programathor-2026.05.23"
 
 
 # --- Sessão (padrão httpx compartilhado) ---------------------------------
@@ -148,6 +150,10 @@ async def get_programathor_jobs(on_job=None) -> list:
             job = await refetch_one(link, client=client)
             if job is None:
                 continue
+            try:
+                job = await enrich_canonical(job, hint_lang="pt")
+            except Exception:
+                pass
             jobs.append(job)
             if on_job is not None:
                 try:

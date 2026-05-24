@@ -39,11 +39,13 @@ import logging
 logger = logging.getLogger("scraper.engine.jooble")
 from src.persistence.extraction_tracker import tracker  # noqa: E402
 from src.utils.http_session import fetch_sync  # noqa: E402
+from src.utils.job_enrichment import enrich_canonical  # noqa: E402
 from src.utils.job_fallbacks import apply_description_fallbacks  # noqa: E402
 from src.utils.text_utils import extract_skills, strip_html  # noqa: E402
 
 
-PARSER_VERSION = "jooble-2026.05.08"
+# 2026-05-23 (v2.23.0): pipeline central. Jooble e sempre PT.
+PARSER_VERSION = "jooble-2026.05.23"
 
 
 def is_partial(job_data: dict) -> bool:
@@ -465,6 +467,10 @@ async def get_jooble_jobs(on_job=None) -> list:
                         continue
                     if parsed is None:
                         continue
+                    try:
+                        parsed = await enrich_canonical(parsed, hint_lang="pt")
+                    except Exception:
+                        pass
                     tracker.discover(parsed[0], engine="jooble")
                     jobs.append(parsed)
                     if on_job is not None:

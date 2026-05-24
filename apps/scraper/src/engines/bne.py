@@ -39,6 +39,7 @@ from variavel import get_active_batch_key  # noqa: E402
 from ..persistence.extraction_tracker import tracker
 from ..persistence.progress_tracker import progress
 from ..utils.http_session import fetch_sync
+from ..utils.job_enrichment import enrich_canonical
 from ..utils.job_fallbacks import apply_description_fallbacks
 from ..utils.text_utils import extract_skills, strip_html
 
@@ -46,7 +47,8 @@ import logging
 logger = logging.getLogger("scraper.engine.bne")
 
 
-PARSER_VERSION = "bne-2026.05.08"
+# 2026-05-23 (v2.23.0): pipeline central. BNE e sempre PT.
+PARSER_VERSION = "bne-2026.05.23"
 
 
 # Tamanho minimo de descricao para considerar a vaga *coletada por completo*.
@@ -522,6 +524,11 @@ async def get_bne_jobs(on_job=None) -> list:
     async def _fetch_and_emit(job_id):
         """Resolve uma vaga e emite via callback (se configurado)."""
         parsed = await _fetch_job_detail(job_id, semaphore)
+        if parsed is not None:
+            try:
+                parsed = await enrich_canonical(parsed, hint_lang="pt")
+            except Exception:
+                pass
         if parsed is not None and on_job is not None:
             try:
                 await on_job(parsed)

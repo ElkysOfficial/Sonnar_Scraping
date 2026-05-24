@@ -20,7 +20,8 @@ from src.utils.http_session import HttpSession, fetch  # noqa: E402
 from src.utils.rate_limiter import request_with_policy  # noqa: E402
 
 
-PARSER_VERSION = "geekhunter-2026.05.08"
+# 2026-05-23 (v2.23.0): pipeline central. GeekHunter e sempre PT.
+PARSER_VERSION = "geekhunter-2026.05.23"
 
 # GeekHunter lista apenas vagas ativas, mas o campo createdAt da API reflete a
 # data original da publicacao (frequentemente >90 dias). Sem bypass, ~49% das
@@ -42,6 +43,7 @@ def is_partial(job_data: dict) -> bool:
     publica.
     """
     return False
+from src.utils.job_enrichment import enrich_canonical  # noqa: E402
 from src.utils.job_fallbacks import apply_description_fallbacks  # noqa: E402
 from src.utils.text_utils import extract_skills, strip_html  # noqa: E402
 
@@ -503,9 +505,14 @@ async def get_geekhunter_jobs(on_job=None) -> list:
 
             await asyncio.gather(*(_enrich(i) for i in incomplete))
 
-        # Pos-processamento universal: minera campos faltantes da descricao.
+        # Pos-processamento universal: minera campos faltantes da descricao
+        # e aplica o pipeline central de enriquecimento (v2.23.0).
         for i in range(len(jobs)):
             jobs[i] = apply_description_fallbacks(jobs[i])
+            try:
+                jobs[i] = await enrich_canonical(jobs[i], hint_lang="pt")
+            except Exception:
+                pass
 
         if on_job is not None:
             for job in jobs:

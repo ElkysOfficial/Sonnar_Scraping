@@ -36,6 +36,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 from src.persistence.extraction_tracker import tracker  # noqa: E402
 from src.persistence.progress_tracker import progress  # noqa: E402
 from src.utils.http_session import fetch_sync  # noqa: E402
+from src.utils.job_enrichment import enrich_canonical  # noqa: E402
 from src.utils.job_fallbacks import apply_description_fallbacks  # noqa: E402
 from src.utils.text_utils import extract_skills, strip_html  # noqa: E402
 
@@ -43,7 +44,8 @@ import logging
 logger = logging.getLogger("scraper.engine.simplyhired")
 
 
-PARSER_VERSION = "simplyhired-2026.05.07"
+# 2026-05-23 (v2.23.0): pipeline central. SimplyHired BR e majoritariamente PT.
+PARSER_VERSION = "simplyhired-2026.05.23"
 
 # Import preguiçoso de Playwright: só carrega no listing (que precisa dele
 # pra passar Cloudflare). O fetch_detail usa curl_cffi e roda sem Playwright.
@@ -333,6 +335,10 @@ async def get_simplyhired_jobs(on_job=None) -> list:
                     parsed[9] = extra["description"]
         # Pos-processamento: minera campos vazios da descricao apos detail-fetch.
         apply_description_fallbacks(parsed)
+        try:
+            parsed = await enrich_canonical(parsed, hint_lang="pt")
+        except Exception:
+            pass
         jobs.append(parsed)
         if on_job is not None:
             try:
