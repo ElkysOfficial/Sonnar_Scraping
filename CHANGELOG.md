@@ -5,6 +5,121 @@ Todas as mudanças relevantes deste projeto são documentadas neste arquivo.
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/)
 e o projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [3.0.0] - 2026-05-24
+
+### 🎉 Marco do épico v3.0.0 — extração de responsabilidades + tradução multi-idioma
+
+Cliente PT-BR sempre recebe vagas em **português** com `responsibilities`
+extraído, independente do idioma de origem. Roadmap completo em
+`docs/extraction-responsibilities.md`.
+
+### Adicionado
+
+**Pipeline central de enriquecimento:**
+
+- `src/utils/section_extractor.py`: heurística de 5 camadas pra extrair
+  o trecho de responsabilidades de uma description (HTML ou texto plano):
+  1. Cabeçalho marcado (~80 marcadores PT + EN)
+  2. Bullets dominantes (≥50% das linhas listadas)
+  3. Texto antes do primeiro EXCLUDE marker (`Requisitos:`/`Benefícios:`)
+  4. Verbo de ação no início (`Desenvolver/Manter/Atuar/...`)
+  5. Densidade de substantivos de ação (`comercialização`, `prospecção`,
+     etc.). Tolerante a encoding corrompido sem cedilha.
+- `src/utils/lang_detect.py`: detecta `pt | en | ja | zh | ko | unknown`.
+  CJK por faixa Unicode (hiragana/katakana → ja, hangul → ko, Han → zh).
+  Latino via marcadores com peso pra diacríticos PT.
+- `src/utils/job_enrichment.py`: helper compartilhado `enrich_async`/
+  `enrich_canonical` que faz `detect → translate (se != pt) → extract`.
+  Retorna `(lang, responsibilities, description_pt)`.
+
+**Tradução automática:**
+
+- Toda description em idioma diferente de PT é traduzida pra **PT-BR via
+  Argos** (offline, sem chamada de rede) e gravada no banco em PT.
+- `description_lang` preserva o idioma de **origem** (rastreabilidade).
+- Idiomas suportados: en, ja, zh, ko (direto ou pivotando por en).
+
+**17/17 engines integradas ao pipeline:**
+
+- Globais: LinkedIn (lang variável)
+- EN-only: Dice, RemoteOK, Remotive, WeWorkRemotely, ZipRecruiter
+- PT-only: Indeed, Catho, InfoJobs, BNE, GeekHunter, Jooble,
+  MichaelPage, ProgramaThor, SimplyHired, Gupy
+- Multi-locale com tradução: Careerjet
+
+**Backfill automático (`sonnar-backfill` no PM2):**
+
+- Processo daemon que roda 24/7. Detecta vagas com `description_lang` ou
+  `responsibilities` NULL, traduz + extrai + atualiza in-place no banco.
+- Chunks de 100 vagas; idle de 10min quando fila vazia.
+- Idempotente, resumível, sem intervenção manual.
+
+**Formatter do bot (`apps/whatsapp/formatter`):**
+
+- Lê `jobData.responsibilities` direto do banco (não extrai mais inline).
+- Quando `responsibilities` está vazio/null, **omite** o bloco
+  "Responsabilidades" do card. Sem fallback pra description bruta:
+  cliente nunca recebe info errada.
+- `appendResponsibilitiesBlock` formata como bullets (≤8) ou parágrafo
+  curto (≤400 chars).
+
+**Scripts de smoke pre-deploy:**
+
+- `scripts/validate_engine.py`: testa 1 engine — métricas de extração,
+  idioma, tradução. Opcional `--translate` chama Argos real.
+- `scripts/validate_engines.py`: roda todas as engines em sequência,
+  relatório consolidado.
+- `scripts/show_failures.py`: lista vagas que falharam na extração
+  pra investigar padrões.
+
+**Schema do banco:**
+
+- Migration `20260523120000_jobs_responsibilities_and_lang.sql`: colunas
+  `responsibilities` (text) e `description_lang` (text) em `public.jobs`.
+
+### Modificado
+
+- `_merge_detail_over_seed`: tupla canônica expandiu de 10 → 12 campos
+  (índices 10/11 = `description_lang`/`responsibilities`).
+  Engines legadas continuam emitindo 10 e o normalizador lida via
+  `len()` defensivo.
+- `normalize_job_result`: aceita 10, 11 ou 12 campos.
+- `build_job_payload` (`apps/scraper/src/persistence/jobs_repository.py`):
+  payload Supabase/CSV/jobs.json inclui os 2 novos campos.
+- `_PARSER_VERSION` bumpado em TODAS as 17 engines pra
+  `2026-05-23/2026-05-24` — tracker re-busca vagas antigas.
+
+### Métricas de aceitação (smoke real, 50 vagas/engine)
+
+| Engine | Extração | Status |
+|---|---|---|
+| linkedin, dice, catho, gupy, michaelpage, programathor | ≥96% | ✅ |
+| infojobs, geekhunter | 90% | ✅ |
+| jooble | 86% | 🟡 quase no alvo |
+| bne | 66% | ⚠️ teto natural (vagas vazias) |
+| indeed | 28% | ⚠️ cap-by-source (Cloudflare trunca) |
+| careerjet | 12% | ⚠️ cap-by-source (API trunca) |
+| **TOTAL** | **79%** | — |
+
+Tradução: 100% das vagas non-PT são traduzidas. Argos en→pt validado.
+
+### Política de produto
+
+- Cliente PT-BR **sempre** recebe description em português.
+- Quando `responsibilities` não pode ser extraído (cap-by-source ou
+  vagas genuinamente vazias), card vai sem o bloco "Responsabilidades"
+  — **nunca info errada ou em outro idioma**.
+
+### Operacional
+
+- `OPERACAO.md` atualizado com a 5ª entry PM2 (`sonnar-backfill`).
+- Doc do épico em `docs/extraction-responsibilities.md` marcado 9/9 ✅.
+- Smoke report em `docs/smoke-report-v3.0.0.md`.
+
+### Testes
+
+- 239 testes unitários verdes (67 novos do épico).
+
 ## [2.16.0] - 2026-05-23
 
 ### Adicionado
