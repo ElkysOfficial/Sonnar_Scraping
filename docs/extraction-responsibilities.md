@@ -154,8 +154,8 @@ def extract_responsibilities(description: str, lang: str) -> str | None:
 | 4.5 | **v2.22.0** | **Engines remotas EN** (RemoteOK, Remotive, WeWorkRemotely, ZipRecruiter) + helper `enrich_canonical` | ✅ |
 | 4.6 | **v2.23.0** | **10 Engines PT** (Indeed, Catho, InfoJobs, BNE, GeekHunter, Jooble, MichaelPage, ProgramaThor, SimplyHired, Gupy) — só extração | ✅ |
 | 4.7 | **v2.24.0** | **Careerjet** — pipeline central preserva idioma de origem em `description_lang` | ✅ |
-| 4.8 | v2.25.0 | **Formatter** atualizado pra usar `responsibilities` (com fallback pra `description`) | ⏳ |
-| 4.9 | **v3.0.0** | **Marco oficial** — release consolidado com changelog e doc no `OPERACAO.md` | ⏳ |
+| 4.8 | **v2.25.0** | **Formatter** usa `responsibilities`; description traduzida pra PT no banco; `sonnar-backfill` daemon | ✅ |
+| 4.9 | **v3.0.0** | **Marco oficial** — release consolidado, CHANGELOG e OPERACAO.md atualizados | ✅ |
 
 ## Métricas de sucesso
 

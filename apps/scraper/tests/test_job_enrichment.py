@@ -55,7 +55,7 @@ class TestPortuguese:
             "- Manter pipelines de dados em produção\n\n"
             "Requisitos\n- 5 anos"
         )
-        lang, resp = enrich_sync("Vaga PT", desc)
+        lang, resp, _ = enrich_sync("Vaga PT", desc)
         assert lang == "pt"
         assert resp is not None
         assert "Desenvolver APIs" in resp
@@ -66,7 +66,7 @@ class TestPortuguese:
     def test_async_pt_skips_to_thread(self, fake_translator):
         async def run():
             desc = "Responsabilidades\n- Backend em Go\n- Observabilidade\n- Mentoria"
-            lang, resp = await enrich_async("Vaga PT", desc)
+            lang, resp, _ = await enrich_async("Vaga PT", desc)
             assert lang == "pt"
             assert resp is not None
             assert fake_translator.calls == []
@@ -81,7 +81,7 @@ class TestNonPortuguese:
     def test_japanese_gets_translated(self, fake_translator):
         # Texto japones com marcadores fortes (kana + kanji)
         desc = "データサイエンティスト/フルフレックス/リモート可。" * 5
-        lang, resp = enrich_sync("データ", desc)
+        lang, resp, _ = enrich_sync("データ", desc)
         assert lang == "ja"
         # Translator foi chamado com src='ja'
         assert any(c[0] == "ja" for c in fake_translator.calls)
@@ -97,7 +97,7 @@ class TestNonPortuguese:
             "We are a fast-growing team looking for senior engineers. " * 5
             + "Responsibilities include building APIs and mentoring."
         )
-        lang, resp = enrich_sync("Senior Engineer", desc)
+        lang, resp, _ = enrich_sync("Senior Engineer", desc)
         assert lang == "en"
         assert any(c[0] == "en" for c in fake_translator.calls)
 
@@ -110,12 +110,12 @@ class TestEmptyResponsibilitiesPolicy:
     def test_pt_short_prose_returns_none(self, fake_translator):
         # Texto curto em PT sem cabecalho nem bullets - cai pro None
         desc = "Empresa busca profissional dedicado para área administrativa."
-        lang, resp = enrich_sync("Vaga", desc)
+        lang, resp, _ = enrich_sync("Vaga", desc)
         assert lang == "pt"
         assert resp is None  # SEM fallback pra description completa
 
     def test_empty_description(self, fake_translator):
-        lang, resp = enrich_sync("", "")
+        lang, resp, _ = enrich_sync("", "")
         assert lang is None
         assert resp is None
 
@@ -128,7 +128,7 @@ class TestHintLang:
     def test_hint_skips_detection(self, fake_translator):
         # Texto que detect_lang chamaria de 'pt' mas hint='en' forca tradutor
         desc = "About us\nWe build APIs.\n\nResponsibilities\n- Code\n- Mentor"
-        lang, resp = enrich_sync("Engineer", desc, hint_lang="en")
+        lang, resp, _ = enrich_sync("Engineer", desc, hint_lang="en")
         assert lang == "en"
         assert any(c[0] == "en" for c in fake_translator.calls)
 
@@ -139,7 +139,7 @@ class TestHintLang:
             "- Cuidar do backend em Python\n"
             "- Mentoria do time"
         )
-        lang, resp = enrich_sync("Vaga", desc, hint_lang="pt")
+        lang, resp, _ = enrich_sync("Vaga", desc, hint_lang="pt")
         assert lang == "pt"
         assert resp is not None
         assert fake_translator.calls == []
@@ -153,7 +153,7 @@ class TestAsyncWrap:
     def test_async_japanese(self, fake_translator):
         async def run():
             desc = "データサイエンティスト" * 20
-            lang, resp = await enrich_async("データ", desc)
+            lang, resp, _ = await enrich_async("データ", desc)
             assert lang == "ja"
             return resp
         result = asyncio.run(run())

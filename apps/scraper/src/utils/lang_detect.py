@@ -113,6 +113,15 @@ def detect_lang(text: str | None) -> str:
 
     if pt == 0 and en == 0:
         return "unknown"
+    # Sem nenhum marcador PT mas com EN -> texto e EN. O 'pt if pt >= en'
+    # padrao favorecia PT quando pt=0 e en>0, classificando vagas Indeed
+    # em ingles como portugues.
+    if pt == 0 and en > 0:
+        return "en"
+    if en == 0 and pt > 0:
+        return "pt"
+    # Ambos > 0: vence o maior. Empate -> PT (default conservador pro nosso
+    # publico brasileiro).
     return "pt" if pt >= en else "en"
 
 

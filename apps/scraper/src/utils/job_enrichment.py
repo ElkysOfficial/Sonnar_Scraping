@@ -53,7 +53,7 @@ def enrich_sync(
     title: str,
     description: str,
     hint_lang: Optional[str] = None,
-) -> tuple[Optional[str], Optional[str]]:
+) -> tuple[Optional[str], Optional[str], Optional[str]]:
     """Versao sincrona do enrichment - chamavel diretamente em codigo sync.
 
     Args:
@@ -63,61 +63,66 @@ def enrich_sync(
             locale), passa aqui e pulamos a deteccao.
 
     Returns:
-        ``(description_lang, responsibilities)`` - cada um pode ser None.
-        ``description_lang`` so e None se title+description estiverem vazios.
+        ``(description_lang, responsibilities, description_pt)``.
+        - ``description_lang``: idioma ORIGINAL detectado ('pt'/'en'/'ja'/'zh'/'ko'/'unknown').
+        - ``responsibilities``: trecho extraido em PT, ou None se a heuristica nao
+          achou nada.
+        - ``description_pt``: a description COMPLETA em PT (texto limpo, sem HTML).
+          Quando lang ja era 'pt', retorna apenas a versao limpa de HTML
+          (sem traducao). Quando lang != 'pt', retorna o texto traduzido via
+          Argos. None apenas se description estava vazia.
+
+    O caller decide se SUBSTITUI a description original pela versao PT no banco.
+    Hoje (v3.0.0) o backfill e as engines NAO-careerjet substituem; Careerjet
+    ja traduzia inline antes e continua fazendo isso.
     """
     if not description and not title:
-        return None, None
+        return None, None, None
 
     full = f"{title or ''}\n{description or ''}"
     lang = hint_lang or detect_lang(full)
     if lang == "unknown":
-        # Tratamos 'unknown' como 'en' pro pipeline tentar traduzir; mas
-        # gravamos 'unknown' no banco pra observabilidade.
         translate_src = "en"
         recorded_lang = "unknown"
     else:
         translate_src = lang
         recorded_lang = lang
 
-    # Limpa HTML antes de qualquer processamento de texto. Mantemos a
-    # description original (com HTML) intocada pra preservar formatacao
-    # caso queiramos exibir em outro canal no futuro.
     cleaned = clean_html(description) if description else ""
+    if not cleaned:
+        return recorded_lang, None, None
 
-    text_for_extract = cleaned
+    text_pt = cleaned
     if needs_translation(translate_src) and translate_src != "pt":
-        # Traduz a description bruta - o extractor trabalha melhor em
-        # texto traduzido completo do que em fragmentos
-        text_for_extract = _safe_translate_to_pt(cleaned, translate_src)
+        # Traduz a description completa pra PT
+        text_pt = _safe_translate_to_pt(cleaned, translate_src)
 
-    # Apos traducao, o texto esta em PT - extracao usa marcadores PT
-    responsibilities = extract_responsibilities(text_for_extract, "pt")
-
-    return recorded_lang, responsibilities
+    responsibilities = extract_responsibilities(text_pt, "pt")
+    return recorded_lang, responsibilities, text_pt
 
 
 async def enrich_async(
     title: str,
     description: str,
     hint_lang: Optional[str] = None,
-) -> tuple[Optional[str], Optional[str]]:
+) -> tuple[Optional[str], Optional[str], Optional[str]]:
     """Versao async do enrichment - usa to_thread pra nao travar event loop.
 
-    A traducao Argos e CPU-bound; engines async devem chamar essa versao.
-    Se nao houver nada a traduzir (lang == 'pt'), nao paga o custo de
-    delegar pra thread - retorna direto.
+    Retorna a mesma tupla de 3 do enrich_sync. Se nao houver nada a
+    traduzir (lang == 'pt'), nao paga o custo de delegar pra thread.
     """
     if not description and not title:
-        return None, None
+        return None, None, None
 
     full = f"{title or ''}\n{description or ''}"
     lang = hint_lang or detect_lang(full)
     if lang == "pt":
-        # Caminho rapido: nao precisa de translator, roda inline
+        # Caminho rapido: nao precisa de translator
         cleaned = clean_html(description) if description else ""
+        if not cleaned:
+            return "pt", None, None
         responsibilities = extract_responsibilities(cleaned, "pt")
-        return "pt", responsibilities
+        return "pt", responsibilities, cleaned
 
     # Caso geral: delega pra thread (pode envolver Argos)
     return await asyncio.to_thread(
@@ -149,7 +154,13 @@ async def enrich_canonical(
         return canonical
     title = canonical[1] or ""
     description = canonical[9] or ""
-    lang, resp = await enrich_async(title, description, hint_lang=hint_lang)
+    lang, resp, description_pt = await enrich_async(title, description, hint_lang=hint_lang)
+    # SUBSTITUI description original pela versao em PT quando o idioma
+    # nao era 'pt'. Politica de produto v3.0.0: cliente nunca recebe
+    # description em outro idioma. Mantemos description_lang com o
+    # idioma de origem (rastreabilidade).
+    if description_pt and lang and lang != "pt" and lang != "unknown":
+        canonical[9] = description_pt
     if len(canonical) >= 12:
         canonical[10] = lang
         canonical[11] = resp

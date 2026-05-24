@@ -99,5 +99,25 @@ module.exports = {
       max_memory_restart: "2048M",
       time: true,
     },
+    {
+      // Backfill automatico do epico v3.0.0:
+      //   1) Le do banco vagas com description_lang OU responsibilities NULL
+      //   2) Detecta idioma, traduz description pra PT (se != pt), extrai
+      //      responsibilities, UPDATE no banco.
+      //   3) Modo --daemon: roda 24/7. Quando fila esvazia, dorme 10min e
+      //      re-checa - vagas novas que entrarem ficam tratadas.
+      // Pode consumir CPU em rajadas (Argos e CPU-bound). 1G de teto da
+      // folga pros modelos de traducao.
+      name: "sonnar-backfill",
+      cwd: "./apps/scraper",
+      script: "scripts/backfill_enrichment.py",
+      args: "--all --daemon --idle-sleep 600 --chunk-size 100",
+      interpreter: PYTHON,
+      autorestart: true,
+      max_restarts: 10,
+      restart_delay: 30000,
+      max_memory_restart: "1024M",
+      time: true,
+    },
   ],
 };

@@ -66,7 +66,10 @@ function jobDataToEmbed(job) {
     // Campos extras propagados do payload original — usados pelo cardGenerator
     // quando vierem da API. O Discord embed real ignora propriedades desconhecidas.
     skills: Array.isArray(job.skills) ? job.skills : [],
-    description: job.description || ""
+    description: job.description || "",
+    // v3.0.0: campo pre-extraido pelo scraper. Quando ausente, o
+    // formatter omite o bloco "Responsabilidades" do card.
+    responsibilities: job.responsibilities || ""
   }
 }
 
@@ -242,21 +245,55 @@ function formatCaption(jobData, shortUrl) {
     out.push(skills.join("  •  "))
   }
 
-  const resp = extractResponsibilities(jobData.description)
-  if (resp?.bullets?.length) {
+  // v3.0.0: usa responsibilities pre-extraido no banco (pipeline central
+  // do scraper). Se nao vier preenchido, NAO mostra bloco - politica de
+  // produto: melhor card sem corpo que com informacao errada.
+  // Fallback pra heuristica local SO se o campo responsibilities estiver
+  // ausente (compatibilidade com versoes antigas dos engines durante o
+  // periodo de transicao). Quando todas as engines estiverem em prod
+  // emitindo responsibilities, podemos remover o extractResponsibilities
+  // local.
+  const preExtracted = (jobData.responsibilities || "").toString().trim()
+  if (preExtracted) {
     out.push("")
-    out.push(resp.kind === "req" ? "*📋 Requisitos*" : "*📋 Responsabilidades*")
-    for (const item of resp.bullets) out.push(`• ${item}`)
-  } else if (resp?.text) {
-    out.push("")
-    out.push("*📋 Sobre a vaga*")
-    out.push(resp.text)
+    out.push("*📋 Responsabilidades*")
+    appendResponsibilitiesBlock(out, preExtracted)
   }
+  // Sem `else`: quando responsibilities=NULL, omite o bloco. Cliente recebe
+  // o card com titulo + empresa + skills + link, sem inventar info.
 
   out.push("")
   out.push(`🔗 *Ver a vaga:* ${shortUrl}`)
 
   return out.join("\n")
+}
+
+/**
+ * Formata texto de responsibilities pre-extraido pra exibicao no card.
+ * Se for bulletizavel (varias linhas ou `;` separados), vira lista;
+ * caso contrario, mostra como paragrafo curto.
+ */
+function appendResponsibilitiesBlock(out, text) {
+  if (!text) return
+  // Split por quebra de linha OU `;` quando ha mais de 2 ocorrencias
+  let lines = text.split("\n").map((l) => l.trim()).filter(Boolean)
+  if (lines.length < 2 && (text.match(/;/g) || []).length >= 2) {
+    lines = text.split(";").map((l) => l.trim()).filter(Boolean)
+  }
+  // Limita a 8 itens
+  const MAX = 8
+  lines = lines.slice(0, MAX)
+  if (lines.length > 1) {
+    for (const line of lines) {
+      // Remove bullet ja presente
+      const clean = line.replace(/^[-•*●▪]\s*/, "")
+      out.push(`• ${clean}`)
+    }
+  } else {
+    // Paragrafo unico - corta em ~400 chars com reticencias
+    const text1 = lines[0] || text
+    out.push(text1.length > 400 ? text1.slice(0, 400).replace(/\s+\S*$/, "") + "…" : text1)
+  }
 }
 
 async function buildCardPayload(payload, to) {
