@@ -27,6 +27,7 @@ Exemplos:
 from __future__ import annotations
 
 import argparse
+import gc
 import os
 import sys
 import time
@@ -264,6 +265,11 @@ def run_until_empty(
         if dry_run:
             # Dry-run nao "drena" a fila - sair apos 1 chunk
             break
+        # Forca o GC depois de cada chunk - Argos/Stanza/PyTorch acumulam
+        # tensores e modelos LSTM em memoria. Sem isso o PM2 reiniciava o
+        # processo a cada ~3-6min por OOM, perdendo progresso. gc.collect
+        # libera ~100-200MB por chunk pesado.
+        gc.collect()
         if sleep_between_chunks > 0:
             time.sleep(sleep_between_chunks)
     return grand

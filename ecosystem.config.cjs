@@ -111,17 +111,23 @@ module.exports = {
       name: "sonnar-backfill",
       cwd: "./apps/scraper",
       script: "scripts/backfill_enrichment.py",
-      args: "--all --daemon --idle-sleep 600 --chunk-size 100",
+      // chunk-size 50 (era 100): reduz quanto Argos/Stanza acumulam
+      // entre passes do GC manual. Junto com gc.collect() apos cada
+      // chunk no codigo, mantem RAM estavel <1.5GB.
+      args: "--all --daemon --idle-sleep 600 --chunk-size 50",
       interpreter: PYTHON,
       autorestart: true,
       max_restarts: 10,
       restart_delay: 30000,
-      // 1536M (era 1024M): Argos + Stanza (tokenizer/sentencizer) +
-      // PyTorch acumulam memoria ao longo dos chunks. O processamento
-      // continuo de descriptions estrangeiras (en/ja/zh) carrega
-      // multiplos modelos LSTM e o GC nao libera entre vagas. Bate
-      // 1GB em poucos minutos. 1.5GB da folga. VPS tem 8GB - sobra.
-      max_memory_restart: "1536M",
+      // 2048M (era 1536M): mesmo com gc.collect() + chunk-size 50, em
+      // vagas estrangeiras (en/ja/zh) o footprint do Argos sobe pra
+      // ~1.2-1.4GB. 2GB da folga real e evita restart loop. VPS tem
+      // 8GB - orcamento total fica em ~5GB (sobra ~3GB).
+      max_memory_restart: "2048M",
+      // Aumenta kill_timeout: ao reiniciar, Argos pode estar no meio
+      // de uma traducao que demora alguns segundos. 1.6s default era
+      // curto demais e gerava 'failed to kill' em loop.
+      kill_timeout: 8000,
       time: true,
     },
   ],
