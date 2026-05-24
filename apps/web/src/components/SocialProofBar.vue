@@ -38,12 +38,14 @@ export default {
     const { stats, load } = useJobsCoverage()
     onMounted(() => { load() })
 
-    // Fallback estatico enquanto carrega ou se RPC falha - evita "0 vagas".
-    // Usa total_count (mesma metrica somada no mapa) pra evitar divergencia
-    // entre "vagas extraidas" no mapa e a barra de prova social.
-    const FALLBACK_TOTAL = 1247
+    // Mostra o total real (mesma metrica do mapa). Sem fallback fake -
+    // antes usava || que tratava 0 como falsy e caia num FALLBACK_TOTAL
+    // hardcoded de 1247, mostrando "1.247 vagas" quando o banco real
+    // estava zerado. Agora 0 vira "0" mesmo (e e a verdade). O initial
+    // state em useJobsCoverage tambem comeca em 0, entao o intervalo
+    // entre montar e a RPC responder mostra "0" - aceitavel.
     const formattedTotalCount = computed(() => {
-      const value = stats.value.total_count || FALLBACK_TOTAL
+      const value = Number(stats.value.total_count) || 0
       return value.toLocaleString('pt-BR')
     })
 

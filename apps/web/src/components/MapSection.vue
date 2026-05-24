@@ -246,20 +246,13 @@ export default {
         'YE': 'Iêmen', 'YT': 'Mayotte', 'ZA': 'África do Sul', 'ZM': 'Zâmbia',
         'ZW': 'Zimbábue'
       },
-      jobsByUF: {
-        SP: 12543, RJ: 4567, MG: 3456, PR: 2345, DF: 2134, RS: 1876,
-        BA: 1523, SC: 1543, PE: 1234, GO: 987, CE: 876, ES: 654,
-        MS: 534, PA: 567, MT: 456, RN: 432, MA: 423, PB: 345,
-        AM: 312, AL: 234, PI: 234, TO: 198, SE: 187, RO: 123,
-        RR: 67, AC: 45, AP: 32
-      },
-      jobsByCountry: {
-        BR: 35234, US: 8934, GB: 3456, PT: 2345, CA: 2134, DE: 1876,
-        FR: 1234, ES: 1567, NL: 987, IE: 876, AU: 1234, IN: 2345,
-        JP: 876, IL: 654, MX: 1876, AR: 1234, CO: 654, CL: 567,
-        IT: 765, PL: 432, AE: 432, SG: 543, KR: 456, NZ: 345,
-        CN: 234, RU: 123, ZA: 187, EG: 98, NG: 76
-      },
+      // Comeca vazio - so contadores reais vindos das RPCs do Supabase
+      // entram aqui. Antes havia um fallback hardcoded com ~110k vagas
+      // fakes pra "encher" o mapa enquanto a RPC carregava, mas isso dava
+      // a impressao de o portal ter vagas quando o banco estava vazio.
+      // Preferimos mapa em branco (real) a numeros mentirosos.
+      jobsByUF: {},
+      jobsByCountry: {},
       // Regra de produto: mais vagas = cor MAIS ESCURA/saturada;
       // menos vagas = cor mais clara. Vale pros dois temas (light e dark).
       colorScale: {
@@ -346,14 +339,17 @@ export default {
           supabase.rpc('get_jobs_by_country')
         ])
 
-        if (!ufRes.error && Array.isArray(ufRes.data) && ufRes.data.length > 0) {
+        // SEMPRE sobrescreve com o resultado real, mesmo quando vier vazio.
+        // Banco zerado deve ser refletido como mapa zerado, nao mantido
+        // com valores anteriores que ja estao em cache local.
+        if (!ufRes.error && Array.isArray(ufRes.data)) {
           this.jobsByUF = ufRes.data.reduce((acc, row) => {
             if (row.state_code) acc[row.state_code] = Number(row.count)
             return acc
           }, {})
         }
 
-        if (!countryRes.error && Array.isArray(countryRes.data) && countryRes.data.length > 0) {
+        if (!countryRes.error && Array.isArray(countryRes.data)) {
           this.jobsByCountry = countryRes.data.reduce((acc, row) => {
             if (row.country_code) acc[row.country_code] = Number(row.count)
             return acc
@@ -363,7 +359,8 @@ export default {
         // Re-pinta os mapas com os novos valores se ja estiverem montados
         this.$nextTick(() => this.reapplyMapStyles())
       } catch {
-        // Mantem os valores fallback ja em data() - UI nao quebra se RPC falhar
+        // Mantem o que ja estiver em data() - se for o estado inicial,
+        // mapa fica vazio (mostra "0 vagas") em vez de inventar numero.
       }
     },
     setupThemeObserver() {
