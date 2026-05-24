@@ -85,18 +85,35 @@ def fetch_pending(
     key: str,
     engine: str | None,
     chunk_size: int,
+    retry_missing_resp: bool = False,
 ) -> list[dict]:
-    """Pega proxima pagina de vagas pendentes (description preenchida +
-    description_lang ou responsibilities ainda NULL)."""
-    # Vagas com description nao-nula e PELO MENOS um dos 2 campos NULL.
-    # PostgREST: 'or' query.
+    """Pega proxima pagina de vagas pendentes.
+
+    Default: so vagas NUNCA processadas (description_lang IS NULL).
+    description_lang sempre e setado pelo enrich_sync (mesmo como 'unknown'),
+    entao serve como marker canonico de "ja passou pelo enrichment".
+
+    IMPORTANTE: nao usamos 'responsibilities IS NULL' como filtro porque
+    a politica de produto (v3.0.0) e que responsibilities pode ser NULL
+    legitimo quando a heuristica nao acha nada - a vaga vai sem o bloco
+    no card, sem inventar info. Usar esse campo como sinal de "pendente"
+    causa LOOP INFINITO: vaga sem cabecalho extraivel seria reprocessada
+    a cada pass.
+
+    Com retry_missing_resp=True (flag --retry-missing-resp), volta ao
+    comportamento antigo - util pra reprocessar tudo apos melhoria da
+    heuristica.
+    """
     params = {
         "select": "id,job_url,job_title,description,source,description_lang,responsibilities",
         "description": "not.is.null",
-        "or": "(description_lang.is.null,responsibilities.is.null)",
         "order": "scraped_at.desc",
         "limit": str(chunk_size),
     }
+    if retry_missing_resp:
+        params["or"] = "(description_lang.is.null,responsibilities.is.null)"
+    else:
+        params["description_lang"] = "is.null"
     if engine:
         params["source"] = f"eq.{engine}"
     headers = {"apikey": key, "Authorization": f"Bearer {key}"}
@@ -200,6 +217,7 @@ def run_until_empty(
     limit: int | None,
     dry_run: bool,
     sleep_between_chunks: float,
+    retry_missing_resp: bool = False,
 ) -> dict:
     """Processa chunks ate a fila pendentes esvaziar (ou atingir --limit)."""
     grand = {"total": 0, "with_resp": 0, "without_resp": 0, "errors": 0, "by_lang": {}}
@@ -207,7 +225,10 @@ def run_until_empty(
     while True:
         chunk_no += 1
         try:
-            jobs = fetch_pending(client, url, key, engine_filter, chunk_size)
+            jobs = fetch_pending(
+                client, url, key, engine_filter, chunk_size,
+                retry_missing_resp=retry_missing_resp,
+            )
         except Exception as exc:  # noqa: BLE001
             print(f"ERRO buscar chunk {chunk_no}: {exc}", flush=True)
             return grand
@@ -275,6 +296,14 @@ def main(argv: list[str] | None = None) -> int:
         help="Em modo --daemon, quantos segundos dormir quando fila esvazia "
              "(default 600s = 10min). Ignorado fora do daemon.",
     )
+    parser.add_argument(
+        "--retry-missing-resp", action="store_true",
+        help="Volta ao comportamento antigo: reprocessa vagas que tem "
+             "description_lang setado mas responsibilities NULL. Util pra "
+             "rodar uma vez apos melhorar a heuristica - CUIDADO: causa "
+             "loop infinito se rodado em daemon, pois responsibilities pode "
+             "ser legitimamente NULL.",
+    )
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args(argv)
 
@@ -297,6 +326,7 @@ def main(argv: list[str] | None = None) -> int:
                 limit=args.limit,
                 dry_run=args.dry_run,
                 sleep_between_chunks=args.sleep_between_chunks,
+                retry_missing_resp=args.retry_missing_resp,
             )
             # Acumula totals do pass no grand_total
             grand_total["total"] += grand["total"]
