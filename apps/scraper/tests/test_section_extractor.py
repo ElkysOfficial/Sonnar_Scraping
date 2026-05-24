@@ -129,6 +129,21 @@ class TestExtractResponsibilitiesPT:
         )
         assert extract_responsibilities(desc, "pt") is None
 
+    def test_inline_heading_after_period(self):
+        # Caso real do BNE: description inteira numa linha so, cabecalho
+        # aparece apos ". " sem quebra
+        desc = (
+            "Buscamos analista de sistemas senior com experiencia em SAP. "
+            "Horario comercial, boa viagem/recife. Responsabilidades e atribuicoes "
+            "desenvolver e manter integracoes entre SAP B1 e sistemas terceiros. "
+            "Garantir qualidade. Requisitos e qualificacoes "
+            "ensino superior completo."
+        )
+        out = extract_responsibilities(desc, "pt")
+        assert out is not None
+        assert "integracoes" in out or "integrações" in out
+        assert "ensino superior" not in out  # parou no cabecalho seguinte
+
     def test_accents_optional(self):
         # Sem acento mas pega - heuristica deve casar 'atribuicoes'
         desc = (

@@ -147,7 +147,7 @@ def clean_html(text: str | None) -> str:
 
 _BULLET_LINE = re.compile(r"^\s*([-•*●▪]|\d+[.)])\s+")
 # heading com tolerancia: opcionalmente prefixo markdown/bullet + ate ":"/"-" no fim
-_HEADING_TAIL = r"[\s ]*[:\-–—]?\s*$"
+_HEADING_TAIL = r"(?:[ 	]*[:\-–—]|[ 	]*$|(?=[ 	]+))"
 
 
 @dataclass
@@ -157,16 +157,23 @@ class Section:
 
 
 def _compile_heading_pattern(markers: list[str]) -> re.Pattern[str]:
-    """Compila regex que casa qualquer um dos markers no inicio de linha.
+    """Compila regex que casa qualquer um dos markers como cabecalho.
 
-    Ordena por tamanho descendente pra que multi-palavras casem antes das
-    versoes mais curtas ("Key Responsibilities" vs "Responsibilities").
+    Aceita o cabecalho em 2 contextos:
+      1. Inicio de linha (tolerante a prefixos markdown/bullet).
+      2. INLINE no meio de texto sem quebras de linha, desde que
+         precedido por pontuacao de fim de sentenca ('.', '!', '?', ':'
+         ou ';') + espaco. Cobre descriptions do BNE/MichaelPage/etc
+         que vem tudo num paragrafo so.
+
+    Ordena por tamanho descendente pra que multi-palavras casem antes
+    das versoes mais curtas ("Key Responsibilities" vs "Responsibilities").
     """
     escaped = [re.escape(m) for m in sorted(markers, key=len, reverse=True)]
     body = "|".join(escaped)
-    pattern = (
-        r"(?im)^[\s>#\*\-•]{0,4}(?P<heading>(?:" + body + r"))" + _HEADING_TAIL
-    )
+    # Prefixo: inicio-de-linha (com markdown leve) OU lookbehind pra pontuacao+espaco
+    prefix = r"(?:^[\s>#\*\-•]{0,4}|(?<=[.!?:;])\s*)"
+    pattern = r"(?im)" + prefix + r"(?P<heading>(?:" + body + r"))" + _HEADING_TAIL
     return re.compile(pattern)
 
 
@@ -225,7 +232,7 @@ def extract_responsibilities(
         cleaned, INCLUDE_MARKERS[lang], EXCLUDE_MARKERS[lang]
     )
     # Exige conteudo minimo - evita devolver "Responsabilidades\n" vazio
-    if body and len(body) >= 30:
+    if body and len(body) >= 20:
         return body
 
     # 2) Bullets dominantes

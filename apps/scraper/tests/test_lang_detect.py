@@ -46,6 +46,13 @@ class TestEnglish:
         text = "Requirements: 5 years of experience with Python and AWS skills."
         assert detect_lang(text) == "en"
 
+    def test_en_with_only_2_markers_returns_en(self):
+        # Regression: antes 'pt if pt >= en' favorecia PT quando pt=0 e en>0
+        # mesmo abaixo do limite de 3. Indeed em ingles caia como 'pt'.
+        text = "Hands-on experience in C++ development with strong knowledge of multithreading"
+        # Texto tem ' with ' e ' of ' (2 marcadores EN, 0 PT, 0 diacriticos PT)
+        assert detect_lang(text) == "en"
+
 
 # =====================================================================
 # Japones

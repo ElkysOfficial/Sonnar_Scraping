@@ -37,7 +37,10 @@ def run_engine(engine: str, limit: int, translate: bool) -> dict | None:
     ]
     if translate:
         cmd.append("--translate")
-    out = subprocess.run(cmd, capture_output=True, text=True, cwd=SCRAPER_ROOT)
+    out = subprocess.run(
+        cmd, capture_output=True, text=True, cwd=SCRAPER_ROOT,
+        encoding="utf-8", errors="replace",
+    )
     if out.returncode != 0:
         msg = out.stderr.strip() or out.stdout.strip()
         print(f"  ERRO em {engine}: {msg[:200]}", flush=True)
