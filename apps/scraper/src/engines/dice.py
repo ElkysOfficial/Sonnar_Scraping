@@ -31,6 +31,7 @@ from variavel import get_active_batch_key, get_active_stacks  # noqa: E402
 from src.persistence.extraction_tracker import tracker  # noqa: E402
 from src.persistence.progress_tracker import progress  # noqa: E402
 from src.utils.http_session import fetch_sync  # noqa: E402
+from src.utils.job_enrichment import enrich_async  # noqa: E402
 from src.utils.job_fallbacks import apply_description_fallbacks  # noqa: E402
 from src.utils.text_utils import extract_skills  # noqa: E402
 
@@ -38,7 +39,10 @@ import logging
 logger = logging.getLogger("scraper.engine.dice")
 
 
-PARSER_VERSION = "dice-2026.05.08"
+# 2026-05-23 (v2.21.0): adicao de description_lang + responsibilities via
+# pipeline central (lang_detect + translator + section_extractor). Dice e
+# sempre EN, entao hint_lang='en' pula a deteccao.
+PARSER_VERSION = "dice-2026.05.23"
 
 
 _MIN_USEFUL_DESCRIPTION = 200
@@ -725,10 +729,30 @@ async def get_dice_jobs(on_job=None) -> list:
                         job_title = job_title.encode('ascii', 'ignore').decode('ascii').strip()
 
                         if job_title:
+                            # Pipeline de enriquecimento (epico v3.0.0):
+                            # Dice e EN-only, entao passamos hint_lang='en'
+                            # pra pular deteccao automatica e ir direto pra
+                            # translate -> extract_responsibilities.
+                            description_lang = None
+                            responsibilities = None
+                            if description:
+                                try:
+                                    description_lang, responsibilities = await enrich_async(
+                                        title=job_title,
+                                        description=description,
+                                        hint_lang="en",
+                                    )
+                                except Exception as exc:
+                                    logger.warning(
+                                        "dice_enrich_failed url=%s err=%s",
+                                        link, exc,
+                                    )
+
                             job = apply_description_fallbacks([
                                 link, job_title, company, location_norm, work_type,
                                 hiring_regime, salary_clean, publication_date,
                                 skills, description,
+                                description_lang, responsibilities,
                             ])
                             jobs.append(job)
                             jobs_found_this_page += 1
