@@ -44,7 +44,7 @@
       <div class="coverage-metrics">
         <div class="metric">
           <span class="metric-value">{{ totalJobs.toLocaleString('pt-BR') }}</span>
-          <span class="metric-label">vagas extraídas</span>
+          <span class="metric-label">vagas mapeadas</span>
         </div>
         <div class="metric-divider" />
         <div class="metric">
