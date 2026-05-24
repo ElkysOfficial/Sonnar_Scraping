@@ -21,7 +21,7 @@
       <div class="proof-bar__group proof-bar__group--metric">
         <span class="proof-bar__pulse" aria-hidden="true"></span>
         <p class="proof-bar__metric">
-          Detectamos <span class="proof-bar__metric-value">{{ formattedWeekCount }}</span> vagas esta semana
+          Já detectamos <span class="proof-bar__metric-value">{{ formattedTotalCount }}</span> vagas
         </p>
       </div>
     </div>
@@ -39,13 +39,15 @@ export default {
     onMounted(() => { load() })
 
     // Fallback estatico enquanto carrega ou se RPC falha - evita "0 vagas".
-    const FALLBACK_WEEK = 1247
-    const formattedWeekCount = computed(() => {
-      const value = stats.value.last_week_count || FALLBACK_WEEK
+    // Usa total_count (mesma metrica somada no mapa) pra evitar divergencia
+    // entre "vagas extraidas" no mapa e a barra de prova social.
+    const FALLBACK_TOTAL = 1247
+    const formattedTotalCount = computed(() => {
+      const value = stats.value.total_count || FALLBACK_TOTAL
       return value.toLocaleString('pt-BR')
     })
 
-    return { formattedWeekCount }
+    return { formattedTotalCount }
   }
 }
 </script>
