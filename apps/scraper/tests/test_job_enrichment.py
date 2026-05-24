@@ -3,7 +3,11 @@ import asyncio
 
 import pytest
 
-from src.utils.job_enrichment import enrich_sync, enrich_async
+from src.utils.job_enrichment import (
+    enrich_async,
+    enrich_canonical,
+    enrich_sync,
+)
 
 
 # =====================================================================
@@ -155,3 +159,47 @@ class TestAsyncWrap:
         result = asyncio.run(run())
         # Translator foi chamado (mesmo via to_thread)
         assert any(c[0] == "ja" for c in fake_translator.calls)
+
+
+# =====================================================================
+# enrich_canonical (helper das engines)
+# =====================================================================
+
+class TestEnrichCanonical:
+    def test_pads_10_to_12(self, fake_translator):
+        async def run():
+            canonical = [
+                "https://x.com/jobs/1", "Senior Dev", "Co", "Remote",
+                "Remote", "Full-time", "", "01/05/2026",
+                ["Python"],
+                "Responsibilities\n- Build APIs\n- Mentor\n\nRequirements\n- 5y"
+            ]
+            out = await enrich_canonical(canonical, hint_lang="en")
+            assert len(out) == 12
+            assert out[10] == "en"
+            # Translator foi chamado (mockado retorna marcador 'Responsabilidades')
+            assert out[11] is not None
+            return out
+        asyncio.run(run())
+
+    def test_already_12(self, fake_translator):
+        async def run():
+            canonical = [
+                "u", "t", "c", "l", "wt", "hr", "s", "d",
+                ["sk"], "Responsabilidades\n- X\n- Y\n- Z", "pt", "EXISTING",
+            ]
+            out = await enrich_canonical(canonical, hint_lang="pt")
+            assert len(out) == 12
+            assert out[10] == "pt"
+            # Sobrescreve com novo valor extraido
+            assert out[11] != "EXISTING"
+
+        asyncio.run(run())
+
+    def test_short_list_unchanged(self, fake_translator):
+        async def run():
+            short = ["url", "title"]
+            out = await enrich_canonical(short, hint_lang="en")
+            assert out == short  # nao mexe em listas curtas
+
+        asyncio.run(run())
