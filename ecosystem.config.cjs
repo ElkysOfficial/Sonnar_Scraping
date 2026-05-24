@@ -116,7 +116,12 @@ module.exports = {
       autorestart: true,
       max_restarts: 10,
       restart_delay: 30000,
-      max_memory_restart: "1024M",
+      // 1536M (era 1024M): Argos + Stanza (tokenizer/sentencizer) +
+      // PyTorch acumulam memoria ao longo dos chunks. O processamento
+      // continuo de descriptions estrangeiras (en/ja/zh) carrega
+      // multiplos modelos LSTM e o GC nao libera entre vagas. Bate
+      // 1GB em poucos minutos. 1.5GB da folga. VPS tem 8GB - sobra.
+      max_memory_restart: "1536M",
       time: true,
     },
   ],
