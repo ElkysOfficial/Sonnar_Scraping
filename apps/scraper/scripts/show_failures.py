@@ -22,6 +22,13 @@ try:
 except AttributeError:
     pass
 
+try:
+    from dotenv import load_dotenv  # type: ignore[import-not-found]
+    load_dotenv()
+    load_dotenv(os.path.join(SCRAPER_ROOT, ".env"))
+except ImportError:
+    pass
+
 import httpx  # noqa: E402
 
 from src.utils.lang_detect import detect_lang  # noqa: E402
