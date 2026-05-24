@@ -52,6 +52,7 @@ from src.persistence.progress_tracker import progress  # noqa: E402
 from src.utils.job_fallbacks import apply_description_fallbacks  # noqa: E402
 from src.utils.text_utils import extract_skills, strip_html  # noqa: E402
 from src.utils.translator import prepare as prepare_translation  # noqa: E402
+from src.utils.job_enrichment import enrich_canonical  # noqa: E402
 from src.utils.translator import translate_to_pt  # noqa: E402
 
 import logging
@@ -67,7 +68,12 @@ except Exception:
     pass
 
 
-PARSER_VERSION = "careerjet-api-i18n-2026.05.22"
+# 2026-05-23 (v2.24.0): traducao continua local (precisamos do title e
+# description ja em PT no banco), mas a extracao de responsibilities
+# agora passa pelo pipeline central via enrich_canonical(hint_lang="pt")
+# - apos a traducao, o texto ja esta em PT. description_lang gravado e
+# o IDIOMA ORIGINAL da vaga (locale_lang), nao 'pt'.
+PARSER_VERSION = "careerjet-api-i18n-2026.05.23"
 
 
 # --- Configuracao --------------------------------------------------------
@@ -481,6 +487,17 @@ async def get_careerjet_jobs(on_job=None) -> list:
             "", salary, publication_date,
             skills, description,
         ])
+        # Pipeline central de enriquecimento (epico v3.0.0). description
+        # ja foi traduzida pra PT acima, entao hint_lang="pt" pula a
+        # traducao no helper e so faz extract_responsibilities. Depois
+        # sobrescrevemos description_lang com o IDIOMA DE ORIGEM (src)
+        # pra preservar a informacao de procedencia.
+        try:
+            parsed = await enrich_canonical(parsed, hint_lang="pt")
+            if len(parsed) >= 11:
+                parsed[10] = src
+        except Exception:
+            pass
         tracker.discover(parsed[0], engine="careerjet")
         jobs.append(parsed)
         if on_job is not None:
