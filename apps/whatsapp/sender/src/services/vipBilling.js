@@ -163,7 +163,7 @@ async function runBillingTick() {
     for (const v of expired || []) {
       const { error: updErr } = await supabase
         .from("vip_subscribers")
-        .update({ status: "expired", updated_at: new Date().toISOString() })
+        .update({ status: "expired" })
         .eq("lid", v.lid)
       if (updErr) {
         errorLog(`[VIP BILLING] Falha ao expirar ${v.lid}: ${updErr.message}`)
