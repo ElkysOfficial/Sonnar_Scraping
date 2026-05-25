@@ -36,6 +36,20 @@ from ..persistence.revalidator import run_revalidator_loop
 from ..utils.jobsUtils import process_salary
 from ..utils.metrics import metrics
 from ..utils.structured_logging import setup_logging
+from ..utils.translator import prepare as prepare_translation
+
+
+# Idiomas mais frequentes nas vagas estrangeiras (deduzidos dos locales
+# rotativos do Careerjet e dos VIPs internacionais do sender). Warm-load
+# no boot evita pagar latencia de download/init na primeira vaga de cada
+# idioma — antes, isso aparecia como spikes de CPU intermitentes durante
+# o ciclo. Modelos ja em cache no disco do Argos sao no-op.
+_WARMUP_LANGS = (
+    "en", "es", "fr", "de", "it", "nl", "pl", "pt",
+    "ru", "uk", "tr", "ja", "zh", "ko", "ar", "hu",
+    "cs", "sv", "no", "da", "fi", "ro", "el", "he",
+    "th", "vi", "id",
+)
 
 
 setup_logging(log_path=os.getenv("SCRAPER_LOG_PATH", "scraper.log"))
@@ -536,6 +550,13 @@ async def scrape_jobs() -> None:
                 "tracker_known": len(tracker_known),
             })
 
+            # Warm-load dos modelos Argos em background. Best-effort: se a
+            # tabela de pacotes esta atualizada localmente, e instantaneo.
+            # Roda em thread pra nao bloquear o boot do scraper.
+            asyncio.create_task(
+                asyncio.to_thread(prepare_translation, _WARMUP_LANGS)
+            )
+
             # Flusher de fundo: envia ao core (único escritor do jobs.json) as
             # vagas acumuladas, mantendo os bots com dados frescos durante o lote.
             core_flush_task = asyncio.create_task(_core_flush_loop(repo))
@@ -549,9 +570,23 @@ async def scrape_jobs() -> None:
                 batches = list(iter_batches(BATCH_SIZE))
                 total = len(batches)
 
+                # Checkpoint do ciclo: retoma do lote onde paramos em vez de
+                # reiniciar do 1/N a cada restart. Se total mudou (lista de
+                # stacks alterada entre deploys), reinicia do 1.
+                resume_idx = await progress.load_cycle_idx(total)
+                if resume_idx > 1:
+                    logger.info("cycle_resume", extra={
+                        "resume_idx": resume_idx, "total": total,
+                    })
+
                 for idx, (category, batch) in enumerate(batches, start=1):
+                    if idx < resume_idx:
+                        continue
                     set_active_batch(batch)
                     set_active_batch_context(category, idx)
+                    # Persiste o idx ATUAL antes de executar. Se cair durante,
+                    # ao retomar refaz este mesmo lote (idempotente via dedup).
+                    await progress.save_cycle_idx(idx, total)
                     logger.info("batch_start", extra={
                         "batch_idx": idx, "batch_total": total,
                         "category": category, "stacks": batch,
@@ -588,6 +623,8 @@ async def scrape_jobs() -> None:
                         })
                         await asyncio.sleep(BATCH_INTERVAL_SECONDS)
 
+                # Ciclo concluído: limpa checkpoint pra próximo ciclo começar do 1.
+                await progress.clear_cycle_idx()
                 logger.info("cycle_complete")
                 set_active_batch(None)
     finally:

@@ -3,6 +3,15 @@ from dotenv import load_dotenv
 
 load_dotenv()  # carrega .env (SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 
+# uvloop: event loop em C que substitui o default do asyncio. Speedup
+# tipico de 20-30% em codigo I/O-bound (todo o scraper). Disponivel apenas
+# em Linux/macOS — em Windows (dev) cai gracilmente no asyncio default.
+try:
+    import uvloop
+    uvloop.install()
+except ImportError:
+    pass
+
 from src.controllers.controllers import scrape_jobs
 
 

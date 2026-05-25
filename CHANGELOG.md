@@ -5,6 +5,50 @@ Todas as mudanças relevantes deste projeto são documentadas neste arquivo.
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/)
 e o projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [3.2.0] - 2026-05-25
+
+### Adicionado
+
+- **Checkpoint persistente do ciclo no scraper**: o controller agora salva o
+  `batch_idx` em execução no Supabase (`scraper_progress` com chave fixa
+  `engine=_controller`, `batch_key=cycle`). Após PM2 restart, o scraper
+  retoma do mesmo lote onde parou — antes reiniciava sempre do lote 1/N,
+  perdendo posição. Métodos novos: `progress.save_cycle_idx`,
+  `load_cycle_idx`, `clear_cycle_idx`. Se a lista de stacks mudou entre
+  deploys (total diferente), reinicia do 1 com segurança.
+
+### Performance
+
+5 otimizações de CPU no scraper, reduzindo pico estimado de 73% para ~40-50%
+e sustentado para ~25-35%:
+
+- **`section_extractor`**: `_compile_heading_pattern` agora usa
+  `@lru_cache(maxsize=64)`. As listas de marcadores são constantes
+  module-level, então a mesma regex era recompilada ~2-3x por vaga
+  (2k-3k recompilações por ciclo de 1000+ vagas).
+- **Warm-load do Argos no boot**: `controllers.scrape_jobs` chama
+  `prepare_translation(_WARMUP_LANGS)` em background no startup pra 27
+  idiomas comuns. Elimina spikes de CPU quando a primeira vaga estrangeira
+  de cada idioma chega no ciclo (era a fonte dos warnings de `stanza/mwt`
+  que apareciam intermitentes no log).
+- **`careerjet._looks_portuguese`**: trocou `sum(low.count(m) for m in
+  _MARKERS)` (~30 passadas no texto por vaga) por uma única regex
+  compilada (`_PT_MARKERS_RE.findall`). Cobre as 1800+ vagas/ciclo do
+  Careerjet com uma passada O(N).
+- **`lang_detect.detect_lang`**: mesma técnica aplicada ao detector
+  global, usado por TODAS as engines (não só careerjet). Maior alcance
+  que a otimização anterior.
+- **uvloop**: `scrapy.py` ativa `uvloop.install()` quando disponível
+  (Linux/macOS). Event loop em C com 20-30% de speedup em código async
+  I/O-bound como o scraper. Windows cai gracilmente no asyncio default.
+
+### Operação
+
+- Sem migrations necessárias: a tabela `scraper_progress` já existe e
+  aceita a nova chave `_controller/cycle` no schema atual.
+- `uvloop` é instalado automaticamente em Linux/macOS via
+  `requirements.txt` (`uvloop>=0.19.0; sys_platform != "win32"`).
+
 ## [3.0.0] - 2026-05-24
 
 ### 🎉 Marco do épico v3.0.0 — extração de responsabilidades + tradução multi-idioma
