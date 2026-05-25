@@ -218,7 +218,7 @@
                 <option value="senior">
                   Sênior
                 </option>
-                <option value="lead">
+                <option value="staff_lead">
                   Lead / Staff
                 </option>
               </select>
