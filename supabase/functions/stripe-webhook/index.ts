@@ -332,7 +332,6 @@ async function handleVipEvent(
         payment_method: "card",
         stripe_customer_id: asString(session.customer),
         stripe_subscription_id: asString(session.subscription),
-        updated_at: new Date().toISOString(),
       })
       .eq("lid", lid)
       .select("email, user_name, lid, phone, filters, portal_linked_at");
@@ -371,7 +370,6 @@ async function handleVipEvent(
         stripe_subscription_id: sub.id,
         stripe_customer_id: asString(sub.customer),
         current_period_end: isoFromUnix(subscriptionPeriodEnd(sub)),
-        updated_at: new Date().toISOString(),
       })
       .eq("lid", lid);
     return { status: `vip_subscription_${status}`, error: null };
@@ -404,7 +402,6 @@ async function handleVipEvent(
         .update({
           status: "active",
           ...(periodEnd ? { current_period_end: periodEnd } : {}),
-          updated_at: new Date().toISOString(),
         })
         .eq("lid", vip.lid);
       return { status: "vip_invoice_paid", error: null };
@@ -414,7 +411,7 @@ async function handleVipEvent(
     const newStatus = attemptCount >= 3 ? "canceled" : "past_due";
     await supabase
       .from("vip_subscribers")
-      .update({ status: newStatus, updated_at: new Date().toISOString() })
+      .update({ status: newStatus })
       .eq("lid", vip.lid);
     return { status: `vip_payment_failed_${newStatus}`, error: null };
   }

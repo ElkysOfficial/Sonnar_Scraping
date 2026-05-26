@@ -284,7 +284,6 @@ export async function addVipSubscriber(name, lid, filtersInput, plan = "plus") {
   if (!lid) throw new Error("LID e obrigatorio para adicionar VIP")
 
   const filters = normalizeVipFilters(filtersInput)
-  const now = new Date().toISOString()
 
   const { error } = await supabase
     .from("vip_subscribers")
@@ -294,8 +293,7 @@ export async function addVipSubscriber(name, lid, filtersInput, plan = "plus") {
         lid,
         plan,
         filters,
-        status: "active",
-        updated_at: now
+        status: "active"
       },
       { onConflict: "lid" }
     )
@@ -308,7 +306,7 @@ export async function addVipSubscriber(name, lid, filtersInput, plan = "plus") {
 export async function setVipActive(lid, active) {
   const { data, error } = await supabase
     .from("vip_subscribers")
-    .update({ status: active ? "active" : "rejected", updated_at: new Date().toISOString() })
+    .update({ status: active ? "active" : "rejected" })
     .eq("lid", lid)
     .select("id")
     .maybeSingle()
@@ -321,7 +319,7 @@ export async function setVipActive(lid, active) {
 export async function setVipActiveByName(name, active) {
   const { data, error } = await supabase
     .from("vip_subscribers")
-    .update({ status: active ? "active" : "rejected", updated_at: new Date().toISOString() })
+    .update({ status: active ? "active" : "rejected" })
     .eq("user_name", name)
     .select("id")
     .maybeSingle()
@@ -447,7 +445,6 @@ export async function getVipPendingByNumber(clientNumber) {
 export async function addVipPendingSubscriber(name, lid, filtersInput, paymentProof = null, contact = {}) {
   if (!lid) throw new Error("LID e obrigatorio")
   const filters = normalizeVipFilters(filtersInput)
-  const now = new Date().toISOString()
 
   const { error } = await supabase
     .from("vip_subscribers")
@@ -460,8 +457,7 @@ export async function addVipPendingSubscriber(name, lid, filtersInput, paymentPr
         plan: "plus",
         filters,
         payment_proof: paymentProof,
-        status: "pending",
-        updated_at: now
+        status: "pending"
       },
       { onConflict: "lid" }
     )
@@ -474,7 +470,7 @@ export async function addVipPendingSubscriber(name, lid, filtersInput, paymentPr
 export async function updateVipPendingPaymentProof(lid, paymentProof) {
   const { data, error } = await supabase
     .from("vip_subscribers")
-    .update({ payment_proof: paymentProof, updated_at: new Date().toISOString() })
+    .update({ payment_proof: paymentProof })
     .eq("lid", lid)
     .eq("status", "pending")
     .select("lid")
@@ -507,8 +503,7 @@ export async function approveVipSubscriber(lid, decidedBy) {
       // Zera os avisos: a renovacao reinicia o ciclo de notificacoes.
       billing_notifications: {},
       decided_at: now.toISOString(),
-      decided_by: decidedBy || null,
-      updated_at: now.toISOString()
+      decided_by: decidedBy || null
     })
     .eq("lid", lid)
 
@@ -544,8 +539,7 @@ export async function rejectVipSubscriber(lid, decidedBy, reason = null) {
       status: "rejected",
       decided_at: new Date().toISOString(),
       decided_by: decidedBy || null,
-      reject_reason: reason || null,
-      updated_at: new Date().toISOString()
+      reject_reason: reason || null
     })
     .eq("lid", lid)
 

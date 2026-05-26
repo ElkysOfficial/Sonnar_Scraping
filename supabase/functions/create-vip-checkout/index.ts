@@ -98,7 +98,6 @@ serve(async (req) => {
           status: "pending",
           payment_method: "card",
           stripe_customer_id: customerId,
-          updated_at: new Date().toISOString(),
         },
         { onConflict: "lid" },
       );
