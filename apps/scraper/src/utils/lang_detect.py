@@ -20,6 +20,8 @@ classificar uma description de vaga e barato pra processar em volume.
 """
 from __future__ import annotations
 
+import re
+
 
 # =====================================================================
 # Faixas Unicode dos scripts CJK
@@ -75,6 +77,14 @@ _EN_MARKERS = (
 # Diacriticos praticamente exclusivos do portugues - sinal forte.
 _PT_DIACRITICS = "ãõçáàâêéíóôú"
 
+# Regex compiladas: substituem ``sum(text.count(m) for m in markers)`` que
+# rodava o texto inteiro 1x por marcador (~30 passadas por vaga). Uma unica
+# passada O(N) cobre todos os marcadores via alternancia. Em ciclos grandes
+# (todas as engines chamam detect_lang por vaga), o ganho e relevante.
+_PT_MARKERS_RE = re.compile("|".join(re.escape(m) for m in _PT_MARKERS))
+_EN_MARKERS_RE = re.compile("|".join(re.escape(m) for m in _EN_MARKERS))
+_PT_DIACRITICS_RE = re.compile(f"[{_PT_DIACRITICS}]")
+
 
 def _sample(text: str, limit: int = 2000) -> str:
     return text if len(text) <= limit else text[:limit]
@@ -106,9 +116,9 @@ def detect_lang(text: str | None) -> str:
 
     # 2) Latim: PT vs EN
     low = " " + sample.lower() + " "
-    pt = sum(low.count(m) for m in _PT_MARKERS)
-    en = sum(low.count(m) for m in _EN_MARKERS)
-    if any(ch in low for ch in _PT_DIACRITICS):
+    pt = len(_PT_MARKERS_RE.findall(low))
+    en = len(_EN_MARKERS_RE.findall(low))
+    if _PT_DIACRITICS_RE.search(low):
         pt += 3
 
     if pt == 0 and en == 0:

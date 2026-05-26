@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from functools import lru_cache
 
 
 Lang = str  # 'pt' | 'en'
@@ -209,7 +210,18 @@ class Section:
 def _compile_heading_pattern(markers: list[str]) -> re.Pattern[str]:
     """Compila regex que casa qualquer um dos markers como cabecalho.
 
-    Aceita o cabecalho em 2 contextos:
+    Wrapper sobre ``_compile_heading_pattern_cached`` — converte a lista
+    pra tupla (hashable) pra permitir cache. As listas de markers vem de
+    constantes module-level, então a mesma combinação se repete por todas
+    as vagas do ciclo (~1000+ vagas) — sem cache, recompilaríamos a regex
+    a cada chamada de ``_find_section``.
+    """
+    return _compile_heading_pattern_cached(tuple(markers))
+
+
+@lru_cache(maxsize=64)
+def _compile_heading_pattern_cached(markers: tuple[str, ...]) -> re.Pattern[str]:
+    """Aceita o cabecalho em 2 contextos:
       1. Inicio de linha (tolerante a prefixos markdown/bullet).
       2. INLINE no meio de texto sem quebras de linha, desde que
          precedido por pontuacao de fim de sentenca ('.', '!', '?', ':'

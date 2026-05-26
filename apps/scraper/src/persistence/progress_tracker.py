@@ -152,6 +152,96 @@ class ProgressTracker:
         except Exception as exc:
             logger.warning("progress.clear erro: %s", exc)
 
+    # ---------------- checkpoint do controller (batch_idx do ciclo) ----------------
+    #
+    # Reusa a tabela ``scraper_progress`` com chave fixa
+    # (engine=``_controller``, batch_key=``cycle``). Cursor guarda o índice do
+    # próximo lote a executar dentro do ciclo. Após restart, o controller lê
+    # esse cursor e retoma do lote certo — sem reiniciar do 1/N.
+
+    _CONTROLLER_ENGINE = "_controller"
+    _CONTROLLER_KEY = "cycle"
+
+    async def save_cycle_idx(self, next_idx: int, total: int) -> None:
+        """Grava o próximo ``batch_idx`` (1-based) a executar. Síncrono no
+        banco — não passa pelo buffer, pra garantir que um crash logo após
+        não perca o checkpoint."""
+        if not self.enabled:
+            return
+        payload = [{
+            "engine":     self._CONTROLLER_ENGINE,
+            "batch_key":  self._CONTROLLER_KEY,
+            "cursor":     {"next_idx": int(next_idx), "total": int(total)},
+            "updated_at": _now_iso(),
+        }]
+        try:
+            async with self._client() as cli:
+                r = await cli.post(
+                    "/scraper_progress",
+                    json=payload,
+                    params={"on_conflict": "engine,batch_key"},
+                )
+                if r.status_code >= 400:
+                    logger.warning("progress.save_cycle_idx status=%s body=%s",
+                                   r.status_code, r.text[:200])
+        except Exception as exc:
+            logger.warning("progress.save_cycle_idx erro: %s", exc)
+
+    async def load_cycle_idx(self, total: int) -> int:
+        """Lê o ``next_idx`` salvo. Devolve 1 se não há checkpoint ou se o
+        ``total`` mudou (lista de lotes mudou entre deploys — não dá pra
+        retomar com segurança)."""
+        if not self.enabled:
+            return 1
+        try:
+            async with self._client() as cli:
+                r = await cli.get(
+                    "/scraper_progress",
+                    params={
+                        "select": "cursor",
+                        "engine": f"eq.{self._CONTROLLER_ENGINE}",
+                        "batch_key": f"eq.{self._CONTROLLER_KEY}",
+                        "limit": "1",
+                    },
+                )
+                if r.status_code != 200:
+                    return 1
+                rows = r.json() or []
+                if not rows:
+                    return 1
+                cursor = rows[0].get("cursor") or {}
+                saved_total = int(cursor.get("total", 0))
+                next_idx = int(cursor.get("next_idx", 1))
+                if saved_total != total:
+                    logger.info("progress.load_cycle_idx total mudou (%s -> %s); reiniciando do 1",
+                                saved_total, total)
+                    return 1
+                if next_idx < 1 or next_idx > total:
+                    return 1
+                return next_idx
+        except Exception as exc:
+            logger.warning("progress.load_cycle_idx erro: %s", exc)
+            return 1
+
+    async def clear_cycle_idx(self) -> None:
+        """Apaga o checkpoint do ciclo. Chamado quando o ciclo completa."""
+        if not self.enabled:
+            return
+        try:
+            async with self._client() as cli:
+                r = await cli.delete(
+                    "/scraper_progress",
+                    params={
+                        "engine": f"eq.{self._CONTROLLER_ENGINE}",
+                        "batch_key": f"eq.{self._CONTROLLER_KEY}",
+                    },
+                )
+                if r.status_code >= 400:
+                    logger.warning("progress.clear_cycle_idx status=%s body=%s",
+                                   r.status_code, r.text[:200])
+        except Exception as exc:
+            logger.warning("progress.clear_cycle_idx erro: %s", exc)
+
     # ---------------- flush periódico ----------------
 
     async def flush(self) -> None:

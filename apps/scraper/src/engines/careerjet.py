@@ -39,6 +39,7 @@ from __future__ import annotations
 import asyncio
 import math
 import os
+import re
 import sys
 import time
 from email.utils import parsedate_to_datetime
@@ -231,6 +232,14 @@ _EN_MARKERS = (
 )
 # Diacriticos praticamente exclusivos do portugues - sinal forte.
 _PT_DIACRITICS = "ãõçáàâêéíóôú"
+_PT_DIACRITICS_RE = re.compile(f"[{_PT_DIACRITICS}]")
+
+# Regex unica que conta marcadores via findall (uma passada O(N) no texto).
+# Substitui o ``sum(text.count(m) for m in markers)`` que rodava o texto
+# inteiro 1 vez POR marcador (~30 passadas por vaga). Em ciclos com 1800+
+# vagas via Careerjet, isso saturava CPU desnecessariamente.
+_PT_MARKERS_RE = re.compile("|".join(re.escape(m) for m in _PT_MARKERS))
+_EN_MARKERS_RE = re.compile("|".join(re.escape(m) for m in _EN_MARKERS))
 
 
 def _looks_portuguese(text: str) -> bool:
@@ -244,9 +253,9 @@ def _looks_portuguese(text: str) -> bool:
     if not text:
         return True
     low = " " + text.lower() + " "
-    pt = sum(low.count(m) for m in _PT_MARKERS)
-    en = sum(low.count(m) for m in _EN_MARKERS)
-    if any(ch in low for ch in _PT_DIACRITICS):
+    pt = len(_PT_MARKERS_RE.findall(low))
+    en = len(_EN_MARKERS_RE.findall(low))
+    if _PT_DIACRITICS_RE.search(low):
         pt += 3
     if en >= 3 and en > pt:
         return False

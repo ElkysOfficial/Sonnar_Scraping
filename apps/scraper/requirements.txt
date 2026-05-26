@@ -11,6 +11,11 @@ requests>=2.31.0
 cloudscraper>=1.2.71
 curl_cffi>=0.6.0
 
+# Event loop em C (drop-in replacement do asyncio). 20-30% speedup em
+# codigo I/O-bound. Apenas Linux/macOS — o entrypoint scrapy.py importa
+# com try/except, no Windows cai pro asyncio default sem quebrar.
+uvloop>=0.19.0; sys_platform != "win32"
+
 # HTML Parsing
 beautifulsoup4>=4.12.0
 
