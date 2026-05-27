@@ -7,6 +7,10 @@ tags: [performance, moc]
 
 ⚠️ **Stub** - auditar build atual.
 
+## Estratégias ativas
+
+- [[vcpu-ram-reduction-strategies]] — 🎯 catálogo completo de alavancas para atingir [[../12-decisions/ADR-006-vps-load-reduction-target|ADR-006]] (vCPU pico 73% → 50%). Inclui frentes Canvas, Scraper, Core, Multi-banco/Cache, e plano de rollout faseado.
+
 ## Bundle (último build, v1.8.0)
 
 | Chunk           | Tamanho        | Gzip      |

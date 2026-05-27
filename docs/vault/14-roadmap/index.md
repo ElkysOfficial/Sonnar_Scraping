@@ -9,6 +9,9 @@ tags: [roadmap, moc]
 
 ## Curto prazo (próximas 1–2 sprints)
 
+- [ ] 🎯 **Reduzir vCPU pico de 73% → 50% e reduzir RAM** ([[../12-decisions/ADR-006-vps-load-reduction-target]] + [[../13-issues/vps-cpu-peak-reduction]]). Roteiro encadeado: PR1 Canvas → PR2 Scraper → PR3 Core. Estratégias completas em [[../11-performance/vcpu-ram-reduction-strategies]].
+- [ ] Estender tradução inline às engines não-PT ([[../12-decisions/ADR-007-translation-inline-policy]] + [[../13-issues/untranslated-jobs-gap]]).
+- [ ] ⏸️ Aguardando bloqueador acima: feature Plus [[../03-features/plus-match-breakdown-cv]] (match breakdown + CV).
 - [x] Migrar `OWNER_EMAIL` para `VITE_OWNER_EMAIL` (v1.9.1 - [[../13-issues/_resolved/owner-email-hardcoded]])
 - [x] Criar helper de sanitização completa (control chars, backslash) (v1.9.1 - `src/utils/safeRedirect.ts` + 37 testes - [[../13-issues/_resolved/redirect-sanitization]])
 - [x] Validar `SessionNotice` z-index em modais do `/admin` (v1.9.2 - token `--z-toast: 1100` - [[../13-issues/_resolved/session-notice-zindex]])

@@ -12,6 +12,8 @@ tags: [issue, moc]
 | 🔴 HIGH    | [[jwt-localstorage-xss\|JWT em localStorage]] (XSS surface) | mitigado em v1.9.0 ([[../12-decisions/ADR-002-jwt-storage-csp-hardening\|ADR-002]]) - defesa em profundidade; nota mantida pra rastrear avanços (cookies HttpOnly via BFF) |
 | 🟠 MEDIUM  | Cobertura unitária de auth ausente (parcial)          | parcial em v1.9.3 (`globalAuthGuard` 27 testes, `humanizeAuthError` 19 testes) - falta `useAuth` (timer, `fetchUserRole`, `bootAuth`) e composables UI |
 | 🟠 MEDIUM  | Sem observabilidade em produção (Sentry/PostHog)      | ⏸️ deferido - sem decisão (não está sendo trabalhado) |
+| 🔴 HIGH    | [[vps-cpu-peak-reduction\|Redução de vCPU pico (73% → 50%)]] | aberto - roteiro de PRs traçado, decisão PR1 pendente ([[../12-decisions/ADR-006-vps-load-reduction-target\|ADR-006]]) |
+| 🟠 MEDIUM  | [[untranslated-jobs-gap\|Vagas em EN/ES sem tradução acumulando no banco]] | aberto - política definida em [[../12-decisions/ADR-007-translation-inline-policy\|ADR-007]]; gap retroativo pendente |
 
 ## Resolvidos
 

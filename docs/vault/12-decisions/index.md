@@ -14,6 +14,8 @@ Padrão: cada ADR contém **Contexto → Decisão → Alternativas → Consequê
 | [[ADR-003-indeed-listing-json-extraction]]       | Indeed engine via listing JSON (substitui detail-fetch por vaga)        | Aceito   | data_collection v2026.05 |
 | [[ADR-004-monorepo-restructure]]                 | Reestruturação para monorepo apps/packages/supabase/docs                | Aceito   | 2026-05-15             |
 | [[ADR-005-message-formatting-core-jobs-json]]    | message-formatting-core lê jobs.json em vez de Supabase                 | Aceito   | 2026-05-15             |
+| [[ADR-006-vps-load-reduction-target]]            | Meta de redução de carga na VPS (vCPU pico 73% → 50%)                   | Aceito   | 2026-Q2                |
+| [[ADR-007-translation-inline-policy]]            | Tradução inline obrigatória na extração (backfill aposentado)           | Aceito   | 2026-Q2                |
 
 ## Como adicionar um ADR novo
 

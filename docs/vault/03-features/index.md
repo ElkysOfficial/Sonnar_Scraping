@@ -16,6 +16,7 @@ tags: [feature, moc]
 | Admin: gestão de subscribers | `admin-subscribers.md`     |
 | Admin: novo cliente manual | `admin-new-client.md`        |
 | Admin: gestão de admins  | `admin-admins.md`              |
+| Plus: match breakdown + CV | [[plus-match-breakdown-cv]] ✅ (planned) |
 
 ## Convenção
 
