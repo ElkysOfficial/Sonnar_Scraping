@@ -5,6 +5,17 @@ Todas as mudanças relevantes deste projeto são documentadas neste arquivo.
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/)
 e o projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [3.5.1] - 2026-05-28
+
+### Corrigido
+
+- **`apps/card-renderer/vercel.json`**: removido o bloco `functions` com
+  `runtime: "edge"`, que quebrava o build da Vercel com
+  `Error: Function Runtimes must have a valid version, for example
+  now-php@1.0.0`. O Edge runtime é declarado no próprio `api/card.ts` via
+  `export const config = { runtime: "edge" }` — não no `vercel.json`.
+  Build passa, mantém apenas o cache imutável nas rotas de imagem/fonts/icons.
+
 ## [3.5.0] - 2026-05-28
 
 ### Adicionado
