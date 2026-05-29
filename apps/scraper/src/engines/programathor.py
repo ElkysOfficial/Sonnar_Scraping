@@ -151,8 +151,9 @@ async def get_programathor_jobs(on_job=None) -> list:
             if job is None:
                 continue
             # v3.6.0: skip vaga se enrichment falha — banco so contem PT.
+            # Sem hint_lang: ProgramaThor e PT mas vagas tech as vezes vem em EN.
             try:
-                job = await enrich_canonical(job, hint_lang="pt")
+                job = await enrich_canonical(job)
             except Exception as exc:
                 logger.warning("[programathor] skip job=%s: enrichment falhou: %s", link, exc)
                 continue

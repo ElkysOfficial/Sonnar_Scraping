@@ -531,8 +531,10 @@ async def get_bne_jobs(on_job=None) -> list:
         parsed = await _fetch_job_detail(job_id, semaphore)
         if parsed is None:
             return None
+        # v3.6.0: sem hint_lang — detect_lang protege contra anuncios em EN
+        # raros mas existentes em sites brasileiros.
         try:
-            parsed = await enrich_canonical(parsed, hint_lang="pt")
+            parsed = await enrich_canonical(parsed)
         except Exception as exc:
             logger.warning("[bne] skip job=%s: enrichment falhou: %s", job_id, exc)
             return None

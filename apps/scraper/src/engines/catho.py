@@ -579,8 +579,9 @@ async def get_catho_jobs(on_job=None) -> list:
 
                     parsed_full = apply_description_fallbacks(parsed + [skills, description])
                     # v3.6.0: skip vaga se enrichment falha — banco so contem PT.
+                    # Sem hint_lang: detecta dinamicamente (vagas EN raras mas possiveis).
                     try:
-                        parsed_full = await enrich_canonical(parsed_full, hint_lang="pt")
+                        parsed_full = await enrich_canonical(parsed_full)
                     except Exception as exc:
                         logger.warning("[catho] skip job=%s: enrichment falhou: %s", parsed_full[0] if parsed_full else "?", exc)
                         continue

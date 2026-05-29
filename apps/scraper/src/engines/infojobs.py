@@ -410,8 +410,9 @@ async def get_infojobs_jobs(on_job=None) -> list:
             parsed = _parse_job_detail(response.text, link)
             if parsed is not None:
                 # v3.6.0: skip vaga (return None) se enrichment falha — banco so contem PT.
+                # Sem hint_lang: InfoJobs e BR mas tem vagas ES de Espanha.
                 try:
-                    parsed = await enrich_canonical(parsed, hint_lang="pt")
+                    parsed = await enrich_canonical(parsed)
                 except Exception as exc:
                     import logging
                     logging.getLogger("scraper.engine.infojobs").warning(

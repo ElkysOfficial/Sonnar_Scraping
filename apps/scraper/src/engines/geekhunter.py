@@ -514,8 +514,9 @@ async def get_geekhunter_jobs(on_job=None) -> list:
         enriched_jobs = []
         for job in jobs:
             job = apply_description_fallbacks(job)
+            # v3.6.0: sem hint_lang — detect_lang cobre eventuais vagas EN.
             try:
-                job = await enrich_canonical(job, hint_lang="pt")
+                job = await enrich_canonical(job)
             except Exception as exc:
                 logger.warning("[geekhunter] skip job=%s: enrichment falhou: %s", job[0] if job else "?", exc)
                 continue

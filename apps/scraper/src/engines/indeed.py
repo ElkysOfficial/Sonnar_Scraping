@@ -1199,8 +1199,10 @@ async def get_indeed_jobs(on_job=None) -> list:
             # Trata "a combinar" como vazio e roda os fallbacks compartilhados.
             parsed = apply_description_fallbacks(parsed)
             # v3.6.0: skip vaga se enrichment falha — banco so contem PT.
+            # Sem hint_lang: Indeed BR pode ter vagas EN de multinacionais.
+            # Deixa detect_lang descobrir e traduzir se necessario.
             try:
-                parsed = await enrich_canonical(parsed, hint_lang="pt")
+                parsed = await enrich_canonical(parsed)
             except Exception as exc:
                 logger.warning("[indeed] skip job=%s: enrichment falhou: %s", parsed[0] if parsed else "?", exc)
                 continue

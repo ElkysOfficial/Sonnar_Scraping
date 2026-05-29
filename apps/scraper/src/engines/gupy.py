@@ -209,8 +209,9 @@ async def get_gupy_jobs(on_job=None) -> list:
             seen.add(job_url)
             tracker.discover(job_url, engine="gupy")
             # v3.6.0: skip vaga se enrichment falha — banco so contem PT.
+            # Sem hint_lang: Gupy hospeda multinacionais que postam em EN/ES.
             try:
-                parsed = await enrich_canonical(parsed, hint_lang="pt")
+                parsed = await enrich_canonical(parsed)
             except Exception as exc:
                 logger.warning("[gupy] skip job=%s: enrichment falhou: %s", job_url, exc)
                 continue

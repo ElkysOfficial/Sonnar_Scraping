@@ -468,8 +468,9 @@ async def get_jooble_jobs(on_job=None) -> list:
                     if parsed is None:
                         continue
                     # v3.6.0: skip vaga se enrichment falha — banco so contem PT.
+                    # Sem hint_lang: Jooble agrega de varios sites, idiomas mistos.
                     try:
-                        parsed = await enrich_canonical(parsed, hint_lang="pt")
+                        parsed = await enrich_canonical(parsed)
                     except Exception as exc:
                         logger.warning("[jooble] skip job=%s: enrichment falhou: %s", parsed[0] if parsed else "?", exc)
                         continue

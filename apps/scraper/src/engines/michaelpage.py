@@ -446,8 +446,9 @@ async def get_michaelpage_jobs(on_job=None) -> list:
             apply_description_fallbacks(job)
             # v3.6.0: skip vaga se enrichment falha — sentinela `clear()`
             # marca o slot pra remocao apos o gather (banco so contem PT).
+            # v3.6.0: sem hint_lang — Michael Page Brasil tem vagas EN.
             try:
-                enriched = await enrich_canonical(job, hint_lang="pt")
+                enriched = await enrich_canonical(job)
                 if enriched is not job:
                     job.clear()
                     job.extend(enriched)

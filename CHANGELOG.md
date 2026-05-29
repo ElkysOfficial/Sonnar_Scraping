@@ -113,6 +113,14 @@ agregada: vCPU pico **73% → ~50-55%**, RAM **-700MB** transitório):
   Argos crashar ao traduzir uma vaga, a vaga é descartada localmente em vez
   de gravada com texto estrangeiro. O log do scraper mostra qual vaga foi
   pulada e por quê (mensagem `[engine] skip job=... enrichment falhou: ...`).
+- **Removido `hint_lang="pt"` das 10 engines BR** (indeed, gupy, bne, catho,
+  geekhunter, infojobs, jooble, michaelpage, programathor, simplyhired).
+  O hint forçava o pipeline a pular detecção de idioma — vagas em inglês
+  postadas em sites brasileiros (multinacionais no Indeed, GeekHunter, etc)
+  iam pro banco como se fossem PT. Agora `detect_lang` roda em toda vaga;
+  custo de CPU é desprezível (regex única, otimizada em v3.4.0). Careerjet
+  mantém `hint_lang="pt"` legitimamente — traduz inline antes do enrich,
+  então o hint pula tradução dupla.
 - **Efeito final**: o banco `jobs.db` e tudo que vai pro cliente/grupo é
   garantidamente em **português** (description traduzida via Argos quando
   origem != pt; `description_lang` preserva o idioma original para auditoria).
