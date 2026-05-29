@@ -17,5 +17,19 @@ Allow: /
 User-agent: Bingbot
 Allow: /
 
+# Crawlers do Google AdSense — explicitos pra evitar qualquer ambiguidade.
+# Mediapartners-Google = bot que analisa o conteudo da pagina pra escolher
+# anuncios relevantes. AdsBot-Google = bot que valida URL de destino dos
+# anuncios. Ambos precisam de acesso total a paginas publicas onde anuncios
+# sao exibidos.
+User-agent: Mediapartners-Google
+Allow: /
+
+User-agent: AdsBot-Google
+Allow: /
+
+User-agent: AdsBot-Google-Mobile
+Allow: /
+
 # Sitemap
 Sitemap: https://sonnarjobs.com.br/sitemap.xml

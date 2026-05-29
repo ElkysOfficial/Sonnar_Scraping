@@ -1,0 +1,11 @@
+# ads.txt — Authorized Digital Sellers (IAB Tech Lab spec)
+# https://iabtechlab.com/ads-txt/
+#
+# Declara quais empresas estao autorizadas a vender o inventario de anuncios
+# do dominio sonnarjobs.com.br. Sem este arquivo, o painel do Google AdSense
+# mostra warning de conformidade e o site perde elegibilidade a Authorized
+# Buyers (impactando receita).
+#
+# Formato: <dominio>, <publisher-id>, <relacionamento>, <id-cert-tag>
+
+google.com, pub-7896888594916293, DIRECT, f08c47fec0942fa0
