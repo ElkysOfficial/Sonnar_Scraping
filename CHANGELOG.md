@@ -5,6 +5,70 @@ Todas as mudanças relevantes deste projeto são documentadas neste arquivo.
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/)
 e o projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [3.7.1] - 2026-05-29
+
+### Adicionado — Upsell automático Free → Plus (email + WhatsApp semanal)
+
+Pipeline de conversão automática rodando 100% fora da VPS:
+
+- **`supabase/functions/weekly-upsell-free-to-plus/index.ts`** — Edge
+  Function nova. Disparada por `pg_cron` toda segunda 10:00 BRT. Para
+  cada subscriber elegível (Free + ativo + 7+ dias de cadastro + sem
+  upsell recente do canal), monta pitch personalizado com estatística
+  real da semana ("Esta semana publicamos N vagas — apenas M apareceram
+  no grupo, as outras X foram pra DM dos Plus") + 3 exemplos reais +
+  CTA pro checkout Plus.
+- **`supabase/migrations/20260529120000_upsell_log_free_to_plus.sql`** —
+  Tabela `upsell_log` (rate-limit + auditoria) + RPC
+  `list_upsell_free_candidates(channel)` que filtra elegíveis com
+  rate-limit de **1 envio por canal a cada 30 dias** (evita assédio).
+  RLS limpo (só admins veem o log) + instruções pro agendamento cron.
+- **Email via Resend** (já integrado via `send-auth-email`), HTML
+  reaproveitando `_shared/emailTemplate.ts`.
+- **WhatsApp via `POST /send` do sender** (endpoint já existente,
+  autenticado por `WHATSAPP_API_TOKEN`).
+
+**Configuração pós-deploy** (uma vez):
+
+1. `supabase db push` aplica a migration.
+2. Secrets na Edge Function:
+   - `RESEND_API_KEY` (já existe)
+   - `SENDER_API_URL` (ex: `https://api.sonnarjobs.com.br`)
+   - `SENDER_API_TOKEN` (mesmo valor de `WHATSAPP_API_TOKEN` no sender)
+   - `CRON_TOKEN` (gerar segredo, usar no cron abaixo)
+3. Postgres settings:
+   ```sql
+   alter database postgres set app.functions_url = 'https://<ref>.functions.supabase.co';
+   alter database postgres set app.upsell_cron_token = '<CRON_TOKEN>';
+   ```
+4. Agendar cron:
+   ```sql
+   select cron.schedule('weekly-upsell-free-to-plus', '0 13 * * 1', $$
+     select net.http_post(
+       url := current_setting('app.functions_url') || '/weekly-upsell-free-to-plus',
+       headers := jsonb_build_object(
+         'Authorization', 'Bearer ' || current_setting('app.upsell_cron_token'),
+         'Content-Type', 'application/json'
+       ),
+       body := '{}'::jsonb,
+       timeout_milliseconds := 60000
+     );
+   $$);
+   ```
+
+**Banco:** +1 tabela `upsell_log` + 1 RPC. Tabelas existentes intocadas.
+
+**VPS:** zero — toda a lógica de seleção e envio roda em Supabase Edge +
+Resend. O bot Baileys apenas recebe `POST /send` (endpoint pré-existente).
+
+**Custo runtime:** Resend free tier (3.000 emails/mês) cobre folgado.
+Edge Function: 1×/semana = 4/mês.
+
+### Diferenciação por plano
+
+Funcionalidade do **Free** (target da campanha) que serve ao funil do
+**Plus** (objetivo de conversão). Não envia para Pro nem Plus.
+
 ## [3.7.0] - 2026-05-29
 
 ### Adicionado — Plus #1: ✓/✗ stacks compatíveis no WhatsApp
