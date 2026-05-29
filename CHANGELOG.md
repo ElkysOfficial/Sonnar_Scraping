@@ -5,6 +5,50 @@ Todas as mudanças relevantes deste projeto são documentadas neste arquivo.
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/)
 e o projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [3.5.0] - 2026-05-28
+
+### Adicionado
+
+- **Novo app `apps/card-renderer`**: Vercel Edge Function standalone
+  (TypeScript, sem Next.js) que gera os cards 1080×1080 das vagas via
+  `@vercel/og` (Satori). Substitui o processo `sonnar-wa-formatter` que
+  rasterizava com `@napi-rs/canvas` na VPS. CDN da Vercel cacheia por URL
+  imutável; HMAC-SHA256 protege a Edge contra invocação arbitrária.
+- **`apps/whatsapp/sender/src/services/captionBuilder.js`**: porta de
+  `formatCaption` + `extractJobDataFromEmbed` + `extractResponsibilities`
+  vindas do formatter antigo. Lógica preservada 1:1.
+- **`apps/whatsapp/sender/src/services/cardClient.js`**: assina payload da
+  vaga com HMAC e busca o PNG renderizado da Edge Function.
+- **`apps/whatsapp/sender/src/services/coreClient.js`**: sender fala direto
+  com `message-formatting-core` (eliminado o middleman do formatter).
+- **Variáveis novas no sender**: `CARD_RENDERER_URL` e
+  `CARD_RENDERER_SECRET`.
+
+### Removido
+
+- **Processo `sonnar-wa-formatter`** do `ecosystem.config.cjs` (-1 processo
+  PM2, -600MB de teto de RAM). PM2 cai de 4 para 3 processos ativos.
+- **`apps/whatsapp/formatter/`** inteiro deletado do repo — toda a geração
+  de imagem agora roda fora da VPS.
+- Dependência `@napi-rs/canvas` sai do disco da VPS.
+
+### Performance
+
+Primeiro PR do roteiro de redução de carga da VPS (ADR-006: vCPU pico
+73% → 50%). Métrica real pós-deploy a ser registrada em
+`docs/vault/13-issues/vps-cpu-peak-reduction.md`.
+
+### Operação
+
+- Configurar projeto Vercel apontando para `apps/card-renderer`, adicionar
+  `CARD_RENDERER_SECRET` em Production Environment.
+- DNS Hostinger: `cards.sonnarjobs.com.br` como CNAME para
+  `cname.vercel-dns.com`.
+- `.env` do sender na VPS: setar `CARD_RENDERER_URL` e
+  `CARD_RENDERER_SECRET` (mesmo valor da Vercel) e reiniciar
+  `sonnar-wa-sender`.
+- Rollback: `CARD_API_URL` mantido por 1 release como deprecated.
+
 ## [3.2.0] - 2026-05-25
 
 ### Adicionado
