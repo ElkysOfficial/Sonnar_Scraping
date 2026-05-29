@@ -33,13 +33,13 @@ const SAMPLE_JOB = {
 // ──────────────────────────────────────────────────────────────────────
 
 test("VIP buildJobTextMessage: retorna null para payload nulo", async () => {
-  const result = await buildJobTextMessage(null, { shortenUrl: async () => "" })
+  const result = await buildJobTextMessage(null, {}, { shortenUrl: async () => "" })
   assert.equal(result, null)
 })
 
 test("VIP buildJobTextMessage: monta mensagem completa com dados reais", async () => {
   const shortenUrl = mock.fn(async (url) => `https://son.sh/v/${url.length}`)
-  const result = await buildJobTextMessage(SAMPLE_JOB, { shortenUrl })
+  const result = await buildJobTextMessage(SAMPLE_JOB, {}, { shortenUrl })
 
   assert.ok(result)
   assert.ok(typeof result.text === "string" && result.text.length > 0)
@@ -57,7 +57,7 @@ test("VIP buildJobTextMessage: retorna null quando shortener falha", async () =>
   const shortenUrl = mock.fn(async () => {
     throw new Error("shortener offline")
   })
-  const result = await buildJobTextMessage(SAMPLE_JOB, { shortenUrl })
+  const result = await buildJobTextMessage(SAMPLE_JOB, {}, { shortenUrl })
   assert.equal(result, null)
 })
 
@@ -71,11 +71,81 @@ test("VIP buildJobTextMessage: aceita job ja em forma de embed (com fields)", as
     ],
   }
   const shortenUrl = async () => "https://son.sh/v/x"
-  const result = await buildJobTextMessage(embed, { shortenUrl })
+  const result = await buildJobTextMessage(embed, {}, { shortenUrl })
   assert.ok(result)
   assert.match(result.text, /\*Embed Direto\*/)
   assert.match(result.text, /🏢 _EmbedCo_/)
   assert.match(result.text, /💰 \*R\$ 9\.000\*/)
+})
+
+// ──────────────────────────────────────────────────────────────────────
+// Plus #1: ✓/✗ stacks compatíveis (v3.7.0)
+// ──────────────────────────────────────────────────────────────────────
+
+test("VIP Plus #1: subscriberStack marca cada skill com ✓ ou ✗", async () => {
+  const shortenUrl = async () => "https://son.sh/v/x"
+  const result = await buildJobTextMessage(
+    SAMPLE_JOB, // skills: ["Python", "Airflow"]
+    { subscriberStack: ["python", "kubernetes"] },
+    { shortenUrl }
+  )
+  assert.ok(result)
+  assert.match(result.text, /✓ Python/)
+  assert.match(result.text, /✗ Airflow/)
+  // Match sumario com porcentagem
+  assert.match(result.text, /📊 \*Match:\* 1 de 2 skills \(50%\)/)
+})
+
+test("VIP Plus #1: match 100% quando todas skills batem", async () => {
+  const shortenUrl = async () => "x"
+  const result = await buildJobTextMessage(
+    SAMPLE_JOB,
+    { subscriberStack: ["python", "airflow"] },
+    { shortenUrl }
+  )
+  assert.match(result.text, /✓ Python/)
+  assert.match(result.text, /✓ Airflow/)
+  assert.match(result.text, /📊 \*Match:\* 2 de 2 skills \(100%\)/)
+})
+
+test("VIP Plus #1: match 0% quando nenhuma skill bate", async () => {
+  const shortenUrl = async () => "x"
+  const result = await buildJobTextMessage(
+    SAMPLE_JOB,
+    { subscriberStack: ["go", "rust"] },
+    { shortenUrl }
+  )
+  assert.match(result.text, /✗ Python/)
+  assert.match(result.text, /✗ Airflow/)
+  assert.match(result.text, /📊 \*Match:\* 0 de 2 skills \(0%\)/)
+})
+
+test("VIP Plus #1: match case-insensitive (Node.js no perfil vs node.js no skill)", async () => {
+  const shortenUrl = async () => "x"
+  const result = await buildJobTextMessage(
+    { ...SAMPLE_JOB, skills: ["Node.js", "React"] },
+    { subscriberStack: ["NODE.JS", "react"] },
+    { shortenUrl }
+  )
+  assert.match(result.text, /✓ Node\.js/)
+  assert.match(result.text, /✓ React/)
+  assert.match(result.text, /📊 \*Match:\* 2 de 2 skills \(100%\)/)
+})
+
+test("VIP Plus #1: sem subscriberStack mantem comportamento legado (sem ✓/✗)", async () => {
+  const shortenUrl = async () => "x"
+  const result = await buildJobTextMessage(SAMPLE_JOB, {}, { shortenUrl })
+  assert.doesNotMatch(result.text, /✓|✗/)
+  assert.doesNotMatch(result.text, /📊/)
+  // Skills aparecem sem marcador, separados por bullet `•`
+  assert.match(result.text, /Python {2}• {2}Airflow/)
+})
+
+test("VIP Plus #1: subscriberStack vazio array tambem cai no fluxo legado", async () => {
+  const shortenUrl = async () => "x"
+  const result = await buildJobTextMessage(SAMPLE_JOB, { subscriberStack: [] }, { shortenUrl })
+  assert.doesNotMatch(result.text, /✓|✗/)
+  assert.doesNotMatch(result.text, /📊/)
 })
 
 // ──────────────────────────────────────────────────────────────────────

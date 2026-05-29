@@ -212,8 +212,19 @@ function appendResponsibilitiesBlock(out, text) {
  *
  *   🔗 *Ver a vaga:* <link encurtado>
  *   _via LinkedIn · 28/05/2026 14:30_
+ *
+ * v3.7.0 (Plus #1): quando `options.subscriberStack` e passado (vaga indo
+ * pra DM privada de assinante Plus), cada skill da vaga e marcada com
+ * `✓` (esta no stack do usuario) ou `✗` (nao esta). Logo abaixo aparece
+ * um sumario "📊 Match: X de Y skills (Z%)".
+ *
+ * @param {object} jobData - dados normalizados da vaga
+ * @param {string} shortUrl - link encurtado da vaga
+ * @param {object} [options]
+ * @param {string[]} [options.subscriberStack] - skills do assinante Plus,
+ *   ja em lowercase. Se omitido/vazio, comportamento legado (sem marcacao).
  */
-function formatJobMessage(jobData, shortUrl) {
+function formatJobMessage(jobData, shortUrl, options = {}) {
   const out = []
   out.push(`*${jobData.title}*`)
   if (jobData.company) out.push(`🏢 _${jobData.company}_`)
@@ -231,10 +242,30 @@ function formatJobMessage(jobData, shortUrl) {
   }
 
   const skills = Array.isArray(jobData.skills) ? jobData.skills : []
+  const subscriberStack = Array.isArray(options.subscriberStack) ? options.subscriberStack : []
   if (skills.length) {
     out.push("")
     out.push("*🧩 Tecnologias*")
-    out.push(skills.join("  •  "))
+    if (subscriberStack.length) {
+      // Marca cada skill com ✓/✗ comparando com o stack do assinante.
+      // Match case-insensitive + sem acentos pra cobrir "Node.js" vs "node.js".
+      const stackSet = new Set(
+        subscriberStack.map((s) => String(s).toLowerCase().trim()).filter(Boolean)
+      )
+      const normalize = (s) => String(s).toLowerCase().trim()
+      const marked = skills.map((skill) => {
+        const has = stackSet.has(normalize(skill))
+        return `${has ? "✓" : "✗"} ${skill}`
+      })
+      out.push(marked.join("  ·  "))
+
+      const matched = skills.filter((s) => stackSet.has(normalize(s))).length
+      const pct = Math.round((matched / skills.length) * 100)
+      out.push("")
+      out.push(`📊 *Match:* ${matched} de ${skills.length} skills (${pct}%)`)
+    } else {
+      out.push(skills.join("  •  "))
+    }
   }
 
   // v3.0.0: usa responsibilities pre-extraido no banco. Se nao vier preenchido,
