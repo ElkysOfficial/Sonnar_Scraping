@@ -5,7 +5,7 @@ Todas as mudanças relevantes deste projeto são documentadas neste arquivo.
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/)
 e o projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
-## [3.6.0] - 2026-05-28
+## [3.6.0] - 2026-05-29
 
 ### Mudado
 
@@ -45,6 +45,59 @@ e o projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 Primeiro PR efetivo do roteiro de redução de carga da VPS (ADR-006).
 Métrica real pós-deploy a ser registrada em
 `docs/vault/13-issues/vps-cpu-peak-reduction.md`.
+
+**Pacote de 16 alavancas adicionais aplicadas neste PR** (estimativa
+agregada: vCPU pico **73% → ~50-55%**, RAM **-700MB** transitório):
+
+- **Scraper:**
+  - `CAREERJET_COUNTRY_BATCH_SIZE` default 10 → **2** (menos modelos Argos
+    paralelos; -8 pp vCPU pico).
+  - `LINKEDIN_DETAIL_CONCURRENCY` default 4 → **3** (-5 pp em ciclos
+    LinkedIn-pesados).
+  - `browser_fetch` timeout 30s → **20s** (libera memória do browser
+    antes em páginas travadas).
+  - `--disable-images --disable-css/font/media` no Chromium do
+    `browser_fetch` via `context.route` + flag `imagesEnabled=false`
+    (-30 a -50% CPU do Chromium por página).
+  - Argos warmup: 27 → **8 idiomas** (-800MB no boot).
+  - `lru_cache(1024)` em `extract_skills` (cache de regex por
+    descrição).
+  - Cron de restart 2×/dia documentado (4h + 16h) no
+    `ecosystem.config.cjs`.
+
+- **Sender:**
+  - `max_memory_restart` 500M → **400M** (sem buffer de imagem).
+  - `--max-old-space-size=384` no `node_args` do PM2 (GC mais previsível).
+  - `NODE_ENV=production` explícito.
+  - Baileys logger em `silent` em prod (corta CPU de formatação pino +
+    I/O de disco em horários de pico).
+  - HTTP keep-alive nos clients axios (`coreClient`) — reusa conexão
+    TCP entre requests; -CPU de handshake.
+  - `msgRetryCounterCache` com `stdTTL: 3600` + `checkperiod: 600`
+    (eliminado leak de entries que cresciam indefinidamente).
+  - Removida dep obsoleta `@cacheable/node-cache` (0 uses).
+
+- **Core:**
+  - Gzip nas respostas Express via `compression({ threshold: 1024 })` —
+    `/jobs/pending` reduz ~70% bandwidth/RAM transit.
+  - SQLite já estava em `WAL` + `synchronous=NORMAL` (no-op,
+    confirmação).
+
+### Testes
+
+- **48 testes** novos cobrindo o pipeline texto-only:
+  - `textBuilder.test.js` (19) — montagem da mensagem, extractor,
+    fallbacks, edge cases.
+  - `textBuilder.integration.test.js` (10) — 12 vagas reais (fixture)
+    rendendo mensagens completas + invariantes.
+  - `cardJobSender.test.js` (9) — `buildNextJobMessage`,
+    `sendJobMessage`, `processNextCard` com DI (socket/db/core mockados).
+  - `vipJobSender.test.js` (10) — `buildJobTextMessage`,
+    `sendJobMessage` com socket mockado.
+- **Smoke test:**
+  `apps/whatsapp/sender/scripts/dry-run-text-delivery.js` — roda fixture
+  e imprime cada mensagem renderizada (modo offline) ou consulta o core
+  e renderiza vagas reais (modo `--live`).
 
 ### Operação
 

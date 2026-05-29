@@ -7,10 +7,24 @@
 
 import "dotenv/config"
 import axios from "axios"
+import http from "node:http"
+import https from "node:https"
 import { errorLog } from "../utils/logger.js"
 
 const CORE_BASE_URL = process.env.MESSAGE_FORMATTING_CORE_URL || "http://localhost:3100"
-const client = axios.create({ baseURL: CORE_BASE_URL, timeout: 10000 })
+
+// v3.6.0: HTTP keep-alive nos agents. Reusa conexao TCP entre requests
+// sucessivos pro mesmo host (core local + shortener externo). Reduz CPU
+// gasto em handshake/TLS e diminui latencia por request (~30-60ms).
+const httpAgent = new http.Agent({ keepAlive: true, maxSockets: 10 })
+const httpsAgent = new https.Agent({ keepAlive: true, maxSockets: 10 })
+
+const client = axios.create({
+  baseURL: CORE_BASE_URL,
+  timeout: 10000,
+  httpAgent,
+  httpsAgent,
+})
 
 function withLegacyAliases(job) {
   return {

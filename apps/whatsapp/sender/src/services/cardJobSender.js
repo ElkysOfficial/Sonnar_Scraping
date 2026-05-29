@@ -54,10 +54,26 @@ async function getTimeUntilNextSend() {
 }
 
 /**
- * Busca a proxima vaga pendente direto do core e monta a mensagem em texto.
+ * Defaults das dependencias externas. Em producao usa os imports do modulo;
+ * em testes (`src/test/cardJobSender.test.js`) sao sobrescritos.
  */
-async function buildNextJobMessage() {
-  const pending = await fetchPendingJobs(1)
+const defaultDeps = Object.freeze({
+  fetchPendingJobs,
+  markJobStatus,
+  shortenUrl,
+  getCurrentSocket,
+  isCurrentSocketReady,
+  writeCardSenderState,
+  jobGroupId: JOB_GROUP_ID,
+})
+
+/**
+ * Busca a proxima vaga pendente direto do core e monta a mensagem em texto.
+ *
+ * @param {object} [deps] - injecao opcional pra testes
+ */
+async function buildNextJobMessage(deps = defaultDeps) {
+  const pending = await deps.fetchPendingJobs(1)
   const job = pending[0]
   if (!job) return null
 
@@ -74,7 +90,7 @@ async function buildNextJobMessage() {
   }
 
   try {
-    const shortUrl = await shortenUrl(jobData.url)
+    const shortUrl = await deps.shortenUrl(jobData.url)
     const text = formatJobMessage(jobData, shortUrl)
     return { jobId: jobData.id || job.id || null, text }
   } catch (err) {
@@ -83,14 +99,14 @@ async function buildNextJobMessage() {
   }
 }
 
-async function sendJobMessage(message) {
+async function sendJobMessage(message, deps = defaultDeps) {
   try {
-    const socket = getCurrentSocket()
-    if (!isCurrentSocketReady()) {
+    const socket = deps.getCurrentSocket()
+    if (!deps.isCurrentSocketReady()) {
       warningLog("[CARD] Connection closed. Waiting for reconnection.")
       return false
     }
-    await socket.sendMessage(JOB_GROUP_ID, { text: message.text })
+    await socket.sendMessage(deps.jobGroupId, { text: message.text })
     return true
   } catch (error) {
     errorLog(`Error sending card message: ${error.message}`)
@@ -98,27 +114,27 @@ async function sendJobMessage(message) {
   }
 }
 
-async function processNextCard() {
+async function processNextCard(deps = defaultDeps) {
   infoLog("[CARD] Starting card processing...")
-  if (!isCurrentSocketReady()) {
+  if (!deps.isCurrentSocketReady()) {
     warningLog("[CARD] Connection closed. Waiting for reconnection.")
     return
   }
 
-  const message = await buildNextJobMessage()
+  const message = await buildNextJobMessage(deps)
   if (!message) {
     infoLog("[CARD] No pending cards available")
     return
   }
 
   infoLog(`[CARD] Sending card for job: ${message.jobId}`)
-  const success = await sendJobMessage(message)
+  const success = await sendJobMessage(message, deps)
 
   if (success) {
     if (message.jobId) {
-      await markJobStatus(message.jobId, "whatsapp", true)
+      await deps.markJobStatus(message.jobId, "whatsapp", true)
     }
-    await writeCardSenderState(Date.now())
+    await deps.writeCardSenderState(Date.now())
     const timestamp = new Date().toISOString()
     successLog(`[CARD] Card sent successfully for job: ${message.jobId} at ${timestamp}`)
   }
@@ -187,6 +203,14 @@ export function stopCardSender() {
   }
   cardSenderToken += 1
   infoLog("[CARD] Card sender stopped")
+}
+
+// Exposto apenas para testes (`src/test/cardJobSender.test.js`). Nao usar em
+// codigo de producao — a interface estavel e `startCardSender` / `stopCardSender`.
+export const _internals = {
+  buildNextJobMessage,
+  sendJobMessage,
+  processNextCard,
 }
 
 export default { startCardSender, stopCardSender }

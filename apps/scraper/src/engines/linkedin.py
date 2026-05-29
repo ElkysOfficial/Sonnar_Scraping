@@ -122,7 +122,10 @@ def reset_session() -> None:
 # Mantemos um teto local de coroutines paralelas pra não criar tasks demais
 # (todas vão ser serializadas pelo limitador, mas evitamos overhead de
 # scheduling). Baixo = fluxo previsível, sem flooding inicial.
-_DETAIL_CONCURRENCY = int(os.getenv("LINKEDIN_DETAIL_CONCURRENCY", "4"))
+# v3.6.0: 4 -> 3 (ADR-006). Reduz pico de fetch paralelo do LinkedIn (~25%
+# menos sockets concorrentes), com impacto minimo no throughput porque o
+# bottleneck efetivo eh o DomainRateLimiter, nao o semaforo.
+_DETAIL_CONCURRENCY = int(os.getenv("LINKEDIN_DETAIL_CONCURRENCY", "3"))
 
 # Paginacao do listing. LinkedIn pagina em 25, e aceita ate ~start=1000.
 # Se a stack esgotar antes (zero novos numa pagina), o loop quebra.

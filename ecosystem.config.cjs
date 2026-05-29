@@ -16,6 +16,16 @@
 // NOTA: o processo `sonnar-wa-formatter` foi removido na v3.6.0 — a
 // geracao de imagem dos cards foi descontinuada. O sender agora envia
 // vagas em texto puro (textBuilder.js).
+//
+// CRON DE RESTART DO SCRAPER (v3.6.0): adicionar dois horarios no crontab
+// da VPS pra defrag mais frequente da heap CPython (Argos + Stanza acumulam
+// fragmentacao ao longo do dia):
+//
+//   0 4  * * * pm2 restart sonnar-scraper >> ~/cron.log 2>&1
+//   0 16 * * * pm2 restart sonnar-scraper >> ~/cron.log 2>&1
+//
+// O segundo restart (16h UTC = 13h horario de Brasilia) corta o pico
+// secundario de carga sustentado.
 // =====================================================
 
 // Interpretador Python do scraper. Ordem de prioridade:
@@ -60,6 +70,8 @@ module.exports = {
       // Em produçao, monitorar /health (campo "jobs") e elevar se passar
       // de ~300MB sustentado.
       max_memory_restart: "512M",
+      // v3.6.0: NODE_ENV=production explicito (express/etc otimizam).
+      env: { NODE_ENV: "production" },
       time: true,
     },
     {
@@ -69,7 +81,15 @@ module.exports = {
       autorestart: true,
       max_restarts: 10,
       restart_delay: 5000,
-      max_memory_restart: "500M",
+      // v3.6.0: teto 500M -> 400M. Sem geracao de imagem (buffer base64
+      // de 80-200KB por delivery), o sender opera tipicamente em ~150-200MB.
+      // 400M = 2x acima do pico observado, ainda conservador.
+      max_memory_restart: "400M",
+      // v3.6.0: --max-old-space-size=384 forca V8 a fazer GC antes do
+      // teto do PM2, evitando picos de heap inteiro virar pressao no SO.
+      // Sinergiza com max_memory_restart=400M.
+      node_args: "--max-old-space-size=384",
+      env: { NODE_ENV: "production" },
       time: true,
     },
     {

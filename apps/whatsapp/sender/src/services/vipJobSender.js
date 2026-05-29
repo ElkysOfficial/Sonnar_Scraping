@@ -1920,7 +1920,9 @@ function lidToJid(lid) {
  * @param {Object} job
  * @returns {Promise<{ text: string, jobData: Object } | null>}
  */
-async function buildJobTextMessage(job) {
+// Exportada pra testes em `src/test/vipJobSender.test.js`. Aceita `deps`
+// opcional pra injetar `shortenUrl` mockado nos testes sem bater na rede.
+export async function buildJobTextMessage(job, deps = { shortenUrl }) {
   const embed = resolveEmbedPayload(job)
   if (!embed) {
     warningLog("[VIP] Payload da vaga invalido — nao foi possivel montar embed")
@@ -1934,7 +1936,7 @@ async function buildJobTextMessage(job) {
   }
 
   try {
-    const shortUrl = await shortenUrl(jobData.url)
+    const shortUrl = await deps.shortenUrl(jobData.url)
     const text = formatJobTextMessage(jobData, shortUrl)
     return { text, jobData }
   } catch (err) {
@@ -1949,15 +1951,17 @@ async function buildJobTextMessage(job) {
  * @param {string} jobId
  * @param {{ text: string }} payload
  * @param {Object} socket
+ * @param {Object} [deps] - injecao pra testes (sobrescreve `delay` p/ ser instantaneo).
  * @returns {boolean}
  */
-async function sendJobMessage(jid, jobId, payload, socket) {
+// Exportada pra testes em `src/test/vipJobSender.test.js`.
+export async function sendJobMessage(jid, jobId, payload, socket, deps = { delay }) {
   if (!payload?.text) {
     return false
   }
 
   try {
-    await delay(TIMEOUT_IN_MILLISECONDS_BY_EVENT)
+    await deps.delay(TIMEOUT_IN_MILLISECONDS_BY_EVENT)
     await socket.sendMessage(jid, { text: payload.text })
     const timestamp = new Date().toISOString()
     successLog(`[VIP] Job ${jobId} sent to ${jid} at ${timestamp}`)

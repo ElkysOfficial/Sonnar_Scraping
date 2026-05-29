@@ -18,7 +18,8 @@ string) antes e depois para o token ser aceito.
 from __future__ import annotations
 
 import re
-from typing import List
+from functools import lru_cache
+from typing import List, Tuple
 
 from bs4 import BeautifulSoup
 
@@ -48,14 +49,13 @@ def strip_html(text: str) -> str:
     return re.sub(r"\n{3,}", "\n\n", text).strip()
 
 
-def extract_skills(description: str) -> List[str]:
-    """Match das stacks conhecidas contra ``description``.
-
-    Retorna lista preservando a ordem da 1ª ocorrência, sem duplicatas.
-    Devolve ``[]`` se ``description`` for vazio.
-    """
-    if not description:
-        return []
+# v3.6.0: cache LRU em extract_skills. A mesma vaga pode passar pelo pipeline
+# multiplas vezes (engines diferentes citam o mesmo job, enrichment refetch),
+# e o set de regex sobre cada descricao custa O(N_skills × len(desc)). Cache
+# por hash da descricao da skills_vocabulary corta esse custo no caminho
+# quente. 1024 entries = ~5MB. Tuple e imutavel -> seguro pra cache.
+@lru_cache(maxsize=1024)
+def _extract_skills_cached(description: str) -> Tuple[str, ...]:
     found: List[str] = []
     seen: set = set()
     for skill, pat in _SKILL_PATTERNS:
@@ -64,4 +64,15 @@ def extract_skills(description: str) -> List[str]:
         if pat.search(description):
             found.append(skill)
             seen.add(skill)
-    return found
+    return tuple(found)
+
+
+def extract_skills(description: str) -> List[str]:
+    """Match das stacks conhecidas contra ``description``.
+
+    Retorna lista preservando a ordem da 1ª ocorrência, sem duplicatas.
+    Devolve ``[]`` se ``description`` for vazio.
+    """
+    if not description:
+        return []
+    return list(_extract_skills_cached(description))

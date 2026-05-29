@@ -104,9 +104,12 @@ _MAX_PAGES = int(os.getenv("CAREERJET_MAX_PAGES", "3"))
 _MAX_PAGES_FOREIGN = int(os.getenv("CAREERJET_MAX_PAGES_FOREIGN", "2"))
 # Tamanho do excerto da descricao (default da API e so 120 chars).
 _FRAGMENT_SIZE = int(os.getenv("CAREERJET_FRAGMENT_SIZE", "2000"))
-# Quantos locales estrangeiros entram por ciclo (rodizio). Com 140 locales
-# e lotes de 10, todos sao cobertos a cada ~14 ciclos (~28h).
-_COUNTRY_BATCH_SIZE = int(os.getenv("CAREERJET_COUNTRY_BATCH_SIZE", "10"))
+# Quantos locales estrangeiros entram por ciclo (rodizio). v3.6.0: default
+# baixou de 10 -> 2 (ADR-006, reducao de carga). Com 140 locales e lotes de
+# 2, todos sao cobertos a cada ~70 ciclos (~6 dias) — aceitavel pra vagas
+# internacionais que tem turnover baixo, e reduz drasticamente o pico de
+# RAM/CPU do Argos (cada locale = 1 par de idiomas carregado simultaneamente).
+_COUNTRY_BATCH_SIZE = int(os.getenv("CAREERJET_COUNTRY_BATCH_SIZE", "2"))
 
 # Retry para falhas transitorias (5xx / timeout).
 _MAX_RETRIES = 3

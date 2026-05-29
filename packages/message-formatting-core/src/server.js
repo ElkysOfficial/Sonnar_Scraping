@@ -1,5 +1,6 @@
 import "dotenv/config"
 import express from "express"
+import compression from "compression"
 import cors from "cors"
 import crypto from "node:crypto"
 import fs from "node:fs"
@@ -171,6 +172,10 @@ function buildIncoming(payload) {
 
 const app = express()
 app.use(cors())
+// v3.6.0: gzip nas respostas. /jobs/pending pode retornar payload grande
+// (~500KB-2MB). Compressao reduz ~70% bandwidth + RAM transit do socket.
+// Threshold=1024 evita overhead em respostas pequenas (/health, etc).
+app.use(compression({ threshold: 1024 }))
 
 // Limites de corpo por rota: POST /jobs/batch recebe lotes grandes do scraper;
 // os demais lidam com uma vaga so.
