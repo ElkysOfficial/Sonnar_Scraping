@@ -274,6 +274,114 @@ test("Plus #1: skills vazio + subscriberStack -> omite bloco Tecnologias", () =>
 })
 
 // =====================================================
+// Plus #5 (v3.8.x): subscriberResume -> bloco "🎯 Comparado com seu curriculo"
+// =====================================================
+
+test("Plus #5: bloco aparece quando subscriberResume e passado", () => {
+  const job = {
+    ...FIXED_JOB,
+    title: "Senior Backend Developer",
+    description: "Procuramos pessoa com 5+ anos de experiencia em Node.js",
+    skills: ["Node.js", "AWS"],
+  }
+  const out = formatJobMessage(job, "x", {
+    subscriberResume: {
+      skills: ["Node.js", "TypeScript"],
+      yearsTotal: 6,
+      seniority: "senior",
+    },
+  })
+  assert.match(out, /\*🎯 Comparado com seu curriculo\*/)
+})
+
+test("Plus #5: skills do curriculo batem -> linha ✓ N de M", () => {
+  const job = {
+    ...FIXED_JOB,
+    skills: ["Node.js", "Go", "AWS"],
+  }
+  const out = formatJobMessage(job, "x", {
+    subscriberResume: {
+      skills: ["Node.js", "AWS", "Python"],
+      yearsTotal: null,
+      seniority: null,
+    },
+  })
+  assert.match(out, /✓ Curriculo bate em 2 de 3 skills da vaga/)
+})
+
+test("Plus #5: nenhuma skill bate -> linha ✗", () => {
+  const job = { ...FIXED_JOB, skills: ["Go", "Rust"] }
+  const out = formatJobMessage(job, "x", {
+    subscriberResume: {
+      skills: ["Node.js"],
+      yearsTotal: null,
+      seniority: null,
+    },
+  })
+  assert.match(out, /✗ Nenhuma skill da vaga aparece explicitamente no curriculo/)
+})
+
+test("Plus #5: anos do curriculo >= exigido -> linha ✓ de anos", () => {
+  const job = {
+    ...FIXED_JOB,
+    description: "Buscamos pessoa com 3+ anos de experiencia em backend",
+  }
+  const out = formatJobMessage(job, "x", {
+    subscriberResume: { skills: [], yearsTotal: 5, seniority: null },
+  })
+  assert.match(out, /✓ Vaga pede 3\+ anos — seu curriculo indica ~5 anos/)
+})
+
+test("Plus #5: anos do curriculo < exigido -> linha ⚠ com gap", () => {
+  const job = {
+    ...FIXED_JOB,
+    description: "Necessario minimo 5 anos de experiencia",
+  }
+  const out = formatJobMessage(job, "x", {
+    subscriberResume: { skills: [], yearsTotal: 2, seniority: null },
+  })
+  assert.match(out, /⚠ Vaga pede 5\+ anos — seu curriculo indica ~2 anos \(gap de 3\)/)
+})
+
+test("Plus #5: senioridade bate -> linha ✓", () => {
+  const job = { ...FIXED_JOB, title: "Senior Backend Engineer", description: "" }
+  const out = formatJobMessage(job, "x", {
+    subscriberResume: { skills: [], yearsTotal: null, seniority: "senior" },
+  })
+  assert.match(out, /✓ Seu nivel \(senior\) bate com a vaga \(senior\)/)
+})
+
+test("Plus #5: candidato pleno em vaga senior -> ⚠", () => {
+  const job = { ...FIXED_JOB, title: "Senior Developer", description: "" }
+  const out = formatJobMessage(job, "x", {
+    subscriberResume: { skills: [], yearsTotal: null, seniority: "pleno" },
+  })
+  assert.match(out, /⚠ Vaga e senior — seu curriculo indica pleno/)
+})
+
+test("Plus #5: candidato senior em vaga pleno -> ✓ overqualified", () => {
+  const job = { ...FIXED_JOB, title: "Desenvolvedor Pleno", description: "" }
+  const out = formatJobMessage(job, "x", {
+    subscriberResume: { skills: [], yearsTotal: null, seniority: "senior" },
+  })
+  assert.match(out, /✓ Vaga e pleno — voce ja esta senior/)
+})
+
+test("Plus #5: sem subscriberResume -> bloco nao aparece", () => {
+  const job = { ...FIXED_JOB, title: "Senior Dev", description: "5+ anos" }
+  const out = formatJobMessage(job, "x")
+  assert.doesNotMatch(out, /🎯 Comparado com seu curriculo/)
+})
+
+test("Plus #5: resume sem dados relevantes -> bloco nao aparece (lines vazias)", () => {
+  const job = { ...FIXED_JOB, title: "Dev Junior", description: "Vaga aberta", skills: [] }
+  const out = formatJobMessage(job, "x", {
+    subscriberResume: { skills: [], yearsTotal: null, seniority: null },
+  })
+  assert.doesNotMatch(out, /🎯 Comparado com seu curriculo/)
+})
+
+// =====================================================
 // Integracao end-to-end: payload do core -> mensagem final
 // =====================================================
 

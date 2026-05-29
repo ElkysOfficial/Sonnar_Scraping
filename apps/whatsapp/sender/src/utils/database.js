@@ -197,10 +197,14 @@ function mapLocalVip(row) {
  * Cancelamento/expiracao no Stripe (subscribers.status != 'active') some daqui.
  */
 async function getPortalPlusSubscribers() {
+  // v3.8.x: agora trazemos junto o resume snapshot ativo (Plus #5).
+  // Curriculo e opt-in: cliente Plus que nao subiu vem com `resume: null`,
+  // comportamento legado preservado (so ✓/✗ de stacks declarados).
   const { data, error } = await supabase
     .from("subscriber_profiles")
     .select(
-      "wa_lid, stack, areas, seniority, work_models, location, min_salary, subscribers!inner(name, surname, plan, status, phone)"
+      `wa_lid, stack, areas, seniority, work_models, location, min_salary,
+       subscribers!inner(id, name, surname, plan, status, phone)`
     )
     .not("wa_lid", "is", null)
     .eq("subscribers.plan", "plus")
@@ -208,9 +212,27 @@ async function getPortalPlusSubscribers() {
 
   if (error) throw error
 
-  return (data || []).map((row) => {
+  const rows = data || []
+  const subscriberIds = rows.map((r) => r.subscribers?.id).filter(Boolean)
+
+  // Le os resumes ativos em UMA query (1 round-trip pra todos os Plus).
+  let resumeBySubscriberId = new Map()
+  if (subscriberIds.length > 0) {
+    const { data: resumes, error: rErr } = await supabase
+      .from("subscriber_resumes")
+      .select("subscriber_id, extracted_skills, years_total, seniority, languages")
+      .in("subscriber_id", subscriberIds)
+      .eq("is_active", true)
+      .eq("parse_status", "done")
+    if (!rErr && Array.isArray(resumes)) {
+      for (const r of resumes) resumeBySubscriberId.set(r.subscriber_id, r)
+    }
+  }
+
+  return rows.map((row) => {
     const sub = row.subscribers || {}
     const name = [sub.name, sub.surname].filter(Boolean).join(" ").trim() || sub.name || "Assinante Sonnar"
+    const resume = sub.id ? (resumeBySubscriberId.get(sub.id) || null) : null
     return {
       name,
       lid: row.wa_lid,
@@ -218,6 +240,14 @@ async function getPortalPlusSubscribers() {
       plan: "plus",
       filters: normalizeVipFilters(buildVipFiltersFromPortal(row)),
       stacks: Array.isArray(row.stack) ? row.stack.map((s) => String(s).toLowerCase()) : [],
+      resume: resume
+        ? {
+            skills: Array.isArray(resume.extracted_skills) ? resume.extracted_skills : [],
+            yearsTotal: resume.years_total ?? null,
+            seniority: resume.seniority ?? null,
+            languages: Array.isArray(resume.languages) ? resume.languages : [],
+          }
+        : null,
       status: "active",
       active: true,
       source: "portal"
