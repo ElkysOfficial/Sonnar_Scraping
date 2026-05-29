@@ -5,6 +5,40 @@ Todas as mudanças relevantes deste projeto são documentadas neste arquivo.
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/)
 e o projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [3.6.1] - 2026-05-29
+
+### Adicionado
+
+- **`apps/web/public/ads.txt`** com o publisher ID do AdSense
+  (`pub-7896888594916293`). Obrigatório pelo IAB Tech Lab — sem ele o
+  painel do Google AdSense mostra warning de conformidade e o site perde
+  elegibilidade a Authorized Buyers. Servido em
+  `https://sonnarjobs.com.br/ads.txt` pelo build do Vite (regra
+  `DOCUMENT_ROOT -f` no `.htaccess` existente serve assets diretos).
+- **Meta tag `<meta name="google-adsense-account">`** no `index.html` com
+  o publisher ID. Boa prática oficial do AdSense — ajuda na validação de
+  propriedade do site e não depende do loader async carregar antes do
+  crawler do Google ler a página.
+- **Crawlers do AdSense explícitos no `robots.txt`**:
+  `Mediapartners-Google`, `AdsBot-Google` e `AdsBot-Google-Mobile` com
+  `Allow: /`. Evita ambiguidade — o `User-agent: *` já permitia, mas
+  declarar especificamente cumpre recomendação oficial.
+- **Sitemap.xml expandido** com `/cadastro`, `/termos`, `/privacidade`,
+  `/cookies`. Antes só listava `/` e `/signup` (rota antiga). Atualiza
+  `lastmod` pra 2026-05-29. Sitemap completo facilita a indexação
+  semântica que o AdSense usa pra escolher anúncios relevantes.
+
+### Configuração confirmada (já estava OK desde v3.6.0)
+
+- HTTPS via Hostinger SSL ✓
+- Política de Privacidade em `/privacidade` ✓
+- Termos de Uso em `/termos` ✓
+- Banner de cookies com `__tcfapi` (TCF v2.4) ✓
+- CSP permite googlesyndication / doubleclick / googleadservices ✓
+- `lang="pt-BR"` no `<html>` ✓
+- Meta description + Open Graph + Twitter Card ✓
+- Componente `<AdSlot>` configurado com publisher + slot ✓
+
 ## [3.6.0] - 2026-05-29
 
 ### Mudado
