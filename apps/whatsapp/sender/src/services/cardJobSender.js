@@ -1,28 +1,28 @@
 /**
- * Card Job Sender Service
- * Fetches job cards from the card generator API and sends them to WhatsApp
- * with image + caption format
- * Uses Supabase for state persistence
+ * Loop de envio de uma vaga por intervalo pro grupo geral (JOB_GROUP_ID).
+ * Independente do loop VIP (vipJobSender.js).
  *
- * @author Sonar Bot
+ * Antes: chamava o formatter local (localhost:3001/cards/next) que internamente
+ * lia o core, renderizava no @napi-rs/canvas e devolvia tudo. Agora o sender
+ * faz cada etapa: busca a vaga no core, pede o PNG ao card-renderer (Vercel),
+ * monta a legenda local e envia.
  */
 
 import "dotenv/config"
-import axios from "axios"
 import { infoLog, successLog, warningLog, errorLog } from "../utils/logger.js"
-import { JOB_GROUP_ID, JOB_SEND_INTERVAL, CARD_API_URL } from "../config.js"
+import { JOB_GROUP_ID, JOB_SEND_INTERVAL } from "../config.js"
 import { getCurrentSocket, isCurrentSocketReady } from "../utils/socketManager.js"
 import { getSenderState, updateSenderState } from "./database.js"
+import { fetchPendingJobs, markJobStatus } from "./coreClient.js"
+import { fetchJobCardImage } from "./cardClient.js"
+import { formatCaption } from "./captionBuilder.js"
+import { shortenUrl } from "./urlShortener.js"
 
-// Intervals
 const FIXED_INTERVAL = JOB_SEND_INTERVAL || 5 * 60 * 1000
 
 let cardSenderTimeoutId = null
 let cardSenderToken = 0
 
-/**
- * Read sender state from Supabase
- */
 async function readCardSenderState() {
   try {
     const state = await getSenderState("card")
@@ -35,9 +35,6 @@ async function readCardSenderState() {
   }
 }
 
-/**
- * Write sender state to Supabase
- */
 async function writeCardSenderState(lastSentAt) {
   try {
     await updateSenderState("card", new Date(lastSentAt))
@@ -46,9 +43,6 @@ async function writeCardSenderState(lastSentAt) {
   }
 }
 
-/**
- * Calculate time until next send
- */
 async function getTimeUntilNextSend() {
   const state = await readCardSenderState()
   const now = Date.now()
@@ -63,45 +57,32 @@ async function getTimeUntilNextSend() {
 }
 
 /**
- * Fetch next card from API
- * @returns {Promise<Object|null>} WhatsAppOutbound object or null
+ * Busca a proxima vaga pendente direto do core e monta o card completo
+ * (imagem PNG via card-renderer + caption + shortUrl).
  */
-async function fetchNextCard() {
-  try {
-    const response = await axios.get(`${CARD_API_URL}/cards/next`, {
-      params: { to: JOB_GROUP_ID },
-      timeout: 30000
-    })
+async function buildNextCard() {
+  const pending = await fetchPendingJobs(1)
+  const job = pending[0]
+  if (!job) return null
 
-    if (response.data && response.data.card) {
-      return response.data.card
-    }
+  const cardImage = await fetchJobCardImage(job)
+  if (!cardImage) {
+    warningLog(`[CARD] Render falhou para a vaga ${job.id || job.url}`)
+    return null
+  }
 
-    return null
-  } catch (error) {
-    errorLog(`Error fetching card from API: ${error.message}`)
-    return null
+  const { imageBuffer, jobData } = cardImage
+  const shortUrl = await shortenUrl(jobData.url)
+  const caption = formatCaption(jobData, shortUrl)
+
+  return {
+    jobId: jobData.id || job.id || null,
+    imageBuffer,
+    caption
   }
 }
 
-/**
- * Mark job as sent in the API
- * @param {string} jobId - Job ID to mark
- */
-async function markJobAsSent(jobId) {
-  try {
-    await axios.post(`${CARD_API_URL}/cards/mark-sent`, { jobId }, { timeout: 5000 })
-  } catch (error) {
-    errorLog(`Error marking job as sent: ${error.message}`)
-  }
-}
-
-/**
- * Send WhatsApp message with image and caption
- * @param {Object} cardData - WhatsAppOutbound object
- * @returns {Promise<boolean>} Success status
- */
-async function sendCardMessage(cardData) {
+async function sendCardMessage(card) {
   try {
     const socket = getCurrentSocket()
 
@@ -110,14 +91,10 @@ async function sendCardMessage(cardData) {
       return false
     }
 
-    // Convert base64 to buffer
-    const imageBuffer = Buffer.from(cardData.image.base64, "base64")
-
-    // Send image with caption
-    await socket.sendMessage(cardData.to, {
-      image: imageBuffer,
-      caption: cardData.text,
-      mimetype: cardData.image.mimeType
+    await socket.sendMessage(JOB_GROUP_ID, {
+      image: card.imageBuffer,
+      caption: card.caption,
+      mimetype: "image/png"
     })
 
     return true
@@ -127,9 +104,6 @@ async function sendCardMessage(cardData) {
   }
 }
 
-/**
- * Process and send next job card
- */
 async function processNextCard() {
   infoLog("[CARD] Starting card processing...")
 
@@ -138,36 +112,25 @@ async function processNextCard() {
     return
   }
 
-  // Fetch next card from API
-  const card = await fetchNextCard()
-
+  const card = await buildNextCard()
   if (!card) {
     infoLog("[CARD] No pending cards available")
     return
   }
 
-  const jobId = card.metadata?.jobId
-  infoLog(`[CARD] Sending card for job: ${jobId}`)
-
+  infoLog(`[CARD] Sending card for job: ${card.jobId}`)
   const success = await sendCardMessage(card)
 
   if (success) {
-    // Mark as sent
-    if (jobId) {
-      await markJobAsSent(jobId)
+    if (card.jobId) {
+      await markJobStatus(card.jobId, "whatsapp", true)
     }
-
-    // Update state in Supabase
     await writeCardSenderState(Date.now())
-
     const timestamp = new Date().toISOString()
-    successLog(`[CARD] Card sent successfully for job: ${jobId} at ${timestamp}`)
+    successLog(`[CARD] Card sent successfully for job: ${card.jobId} at ${timestamp}`)
   }
 }
 
-/**
- * Schedule next card send
- */
 function scheduleNextCard() {
   const token = cardSenderToken
   const interval = FIXED_INTERVAL
@@ -177,17 +140,12 @@ function scheduleNextCard() {
   infoLog(`[CARD] Next card in ${minutes}m ${seconds}s`)
 
   cardSenderTimeoutId = setTimeout(async () => {
-    if (token !== cardSenderToken) {
-      return
-    }
+    if (token !== cardSenderToken) return
     await processNextCard()
     scheduleNextCard()
   }, interval)
 }
 
-/**
- * Start card sender service
- */
 export async function startCardSender() {
   if (cardSenderTimeoutId) {
     clearTimeout(cardSenderTimeoutId)
@@ -210,7 +168,6 @@ export async function startCardSender() {
   infoLog("════════════════════════════════════════════════════")
   infoLog(`⏱️  Interval: ${FIXED_INTERVAL / 60000} minutes`)
   infoLog(`📍 Group: ${JOB_GROUP_ID}`)
-  infoLog(`🌐 API: ${CARD_API_URL}`)
   infoLog(`💾 Storage: Supabase (database)`)
   if (state.lastSentAt > 0) {
     infoLog(`📅 Last sent: ${lastSentAgo} seconds ago`)
@@ -224,17 +181,12 @@ export async function startCardSender() {
   infoLog(`[CARD] First card will be sent in ${minutes}m ${seconds}s`)
 
   cardSenderTimeoutId = setTimeout(async () => {
-    if (token !== cardSenderToken) {
-      return
-    }
+    if (token !== cardSenderToken) return
     await processNextCard()
     scheduleNextCard()
   }, timeUntilNext)
 }
 
-/**
- * Stop card sender service
- */
 export function stopCardSender() {
   if (cardSenderTimeoutId) {
     clearTimeout(cardSenderTimeoutId)

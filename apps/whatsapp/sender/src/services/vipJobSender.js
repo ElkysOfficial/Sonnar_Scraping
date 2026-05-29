@@ -10,13 +10,14 @@
  * @author Sonar Bot
  */
 
-import axios from "axios"
 import { delay } from "baileys"
+import { fetchJobCardImage } from "./cardClient.js"
+import { formatCaption } from "./captionBuilder.js"
+import { shortenUrl } from "./urlShortener.js"
 import { infoLog, infoLogAlways, successLog, warningLog, errorLog } from "../utils/logger.js"
 import {
   BOT_EMOJI,
   TIMEOUT_IN_MILLISECONDS_BY_EVENT,
-  CARD_API_URL,
   VIP_JOB_LOOKBACK_DAYS,
   VIP_MAX_JOBS_PER_CYCLE,
   VIP_FALLBACK_MAX_JOBS,
@@ -1906,44 +1907,43 @@ function lidToJid(lid) {
 }
 
 /**
- * Solicita ao serviço de cards um card para a vaga
+ * Solicita ao card-renderer (Vercel Edge) o PNG da vaga e monta a legenda
+ * localmente (formatCaption + shortener). Substituiu a chamada antiga ao
+ * formatter local (POST localhost:3001/cards/generate) quando o processo
+ * sonnar-wa-formatter foi removido da VPS.
+ *
  * @param {Object} job
- * @param {string} to
- * @returns {Object|null}
+ * @returns {Promise<{ imageBuffer: Buffer, caption: string, jobData: Object } | null>}
  */
-async function fetchJobCard(job, to) {
-  try {
-    const response = await axios.post(
-      `${CARD_API_URL}/cards/generate`,
-      { embed: job, to },
-      { timeout: 30000 }
-    )
-    return response.data || null
-  } catch (err) {
-    errorLog(`[VIP CARD] Erro ao gerar card: ${err.message}`)
-    return null
-  }
+async function buildJobCardForDelivery(job) {
+  const cardImage = await fetchJobCardImage(job)
+  if (!cardImage) return null
+
+  const { imageBuffer, jobData } = cardImage
+  const shortUrl = await shortenUrl(jobData.url)
+  const caption = formatCaption(jobData, shortUrl)
+  return { imageBuffer, caption, jobData }
 }
 
 /**
  * Envia o card gerado para o assinante
  * @param {string} jid
- * @param {Object} cardData
+ * @param {string} jobId
+ * @param {{ imageBuffer: Buffer, caption: string }} cardData
  * @param {Object} socket
  * @returns {boolean}
  */
 async function sendCardPayload(jid, jobId, cardData, socket) {
-  if (!cardData?.image?.base64) {
+  if (!cardData?.imageBuffer) {
     return false
   }
 
   try {
-    const buffer = Buffer.from(cardData.image.base64, "base64")
     await delay(TIMEOUT_IN_MILLISECONDS_BY_EVENT)
     await socket.sendMessage(jid, {
-      image: buffer,
-      caption: cardData.text,
-      mimetype: cardData.image.mimeType
+      image: cardData.imageBuffer,
+      caption: cardData.caption,
+      mimetype: "image/png"
     })
     const timestamp = new Date().toISOString()
     successLog(`[VIP CARD] Job ${jobId} sent to ${jid} at ${timestamp}`)
@@ -1991,7 +1991,7 @@ async function sendJobToSubscriber(lid, job) {
     }
 
     const jid = lidToJid(lid)
-    const cardPayload = await fetchJobCard(job, jid)
+    const cardPayload = await buildJobCardForDelivery(job)
     if (!cardPayload) {
       const reason = "card_generation_failed"
       warningLog(`[VIP] Card não gerado para ${lid}: ${reason}`)
