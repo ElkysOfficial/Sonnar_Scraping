@@ -5,6 +5,58 @@ Todas as mudanças relevantes deste projeto são documentadas neste arquivo.
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/)
 e o projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [3.7.0] - 2026-05-29
+
+### Adicionado — Plus #1: ✓/✗ stacks compatíveis no WhatsApp
+
+Primeira funcionalidade do roadmap de diferenciação do Plus.
+
+Quando uma vaga é enviada na DM privada do assinante Plus, agora cada skill
+da vaga aparece marcada conforme o stack declarado no perfil:
+
+```
+*🧩 Tecnologias*
+✓ Node.js  ·  ✓ AWS  ·  ✗ Go  ·  ✓ TypeScript
+
+📊 *Match:* 3 de 4 skills (75%)
+```
+
+Antes o cliente via só uma lista de tecnologias sem contexto. Agora ele
+sabe imediatamente quantas skills da vaga ele já tem e quais faltam —
+informação acionável que torna o match score `0–100` (já existente desde
+v3.0.0) **explicável**.
+
+**Mudanças técnicas:**
+
+- `apps/whatsapp/sender/src/services/textBuilder.js`: `formatJobMessage`
+  ganha 3º parâmetro `options.subscriberStack`. Quando presente, monta
+  o bloco de skills com marcadores ✓/✗ e adiciona linha de sumário com
+  porcentagem. Comparação case-insensitive. Sem `subscriberStack` ou
+  array vazio = comportamento legado (skills separadas por `•`).
+- `apps/whatsapp/sender/src/services/vipJobSender.js`:
+  - `buildJobTextMessage(job, options, deps)` ganha `options.subscriberStack`.
+  - `sendJobToSubscriber(lid, job, subscriberStack=[])` propaga o stack.
+  - 3 callsites internos passam `subscriber.stacks || []` (objeto já
+    carregado do `getVipSubscribers()`, vem do `subscriber_profiles.stack[]`).
+
+**Banco:** nenhuma mudança — `subscriber_profiles.stack[]` já existia desde
+v3.0.0. RPC `get_my_vip_jobs` inalterado.
+
+**VPS:** custo desprezível (Set intersection de ~5×5 strings por mensagem).
+
+**Diferenciação:** funcionalidade exclusiva do Plus. Grupo público (Free) e
+grupo Pro continuam sem marcação (textBuilder chamado sem
+`subscriberStack`).
+
+### Testes
+
+- **14 testes novos** (62 total no sender, todos verdes):
+  - 8 em `textBuilder.test.js` cobrindo formatJobMessage com diferentes
+    inputs de `subscriberStack` (match 0/50/100%, case-insensitive,
+    fluxo legado, skills vazias).
+  - 6 em `vipJobSender.test.js` cobrindo o pipeline `buildJobTextMessage`
+    com a opção nova + integração até o socket.
+
 ## [3.6.1] - 2026-05-29
 
 ### Adicionado

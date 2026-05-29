@@ -209,6 +209,71 @@ test("formatJobMessage: bloco Responsabilidades com bullets de quebra de linha",
 })
 
 // =====================================================
+// Plus #1 (v3.7.0): subscriberStack -> ✓/✗ por skill + match %
+// =====================================================
+
+test("Plus #1: subscriberStack marca skill compativel com ✓ e incompativel com ✗", () => {
+  const job = { ...FIXED_JOB, skills: ["Node.js", "AWS", "TypeScript"] }
+  const out = formatJobMessage(job, "https://son.sh/v/x", {
+    subscriberStack: ["node.js", "aws"]
+  })
+  assert.match(out, /✓ Node\.js/)
+  assert.match(out, /✓ AWS/)
+  assert.match(out, /✗ TypeScript/)
+  // Skills separadas por ' · ' (em vez de ' • ' do fluxo legado)
+  assert.match(out, /✓ Node\.js {2}· {2}✓ AWS {2}· {2}✗ TypeScript/)
+})
+
+test("Plus #1: linha de sumario *Match: X de Y skills (Z%)* aparece com subscriberStack", () => {
+  const job = { ...FIXED_JOB, skills: ["React", "Vue", "Svelte"] }
+  const out = formatJobMessage(job, "x", { subscriberStack: ["react"] })
+  assert.match(out, /📊 \*Match:\* 1 de 3 skills \(33%\)/)
+})
+
+test("Plus #1: 100% quando todas batem", () => {
+  const job = { ...FIXED_JOB, skills: ["A", "B"] }
+  const out = formatJobMessage(job, "x", { subscriberStack: ["a", "b", "c"] })
+  assert.match(out, /✓ A.+✓ B/s)
+  assert.match(out, /📊 \*Match:\* 2 de 2 skills \(100%\)/)
+})
+
+test("Plus #1: 0% quando nada bate", () => {
+  const job = { ...FIXED_JOB, skills: ["X", "Y"] }
+  const out = formatJobMessage(job, "x", { subscriberStack: ["q", "z"] })
+  assert.match(out, /✗ X/)
+  assert.match(out, /✗ Y/)
+  assert.match(out, /📊 \*Match:\* 0 de 2 skills \(0%\)/)
+})
+
+test("Plus #1: comparacao case-insensitive (TypeScript vs typescript)", () => {
+  const job = { ...FIXED_JOB, skills: ["TypeScript", "JavaScript"] }
+  const out = formatJobMessage(job, "x", { subscriberStack: ["TYPESCRIPT", "JavaScript"] })
+  assert.match(out, /✓ TypeScript/)
+  assert.match(out, /✓ JavaScript/)
+})
+
+test("Plus #1: sem subscriberStack -> bloco legado (sem ✓/✗ nem 📊)", () => {
+  const job = { ...FIXED_JOB, skills: ["A", "B"] }
+  const out = formatJobMessage(job, "x")
+  assert.doesNotMatch(out, /✓|✗/)
+  assert.doesNotMatch(out, /📊/)
+  assert.match(out, /A {2}• {2}B/)
+})
+
+test("Plus #1: subscriberStack vazio -> fluxo legado", () => {
+  const job = { ...FIXED_JOB, skills: ["A"] }
+  const out = formatJobMessage(job, "x", { subscriberStack: [] })
+  assert.doesNotMatch(out, /✓|✗|📊/)
+})
+
+test("Plus #1: skills vazio + subscriberStack -> omite bloco Tecnologias", () => {
+  const job = { ...FIXED_JOB, skills: [] }
+  const out = formatJobMessage(job, "x", { subscriberStack: ["react"] })
+  assert.doesNotMatch(out, /🧩 Tecnologias/)
+  assert.doesNotMatch(out, /📊/)
+})
+
+// =====================================================
 // Integracao end-to-end: payload do core -> mensagem final
 // =====================================================
 

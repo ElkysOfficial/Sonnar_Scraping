@@ -1922,7 +1922,11 @@ function lidToJid(lid) {
  */
 // Exportada pra testes em `src/test/vipJobSender.test.js`. Aceita `deps`
 // opcional pra injetar `shortenUrl` mockado nos testes sem bater na rede.
-export async function buildJobTextMessage(job, deps = { shortenUrl }) {
+//
+// v3.7.0 (Plus #1): aceita `options.subscriberStack` — array de skills do
+// assinante Plus. Quando presente, a mensagem ganha marcadores ✓/✗ por
+// skill da vaga + sumario de match. Sem stack = comportamento legado.
+export async function buildJobTextMessage(job, options = {}, deps = { shortenUrl }) {
   const embed = resolveEmbedPayload(job)
   if (!embed) {
     warningLog("[VIP] Payload da vaga invalido — nao foi possivel montar embed")
@@ -1937,7 +1941,9 @@ export async function buildJobTextMessage(job, deps = { shortenUrl }) {
 
   try {
     const shortUrl = await deps.shortenUrl(jobData.url)
-    const text = formatJobTextMessage(jobData, shortUrl)
+    const text = formatJobTextMessage(jobData, shortUrl, {
+      subscriberStack: options.subscriberStack,
+    })
     return { text, jobData }
   } catch (err) {
     errorLog(`[VIP] Erro ao montar mensagem da vaga: ${err.message}`)
@@ -1975,11 +1981,16 @@ export async function sendJobMessage(jid, jobId, payload, socket, deps = { delay
 /**
  * Envia uma vaga para um assinante VIP
  * IMPORTANTE: Verifica intervalo de 7 minutos e histórico de 48h via persistência
+ *
+ * v3.7.0 (Plus #1): aceita `subscriberStack` (array de skills do assinante).
+ * Quando passado, a mensagem ganha marcadores ✓/✗ + sumario de match.
+ *
  * @param {string} lid - LID do assinante
  * @param {Object} job - Vaga a enviar
+ * @param {string[]} [subscriberStack] - skills do assinante (Plus diferencial)
  * @returns {{success: boolean, reason?: string}}
  */
-async function sendJobToSubscriber(lid, job) {
+async function sendJobToSubscriber(lid, job, subscriberStack = []) {
   try {
     // Valida LID
     if (!lid || lid.trim() === "") {
@@ -2009,7 +2020,7 @@ async function sendJobToSubscriber(lid, job) {
     }
 
     const jid = lidToJid(lid)
-    const messagePayload = await buildJobTextMessage(job)
+    const messagePayload = await buildJobTextMessage(job, { subscriberStack })
     if (!messagePayload) {
       const reason = "message_build_failed"
       warningLog(`[VIP] Mensagem não montada para ${lid}: ${reason}`)
@@ -2119,7 +2130,8 @@ async function processVipJobs() {
     }
 
     matches += 1
-    const result = await sendJobToSubscriber(subscriber.lid, matchedJob)
+    // v3.7.0 (Plus #1): passa o stack do assinante pra mensagem ganhar ✓/✗
+    const result = await sendJobToSubscriber(subscriber.lid, matchedJob, subscriber.stacks || [])
 
     if (result.success) {
       sent += 1
@@ -2247,7 +2259,8 @@ export async function forceVipJobCheck(lid) {
     return { success: true, message: `Nenhuma vaga disponível (${totalCompatible} compatíveis, ${sentJobIds.size} já enviadas)` }
   }
 
-  const result = await sendJobToSubscriber(lid, matchedJob)
+  // v3.7.0 (Plus #1): passa o stack do assinante pra mensagem ganhar ✓/✗
+  const result = await sendJobToSubscriber(lid, matchedJob, subscriber.stacks || [])
   if (result.success) {
     return { success: true, message: "1 vaga enviada" }
   }
@@ -2337,7 +2350,8 @@ export async function triggerVipSearch(lid, stacksOrFilters, options = {}) {
 
     // Envia apenas uma vaga (regra: 1 vaga a cada 7 minutos)
     let jobsSent = 0
-    const result = await sendJobToSubscriber(lid, matchedJob)
+    // v3.7.0 (Plus #1): passa o stack do assinante pra mensagem ganhar ✓/✗
+    const result = await sendJobToSubscriber(lid, matchedJob, subscriber.stacks || [])
     if (result.success) {
       jobsSent = 1
       successLog(`[VIP SEARCH] runId=${runId} Vaga enviada para ${lid}: ${matchedJob.title || matchedJob.job_title}`)
