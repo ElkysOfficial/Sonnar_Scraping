@@ -5,6 +5,96 @@ Todas as mudanças relevantes deste projeto são documentadas neste arquivo.
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/)
 e o projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [3.8.0] - 2026-05-29
+
+### Adicionado — Plus #4: Upload de currículo + parse determinístico (zero LLM)
+
+Segunda funcionalidade flagship do plano Plus. Cliente faz upload de
+PDF/DOCX no dashboard, sistema extrai automaticamente skills, anos de
+experiência, senioridade e idiomas — **sem nenhum LLM pago, sem custos
+recorrentes**. Todo o pipeline roda em Supabase Edge + Storage.
+
+**Arquitetura (Caminho A — Zero Custo):**
+
+```
+Frontend (Vue)                Supabase Storage      Supabase Edge Function
+   │                               │                         │
+   │  1. select PDF/DOCX           │                         │
+   │─────►uploads─────────────────►│                         │
+   │       resumes/<sub_id>/<uuid> │                         │
+   │                               │                         │
+   │  2. invoke parse-resume       │                         │
+   │──────────────────────────────────────────────────────►  │
+   │                               │                         │ baixa arquivo
+   │                               │◄────────download────────│
+   │                               │                         │ pdfjs / mammoth
+   │                               │                         │ -> texto
+   │                               │                         │ regex vocab
+   │                               │                         │ -> skills, anos,
+   │                               │                         │    seniority, idiomas
+   │                               │                         │ INSERT subscriber_resumes
+   │                               │                         │
+   │◄──────────── { skills, yearsTotal, seniority, ... } ────│
+   │                                                          
+   │  3. UI mostra resultado
+```
+
+**Componentes:**
+
+- **`supabase/migrations/20260529150000_subscriber_resumes.sql`**:
+  - Tabela `subscriber_resumes` (file_path, raw_text, extracted_skills,
+    years_total, seniority, languages, parse_status, parser_version)
+  - Trigger garante 1 currículo `is_active=true` por subscriber
+  - RLS: cada subscriber só vê/edita os próprios
+  - Storage bucket `resumes` privado (10MB max, só PDF/DOCX)
+  - Storage policies: subscriber só pode upload na própria pasta
+  - RPC `get_my_active_resume()` retorna o currículo ativo
+- **`supabase/functions/_shared/skills_vocabulary.ts`**: vocabulário
+  canônico de 1118 skills/papéis, gerado a partir do
+  `apps/scraper/src/utils/skills_vocabulary.py`. Sincronia manual quando
+  o Python evolui.
+- **`supabase/functions/_shared/resumeParser.ts`**: parser determinístico:
+  - `extractSkills`: regex case-insensitive contra o vocabulário,
+    com lookarounds que aceitam fronteiras não-alfanuméricas (cobre
+    `Node.js`, `C#`, `.NET`).
+  - `extractYearsTotal`: soma intervalos `AAAA - AAAA` (mergeando
+    sobrepostos pra não contar 2× o mesmo período). Fallback: `X anos`.
+  - `extractSeniority`: ranking lead/staff > senior > pleno > junior
+    por keyword.
+  - `extractLanguages`: regex contra dicionário PT/EN/ES/FR/DE/IT/JA/ZH.
+- **`supabase/functions/parse-resume/index.ts`**: Edge Function que
+  recebe `{ subscriberId, filePath, fileMime }`, valida que o subscriber
+  pertence ao usuário autenticado E que o plano é Plus, baixa arquivo do
+  Storage, extrai texto via `pdfjs-dist` (PDF) ou `mammoth` (DOCX), roda
+  o parser, persiste em `subscriber_resumes` (insert pending → update
+  done/failed). Custo: zero LLM, apenas CPU do Edge Function.
+- **`apps/web/src/components/ResumeUpload.vue`**: componente Vue 3
+  (TypeScript) que faz o upload direto pro Storage, chama a Edge
+  Function, exibe o resultado (skills detectadas como chips, anos,
+  senioridade, idiomas). UI mostra currículo ativo + permite substituir.
+
+**Banco:** +1 tabela `subscriber_resumes` + 1 trigger + 1 RPC + 1 bucket
++ 3 policies. Tabelas existentes intocadas.
+
+**VPS:** zero — todo o pipeline roda em Supabase Edge + Storage.
+
+**Custo runtime:** **zero**. Pdfjs + mammoth são MIT/free. Sem LLM. Sem
+APIs pagas. Escala infinita.
+
+**Diferenciação Plus:**
+
+- Edge Function rejeita (HTTP 402) chamadas de subscribers com `plan !== 'plus'`.
+- Frontend deve esconder a tab "Currículo" para Free/Pro (integração ao
+  `DashboardSettings.vue` fica como follow-up — neste PR a feature está
+  funcional via componente standalone).
+
+### Próximo passo no roadmap
+
+Plus #5 (Match breakdown estruturado) consumirá os campos
+`extracted_skills` desta tabela pra gerar comparações ✓/✗/⚠ entre
+currículo e descrição da vaga — ainda sem LLM, usando set intersection
++ checagem de anos contra os requisitos mencionados.
+
 ## [3.7.1] - 2026-05-29
 
 ### Adicionado — Upsell automático Free → Plus (email + WhatsApp semanal)
