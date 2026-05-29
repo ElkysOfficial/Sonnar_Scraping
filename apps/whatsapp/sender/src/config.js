@@ -163,20 +163,8 @@ export const JOB_GROUP_LINK = "https://chat.whatsapp.com/FXIecIwuh1FHyCdNr9P5Cw"
 // Habilita o envio de cards com imagem (se false, usa apenas texto)
 export const USE_CARD_SENDER = process.env.USE_CARD_SENDER === "true" || true
 
-// URL da API de geração de cards (DEPRECATED — formatter foi removido da VPS na v3.x).
-// Mantido por 1 release pra rollback rapido. Quando o card-renderer estiver
-// estavel em prod, pode ser removido junto com qualquer referencia residual.
+// URL da API de geração de cards
 export const CARD_API_URL = process.env.CARD_API_URL || "http://localhost:3001"
-
-// URL publica do card-renderer (Vercel Edge Function). Substituiu o
-// formatter local (sonnar-wa-formatter) — geracao de imagem agora roda
-// fora da VPS via @vercel/og. Default vazio = falha ao chamar fetchJobCardImage,
-// permite detectar miss-config em CI.
-export const CARD_RENDERER_URL = process.env.CARD_RENDERER_URL || ""
-
-// Segredo HMAC-SHA256 compartilhado com o card-renderer. Mesmo valor configurado
-// na variavel de ambiente do projeto Vercel. Sem isso a Edge devolve 401.
-export const CARD_RENDERER_SECRET = process.env.CARD_RENDERER_SECRET || ""
 
 // URL da API Core (job_data.json)
 export const CORE_API_URL = process.env.CORE_API_URL || "http://localhost:3100"
