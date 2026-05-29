@@ -17,6 +17,7 @@ tags: [issue, moc]
 
 | Severidade | Título                                                                       | Release |
 | ---------- | ---------------------------------------------------------------------------- | ------- |
+| 🔴 HIGH    | [[_resolved/vps-cpu-peak-reduction\|vCPU pico 73% → ~50%]] (texto-only + 16 alavancas + pipeline PT-only obrigatório) | v3.6.0  |
 | 🟠 MEDIUM  | [[_resolved/owner-email-hardcoded\|`OWNER_EMAIL` hardcoded → env var]]       | v1.9.1  |
 | 🟠 MEDIUM  | [[_resolved/redirect-sanitization\|Sanitização `?redirect=` (helper + 37 testes)]] | v1.9.1  |
 | 🟠 MEDIUM  | [[_resolved/subscriber-row-post-signup-race\|`subscriber` row pós-signup]] (not-an-issue: trigger síncrono na transação) | - |
