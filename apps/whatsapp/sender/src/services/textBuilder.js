@@ -168,6 +168,75 @@ function extractJobDataFromEmbed(embed) {
 }
 
 // =====================================================
+// Plus #5 (v3.8.x): bloco de breakdown comparativo (curriculo vs vaga).
+// Sem LLM. Usa subscriberResume + jobRequirementsParser.
+// =====================================================
+
+import {
+  extractJobRequirements,
+  compareSeniority,
+} from "./jobRequirementsParser.js"
+
+function appendResumeBreakdown(out, jobData, resume) {
+  if (!resume) return
+
+  const lines = []
+  const norm = (s) => String(s || "").toLowerCase().trim()
+  const resumeSkillsSet = new Set(
+    (Array.isArray(resume.skills) ? resume.skills : []).map(norm).filter(Boolean)
+  )
+
+  // Skills da vaga marcadas contra o curriculo (alem dos stacks declarados)
+  const jobSkills = Array.isArray(jobData.skills) ? jobData.skills : []
+  if (jobSkills.length && resumeSkillsSet.size) {
+    const inResume = jobSkills.filter((s) => resumeSkillsSet.has(norm(s))).length
+    if (inResume > 0) {
+      lines.push(
+        `✓ Curriculo bate em ${inResume} de ${jobSkills.length} skills da vaga`
+      )
+    } else {
+      lines.push(`✗ Nenhuma skill da vaga aparece explicitamente no curriculo`)
+    }
+  }
+
+  // Anos exigidos vs anos do curriculo
+  const reqs = extractJobRequirements(jobData)
+  if (reqs.yearsRequired != null) {
+    const has = resume.yearsTotal
+    if (has != null) {
+      if (has >= reqs.yearsRequired) {
+        lines.push(
+          `✓ Vaga pede ${reqs.yearsRequired}+ anos — seu curriculo indica ~${has} anos`
+        )
+      } else {
+        const gap = reqs.yearsRequired - has
+        lines.push(
+          `⚠ Vaga pede ${reqs.yearsRequired}+ anos — seu curriculo indica ~${has} anos (gap de ${gap})`
+        )
+      }
+    }
+  }
+
+  // Senioridade
+  if (reqs.seniorityRequired && resume.seniority) {
+    const cmp = compareSeniority(resume.seniority, reqs.seniorityRequired)
+    if (cmp === "match") {
+      lines.push(`✓ Seu nivel (${resume.seniority}) bate com a vaga (${reqs.seniorityRequired})`)
+    } else if (cmp === "under") {
+      lines.push(`⚠ Vaga e ${reqs.seniorityRequired} — seu curriculo indica ${resume.seniority}`)
+    } else if (cmp === "over") {
+      lines.push(`✓ Vaga e ${reqs.seniorityRequired} — voce ja esta ${resume.seniority}`)
+    }
+  }
+
+  if (lines.length === 0) return
+
+  out.push("")
+  out.push("*🎯 Comparado com seu curriculo*")
+  for (const l of lines) out.push(l)
+}
+
+// =====================================================
 // Bloco de responsabilidades (texto pre-extraido)
 // =====================================================
 
@@ -218,11 +287,20 @@ function appendResponsibilitiesBlock(out, text) {
  * `✓` (esta no stack do usuario) ou `✗` (nao esta). Logo abaixo aparece
  * um sumario "📊 Match: X de Y skills (Z%)".
  *
+ * v3.8.x (Plus #5): quando `options.subscriberResume` e passado (assinante
+ * Plus que subiu curriculo), adiciona um bloco extra "🎯 Comparado com seu
+ * curriculo" com linhas ✓/✗/⚠ por skill comparada contra
+ * extracted_skills, anos exigidos vs anos do curriculo, e senioridade.
+ * Tudo deterministico — zero LLM, calculado no proprio sender.
+ *
  * @param {object} jobData - dados normalizados da vaga
  * @param {string} shortUrl - link encurtado da vaga
  * @param {object} [options]
  * @param {string[]} [options.subscriberStack] - skills do assinante Plus,
  *   ja em lowercase. Se omitido/vazio, comportamento legado (sem marcacao).
+ * @param {object} [options.subscriberResume] - snapshot do curriculo parseado:
+ *   { skills: string[], yearsTotal: number|null, seniority: string|null }.
+ *   Quando presente, adiciona o bloco de breakdown comparativo.
  */
 function formatJobMessage(jobData, shortUrl, options = {}) {
   const out = []
@@ -266,6 +344,13 @@ function formatJobMessage(jobData, shortUrl, options = {}) {
     } else {
       out.push(skills.join("  •  "))
     }
+  }
+
+  // v3.8.x (Plus #5): bloco "Comparado com seu curriculo" — so quando o
+  // assinante tem curriculo ativo. Determinstico: usa subscriberResume +
+  // jobRequirementsParser.
+  if (options.subscriberResume) {
+    appendResumeBreakdown(out, jobData, options.subscriberResume)
   }
 
   // v3.0.0: usa responsibilities pre-extraido no banco. Se nao vier preenchido,

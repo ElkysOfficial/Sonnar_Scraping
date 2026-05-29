@@ -5,6 +5,82 @@ Todas as mudanças relevantes deste projeto são documentadas neste arquivo.
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/)
 e o projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [3.8.1] - 2026-05-29
+
+### Adicionado — Plus #5: Match breakdown estruturado (zero LLM)
+
+Continuação direta do Plus #4 — agora o currículo parseado é consumido
+pelo sender pra gerar um bloco comparativo em cada vaga enviada na DM
+privada do assinante Plus.
+
+**Exemplo de mensagem (Plus que subiu currículo):**
+
+```
+*Senior Backend Engineer*
+🏢 _Acme_
+📍 SP
+💼 Remoto
+💰 *R$ 15.000*
+
+*🧩 Tecnologias*
+✓ Node.js  ·  ✓ AWS  ·  ✗ Go  ·  ✓ TypeScript
+
+📊 *Match:* 3 de 4 skills (75%)
+
+*🎯 Comparado com seu curriculo*
+✓ Curriculo bate em 3 de 4 skills da vaga
+✓ Vaga pede 5+ anos — seu curriculo indica ~7 anos
+✓ Seu nivel (senior) bate com a vaga (senior)
+
+*📋 Responsabilidades*
+• ...
+```
+
+**Mudanças técnicas:**
+
+- **`apps/whatsapp/sender/src/services/jobRequirementsParser.js`** (novo):
+  - `extractRequiredYears(description)` — regex pra `5+ anos`, `pelo menos
+    3 anos`, `experiência de 5 anos`, etc.
+  - `extractRequiredSeniority(title, description)` — heurística por
+    keyword (lead/staff > senior > pleno > junior).
+  - `compareSeniority(candidate, required)` — `"match" | "under" | "over"`.
+  - `extractJobRequirements(job)` — agregador.
+- **`textBuilder.js`** — `formatJobMessage` ganha 4º campo em `options`:
+  `subscriberResume`. Quando presente, chama nova função
+  `appendResumeBreakdown` que monta 3 linhas:
+  - Skills do currículo que batem com as da vaga (`✓ N de M`)
+  - Anos exigidos vs anos do CV (`✓` ou `⚠ com gap`)
+  - Senioridade do CV vs da vaga (`✓`, `⚠ under` ou `✓ over`)
+- **`utils/database.js#getPortalPlusSubscribers`**: agora faz 1 query
+  extra (em batch, 1 round-trip pra todos Plus) lendo `subscriber_resumes`
+  ativos e anexa `resume` ao objeto do subscriber.
+- **`vipJobSender.js`**: `sendJobToSubscriber(lid, job, subscriberStack,
+  subscriberResume)` propaga o resume nos 3 callsites internos
+  (`processVipJobs`, `forceVipJobCheck`, `triggerVipSearch`).
+
+**Banco:** zero mudanças — usa `subscriber_resumes` criada na v3.8.0.
+
+**VPS:** custo desprezível — 1 query extra (batched) por ciclo VIP +
+parsing regex local (sub-millisegundo por vaga).
+
+**Custo runtime:** **zero**. Sem LLM. Determinístico.
+
+**Diferenciação Plus:** o bloco só aparece quando o assinante:
+1. Tem `plan='plus'` (já é Plus pra cair no DM privado)
+2. Subiu currículo no Plus #4 (`subscriber_resumes` com `is_active=true,
+   parse_status='done'`)
+
+Plus que ainda não subiu CV recebe apenas o Plus #1 (✓/✗ stacks).
+
+### Testes
+
+- **10 testes novos** (72 total no sender, todos verdes):
+  - Bloco aparece/desaparece com base em `subscriberResume`
+  - Cobertura de skills do CV bate/não bate
+  - Anos: `✓` quando atinge, `⚠ com gap` quando falta
+  - Senioridade: 3 casos (`match`, `under`, `over`)
+  - Resume sem dados relevantes não polui mensagem (omite bloco)
+
 ## [3.8.0] - 2026-05-29
 
 ### Adicionado — Plus #4: Upload de currículo + parse determinístico (zero LLM)
