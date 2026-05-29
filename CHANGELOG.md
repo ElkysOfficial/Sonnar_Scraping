@@ -5,6 +5,55 @@ Todas as mudanças relevantes deste projeto são documentadas neste arquivo.
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/)
 e o projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [3.6.0] - 2026-05-28
+
+### Mudado
+
+- **Vagas passam a ser enviadas em texto puro no WhatsApp.** A geração de
+  imagem (cards 1080×1080) foi **descontinuada** do produto. Toda a
+  informação que vivia no card visual (salário em destaque, modalidade,
+  fonte, data) agora aparece no próprio texto da mensagem, junto com o que
+  já estava na caption (título, empresa, localização, skills,
+  responsabilidades, link encurtado).
+
+### Adicionado
+
+- **`apps/whatsapp/sender/src/services/textBuilder.js`**: monta a mensagem
+  completa em texto. Porta de `extractJobDataFromEmbed` + caption +
+  `extractResponsibilities` do formatter antigo, com layout novo incluindo
+  salário e source/data no rodapé.
+- **`apps/whatsapp/sender/src/services/coreClient.js`**: sender fala direto
+  com `message-formatting-core` (eliminado o middleman do formatter pro
+  `cardJobSender`).
+
+### Removido
+
+- **Processo `sonnar-wa-formatter`** do `ecosystem.config.cjs` (-1 PM2,
+  -600MB de teto de RAM). PM2 cai de 4 para 3 processos ativos.
+- **`apps/whatsapp/formatter/`** inteiro deletado do repo.
+- Dependência `@napi-rs/canvas` sai do disco da VPS.
+- Variável `CARD_API_URL` removida do `config.js` do sender.
+
+### Revertido
+
+- **PR #100 (v3.5.0)** e **PR #101 (v3.5.1)** — tentativa de migrar canvas
+  pra Vercel Edge Function via `@vercel/og`. Substituído por essa solução
+  mais direta (texto puro, zero vendor novo, zero DNS, zero compute extra).
+
+### Performance
+
+Primeiro PR efetivo do roteiro de redução de carga da VPS (ADR-006).
+Métrica real pós-deploy a ser registrada em
+`docs/vault/13-issues/vps-cpu-peak-reduction.md`.
+
+### Operação
+
+- VPS: nenhuma config nova de env. `pm2 reload ecosystem.config.cjs` +
+  `pm2 delete sonnar-wa-formatter` + `pm2 save`.
+- Se você tinha configurado Vercel/DNS para o card-renderer dos PRs
+  #100/#101: pode deletar o projeto Vercel e remover o CNAME
+  `cards.sonnarjobs.com.br` no painel Hostinger.
+
 ## [3.2.0] - 2026-05-25
 
 ### Adicionado

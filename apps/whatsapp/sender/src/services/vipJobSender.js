@@ -10,13 +10,17 @@
  * @author Sonar Bot
  */
 
-import axios from "axios"
 import { delay } from "baileys"
+import {
+  extractJobDataFromEmbed,
+  resolveEmbedPayload,
+  formatJobMessage as formatJobTextMessage
+} from "./textBuilder.js"
+import { shortenUrl } from "./urlShortener.js"
 import { infoLog, infoLogAlways, successLog, warningLog, errorLog } from "../utils/logger.js"
 import {
   BOT_EMOJI,
   TIMEOUT_IN_MILLISECONDS_BY_EVENT,
-  CARD_API_URL,
   VIP_JOB_LOOKBACK_DAYS,
   VIP_MAX_JOBS_PER_CYCLE,
   VIP_FALLBACK_MAX_JOBS,
@@ -1906,50 +1910,60 @@ function lidToJid(lid) {
 }
 
 /**
- * Solicita ao serviço de cards um card para a vaga
+ * Monta a mensagem da vaga em texto puro (sem imagem). Substituiu a chamada
+ * antiga ao formatter local (POST localhost:3001/cards/generate) na v3.6.0,
+ * quando a geracao de imagem foi removida pra zerar custo de CPU/RAM.
+ *
+ * Toda informacao que vivia no card visual (salario, modalidade, fonte, data)
+ * agora aparece no proprio texto.
+ *
  * @param {Object} job
- * @param {string} to
- * @returns {Object|null}
+ * @returns {Promise<{ text: string, jobData: Object } | null>}
  */
-async function fetchJobCard(job, to) {
+async function buildJobTextMessage(job) {
+  const embed = resolveEmbedPayload(job)
+  if (!embed) {
+    warningLog("[VIP] Payload da vaga invalido — nao foi possivel montar embed")
+    return null
+  }
+
+  const jobData = extractJobDataFromEmbed(embed)
+  if (!jobData) {
+    warningLog("[VIP] Nao foi possivel extrair dados da vaga")
+    return null
+  }
+
   try {
-    const response = await axios.post(
-      `${CARD_API_URL}/cards/generate`,
-      { embed: job, to },
-      { timeout: 30000 }
-    )
-    return response.data || null
+    const shortUrl = await shortenUrl(jobData.url)
+    const text = formatJobTextMessage(jobData, shortUrl)
+    return { text, jobData }
   } catch (err) {
-    errorLog(`[VIP CARD] Erro ao gerar card: ${err.message}`)
+    errorLog(`[VIP] Erro ao montar mensagem da vaga: ${err.message}`)
     return null
   }
 }
 
 /**
- * Envia o card gerado para o assinante
+ * Envia a mensagem de texto da vaga para o assinante.
  * @param {string} jid
- * @param {Object} cardData
+ * @param {string} jobId
+ * @param {{ text: string }} payload
  * @param {Object} socket
  * @returns {boolean}
  */
-async function sendCardPayload(jid, jobId, cardData, socket) {
-  if (!cardData?.image?.base64) {
+async function sendJobMessage(jid, jobId, payload, socket) {
+  if (!payload?.text) {
     return false
   }
 
   try {
-    const buffer = Buffer.from(cardData.image.base64, "base64")
     await delay(TIMEOUT_IN_MILLISECONDS_BY_EVENT)
-    await socket.sendMessage(jid, {
-      image: buffer,
-      caption: cardData.text,
-      mimetype: cardData.image.mimeType
-    })
+    await socket.sendMessage(jid, { text: payload.text })
     const timestamp = new Date().toISOString()
-    successLog(`[VIP CARD] Job ${jobId} sent to ${jid} at ${timestamp}`)
+    successLog(`[VIP] Job ${jobId} sent to ${jid} at ${timestamp}`)
     return true
   } catch (err) {
-    errorLog(`[VIP CARD] Falha ao enviar card para ${jid}: ${err.message}`)
+    errorLog(`[VIP] Falha ao enviar vaga para ${jid}: ${err.message}`)
     return false
   }
 }
@@ -1991,17 +2005,17 @@ async function sendJobToSubscriber(lid, job) {
     }
 
     const jid = lidToJid(lid)
-    const cardPayload = await fetchJobCard(job, jid)
-    if (!cardPayload) {
-      const reason = "card_generation_failed"
-      warningLog(`[VIP] Card não gerado para ${lid}: ${reason}`)
+    const messagePayload = await buildJobTextMessage(job)
+    if (!messagePayload) {
+      const reason = "message_build_failed"
+      warningLog(`[VIP] Mensagem não montada para ${lid}: ${reason}`)
       return { success: false, reason }
     }
 
-    const sent = await sendCardPayload(jid, jobId, cardPayload, socket)
+    const sent = await sendJobMessage(jid, jobId, messagePayload, socket)
     if (!sent) {
-      const reason = "card_send_failed"
-      warningLog(`[VIP] Falha ao enviar card para ${lid}: ${reason}`)
+      const reason = "message_send_failed"
+      warningLog(`[VIP] Falha ao enviar vaga para ${lid}: ${reason}`)
       return { success: false, reason }
     }
 

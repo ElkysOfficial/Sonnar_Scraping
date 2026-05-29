@@ -6,12 +6,16 @@
 //   pm2 logs / pm2 restart all
 //   pm2 save && pm2 startup               (persistir no boot da VPS)
 //
-// Todos os 4 processos sao de longa duracao (rodam ate alguem parar).
+// Todos os 3 processos sao de longa duracao (rodam ate alguem parar).
 // Ordem do array = ordem de subida.
 //
 // MEMORIA: a maquina tem 8GB. `max_memory_restart` reinicia o processo se
 // ele passar do teto, evitando que a maquina inteira estoure (OOM).
-// Orcamento: ~3.5GB pros apps + ~1GB SO = bastante folga. Ver OPERACAO.md.
+// Orcamento: ~3GB pros apps + ~1GB SO = bastante folga. Ver OPERACAO.md.
+//
+// NOTA: o processo `sonnar-wa-formatter` foi removido na v3.6.0 — a
+// geracao de imagem dos cards foi descontinuada. O sender agora envia
+// vagas em texto puro (textBuilder.js).
 // =====================================================
 
 // Interpretador Python do scraper. Ordem de prioridade:
@@ -56,21 +60,6 @@ module.exports = {
       // Em produçao, monitorar /health (campo "jobs") e elevar se passar
       // de ~300MB sustentado.
       max_memory_restart: "512M",
-      time: true,
-    },
-    {
-      name: "sonnar-wa-formatter",
-      cwd: "./apps/whatsapp/formatter",
-      script: "src/server.js",
-      autorestart: true,
-      max_restarts: 10,
-      restart_delay: 3000,
-      // 600M (era 400M): o Canvas (geracao de imagem) acumula buffers e
-      // batia o teto a cada ~30min, gerando ~12-15 restarts/dia sem erro
-      // fatal nos logs (PM2 SIGTERM antes do crash). 600M dobra o intervalo
-      // para ~1h, reduzindo para ~6-8 restarts/dia. Ainda dentro do
-      // orcamento de 8GB da VPS (~3.7GB total apps).
-      max_memory_restart: "600M",
       time: true,
     },
     {
