@@ -409,10 +409,15 @@ async def get_infojobs_jobs(on_job=None) -> list:
                 return None
             parsed = _parse_job_detail(response.text, link)
             if parsed is not None:
+                # v3.6.0: skip vaga (return None) se enrichment falha — banco so contem PT.
                 try:
                     parsed = await enrich_canonical(parsed, hint_lang="pt")
-                except Exception:
-                    pass
+                except Exception as exc:
+                    import logging
+                    logging.getLogger("scraper.engine.infojobs").warning(
+                        "[infojobs] skip job=%s: enrichment falhou: %s", link, exc
+                    )
+                    return None
             if parsed is not None and on_job is not None:
                 try:
                     await on_job(parsed)

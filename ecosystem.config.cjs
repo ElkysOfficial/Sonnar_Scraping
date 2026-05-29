@@ -111,20 +111,9 @@ module.exports = {
       max_memory_restart: "2048M",
       time: true,
     },
-    // NOTA: o servico `sonnar-backfill` foi removido do VPS.
-    // O backfill so existe para tratar vagas LEGADO (anteriores ao v3.0.0)
-    // que entraram no banco sem `description_lang`/`responsibilities`.
-    // Vagas novas ja saem das engines com esses campos preenchidos via
-    // `enrich_canonical` em `src/utils/job_enrichment.py`, entao nao ha
-    // motivo para manter o daemon rodando 24/7 na VPS competindo por
-    // CPU/RAM com o scraper e o core (Argos e CPU-bound e custou caro:
-    // ~67% de CPU sustentado, alem de ter gerado processo orfao quando
-    // PM2 nao conseguiu reciclar).
-    //
-    // Para processar o legado, rodar localmente (uma maquina mais
-    // potente que a VPS):
-    //   cd apps/scraper
-    //   python scripts/backfill_enrichment.py --all --chunk-size 50
-    // (sem --daemon: termina quando a fila esvazia).
+    // v3.6.0: backfill removido completamente.
+    // Toda engine ja chama `enrich_canonical` antes de gravar a vaga, e o
+    // core (POST /jobs/batch) rejeita payloads sem `description_lang` — nao
+    // existe mais o conceito de "vaga legado sem enrichment".
   ],
 };

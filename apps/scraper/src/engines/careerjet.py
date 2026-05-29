@@ -504,12 +504,21 @@ async def get_careerjet_jobs(on_job=None) -> list:
         # traducao no helper e so faz extract_responsibilities. Depois
         # sobrescrevemos description_lang com o IDIOMA DE ORIGEM (src)
         # pra preservar a informacao de procedencia.
+        #
+        # v3.6.0: aqui o skip nao se aplica como nas outras engines porque
+        # a description ja foi traduzida pra PT antes deste ponto. Se enrich
+        # falha, e so a extract_responsibilities + description_lang que nao
+        # preenchem — mas o core REJEITA description_lang=None, entao
+        # garantimos manualmente preenchendo com o src de origem.
         try:
             parsed = await enrich_canonical(parsed, hint_lang="pt")
-            if len(parsed) >= 11:
-                parsed[10] = src
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("[careerjet] enrich falhou url=%s src=%s err=%s — usando metadados parciais", parsed[0] if parsed else "?", src, exc)
+            # Garante shape 12 mesmo no fallback (description ja em PT acima).
+            if len(parsed) < 12:
+                parsed = list(parsed) + [None] * (12 - len(parsed))
+        if len(parsed) >= 11:
+            parsed[10] = src  # idioma de origem (mesmo em fallback)
         tracker.discover(parsed[0], engine="careerjet")
         jobs.append(parsed)
         if on_job is not None:

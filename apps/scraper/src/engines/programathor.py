@@ -150,10 +150,12 @@ async def get_programathor_jobs(on_job=None) -> list:
             job = await refetch_one(link, client=client)
             if job is None:
                 continue
+            # v3.6.0: skip vaga se enrichment falha — banco so contem PT.
             try:
                 job = await enrich_canonical(job, hint_lang="pt")
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning("[programathor] skip job=%s: enrichment falhou: %s", link, exc)
+                continue
             jobs.append(job)
             if on_job is not None:
                 try:

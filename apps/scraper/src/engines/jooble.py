@@ -467,10 +467,12 @@ async def get_jooble_jobs(on_job=None) -> list:
                         continue
                     if parsed is None:
                         continue
+                    # v3.6.0: skip vaga se enrichment falha — banco so contem PT.
                     try:
                         parsed = await enrich_canonical(parsed, hint_lang="pt")
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        logger.warning("[jooble] skip job=%s: enrichment falhou: %s", parsed[0] if parsed else "?", exc)
+                        continue
                     tracker.discover(parsed[0], engine="jooble")
                     jobs.append(parsed)
                     if on_job is not None:

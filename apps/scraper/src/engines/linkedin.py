@@ -861,6 +861,8 @@ async def _fetch_detail(seed: dict, sem: asyncio.Semaphore, client) -> dict:
     # detect_lang -> translate (se !=pt) -> extract_responsibilities.
     # description e SUBSTITUIDA pela versao em PT quando idioma original
     # nao for portugues (regra de produto: cliente sempre recebe PT).
+    #
+    # v3.6.0: se enrichment falha, retorna None (skip vaga). Banco so PT.
     if out["description"]:
         try:
             lang, resp, description_pt = await enrich_async(
@@ -875,8 +877,9 @@ async def _fetch_detail(seed: dict, sem: asyncio.Semaphore, client) -> dict:
                 out["skills"] = extract_skills(description_pt)
         except Exception as exc:  # noqa: BLE001
             logger.warning(
-                "enrich_failed url=%s err=%s", seed.get("link"), exc
+                "[linkedin] skip url=%s: enrichment falhou: %s", seed.get("link"), exc
             )
+            return None
 
     return out
 

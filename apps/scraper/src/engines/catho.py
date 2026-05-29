@@ -578,10 +578,12 @@ async def get_catho_jobs(on_job=None) -> list:
                         await asyncio.sleep(random.uniform(1.0, 2.0))
 
                     parsed_full = apply_description_fallbacks(parsed + [skills, description])
+                    # v3.6.0: skip vaga se enrichment falha — banco so contem PT.
                     try:
                         parsed_full = await enrich_canonical(parsed_full, hint_lang="pt")
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        logger.warning("[catho] skip job=%s: enrichment falhou: %s", parsed_full[0] if parsed_full else "?", exc)
+                        continue
                     jobs.append(parsed_full)
                     added_this_page += 1
                     added_for_stack += 1

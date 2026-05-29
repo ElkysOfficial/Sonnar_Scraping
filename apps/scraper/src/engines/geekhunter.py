@@ -9,9 +9,12 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import re
 import sys
+
+logger = logging.getLogger("scraper.engine.geekhunter")
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
@@ -507,12 +510,17 @@ async def get_geekhunter_jobs(on_job=None) -> list:
 
         # Pos-processamento universal: minera campos faltantes da descricao
         # e aplica o pipeline central de enriquecimento (v2.23.0).
-        for i in range(len(jobs)):
-            jobs[i] = apply_description_fallbacks(jobs[i])
+        # v3.6.0: vagas com enrichment falhado sao descartadas (banco so PT).
+        enriched_jobs = []
+        for job in jobs:
+            job = apply_description_fallbacks(job)
             try:
-                jobs[i] = await enrich_canonical(jobs[i], hint_lang="pt")
-            except Exception:
-                pass
+                job = await enrich_canonical(job, hint_lang="pt")
+            except Exception as exc:
+                logger.warning("[geekhunter] skip job=%s: enrichment falhou: %s", job[0] if job else "?", exc)
+                continue
+            enriched_jobs.append(job)
+        jobs = enriched_jobs
 
         if on_job is not None:
             for job in jobs:

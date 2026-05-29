@@ -99,6 +99,24 @@ agregada: vCPU pico **73% → ~50-55%**, RAM **-700MB** transitório):
   e imprime cada mensagem renderizada (modo offline) ou consulta o core
   e renderiza vagas reais (modo `--live`).
 
+### Qualidade — pipeline PT-only obrigatório
+
+- **Backfill removido completamente**: `apps/scraper/scripts/backfill_enrichment.py`
+  deletado. Não existe mais o conceito de "vaga legado sem enrichment" — toda
+  vaga nova já passa por `enrich_canonical` na engine.
+- **Guarda no core**: `POST /jobs/batch` agora **rejeita** (HTTP 422) qualquer
+  payload com vaga que não tenha `description_lang` preenchido. Esse campo só
+  existe se a engine chamou o pipeline de enrichment — a guarda previne que
+  uma engine quebrada deixe texto estrangeiro vazar pro banco.
+- **Engines: `try/except: pass` substituído por skip + log warning** em 17
+  arquivos (15 engines do padrão simples + linkedin + careerjet). Se o
+  Argos crashar ao traduzir uma vaga, a vaga é descartada localmente em vez
+  de gravada com texto estrangeiro. O log do scraper mostra qual vaga foi
+  pulada e por quê (mensagem `[engine] skip job=... enrichment falhou: ...`).
+- **Efeito final**: o banco `jobs.db` e tudo que vai pro cliente/grupo é
+  garantidamente em **português** (description traduzida via Argos quando
+  origem != pt; `description_lang` preserva o idioma original para auditoria).
+
 ### Operação
 
 - VPS: nenhuma config nova de env. `pm2 reload ecosystem.config.cjs` +
@@ -106,6 +124,9 @@ agregada: vCPU pico **73% → ~50-55%**, RAM **-700MB** transitório):
 - Se você tinha configurado Vercel/DNS para o card-renderer dos PRs
   #100/#101: pode deletar o projeto Vercel e remover o CNAME
   `cards.sonnarjobs.com.br` no painel Hostinger.
+- Monitorar nos logs `[<engine>] skip job=...` após deploy — se aparecer em
+  volume alto numa engine específica, sinal de problema sistêmico no Argos
+  (sem modelo baixado, OOM, etc).
 
 ## [3.2.0] - 2026-05-25
 
