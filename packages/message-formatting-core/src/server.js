@@ -1,5 +1,6 @@
 import "dotenv/config"
 import express from "express"
+import compression from "compression"
 import cors from "cors"
 import crypto from "node:crypto"
 import fs from "node:fs"
@@ -171,6 +172,10 @@ function buildIncoming(payload) {
 
 const app = express()
 app.use(cors())
+// v3.6.0: gzip nas respostas. /jobs/pending pode retornar payload grande
+// (~500KB-2MB). Compressao reduz ~70% bandwidth + RAM transit do socket.
+// Threshold=1024 evita overhead em respostas pequenas (/health, etc).
+app.use(compression({ threshold: 1024 }))
 
 // Limites de corpo por rota: POST /jobs/batch recebe lotes grandes do scraper;
 // os demais lidam com uma vaga so.
@@ -202,10 +207,49 @@ app.post("/jobs", jsonSmall, (req, res) => {
 //
 // sent_to NUNCA e sobrescrito pelo que o scraper manda: e autoridade do core
 // (sao os bots que marcam envio). O repo.upsertBatch ja preserva.
+//
+// v3.6.0: guard de qualidade. Toda vaga deve ter passado pelo pipeline
+// `enrich_canonical` (apps/scraper/src/utils/job_enrichment.py) antes de
+// chegar aqui. Isso traduz a description pra PT (quando origem != pt) e
+// extrai responsibilities. O sinal de que o enrichment rodou e o campo
+// `description_lang` estar preenchido (idioma de origem detectado).
+//
+// Politica de produto: o banco NUNCA pode ter vaga com description em
+// outro idioma que nao PT. Se uma engine esquecer de chamar enrich, o
+// payload e rejeitado aqui — falha fica visivel no log do scraper em
+// vez de poluir o banco silenciosamente.
+function validateEnrichedJobs(jobs) {
+  const missing = []
+  for (const job of jobs) {
+    const id = job?.id || job?.job_url || job?.url || "<sem-id>"
+    if (!job?.description_lang) {
+      missing.push(id)
+    }
+  }
+  return missing
+}
+
 app.post("/jobs/batch", jsonBatch, (req, res) => {
   const incoming = Array.isArray(req.body?.jobs) ? req.body.jobs : null
   if (!incoming) {
     return res.status(400).json({ success: false, message: "Campo 'jobs' (array) e obrigatorio." })
+  }
+  const missingLang = validateEnrichedJobs(incoming)
+  if (missingLang.length > 0) {
+    const preview = missingLang.slice(0, 5).join(", ")
+    const more = missingLang.length > 5 ? ` (+${missingLang.length - 5} mais)` : ""
+    console.warn(
+      `[core] POST /jobs/batch rejeitado: ${missingLang.length} vaga(s) sem description_lang. ` +
+      `IDs: ${preview}${more}`
+    )
+    return res.status(422).json({
+      success: false,
+      message:
+        "Vagas sem description_lang nao sao aceitas. Toda engine deve chamar " +
+        "enrich_canonical antes do upload (politica de produto: banco so contem " +
+        "descricoes em PT).",
+      missingLang,
+    })
   }
   try {
     const { upserted, skipped } = repo.upsertBatch(incoming)

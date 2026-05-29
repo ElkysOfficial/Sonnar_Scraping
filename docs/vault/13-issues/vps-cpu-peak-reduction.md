@@ -18,7 +18,7 @@ Issue operacional de acompanhamento do objetivo formalizado em [[../12-decisions
 - RAM: 28%
 - Processos PM2 ativos: 4 (`sonnar-core`, `sonnar-wa-formatter`, `sonnar-wa-sender`, `sonnar-scraper`). O `sonnar-backfill` está parado.
 
-> ⚠️ Após o merge do PR1 (card-renderer Vercel) os processos ativos passam a ser **3**: `sonnar-core`, `sonnar-wa-sender`, `sonnar-scraper`. Baseline pós-deploy a ser remedido.
+> ⚠️ Após o merge do PR de texto-only (v3.6.0) os processos ativos passam a ser **3**: `sonnar-core`, `sonnar-wa-sender`, `sonnar-scraper`. Baseline pós-deploy a ser remedido.
 
 **Meta:** vCPU pico ≤ 50%, RAM em queda relevante.
 
@@ -40,33 +40,25 @@ Janela de pico observada: ciclo VIP do `sonnar-wa-sender` (a cada 30min em `vipJ
 
 ## Roteiro de PRs
 
-### PR1 — Canvas (formatter) ✅ implementado
+### PR1 — Canvas (formatter) ✅ resolvido pela via mais direta: removido
 
-**Decisão:** Nível 2 — `@vercel/og` standalone (sem Next.js), TypeScript.
+**Decisão final (v3.6.0):** geração de imagem foi **descontinuada** do produto. Todas as vagas passam a ser enviadas como **texto puro** no WhatsApp. As informações que ficavam no card visual (salário, modalidade, fonte, data) entram no próprio texto.
 
-Novo app `apps/card-renderer/` (Vercel Edge Function + Satori) substituiu o processo `sonnar-wa-formatter`. Geração de imagem 100% fora da VPS. Domínio `cards.sonnarjobs.com.br` (CNAME Vercel).
+Caminho percorrido:
+1. PR #100 (v3.5.0) tentou migrar canvas pra Vercel Edge Function (`@vercel/og`).
+2. PR #101 (v3.5.1) corrigiu erro de runtime no `vercel.json`.
+3. Antes de configurar Vercel/DNS, Lucelho decidiu que **com 1 cliente VIP** o card visual não justifica o custo de manter outro vendor + infra. Texto puro entrega a mesma informação, custa zero compute e elimina a dependência inteira.
+4. PR de reversão + transição: `git revert` dos #100 e #101 + novo PR removendo o formatter de vez e refatorando o sender pra mandar texto.
 
-**Mudanças na VPS:**
+**Mudanças resultantes na VPS:**
+- Processo `sonnar-wa-formatter` removido do `ecosystem.config.cjs` (-1 PM2, -600MB de teto).
+- `apps/whatsapp/formatter/` deletado do repo.
+- `@napi-rs/canvas` sai do disco.
+- `apps/whatsapp/sender/src/services/textBuilder.js` (novo) monta a mensagem completa em texto.
+- `apps/whatsapp/sender/src/services/coreClient.js` (novo) — sender fala direto com o core, sem middleman.
+- `vipJobSender.js` e `cardJobSender.js` enviam com `{ text }` em vez de `{ image, caption }`.
 
-- `sonnar-wa-formatter` **removido do `ecosystem.config.cjs`** (-600MB de teto, -1 processo PM2).
-- `apps/whatsapp/formatter/` **deletado** do repo.
-- `formatCaption` + `extractJobDataFromEmbed` + `extractResponsibilities` migrados pra `apps/whatsapp/sender/src/services/captionBuilder.js` (lógica preservada 1:1).
-- `apps/whatsapp/sender/src/services/cardClient.js` novo: assina payload com HMAC-SHA256 e faz GET no card-renderer.
-- `apps/whatsapp/sender/src/services/coreClient.js` novo: sender fala direto com o core (eliminado o middleman do formatter).
-- Dependência `@napi-rs/canvas` sai do disco da VPS.
-
-**Variáveis novas no sender:**
-- `CARD_RENDERER_URL` (ex: `https://cards.sonnarjobs.com.br`)
-- `CARD_RENDERER_SECRET` (mesmo valor configurado no Vercel)
-
-**Rollback:** `CARD_API_URL` mantido por 1 release como deprecated no `config.js`; ecosystem antigo está no histórico git.
-
-**Métrica pendente:** rodar `pm2 monit` 24h pós-deploy em prod e atualizar esta nota com delta real de vCPU/RAM.
-
-**Decisões de produto refletidas no card:**
-- Sem cache em disco (descartado — apenas 1 cliente VIP, ganho marginal vs CDN da Vercel).
-- Sem grão/textura procedural (Satori não suporta; visual ~95% idêntico em chat WhatsApp).
-- Tipografia adaptativa por heurística de comprimento (Satori não tem `measureText`).
+**Métrica:** rodar `pm2 monit` 24h pós-deploy em prod e atualizar esta nota com delta real de vCPU/RAM.
 
 ### PR2 — Scraper
 

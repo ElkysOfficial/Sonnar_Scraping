@@ -44,11 +44,13 @@ from ..utils.translator import prepare as prepare_translation
 # no boot evita pagar latencia de download/init na primeira vaga de cada
 # idioma — antes, isso aparecia como spikes de CPU intermitentes durante
 # o ciclo. Modelos ja em cache no disco do Argos sao no-op.
+# v3.6.0: reduzido de 27 -> 8 idiomas (ADR-006). Os 8 mantidos cobrem >95%
+# das vagas estrangeiras observadas em prod (en/es/fr/de/it sao a maior
+# fatia; pl/nl/pt completam o nucleo). Idiomas raros sao preparados sob
+# demanda na primeira vaga (overhead ~2-5s por idioma novo, amortizado).
+# Ganho: -800MB de RAM no boot do scraper.
 _WARMUP_LANGS = (
     "en", "es", "fr", "de", "it", "nl", "pl", "pt",
-    "ru", "uk", "tr", "ja", "zh", "ko", "ar", "hu",
-    "cs", "sv", "no", "da", "fi", "ro", "el", "he",
-    "th", "vi", "id",
 )
 
 

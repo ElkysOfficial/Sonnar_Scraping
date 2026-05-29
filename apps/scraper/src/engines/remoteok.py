@@ -186,10 +186,13 @@ async def get_remoteok_jobs(on_job=None) -> list:
             if parsed is None:
                 continue
             # Pipeline de enriquecimento (epico v3.0.0). RemoteOK e EN-only.
+            # v3.6.0: se enrichment falha, descarta a vaga em vez de gravar
+            # texto estrangeiro no banco. Politica: banco so contem PT.
             try:
                 parsed = await enrich_canonical(parsed, hint_lang="en")
-            except Exception:
-                pass  # fallback: continua com 10 campos sem lang/resp
+            except Exception as exc:
+                logger.warning("[remoteok] skip job=%s: enrichment falhou: %s", job_id, exc)
+                continue
             seen_ids.add(job_id)
             tracker.discover(parsed[0], engine="remoteok")
             jobs.append(parsed)

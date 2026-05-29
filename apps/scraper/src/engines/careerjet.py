@@ -104,9 +104,12 @@ _MAX_PAGES = int(os.getenv("CAREERJET_MAX_PAGES", "3"))
 _MAX_PAGES_FOREIGN = int(os.getenv("CAREERJET_MAX_PAGES_FOREIGN", "2"))
 # Tamanho do excerto da descricao (default da API e so 120 chars).
 _FRAGMENT_SIZE = int(os.getenv("CAREERJET_FRAGMENT_SIZE", "2000"))
-# Quantos locales estrangeiros entram por ciclo (rodizio). Com 140 locales
-# e lotes de 10, todos sao cobertos a cada ~14 ciclos (~28h).
-_COUNTRY_BATCH_SIZE = int(os.getenv("CAREERJET_COUNTRY_BATCH_SIZE", "10"))
+# Quantos locales estrangeiros entram por ciclo (rodizio). v3.6.0: default
+# baixou de 10 -> 2 (ADR-006, reducao de carga). Com 140 locales e lotes de
+# 2, todos sao cobertos a cada ~70 ciclos (~6 dias) — aceitavel pra vagas
+# internacionais que tem turnover baixo, e reduz drasticamente o pico de
+# RAM/CPU do Argos (cada locale = 1 par de idiomas carregado simultaneamente).
+_COUNTRY_BATCH_SIZE = int(os.getenv("CAREERJET_COUNTRY_BATCH_SIZE", "2"))
 
 # Retry para falhas transitorias (5xx / timeout).
 _MAX_RETRIES = 3
@@ -501,12 +504,21 @@ async def get_careerjet_jobs(on_job=None) -> list:
         # traducao no helper e so faz extract_responsibilities. Depois
         # sobrescrevemos description_lang com o IDIOMA DE ORIGEM (src)
         # pra preservar a informacao de procedencia.
+        #
+        # v3.6.0: aqui o skip nao se aplica como nas outras engines porque
+        # a description ja foi traduzida pra PT antes deste ponto. Se enrich
+        # falha, e so a extract_responsibilities + description_lang que nao
+        # preenchem — mas o core REJEITA description_lang=None, entao
+        # garantimos manualmente preenchendo com o src de origem.
         try:
             parsed = await enrich_canonical(parsed, hint_lang="pt")
-            if len(parsed) >= 11:
-                parsed[10] = src
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("[careerjet] enrich falhou url=%s src=%s err=%s — usando metadados parciais", parsed[0] if parsed else "?", src, exc)
+            # Garante shape 12 mesmo no fallback (description ja em PT acima).
+            if len(parsed) < 12:
+                parsed = list(parsed) + [None] * (12 - len(parsed))
+        if len(parsed) >= 11:
+            parsed[10] = src  # idioma de origem (mesmo em fallback)
         tracker.discover(parsed[0], engine="careerjet")
         jobs.append(parsed)
         if on_job is not None:

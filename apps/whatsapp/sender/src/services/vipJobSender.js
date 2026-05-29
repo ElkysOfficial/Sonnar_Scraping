@@ -11,8 +11,11 @@
  */
 
 import { delay } from "baileys"
-import { fetchJobCardImage } from "./cardClient.js"
-import { formatCaption } from "./captionBuilder.js"
+import {
+  extractJobDataFromEmbed,
+  resolveEmbedPayload,
+  formatJobMessage as formatJobTextMessage
+} from "./textBuilder.js"
 import { shortenUrl } from "./urlShortener.js"
 import { infoLog, infoLogAlways, successLog, warningLog, errorLog } from "../utils/logger.js"
 import {
@@ -1907,49 +1910,64 @@ function lidToJid(lid) {
 }
 
 /**
- * Solicita ao card-renderer (Vercel Edge) o PNG da vaga e monta a legenda
- * localmente (formatCaption + shortener). Substituiu a chamada antiga ao
- * formatter local (POST localhost:3001/cards/generate) quando o processo
- * sonnar-wa-formatter foi removido da VPS.
+ * Monta a mensagem da vaga em texto puro (sem imagem). Substituiu a chamada
+ * antiga ao formatter local (POST localhost:3001/cards/generate) na v3.6.0,
+ * quando a geracao de imagem foi removida pra zerar custo de CPU/RAM.
+ *
+ * Toda informacao que vivia no card visual (salario, modalidade, fonte, data)
+ * agora aparece no proprio texto.
  *
  * @param {Object} job
- * @returns {Promise<{ imageBuffer: Buffer, caption: string, jobData: Object } | null>}
+ * @returns {Promise<{ text: string, jobData: Object } | null>}
  */
-async function buildJobCardForDelivery(job) {
-  const cardImage = await fetchJobCardImage(job)
-  if (!cardImage) return null
+// Exportada pra testes em `src/test/vipJobSender.test.js`. Aceita `deps`
+// opcional pra injetar `shortenUrl` mockado nos testes sem bater na rede.
+export async function buildJobTextMessage(job, deps = { shortenUrl }) {
+  const embed = resolveEmbedPayload(job)
+  if (!embed) {
+    warningLog("[VIP] Payload da vaga invalido — nao foi possivel montar embed")
+    return null
+  }
 
-  const { imageBuffer, jobData } = cardImage
-  const shortUrl = await shortenUrl(jobData.url)
-  const caption = formatCaption(jobData, shortUrl)
-  return { imageBuffer, caption, jobData }
+  const jobData = extractJobDataFromEmbed(embed)
+  if (!jobData) {
+    warningLog("[VIP] Nao foi possivel extrair dados da vaga")
+    return null
+  }
+
+  try {
+    const shortUrl = await deps.shortenUrl(jobData.url)
+    const text = formatJobTextMessage(jobData, shortUrl)
+    return { text, jobData }
+  } catch (err) {
+    errorLog(`[VIP] Erro ao montar mensagem da vaga: ${err.message}`)
+    return null
+  }
 }
 
 /**
- * Envia o card gerado para o assinante
+ * Envia a mensagem de texto da vaga para o assinante.
  * @param {string} jid
  * @param {string} jobId
- * @param {{ imageBuffer: Buffer, caption: string }} cardData
+ * @param {{ text: string }} payload
  * @param {Object} socket
+ * @param {Object} [deps] - injecao pra testes (sobrescreve `delay` p/ ser instantaneo).
  * @returns {boolean}
  */
-async function sendCardPayload(jid, jobId, cardData, socket) {
-  if (!cardData?.imageBuffer) {
+// Exportada pra testes em `src/test/vipJobSender.test.js`.
+export async function sendJobMessage(jid, jobId, payload, socket, deps = { delay }) {
+  if (!payload?.text) {
     return false
   }
 
   try {
-    await delay(TIMEOUT_IN_MILLISECONDS_BY_EVENT)
-    await socket.sendMessage(jid, {
-      image: cardData.imageBuffer,
-      caption: cardData.caption,
-      mimetype: "image/png"
-    })
+    await deps.delay(TIMEOUT_IN_MILLISECONDS_BY_EVENT)
+    await socket.sendMessage(jid, { text: payload.text })
     const timestamp = new Date().toISOString()
-    successLog(`[VIP CARD] Job ${jobId} sent to ${jid} at ${timestamp}`)
+    successLog(`[VIP] Job ${jobId} sent to ${jid} at ${timestamp}`)
     return true
   } catch (err) {
-    errorLog(`[VIP CARD] Falha ao enviar card para ${jid}: ${err.message}`)
+    errorLog(`[VIP] Falha ao enviar vaga para ${jid}: ${err.message}`)
     return false
   }
 }
@@ -1991,17 +2009,17 @@ async function sendJobToSubscriber(lid, job) {
     }
 
     const jid = lidToJid(lid)
-    const cardPayload = await buildJobCardForDelivery(job)
-    if (!cardPayload) {
-      const reason = "card_generation_failed"
-      warningLog(`[VIP] Card não gerado para ${lid}: ${reason}`)
+    const messagePayload = await buildJobTextMessage(job)
+    if (!messagePayload) {
+      const reason = "message_build_failed"
+      warningLog(`[VIP] Mensagem não montada para ${lid}: ${reason}`)
       return { success: false, reason }
     }
 
-    const sent = await sendCardPayload(jid, jobId, cardPayload, socket)
+    const sent = await sendJobMessage(jid, jobId, messagePayload, socket)
     if (!sent) {
-      const reason = "card_send_failed"
-      warningLog(`[VIP] Falha ao enviar card para ${lid}: ${reason}`)
+      const reason = "message_send_failed"
+      warningLog(`[VIP] Falha ao enviar vaga para ${lid}: ${reason}`)
       return { success: false, reason }
     }
 

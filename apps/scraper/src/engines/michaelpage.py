@@ -444,16 +444,18 @@ async def get_michaelpage_jobs(on_job=None) -> list:
                 job[9] = extra["description"]
             # Pos-processamento: minera campos vazios da descricao.
             apply_description_fallbacks(job)
+            # v3.6.0: skip vaga se enrichment falha — sentinela `clear()`
+            # marca o slot pra remocao apos o gather (banco so contem PT).
+            # v3.6.0: sem hint_lang — Michael Page Brasil tem vagas EN.
             try:
-                # enrich_canonical mutaria; aqui job ja e referencia da lista
-                # original em jobs[]. Reatribuicao explicita pra cobrir o
-                # caso de extensao 10->12.
-                enriched = await enrich_canonical(job, hint_lang="pt")
+                enriched = await enrich_canonical(job)
                 if enriched is not job:
                     job.clear()
                     job.extend(enriched)
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning("[michaelpage] skip job=%s: enrichment falhou: %s", job[0] if job else "?", exc)
+                job.clear()
+                return
             if on_job is not None:
                 try:
                     await on_job(job)
@@ -461,6 +463,8 @@ async def get_michaelpage_jobs(on_job=None) -> list:
                     pass
 
         await asyncio.gather(*(_enrich(j) for j in jobs))
+        # Remove vagas que tiveram enrichment falhado (job.clear() = vazia).
+        jobs[:] = [j for j in jobs if j]
     elif on_job is not None:
         # MP_FETCH_DETAIL desligado: emite o que veio do listing
         for j in jobs:

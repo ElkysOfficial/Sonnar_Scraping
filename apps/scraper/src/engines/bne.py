@@ -522,14 +522,23 @@ async def get_bne_jobs(on_job=None) -> list:
     semaphore = asyncio.Semaphore(6)
 
     async def _fetch_and_emit(job_id):
-        """Resolve uma vaga e emite via callback (se configurado)."""
+        """Resolve uma vaga e emite via callback (se configurado).
+
+        v3.6.0: se enrichment falha, descarta a vaga (retorna None) em vez de
+        emitir/gravar texto estrangeiro. BNE e PT-only mas Argos pode falhar
+        por OOM independente do idioma.
+        """
         parsed = await _fetch_job_detail(job_id, semaphore)
-        if parsed is not None:
-            try:
-                parsed = await enrich_canonical(parsed, hint_lang="pt")
-            except Exception:
-                pass
-        if parsed is not None and on_job is not None:
+        if parsed is None:
+            return None
+        # v3.6.0: sem hint_lang — detect_lang protege contra anuncios em EN
+        # raros mas existentes em sites brasileiros.
+        try:
+            parsed = await enrich_canonical(parsed)
+        except Exception as exc:
+            logger.warning("[bne] skip job=%s: enrichment falhou: %s", job_id, exc)
+            return None
+        if on_job is not None:
             try:
                 await on_job(parsed)
             except Exception:

@@ -21,22 +21,21 @@ tags: [performance, vps, infra, scraper, formatter, core, strategies, brainstorm
 
 ## 1. Frente Canvas (formatter)
 
+### 1.0 ✅ APLICADO: remover geração de imagem (texto puro)
+
+Decisão final (v3.6.0): card visual descontinuado. Vagas passam a ir como **texto WhatsApp puro** com toda a informação que antes vivia na imagem (título, empresa, location, modalidade, salário em destaque, skills, responsabilidades, fonte e data no rodapé).
+
+- **Ganho:** processo `sonnar-wa-formatter` **removido da VPS** (-1 PM2, -600MB de teto). Zero compute de rasterização. Zero dependência externa (vs Vercel Edge).
+- **Trade-off de produto:** perde o apelo visual do card. Aceito porque (a) só há 1 cliente VIP hoje, (b) toda info crítica está no próprio texto, (c) elimina vendor novo e custos recorrentes.
+- **Implementação:** `apps/whatsapp/sender/src/services/textBuilder.js` monta a mensagem completa local. `coreClient.js` busca vagas direto do core (sem middleman). `vipJobSender.js` e `cardJobSender.js` enviam com `{ text }`.
+
 ### 1.1 Cache em disco local por `job_id` ❌ descartado
 
-PNG salvo em `assets/cache/<job_id>.png` na primeira renderização; próximas leem do disco.
+Superado pela decisão 1.0 acima. Cache em disco só fazia sentido se o card visual fosse mantido.
 
-- **Motivo do descarte:** Lucelho optou por 1.2 (Vercel) que tira o processo inteiro da VPS — superior ao cache local que mantém o formatter rodando. Cache em disco beneficia cenários multi-cliente; com 1 VIP ativo o ganho seria marginal.
+### 1.2 Migrar para `@vercel/og` ❌ revertido (PR #100 e #101)
 
-### 1.2 Migrar para `@vercel/og` ✅ aplicado
-
-Função no portal Vercel renderiza o card; CDN cacheia por URL. Sender aponta para URL pública em vez de `localhost:3001`.
-
-- **Implementação:** `apps/card-renderer/` (Vercel Edge standalone, sem Next.js, TS).
-- **Ganho:** processo `sonnar-wa-formatter` **saiu da VPS** (-600MB de teto, -1 processo PM2).
-- **Caption + shortener:** ficaram no sender (`captionBuilder.js`, `urlShortener.js` inalterado).
-- **Auth:** HMAC-SHA256 com `CARD_RENDERER_SECRET`. URL é determinística por payload = cache HIT na CDN da Vercel.
-- **Domínio:** `cards.sonnarjobs.com.br` (CNAME).
-- **Status:** mergeado no PR `feat/card-renderer-vercel-og`. Métrica de vCPU pós-deploy a ser registrada em [[../13-issues/vps-cpu-peak-reduction]].
+Tentado em v3.5.0 e revertido em v3.6.0. Motivo: introduzir Vercel como vendor + configurar DNS + manter HMAC compartilhado não se justifica pra 1 cliente quando texto puro entrega a mesma informação útil sem nenhuma dessas camadas. Mantemos a opção arquivada caso Sonnar volte a ter público amplo que se beneficie de card visual.
 
 ### 1.3 Reduzir resolução 1080→800 🟡 baixo ganho isolado
 

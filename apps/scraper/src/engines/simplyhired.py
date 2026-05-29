@@ -335,10 +335,13 @@ async def get_simplyhired_jobs(on_job=None) -> list:
                     parsed[9] = extra["description"]
         # Pos-processamento: minera campos vazios da descricao apos detail-fetch.
         apply_description_fallbacks(parsed)
+        # v3.6.0: skip vaga se enrichment falha — banco so contem PT.
+        # Sem hint_lang: SimplyHired tem vagas BR + EN misturadas.
         try:
-            parsed = await enrich_canonical(parsed, hint_lang="pt")
-        except Exception:
-            pass
+            parsed = await enrich_canonical(parsed)
+        except Exception as exc:
+            logger.warning("[simplyhired] skip job=%s: enrichment falhou: %s", parsed[0] if parsed else "?", exc)
+            return
         jobs.append(parsed)
         if on_job is not None:
             try:

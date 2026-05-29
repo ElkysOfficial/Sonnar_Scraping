@@ -46,14 +46,25 @@ if (!fs.existsSync(TEMP_DIR)) {
   fs.mkdirSync(TEMP_DIR, { recursive: true });
 }
 
-const logger = pino(
-  { timestamp: () => `,"time":"${new Date().toJSON()}"` },
-  pino.destination(path.join(TEMP_DIR, "wa-logs.txt"))
-);
+// v3.6.0: em producao, logger Baileys vai pra silent (pino noop). Em dev,
+// mantem "error" gravando em wa-logs.txt pra debug de conexao. Reducao de
+// CPU em horarios de pico de eventos Baileys (formatacao + I/O de disco).
+const isProd = process.env.NODE_ENV === "production";
+const logger = isProd
+  ? pino({ level: "silent" })
+  : pino(
+      { timestamp: () => `,"time":"${new Date().toJSON()}"` },
+      pino.destination(path.join(TEMP_DIR, "wa-logs.txt"))
+    );
 
-logger.level = "error";
+if (!isProd) {
+  logger.level = "error";
+}
 
-const msgRetryCounterCache = new NodeCache();
+// v3.6.0: TTL de 1h + checkperiod de 10min. Sem TTL, entries de retry counter
+// (uma por messageID) cresciam indefinidamente — leak lento mas previsivel.
+// 1h e mais que suficiente porque retries do Baileys acontecem em segundos.
+const msgRetryCounterCache = new NodeCache({ stdTTL: 3600, checkperiod: 600 });
 let reconnectTimeoutId = null;
 let reconnectAttempts = 0;
 

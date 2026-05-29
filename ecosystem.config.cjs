@@ -13,9 +13,19 @@
 // ele passar do teto, evitando que a maquina inteira estoure (OOM).
 // Orcamento: ~3GB pros apps + ~1GB SO = bastante folga. Ver OPERACAO.md.
 //
-// NOTA: o processo `sonnar-wa-formatter` foi removido (geracao de imagem
-// migrou pra Vercel Edge Function via @vercel/og — projeto card-renderer).
-// Ver docs/vault/12-decisions/ADR-006-vps-load-reduction-target.md.
+// NOTA: o processo `sonnar-wa-formatter` foi removido na v3.6.0 — a
+// geracao de imagem dos cards foi descontinuada. O sender agora envia
+// vagas em texto puro (textBuilder.js).
+//
+// CRON DE RESTART DO SCRAPER (v3.6.0): adicionar dois horarios no crontab
+// da VPS pra defrag mais frequente da heap CPython (Argos + Stanza acumulam
+// fragmentacao ao longo do dia):
+//
+//   0 4  * * * pm2 restart sonnar-scraper >> ~/cron.log 2>&1
+//   0 16 * * * pm2 restart sonnar-scraper >> ~/cron.log 2>&1
+//
+// O segundo restart (16h UTC = 13h horario de Brasilia) corta o pico
+// secundario de carga sustentado.
 // =====================================================
 
 // Interpretador Python do scraper. Ordem de prioridade:
@@ -60,6 +70,8 @@ module.exports = {
       // Em produçao, monitorar /health (campo "jobs") e elevar se passar
       // de ~300MB sustentado.
       max_memory_restart: "512M",
+      // v3.6.0: NODE_ENV=production explicito (express/etc otimizam).
+      env: { NODE_ENV: "production" },
       time: true,
     },
     {
@@ -69,7 +81,15 @@ module.exports = {
       autorestart: true,
       max_restarts: 10,
       restart_delay: 5000,
-      max_memory_restart: "500M",
+      // v3.6.0: teto 500M -> 400M. Sem geracao de imagem (buffer base64
+      // de 80-200KB por delivery), o sender opera tipicamente em ~150-200MB.
+      // 400M = 2x acima do pico observado, ainda conservador.
+      max_memory_restart: "400M",
+      // v3.6.0: --max-old-space-size=384 forca V8 a fazer GC antes do
+      // teto do PM2, evitando picos de heap inteiro virar pressao no SO.
+      // Sinergiza com max_memory_restart=400M.
+      node_args: "--max-old-space-size=384",
+      env: { NODE_ENV: "production" },
       time: true,
     },
     {
@@ -91,20 +111,9 @@ module.exports = {
       max_memory_restart: "2048M",
       time: true,
     },
-    // NOTA: o servico `sonnar-backfill` foi removido do VPS.
-    // O backfill so existe para tratar vagas LEGADO (anteriores ao v3.0.0)
-    // que entraram no banco sem `description_lang`/`responsibilities`.
-    // Vagas novas ja saem das engines com esses campos preenchidos via
-    // `enrich_canonical` em `src/utils/job_enrichment.py`, entao nao ha
-    // motivo para manter o daemon rodando 24/7 na VPS competindo por
-    // CPU/RAM com o scraper e o core (Argos e CPU-bound e custou caro:
-    // ~67% de CPU sustentado, alem de ter gerado processo orfao quando
-    // PM2 nao conseguiu reciclar).
-    //
-    // Para processar o legado, rodar localmente (uma maquina mais
-    // potente que a VPS):
-    //   cd apps/scraper
-    //   python scripts/backfill_enrichment.py --all --chunk-size 50
-    // (sem --daemon: termina quando a fila esvazia).
+    // v3.6.0: backfill removido completamente.
+    // Toda engine ja chama `enrich_canonical` antes de gravar a vaga, e o
+    // core (POST /jobs/batch) rejeita payloads sem `description_lang` — nao
+    // existe mais o conceito de "vaga legado sem enrichment".
   ],
 };

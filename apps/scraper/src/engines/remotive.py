@@ -195,10 +195,12 @@ async def get_remotive_jobs(on_job=None) -> list:
                     parsed = _parse_job_item(item)
                     if parsed is None:
                         continue
+                    # v3.6.0: skip vaga se enrichment falha — banco so contem PT.
                     try:
                         parsed = await enrich_canonical(parsed, hint_lang="en")
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        logger.warning("[remotive] skip job=%s: enrichment falhou: %s", job_id, exc)
+                        continue
                     seen_ids.add(job_id)
                     tracker.discover(parsed[0], engine="remotive")
                     jobs.append(parsed)

@@ -122,7 +122,10 @@ def reset_session() -> None:
 # Mantemos um teto local de coroutines paralelas pra não criar tasks demais
 # (todas vão ser serializadas pelo limitador, mas evitamos overhead de
 # scheduling). Baixo = fluxo previsível, sem flooding inicial.
-_DETAIL_CONCURRENCY = int(os.getenv("LINKEDIN_DETAIL_CONCURRENCY", "4"))
+# v3.6.0: 4 -> 3 (ADR-006). Reduz pico de fetch paralelo do LinkedIn (~25%
+# menos sockets concorrentes), com impacto minimo no throughput porque o
+# bottleneck efetivo eh o DomainRateLimiter, nao o semaforo.
+_DETAIL_CONCURRENCY = int(os.getenv("LINKEDIN_DETAIL_CONCURRENCY", "3"))
 
 # Paginacao do listing. LinkedIn pagina em 25, e aceita ate ~start=1000.
 # Se a stack esgotar antes (zero novos numa pagina), o loop quebra.
@@ -858,6 +861,8 @@ async def _fetch_detail(seed: dict, sem: asyncio.Semaphore, client) -> dict:
     # detect_lang -> translate (se !=pt) -> extract_responsibilities.
     # description e SUBSTITUIDA pela versao em PT quando idioma original
     # nao for portugues (regra de produto: cliente sempre recebe PT).
+    #
+    # v3.6.0: se enrichment falha, retorna None (skip vaga). Banco so PT.
     if out["description"]:
         try:
             lang, resp, description_pt = await enrich_async(
@@ -872,8 +877,9 @@ async def _fetch_detail(seed: dict, sem: asyncio.Semaphore, client) -> dict:
                 out["skills"] = extract_skills(description_pt)
         except Exception as exc:  # noqa: BLE001
             logger.warning(
-                "enrich_failed url=%s err=%s", seed.get("link"), exc
+                "[linkedin] skip url=%s: enrichment falhou: %s", seed.get("link"), exc
             )
+            return None
 
     return out
 

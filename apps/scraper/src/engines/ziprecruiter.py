@@ -250,10 +250,12 @@ async def get_ziprecruiter_jobs(on_job=None) -> list:
 
                         job = [link, job_title, company, location, work_type,
                                hiring_regime, salary, publication_date]
+                        # v3.6.0: skip vaga se enrichment falha — banco so contem PT.
                         try:
                             job = await enrich_canonical(job, hint_lang="en")
-                        except Exception:
-                            pass
+                        except Exception as exc:
+                            logger.warning("[ziprecruiter] skip job=%s: enrichment falhou: %s", link, exc)
+                            continue
                         jobs.append(job)
                         if on_job is not None:
                             try:

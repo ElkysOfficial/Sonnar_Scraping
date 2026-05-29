@@ -43,7 +43,7 @@ Qualquer decisão técnica nesta linha de trabalho é avaliada pela pergunta: **
 
 Encadeamento de PRs aprovado (detalhes em [[../13-issues/vps-cpu-peak-reduction]]):
 
-1. **PR1 — Canvas: ✅ feito.** Decisão: Nível 2 (`@vercel/og` standalone, sem Next.js, TypeScript). Implementação em `apps/card-renderer/` (Vercel Edge + Satori). Processo `sonnar-wa-formatter` removido do PM2; geração de imagem 100% fora da VPS. Caption migrou pro sender; URL shortener inalterado. Branch: `feat/card-renderer-vercel-og`. Métrica pós-deploy pendente.
+1. **PR1 — Canvas: ✅ feito por remoção total na v3.6.0.** Tentamos primeiro migrar pro Vercel Edge (PR #100/#101 — `@vercel/og`), mas antes do deploy final ficou claro que pra 1 cliente VIP o card visual não justifica adicionar vendor novo, DNS dedicado e segredo compartilhado. Decisão final: geração de imagem descontinuada; vagas passam a ir em **texto puro** com toda a informação que vivia no card (salário, modalidade, fonte, data) no próprio texto. Processo `sonnar-wa-formatter` removido do PM2, `@napi-rs/canvas` sai do disco. Métrica pós-deploy pendente.
 2. **PR2 — Scraper:** `--disable-images/css` no Chromium, pool de browser único entre engines Playwright, cron de restart 2×/dia. Tier noturno de engines foi descartado.
 3. **PR3 — Core:** investigar se ainda há parse pesado por request além da migração `jobs.json` → SQLite da v3.1.0.
 

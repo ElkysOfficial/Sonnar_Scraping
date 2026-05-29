@@ -733,6 +733,8 @@ async def get_dice_jobs(on_job=None) -> list:
                             # Dice e EN-only, entao passamos hint_lang='en'
                             # pra pular deteccao automatica e ir direto pra
                             # translate -> extract_responsibilities.
+                            # v3.6.0: se enrichment falha numa vaga com description,
+                            # skipa em vez de gravar texto estrangeiro no banco.
                             description_lang = None
                             responsibilities = None
                             if description:
@@ -752,9 +754,10 @@ async def get_dice_jobs(on_job=None) -> list:
                                         description = description_pt
                                 except Exception as exc:
                                     logger.warning(
-                                        "dice_enrich_failed url=%s err=%s",
+                                        "[dice] skip job=%s: enrichment falhou: %s",
                                         link, exc,
                                     )
+                                    continue
 
                             job = apply_description_fallbacks([
                                 link, job_title, company, location_norm, work_type,

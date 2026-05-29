@@ -5,60 +5,136 @@ Todas as mudanças relevantes deste projeto são documentadas neste arquivo.
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/)
 e o projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
-## [3.5.1] - 2026-05-28
+## [3.6.0] - 2026-05-29
 
-### Corrigido
+### Mudado
 
-- **`apps/card-renderer/vercel.json`**: removido o bloco `functions` com
-  `runtime: "edge"`, que quebrava o build da Vercel com
-  `Error: Function Runtimes must have a valid version, for example
-  now-php@1.0.0`. O Edge runtime é declarado no próprio `api/card.ts` via
-  `export const config = { runtime: "edge" }` — não no `vercel.json`.
-  Build passa, mantém apenas o cache imutável nas rotas de imagem/fonts/icons.
-
-## [3.5.0] - 2026-05-28
+- **Vagas passam a ser enviadas em texto puro no WhatsApp.** A geração de
+  imagem (cards 1080×1080) foi **descontinuada** do produto. Toda a
+  informação que vivia no card visual (salário em destaque, modalidade,
+  fonte, data) agora aparece no próprio texto da mensagem, junto com o que
+  já estava na caption (título, empresa, localização, skills,
+  responsabilidades, link encurtado).
 
 ### Adicionado
 
-- **Novo app `apps/card-renderer`**: Vercel Edge Function standalone
-  (TypeScript, sem Next.js) que gera os cards 1080×1080 das vagas via
-  `@vercel/og` (Satori). Substitui o processo `sonnar-wa-formatter` que
-  rasterizava com `@napi-rs/canvas` na VPS. CDN da Vercel cacheia por URL
-  imutável; HMAC-SHA256 protege a Edge contra invocação arbitrária.
-- **`apps/whatsapp/sender/src/services/captionBuilder.js`**: porta de
-  `formatCaption` + `extractJobDataFromEmbed` + `extractResponsibilities`
-  vindas do formatter antigo. Lógica preservada 1:1.
-- **`apps/whatsapp/sender/src/services/cardClient.js`**: assina payload da
-  vaga com HMAC e busca o PNG renderizado da Edge Function.
+- **`apps/whatsapp/sender/src/services/textBuilder.js`**: monta a mensagem
+  completa em texto. Porta de `extractJobDataFromEmbed` + caption +
+  `extractResponsibilities` do formatter antigo, com layout novo incluindo
+  salário e source/data no rodapé.
 - **`apps/whatsapp/sender/src/services/coreClient.js`**: sender fala direto
-  com `message-formatting-core` (eliminado o middleman do formatter).
-- **Variáveis novas no sender**: `CARD_RENDERER_URL` e
-  `CARD_RENDERER_SECRET`.
+  com `message-formatting-core` (eliminado o middleman do formatter pro
+  `cardJobSender`).
 
 ### Removido
 
-- **Processo `sonnar-wa-formatter`** do `ecosystem.config.cjs` (-1 processo
-  PM2, -600MB de teto de RAM). PM2 cai de 4 para 3 processos ativos.
-- **`apps/whatsapp/formatter/`** inteiro deletado do repo — toda a geração
-  de imagem agora roda fora da VPS.
+- **Processo `sonnar-wa-formatter`** do `ecosystem.config.cjs` (-1 PM2,
+  -600MB de teto de RAM). PM2 cai de 4 para 3 processos ativos.
+- **`apps/whatsapp/formatter/`** inteiro deletado do repo.
 - Dependência `@napi-rs/canvas` sai do disco da VPS.
+- Variável `CARD_API_URL` removida do `config.js` do sender.
+
+### Revertido
+
+- **PR #100 (v3.5.0)** e **PR #101 (v3.5.1)** — tentativa de migrar canvas
+  pra Vercel Edge Function via `@vercel/og`. Substituído por essa solução
+  mais direta (texto puro, zero vendor novo, zero DNS, zero compute extra).
 
 ### Performance
 
-Primeiro PR do roteiro de redução de carga da VPS (ADR-006: vCPU pico
-73% → 50%). Métrica real pós-deploy a ser registrada em
+Primeiro PR efetivo do roteiro de redução de carga da VPS (ADR-006).
+Métrica real pós-deploy a ser registrada em
 `docs/vault/13-issues/vps-cpu-peak-reduction.md`.
+
+**Pacote de 16 alavancas adicionais aplicadas neste PR** (estimativa
+agregada: vCPU pico **73% → ~50-55%**, RAM **-700MB** transitório):
+
+- **Scraper:**
+  - `CAREERJET_COUNTRY_BATCH_SIZE` default 10 → **2** (menos modelos Argos
+    paralelos; -8 pp vCPU pico).
+  - `LINKEDIN_DETAIL_CONCURRENCY` default 4 → **3** (-5 pp em ciclos
+    LinkedIn-pesados).
+  - `browser_fetch` timeout 30s → **20s** (libera memória do browser
+    antes em páginas travadas).
+  - `--disable-images --disable-css/font/media` no Chromium do
+    `browser_fetch` via `context.route` + flag `imagesEnabled=false`
+    (-30 a -50% CPU do Chromium por página).
+  - Argos warmup: 27 → **8 idiomas** (-800MB no boot).
+  - `lru_cache(1024)` em `extract_skills` (cache de regex por
+    descrição).
+  - Cron de restart 2×/dia documentado (4h + 16h) no
+    `ecosystem.config.cjs`.
+
+- **Sender:**
+  - `max_memory_restart` 500M → **400M** (sem buffer de imagem).
+  - `--max-old-space-size=384` no `node_args` do PM2 (GC mais previsível).
+  - `NODE_ENV=production` explícito.
+  - Baileys logger em `silent` em prod (corta CPU de formatação pino +
+    I/O de disco em horários de pico).
+  - HTTP keep-alive nos clients axios (`coreClient`) — reusa conexão
+    TCP entre requests; -CPU de handshake.
+  - `msgRetryCounterCache` com `stdTTL: 3600` + `checkperiod: 600`
+    (eliminado leak de entries que cresciam indefinidamente).
+  - Removida dep obsoleta `@cacheable/node-cache` (0 uses).
+
+- **Core:**
+  - Gzip nas respostas Express via `compression({ threshold: 1024 })` —
+    `/jobs/pending` reduz ~70% bandwidth/RAM transit.
+  - SQLite já estava em `WAL` + `synchronous=NORMAL` (no-op,
+    confirmação).
+
+### Testes
+
+- **48 testes** novos cobrindo o pipeline texto-only:
+  - `textBuilder.test.js` (19) — montagem da mensagem, extractor,
+    fallbacks, edge cases.
+  - `textBuilder.integration.test.js` (10) — 12 vagas reais (fixture)
+    rendendo mensagens completas + invariantes.
+  - `cardJobSender.test.js` (9) — `buildNextJobMessage`,
+    `sendJobMessage`, `processNextCard` com DI (socket/db/core mockados).
+  - `vipJobSender.test.js` (10) — `buildJobTextMessage`,
+    `sendJobMessage` com socket mockado.
+- **Smoke test:**
+  `apps/whatsapp/sender/scripts/dry-run-text-delivery.js` — roda fixture
+  e imprime cada mensagem renderizada (modo offline) ou consulta o core
+  e renderiza vagas reais (modo `--live`).
+
+### Qualidade — pipeline PT-only obrigatório
+
+- **Backfill removido completamente**: `apps/scraper/scripts/backfill_enrichment.py`
+  deletado. Não existe mais o conceito de "vaga legado sem enrichment" — toda
+  vaga nova já passa por `enrich_canonical` na engine.
+- **Guarda no core**: `POST /jobs/batch` agora **rejeita** (HTTP 422) qualquer
+  payload com vaga que não tenha `description_lang` preenchido. Esse campo só
+  existe se a engine chamou o pipeline de enrichment — a guarda previne que
+  uma engine quebrada deixe texto estrangeiro vazar pro banco.
+- **Engines: `try/except: pass` substituído por skip + log warning** em 17
+  arquivos (15 engines do padrão simples + linkedin + careerjet). Se o
+  Argos crashar ao traduzir uma vaga, a vaga é descartada localmente em vez
+  de gravada com texto estrangeiro. O log do scraper mostra qual vaga foi
+  pulada e por quê (mensagem `[engine] skip job=... enrichment falhou: ...`).
+- **Removido `hint_lang="pt"` das 10 engines BR** (indeed, gupy, bne, catho,
+  geekhunter, infojobs, jooble, michaelpage, programathor, simplyhired).
+  O hint forçava o pipeline a pular detecção de idioma — vagas em inglês
+  postadas em sites brasileiros (multinacionais no Indeed, GeekHunter, etc)
+  iam pro banco como se fossem PT. Agora `detect_lang` roda em toda vaga;
+  custo de CPU é desprezível (regex única, otimizada em v3.4.0). Careerjet
+  mantém `hint_lang="pt"` legitimamente — traduz inline antes do enrich,
+  então o hint pula tradução dupla.
+- **Efeito final**: o banco `jobs.db` e tudo que vai pro cliente/grupo é
+  garantidamente em **português** (description traduzida via Argos quando
+  origem != pt; `description_lang` preserva o idioma original para auditoria).
 
 ### Operação
 
-- Configurar projeto Vercel apontando para `apps/card-renderer`, adicionar
-  `CARD_RENDERER_SECRET` em Production Environment.
-- DNS Hostinger: `cards.sonnarjobs.com.br` como CNAME para
-  `cname.vercel-dns.com`.
-- `.env` do sender na VPS: setar `CARD_RENDERER_URL` e
-  `CARD_RENDERER_SECRET` (mesmo valor da Vercel) e reiniciar
-  `sonnar-wa-sender`.
-- Rollback: `CARD_API_URL` mantido por 1 release como deprecated.
+- VPS: nenhuma config nova de env. `pm2 reload ecosystem.config.cjs` +
+  `pm2 delete sonnar-wa-formatter` + `pm2 save`.
+- Se você tinha configurado Vercel/DNS para o card-renderer dos PRs
+  #100/#101: pode deletar o projeto Vercel e remover o CNAME
+  `cards.sonnarjobs.com.br` no painel Hostinger.
+- Monitorar nos logs `[<engine>] skip job=...` após deploy — se aparecer em
+  volume alto numa engine específica, sinal de problema sistêmico no Argos
+  (sem modelo baixado, OOM, etc).
 
 ## [3.2.0] - 2026-05-25
 

@@ -215,10 +215,12 @@ async def get_weworkremotely_jobs(on_job=None) -> list:
             seen.add(link)
             tracker.discover(link, engine="weworkremotely")
             parsed = apply_description_fallbacks(parsed)
+            # v3.6.0: skip vaga se enrichment falha — banco so contem PT.
             try:
                 parsed = await enrich_canonical(parsed, hint_lang="en")
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning("[weworkremotely] skip job=%s: enrichment falhou: %s", link, exc)
+                continue
             jobs.append(parsed)
             if on_job is not None:
                 try:

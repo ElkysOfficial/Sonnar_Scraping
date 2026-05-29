@@ -2,10 +2,13 @@
  * Loop de envio de uma vaga por intervalo pro grupo geral (JOB_GROUP_ID).
  * Independente do loop VIP (vipJobSender.js).
  *
- * Antes: chamava o formatter local (localhost:3001/cards/next) que internamente
- * lia o core, renderizava no @napi-rs/canvas e devolvia tudo. Agora o sender
- * faz cada etapa: busca a vaga no core, pede o PNG ao card-renderer (Vercel),
- * monta a legenda local e envia.
+ * v3.6.0: deixou de chamar o formatter (`localhost:3001/cards/next`) — agora
+ * busca a vaga direto no core (`message-formatting-core`), monta a mensagem
+ * em texto puro localmente (textBuilder + shortener) e envia. Geracao de
+ * imagem foi removida do produto.
+ *
+ * Nome do arquivo mantido (`cardJobSender.js`) pra nao quebrar import em
+ * `loader.js`.
  */
 
 import "dotenv/config"
@@ -14,8 +17,7 @@ import { JOB_GROUP_ID, JOB_SEND_INTERVAL } from "../config.js"
 import { getCurrentSocket, isCurrentSocketReady } from "../utils/socketManager.js"
 import { getSenderState, updateSenderState } from "./database.js"
 import { fetchPendingJobs, markJobStatus } from "./coreClient.js"
-import { fetchJobCardImage } from "./cardClient.js"
-import { formatCaption } from "./captionBuilder.js"
+import { extractJobDataFromEmbed, resolveEmbedPayload, formatJobMessage } from "./textBuilder.js"
 import { shortenUrl } from "./urlShortener.js"
 
 const FIXED_INTERVAL = JOB_SEND_INTERVAL || 5 * 60 * 1000
@@ -47,56 +49,64 @@ async function getTimeUntilNextSend() {
   const state = await readCardSenderState()
   const now = Date.now()
   const elapsed = now - state.lastSentAt
-
-  if (elapsed >= FIXED_INTERVAL) {
-    return 5000
-  }
-
-  const remaining = FIXED_INTERVAL - elapsed
-  return Math.max(5000, remaining)
+  if (elapsed >= FIXED_INTERVAL) return 5000
+  return Math.max(5000, FIXED_INTERVAL - elapsed)
 }
 
 /**
- * Busca a proxima vaga pendente direto do core e monta o card completo
- * (imagem PNG via card-renderer + caption + shortUrl).
+ * Defaults das dependencias externas. Em producao usa os imports do modulo;
+ * em testes (`src/test/cardJobSender.test.js`) sao sobrescritos.
  */
-async function buildNextCard() {
-  const pending = await fetchPendingJobs(1)
+const defaultDeps = Object.freeze({
+  fetchPendingJobs,
+  markJobStatus,
+  shortenUrl,
+  getCurrentSocket,
+  isCurrentSocketReady,
+  writeCardSenderState,
+  jobGroupId: JOB_GROUP_ID,
+})
+
+/**
+ * Busca a proxima vaga pendente direto do core e monta a mensagem em texto.
+ *
+ * @param {object} [deps] - injecao opcional pra testes
+ */
+async function buildNextJobMessage(deps = defaultDeps) {
+  const pending = await deps.fetchPendingJobs(1)
   const job = pending[0]
   if (!job) return null
 
-  const cardImage = await fetchJobCardImage(job)
-  if (!cardImage) {
-    warningLog(`[CARD] Render falhou para a vaga ${job.id || job.url}`)
+  const embed = resolveEmbedPayload(job)
+  if (!embed) {
+    warningLog(`[CARD] Payload invalido para job ${job.id || job.url}`)
     return null
   }
 
-  const { imageBuffer, jobData } = cardImage
-  const shortUrl = await shortenUrl(jobData.url)
-  const caption = formatCaption(jobData, shortUrl)
+  const jobData = extractJobDataFromEmbed(embed)
+  if (!jobData) {
+    warningLog(`[CARD] Nao foi possivel extrair dados de ${job.id || job.url}`)
+    return null
+  }
 
-  return {
-    jobId: jobData.id || job.id || null,
-    imageBuffer,
-    caption
+  try {
+    const shortUrl = await deps.shortenUrl(jobData.url)
+    const text = formatJobMessage(jobData, shortUrl)
+    return { jobId: jobData.id || job.id || null, text }
+  } catch (err) {
+    errorLog(`[CARD] Erro ao montar mensagem: ${err.message}`)
+    return null
   }
 }
 
-async function sendCardMessage(card) {
+async function sendJobMessage(message, deps = defaultDeps) {
   try {
-    const socket = getCurrentSocket()
-
-    if (!isCurrentSocketReady()) {
+    const socket = deps.getCurrentSocket()
+    if (!deps.isCurrentSocketReady()) {
       warningLog("[CARD] Connection closed. Waiting for reconnection.")
       return false
     }
-
-    await socket.sendMessage(JOB_GROUP_ID, {
-      image: card.imageBuffer,
-      caption: card.caption,
-      mimetype: "image/png"
-    })
-
+    await socket.sendMessage(deps.jobGroupId, { text: message.text })
     return true
   } catch (error) {
     errorLog(`Error sending card message: ${error.message}`)
@@ -104,30 +114,29 @@ async function sendCardMessage(card) {
   }
 }
 
-async function processNextCard() {
+async function processNextCard(deps = defaultDeps) {
   infoLog("[CARD] Starting card processing...")
-
-  if (!isCurrentSocketReady()) {
+  if (!deps.isCurrentSocketReady()) {
     warningLog("[CARD] Connection closed. Waiting for reconnection.")
     return
   }
 
-  const card = await buildNextCard()
-  if (!card) {
+  const message = await buildNextJobMessage(deps)
+  if (!message) {
     infoLog("[CARD] No pending cards available")
     return
   }
 
-  infoLog(`[CARD] Sending card for job: ${card.jobId}`)
-  const success = await sendCardMessage(card)
+  infoLog(`[CARD] Sending card for job: ${message.jobId}`)
+  const success = await sendJobMessage(message, deps)
 
   if (success) {
-    if (card.jobId) {
-      await markJobStatus(card.jobId, "whatsapp", true)
+    if (message.jobId) {
+      await deps.markJobStatus(message.jobId, "whatsapp", true)
     }
-    await writeCardSenderState(Date.now())
+    await deps.writeCardSenderState(Date.now())
     const timestamp = new Date().toISOString()
-    successLog(`[CARD] Card sent successfully for job: ${card.jobId} at ${timestamp}`)
+    successLog(`[CARD] Card sent successfully for job: ${message.jobId} at ${timestamp}`)
   }
 }
 
@@ -194,6 +203,14 @@ export function stopCardSender() {
   }
   cardSenderToken += 1
   infoLog("[CARD] Card sender stopped")
+}
+
+// Exposto apenas para testes (`src/test/cardJobSender.test.js`). Nao usar em
+// codigo de producao — a interface estavel e `startCardSender` / `stopCardSender`.
+export const _internals = {
+  buildNextJobMessage,
+  sendJobMessage,
+  processNextCard,
 }
 
 export default { startCardSender, stopCardSender }
