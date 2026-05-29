@@ -16,8 +16,10 @@
 
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
-// pdfjs serverless build pra Deno
-import * as pdfjsLib from "https://esm.sh/pdfjs-dist@4.0.379/legacy/build/pdf.mjs";
+// unpdf: parser PDF feito pra serverless (Deno/Cloudflare Workers/Vercel Edge).
+// Sem dependencia de canvas.node — o pdfjs-dist puro nao roda no Deno edge
+// porque tenta carregar o binding nativo de canvas durante o bundle.
+import { extractText, getDocumentProxy } from "https://esm.sh/unpdf@0.12.1";
 import mammoth from "https://esm.sh/mammoth@1.6.0";
 import { corsHeaders, jsonResponse } from "../_shared/auth.ts";
 import { parseResumeText, PARSER_VERSION } from "../_shared/resumeParser.ts";
@@ -35,19 +37,12 @@ interface ParseRequest {
 // ──────────────────────────────────────────────────────────────────────
 
 async function extractPdfText(buffer: ArrayBuffer): Promise<string> {
-  const doc = await pdfjsLib.getDocument({ data: new Uint8Array(buffer) }).promise;
-  const pages: string[] = [];
-  for (let i = 1; i <= doc.numPages; i++) {
-    const page = await doc.getPage(i);
-    const content = await page.getTextContent();
-    const pageText = content.items
-      // deno-lint-ignore no-explicit-any
-      .map((it: any) => (typeof it.str === "string" ? it.str : ""))
-      .filter(Boolean)
-      .join(" ");
-    pages.push(pageText);
-  }
-  return pages.join("\n\n");
+  // unpdf devolve pages como array; juntamos com 2 \n entre paginas pra
+  // preservar a estrutura usada pelas heuristicas do parser (datas, etc).
+  const doc = await getDocumentProxy(new Uint8Array(buffer));
+  const { text } = await extractText(doc, { mergePages: false });
+  if (Array.isArray(text)) return text.join("\n\n");
+  return String(text || "");
 }
 
 async function extractDocxText(buffer: ArrayBuffer): Promise<string> {
