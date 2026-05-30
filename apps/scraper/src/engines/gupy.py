@@ -127,10 +127,17 @@ def _parse_job_item(item: dict) -> list:
 
     city = item.get("city") or ""
     state = item.get("state") or ""
+    country = item.get("country") or ""
+    # v3.10.9: quando city/state vazios mas a API entrega ``country``
+    # ("Brasil" eh o caso comum em vagas remotas), usa ele pra que o
+    # normalize_location derive ao menos country_code. Antes 28% das
+    # vagas ficavam com location_raw=null.
     if city and state:
         location = f"{city} - {state}"
-    else:
+    elif city or state:
         location = city or state
+    else:
+        location = country
 
     # Data ISO → DD/MM/YYYY
     date_raw = (item.get("publishedDate") or "")[:10]
