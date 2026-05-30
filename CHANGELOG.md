@@ -5,6 +5,75 @@ Todas as mudanças relevantes deste projeto são documentadas neste arquivo.
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/)
 e o projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [3.9.0] - 2026-05-30
+
+### Corrigido (bug crítico)
+
+- **Bloco "Responsabilidades" voltou a aparecer nas mensagens.** O campo
+  `responsibilities` estava sendo descartado em
+  `apps/whatsapp/sender/src/services/database.js#jobApiToDbShape` — quando o
+  sender lia vagas do core via HTTP, copiava só uma lista fixa de campos e
+  `responsibilities` (+ `description_lang`) não estavam nela. Resultado:
+  nenhuma mensagem na DM VIP mostrava o bloco mesmo quando o scraper
+  preenchia o campo. Adicionados os 2 campos ao shape.
+
+### Mudado — Redesign visual da mensagem WhatsApp
+
+Formatação profissional aproveitando todo o markdown do WhatsApp:
+
+```
+*Senior Backend Engineer*
+🏢 _Acme Corp_
+📍 São Paulo - SP
+💼 Remoto
+💰 *R$ 12.000 a R$ 18.000*
+
+━━━━━━━━━━━━━━━━━━━━
+*💻 Tecnologias*
+
+✅ Node.js   ✅ AWS
+❌ Go        ✅ TypeScript
+
+━━━━━━━━━━━━━━━━━━━━
+*📋 Responsabilidades*
+
+• Desenvolver e manter APIs em Node.js
+• Conduzir code reviews
+• Apoiar o crescimento técnico do time
+
+━━━━━━━━━━━━━━━━━━━━
+*🎯 Comparado com seu currículo*
+
+✅ Currículo bate em *3 de 4* skills da vaga
+✅ Vaga pede *5+ anos* — seu currículo indica *~7 anos*
+✅ Seu nível (*senior*) bate com a vaga
+
+━━━━━━━━━━━━━━━━━━━━
+
+🔗 *Ver a vaga:* https://son.sh/v/abc
+_via LinkedIn · 30/05/2026 09:15_
+```
+
+Detalhes:
+
+- **Separadores horizontais** (`━━━━━` × 20) organizam blocos visualmente
+- **Emojis ✅/❌/⚠️** unificados (era ✓/✗/⚠) — mais legíveis no chat
+- **Skills em 2 colunas** quando marcadas (Plus #1): caso 8 skills, vira 4
+  linhas em vez de 1 linha enorme
+- **Itálico** (`_..._`) em company + footer (fonte/data); **negrito**
+  (`*...*`) em título, salário, valores destacados no breakdown
+- **Linha "📊 Match: X de Y skills (Z%)" REMOVIDA**: redundante — os
+  emojis ✅/❌ por skill já comunicam o match visualmente
+- **Bloco de comparação com currículo** agora destaca valores em
+  negrito (`*5+ anos*`, `*senior*`) pra leitura rápida
+
+### Testes
+
+- **72 testes verdes** (todos os assertions atualizados pros novos
+  emojis/separadores/formato).
+- Smoke test offline (12 vagas reais da fixture) renderiza tudo
+  visualmente correto.
+
 ## [3.8.1] - 2026-05-29
 
 ### Adicionado — Plus #5: Match breakdown estruturado (zero LLM)

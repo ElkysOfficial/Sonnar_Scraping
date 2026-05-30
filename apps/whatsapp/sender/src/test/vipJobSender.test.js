@@ -79,10 +79,10 @@ test("VIP buildJobTextMessage: aceita job ja em forma de embed (com fields)", as
 })
 
 // ──────────────────────────────────────────────────────────────────────
-// Plus #1: ✓/✗ stacks compatíveis (v3.7.0)
+// Plus #1: ✓/❌ stacks compatíveis (v3.7.0)
 // ──────────────────────────────────────────────────────────────────────
 
-test("VIP Plus #1: subscriberStack marca cada skill com ✓ ou ✗", async () => {
+test("VIP Plus #1: subscriberStack marca cada skill com ✅ ou ✗", async () => {
   const shortenUrl = async () => "https://son.sh/v/x"
   const result = await buildJobTextMessage(
     SAMPLE_JOB, // skills: ["Python", "Airflow"]
@@ -90,10 +90,10 @@ test("VIP Plus #1: subscriberStack marca cada skill com ✓ ou ✗", async () =>
     { shortenUrl }
   )
   assert.ok(result)
-  assert.match(result.text, /✓ Python/)
-  assert.match(result.text, /✗ Airflow/)
+  assert.match(result.text, /✅ Python/)
+  assert.match(result.text, /❌ Airflow/)
   // Match sumario com porcentagem
-  assert.match(result.text, /📊 \*Match:\* 1 de 2 skills \(50%\)/)
+  // v3.9.0: linha Match removida — emojis ✅/❌ por skill ja comunicam o match
 })
 
 test("VIP Plus #1: match 100% quando todas skills batem", async () => {
@@ -103,9 +103,9 @@ test("VIP Plus #1: match 100% quando todas skills batem", async () => {
     { subscriberStack: ["python", "airflow"] },
     { shortenUrl }
   )
-  assert.match(result.text, /✓ Python/)
-  assert.match(result.text, /✓ Airflow/)
-  assert.match(result.text, /📊 \*Match:\* 2 de 2 skills \(100%\)/)
+  assert.match(result.text, /✅ Python/)
+  assert.match(result.text, /✅ Airflow/)
+  // v3.9.0: linha Match removida
 })
 
 test("VIP Plus #1: match 0% quando nenhuma skill bate", async () => {
@@ -115,9 +115,9 @@ test("VIP Plus #1: match 0% quando nenhuma skill bate", async () => {
     { subscriberStack: ["go", "rust"] },
     { shortenUrl }
   )
-  assert.match(result.text, /✗ Python/)
-  assert.match(result.text, /✗ Airflow/)
-  assert.match(result.text, /📊 \*Match:\* 0 de 2 skills \(0%\)/)
+  assert.match(result.text, /❌ Python/)
+  assert.match(result.text, /❌ Airflow/)
+  // v3.9.0: linha Match removida
 })
 
 test("VIP Plus #1: match case-insensitive (Node.js no perfil vs node.js no skill)", async () => {
@@ -127,9 +127,9 @@ test("VIP Plus #1: match case-insensitive (Node.js no perfil vs node.js no skill
     { subscriberStack: ["NODE.JS", "react"] },
     { shortenUrl }
   )
-  assert.match(result.text, /✓ Node\.js/)
-  assert.match(result.text, /✓ React/)
-  assert.match(result.text, /📊 \*Match:\* 2 de 2 skills \(100%\)/)
+  assert.match(result.text, /✅ Node\.js/)
+  assert.match(result.text, /✅ React/)
+  // v3.9.0: linha Match removida
 })
 
 test("VIP Plus #1: sem subscriberStack mantem comportamento legado (sem ✓/✗)", async () => {
