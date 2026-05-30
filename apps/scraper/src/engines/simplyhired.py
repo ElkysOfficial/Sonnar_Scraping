@@ -276,9 +276,12 @@ def _parse_job_item(item: dict, seen: set) -> list | None:
     title_lower = job_title.lower()
     location_lower = location_str.lower()
     remote_attrs = item.get("remoteAttributes", [])
+    # v3.10.7: NAO zera location quando work_type=Remoto. Vagas remotas
+    # frequentemente tem cidade/UF declarada (sao remotas a partir daquela
+    # localidade). Antes o engine descartava essa info — 69% das vagas
+    # ficavam com location_raw=null no banco.
     if remote_attrs or "remoto" in title_lower or "remote" in title_lower or "remoto" in location_lower:
         work_type = "Remoto"
-        location = []
     elif "híbrido" in title_lower or "hybrid" in title_lower or "híbrido" in location_lower:
         work_type = "Híbrido"
     else:
