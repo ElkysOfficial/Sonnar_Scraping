@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 import sys
 import xml.etree.ElementTree as ET
 from datetime import datetime
@@ -32,8 +33,21 @@ logger = logging.getLogger("scraper.engine.weworkremotely")
 from src.utils.text_utils import extract_skills, strip_html  # noqa: E402
 
 
-# 2026-05-23 (v2.22.0): pipeline central de enriquecimento. WWR e EN.
-PARSER_VERSION = "weworkremotely-2026.05.23"
+# v3.10.2 (2026-05-30): passa a extrair location de duas fontes do RSS:
+# - <region> (anywhere in the world / pais especifico)
+# - "Headquarters:" no inicio da description (HQ da empresa)
+# Antes hardcodeava location=[] mesmo com a info disponivel.
+PARSER_VERSION = "weworkremotely-2026.05.30"
+
+
+# Regex pra extrair "Headquarters: X" do inicio da description.
+# WWR sempre publica "<strong>Headquarters:</strong> {valor}" no topo.
+# O `</strong>` opcional vem entre ":" e o valor real, e o lookahead para
+# em "<", quebra de linha, "URL:" ou fim.
+_HQ_RE = re.compile(
+    r"Headquarters\s*:\s*(?:</strong>)?\s*([^\n<]+?)\s*(?=<|URL\s*:|$)",
+    re.IGNORECASE,
+)
 
 
 # --- Sessão ---------------------------------------------------------------
@@ -141,18 +155,45 @@ def _parse_job_item(item: ET.Element) -> list | None:
     publication_date = _parse_rfc822_date(pub_el.text) if pub_el is not None and pub_el.text else ""
 
     desc_el = item.find("description")
-    description = strip_html(desc_el.text) if desc_el is not None and desc_el.text else ""
+    raw_desc = desc_el.text if desc_el is not None and desc_el.text else ""
+    description = strip_html(raw_desc) if raw_desc else ""
     skills = extract_skills(description) if description else []
+
+    # v3.10.2: location vem de duas fontes no RSS — preferimos a HQ
+    # (mais especifica que o <region>, que costuma ser "Anywhere in the World").
+    location_raw = _extract_location(item, raw_desc)
 
     return [
         link, job_title, company,
-        [],                              # location vazia - site é 100% remoto
+        location_raw,
         "Remoto",                        # work_type
         _extract_hiring_regime(title_lower),
         "",                              # salary não disponível no RSS
         publication_date,
         skills, description,
     ]
+
+
+def _extract_location(item: ET.Element, raw_description: str) -> str:
+    """Deriva location_raw combinando <region> e 'Headquarters:' da description.
+
+    Prioridade:
+        1. Headquarters: ... (mais especifica — pais/cidade real).
+        2. <region> quando nao for "Anywhere".
+        3. "Worldwide" como fallback.
+    """
+    hq_match = _HQ_RE.search(raw_description or "")
+    if hq_match:
+        hq = hq_match.group(1).strip().rstrip(".,;:")
+        if hq and not re.search(r"anywhere|worldwide|remote", hq, re.I):
+            return hq
+
+    region_el = item.find("region")
+    region = region_el.text.strip() if region_el is not None and region_el.text else ""
+    if region and not re.search(r"anywhere|worldwide", region, re.I):
+        return region
+
+    return "Worldwide"
 
 
 # --- Função pública -------------------------------------------------------

@@ -578,6 +578,19 @@ def normalize_location(raw_location: str) -> Tuple[Optional[str], Optional[str]]
     if country:
         return None, country
 
+    # v3.10.2: string igual a sigla ISO alpha-2 ("BR", "US", "DE"). WWR
+    # frequentemente entrega "Headquarters: BR" / "Headquarters: US".
+    iso_only = re.match(r'^([A-Z]{2})$', raw)
+    if iso_only and iso_only.group(1) in ISO_COUNTRY_CODES:
+        return None, iso_only.group(1)
+
+    # v3.10.2: state US por nome completo sem cidade ("Florida",
+    # "WEST VIRGINIA"). Antes so funcionava como sufixo combinado.
+    if country is None:
+        for name in sorted(US_STATE_NAMES.keys(), key=len, reverse=True):
+            if normalized == name:
+                return US_STATE_NAMES[name], 'US'
+
     # v3.10.1: cidade US conhecida sem pais explicito ("Baltimore,",
     # "New York,", "San Francisco Bay Area"). Aplicado SO quando nao
     # houve match de pais e a cidade nao colide com UF brasileira.
