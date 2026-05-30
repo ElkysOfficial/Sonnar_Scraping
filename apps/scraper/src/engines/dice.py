@@ -220,7 +220,14 @@ def _format_salary(raw: str) -> str:
 
 
 def _extract_hiring_regime(text: str) -> str:
-    """Extrai regime de contratacao do texto."""
+    """Extrai regime de contratacao do texto.
+
+    v3.10.10: default 'Permanente' quando ha texto mas nada explicito casa.
+    Dice eh marketplace US tech onde full-time/permanent eh esmagadora
+    maioria. Texto vazio continua retornando '' (sem chute pra texto vazio).
+    """
+    if not text or not text.strip():
+        return ''
     text_lower = text.lower()
 
     if 'full-time' in text_lower or 'full time' in text_lower:
@@ -238,7 +245,11 @@ def _extract_hiring_regime(text: str) -> str:
     if 'temporary' in text_lower or 'temp' in text_lower:
         return 'Temporary'
 
-    return ''
+    # v3.10.10: default Permanente quando nada explicito casa. Dice eh
+    # marketplace US tech — vagas full-time/permanent sao a esmagadora
+    # maioria, e antes 87% das vagas ficavam com hiring_regime null.
+    # Sinais explicitos (Contractor/Part-time/Internship) tem precedencia.
+    return 'Permanente'
 
 
 def _extract_work_type(text: str, location: str) -> str:
