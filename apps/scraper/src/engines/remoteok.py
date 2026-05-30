@@ -22,9 +22,11 @@ from src.utils.job_fallbacks import apply_description_fallbacks  # noqa: E402
 from src.utils.text_utils import extract_skills, strip_html  # noqa: E402
 
 
-# 2026-05-23 (v2.22.0): pipeline central de enriquecimento
-# (description_lang + responsibilities). RemoteOK e sempre EN.
-PARSER_VERSION = "remoteok-2026.05.23"
+# v3.10.1 (2026-05-30): para de hardcodear location=[] e hiring_regime
+# fixo. A API do RemoteOK expoe `location` em ~93% das vagas (cobre
+# country_code/state_code apos normalize) e expoe regime via tags
+# ("full time" / "part time" / "contract" / "internship").
+PARSER_VERSION = "remoteok-2026.05.30"
 
 
 # --- Sessão ---------------------------------------------------------------
@@ -96,18 +98,34 @@ def _parse_iso_date(date_str: str) -> str:
     return date_raw
 
 
+def _infer_regime_from_tags(tags_lower: set) -> str:
+    """Infere ``hiring_regime`` a partir das tags da API.
+
+    Tags do RemoteOK incluem keywords de jornada ("full time", "part time",
+    "contract", "internship"). Default Full-time quando nenhuma bate.
+    """
+    if "part time" in tags_lower or "part-time" in tags_lower:
+        return "Part-time"
+    if "contract" in tags_lower or "contractor" in tags_lower:
+        return "Contractor"
+    if "intern" in tags_lower or "internship" in tags_lower:
+        return "Internship"
+    return "Full-time"
+
+
 def _parse_job_item(item: dict, stacks_lower: set) -> list | None:
     """Converte um item da API RemoteOK em lista canônica.
 
     Returns:
-        Lista canônica de 8 campos, ou ``None`` se a vaga não for relevante
+        Lista canônica de 10 campos, ou ``None`` se a vaga não for relevante
         (filtro contra ``stacks_lower`` + ``_TECH_FALLBACK``).
     """
     tags_raw = item.get("tags", []) or []
     tags = [str(t).lower() for t in tags_raw]
+    tags_lower = set(tags)
     position = (item.get("position") or "").lower()
     description = (item.get("description") or "").lower()[:500]
-    haystack_terms = set(tags) | set(position.split()) | set(description.split())
+    haystack_terms = tags_lower | set(position.split()) | set(description.split())
 
     if not _is_relevant(haystack_terms, stacks_lower):
         return None
@@ -115,9 +133,14 @@ def _parse_job_item(item: dict, stacks_lower: set) -> list | None:
     link = item.get("url", "")
     job_title = item.get("position", "")
     company = item.get("company", "")
-    location: list = []           # RemoteOK é 100% remoto
+
+    # v3.10.1: a API expoe `location` em ~93% das vagas (city/country).
+    # Quando vazio, fallback "Worldwide" — vaga remota sem ancoragem.
+    # Normalizamos pra string (controller aceita str ou list).
+    location_raw = (item.get("location") or "").strip()
+    location = location_raw if location_raw else "Worldwide"
     work_type = "Remoto"
-    hiring_regime = "Full-time"
+    hiring_regime = _infer_regime_from_tags(tags_lower)
 
     salary = _format_salary(item.get("salary_min"), item.get("salary_max"))
     publication_date = _parse_iso_date(item.get("date", ""))

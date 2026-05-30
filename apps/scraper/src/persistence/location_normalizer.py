@@ -133,6 +133,124 @@ COUNTRY_NAMES = {
     'malasia': 'MY', 'malaysia': 'MY',
     'taiwan': 'TW',
     'hong kong': 'HK',
+    # v3.10.1: nomes locais / paises adicionais (RemoteOK, WeWorkRemotely)
+    'espana': 'ES',
+    'kazakhstan': 'KZ', 'cazaquistao': 'KZ',
+    'paquistao': 'PK', 'pakistan': 'PK',
+    'bangladesh': 'BD',
+    'sri lanka': 'LK',
+    'nepal': 'NP',
+    'bahamas': 'BS',
+    'jamaica': 'JM',
+    'estonia': 'EE', 'estonia ': 'EE',
+    'letonia': 'LV', 'latvia': 'LV',
+    'lituania': 'LT', 'lithuania': 'LT',
+    'eslovaquia': 'SK', 'slovakia': 'SK',
+    'eslovenia': 'SI', 'slovenia': 'SI',
+    'islandia': 'IS', 'iceland': 'IS',
+    'luxemburgo': 'LU', 'luxembourg': 'LU',
+    'malta': 'MT',
+    'cipre': 'CY', 'cyprus': 'CY',
+    'libano': 'LB', 'lebanon': 'LB',
+    'jordania': 'JO', 'jordan': 'JO',
+    'iraque': 'IQ', 'iraq': 'IQ',
+    'ira': 'IR', 'iran': 'IR',
+    'ganha': 'GH', 'ghana': 'GH',
+    'mocambique': 'MZ', 'mozambique': 'MZ',
+    'angola': 'AO',
+}
+
+# Cidades US comuns que aparecem em listings sem "United States" explicito
+# (RemoteOK frequentemente entrega "Baltimore," ou "New York,"). Mapeia
+# direto para state_code US.
+US_CITY_TO_STATE = {
+    'new york': 'NY', 'manhattan': 'NY', 'brooklyn': 'NY', 'queens': 'NY',
+    'los angeles': 'CA', 'san francisco': 'CA', 'san diego': 'CA',
+    'san jose': 'CA', 'sacramento': 'CA', 'oakland': 'CA',
+    'san francisco bay area': 'CA', 'los angeles metropolitan area': 'CA',
+    'chicago': 'IL', 'houston': 'TX', 'dallas': 'TX', 'austin': 'TX',
+    'fort worth': 'TX', 'san antonio': 'TX', 'el paso': 'TX',
+    'phoenix': 'AZ', 'tucson': 'AZ', 'mesa': 'AZ',
+    'philadelphia': 'PA', 'pittsburgh': 'PA',
+    'baltimore': 'MD',
+    'washington': 'DC', 'washington dc': 'DC',
+    'boston': 'MA', 'cambridge': 'MA',
+    'seattle': 'WA', 'tacoma': 'WA',
+    'denver': 'CO', 'boulder': 'CO',
+    'atlanta': 'GA',
+    'miami': 'FL', 'orlando': 'FL', 'tampa': 'FL', 'jacksonville': 'FL',
+    'detroit': 'MI', 'cleveland': 'OH', 'columbus': 'OH', 'cincinnati': 'OH',
+    'minneapolis': 'MN', 'st paul': 'MN',
+    'portland': 'OR',
+    'las vegas': 'NV', 'reno': 'NV',
+    'nashville': 'TN', 'memphis': 'TN',
+    'charlotte': 'NC', 'raleigh': 'NC',
+    'indianapolis': 'IN',
+    'milwaukee': 'WI',
+    'kansas city': 'MO', 'st louis': 'MO',
+    'salt lake city': 'UT',
+    'new orleans': 'LA',
+    'honolulu': 'HI',
+    'anchorage': 'AK',
+}
+
+# Cidades nao-US que aparecem como "Cidade," sem pais explicito.
+WORLD_CITY_TO_COUNTRY = {
+    'london': 'GB', 'manchester': 'GB', 'birmingham': 'GB', 'edinburgh': 'GB',
+    'glasgow': 'GB', 'liverpool': 'GB', 'bristol': 'GB',
+    'paris': 'FR', 'lyon': 'FR', 'marseille': 'FR',
+    'berlin': 'DE', 'munich': 'DE', 'hamburg': 'DE', 'frankfurt': 'DE', 'cologne': 'DE',
+    'madrid': 'ES', 'barcelona': 'ES', 'valencia': 'ES', 'sevilla': 'ES',
+    'lisbon': 'PT', 'lisboa': 'PT', 'porto': 'PT',
+    'rome': 'IT', 'roma': 'IT', 'milan': 'IT', 'milano': 'IT',
+    'amsterdam': 'NL', 'rotterdam': 'NL',
+    'brussels': 'BE',
+    'zurich': 'CH', 'geneva': 'CH',
+    'vienna': 'AT',
+    'dublin': 'IE',
+    'stockholm': 'SE',
+    'oslo': 'NO', 'copenhagen': 'DK', 'helsinki': 'FI',
+    'warsaw': 'PL', 'krakow': 'PL',
+    'prague': 'CZ',
+    'budapest': 'HU',
+    'athens': 'GR',
+    'istanbul': 'TR', 'ankara': 'TR',
+    'moscow': 'RU', 'st petersburg': 'RU',
+    'kyiv': 'UA', 'kiev': 'UA',
+    'tel aviv': 'IL', 'jerusalem': 'IL',
+    'dubai': 'AE', 'abu dhabi': 'AE',
+    'riyadh': 'SA',
+    'tokyo': 'JP', 'osaka': 'JP', 'kyoto': 'JP',
+    'seoul': 'KR', 'busan': 'KR',
+    'beijing': 'CN', 'shanghai': 'CN', 'guangzhou': 'CN', 'shenzhen': 'CN',
+    'hong kong': 'HK',
+    'taipei': 'TW',
+    'singapore': 'SG',
+    'bangkok': 'TH',
+    'jakarta': 'ID',
+    'manila': 'PH', 'metro manila': 'PH',
+    'kuala lumpur': 'MY',
+    'mumbai': 'IN', 'delhi': 'IN', 'bangalore': 'IN', 'bengaluru': 'IN',
+    'hyderabad': 'IN', 'chennai': 'IN', 'kolkata': 'IN', 'pune': 'IN',
+    'gurgaon': 'IN', 'noida': 'IN', 'surat': 'IN', 'ahmedabad': 'IN',
+    'karachi': 'PK', 'lahore': 'PK', 'islamabad': 'PK',
+    'dhaka': 'BD',
+    'nairobi': 'KE',
+    'lagos': 'NG', 'abuja': 'NG',
+    'cape town': 'ZA', 'johannesburg': 'ZA',
+    'cairo': 'EG',
+    'sydney': 'AU', 'melbourne': 'AU', 'brisbane': 'AU', 'perth': 'AU',
+    'auckland': 'NZ', 'wellington': 'NZ',
+    'toronto': 'CA', 'vancouver': 'CA', 'montreal': 'CA', 'ottawa': 'CA',
+    'calgary': 'CA',
+    'mexico city': 'MX', 'guadalajara': 'MX',
+    'buenos aires': 'AR',
+    'santiago': 'CL',
+    'bogota': 'CO', 'medellin': 'CO',
+    'lima': 'PE',
+    'caracas': 'VE',
+    'nassau': 'BS',
+    'almaty': 'KZ', 'astana': 'KZ',
 }
 
 # Macro-regioes metropolitanas BR -> UF.
@@ -459,6 +577,18 @@ def normalize_location(raw_location: str) -> Tuple[Optional[str], Optional[str]]
 
     if country:
         return None, country
+
+    # v3.10.1: cidade US conhecida sem pais explicito ("Baltimore,",
+    # "New York,", "San Francisco Bay Area"). Aplicado SO quando nao
+    # houve match de pais e a cidade nao colide com UF brasileira.
+    for city in sorted(US_CITY_TO_STATE.keys(), key=len, reverse=True):
+        if re.search(rf'(?:^|[^a-z]){re.escape(city)}(?:[^a-z]|$)', normalized):
+            return US_CITY_TO_STATE[city], 'US'
+
+    # v3.10.1: cidade nao-US conhecida ("London,", "Mumbai", "Metro Manila").
+    for city in sorted(WORLD_CITY_TO_COUNTRY.keys(), key=len, reverse=True):
+        if re.search(rf'(?:^|[^a-z]){re.escape(city)}(?:[^a-z]|$)', normalized):
+            return None, WORLD_CITY_TO_COUNTRY[city]
 
     # Fallback: ISO alpha-2 explicito no fim da string (", BR", ", US").
     # Cobre engines que serializam JSON-LD como "Cidade, Region, BR" sem
