@@ -746,7 +746,12 @@ async def get_dice_jobs(on_job=None) -> list:
                             # translate -> extract_responsibilities.
                             # v3.6.0: se enrichment falha numa vaga com description,
                             # skipa em vez de gravar texto estrangeiro no banco.
-                            description_lang = None
+                            # v3.10.15: description_lang DEFAULT 'en' (Dice eh
+                            # EN-only). O core rejeita description_lang=None,
+                            # entao mesmo vagas SEM description precisam emitir
+                            # 'en' pra serem aceitas. Antes essas vagas ficavam
+                            # presas em loop de retry batendo /jobs/batch a 5s.
+                            description_lang = "en"
                             responsibilities = None
                             if description:
                                 try:
