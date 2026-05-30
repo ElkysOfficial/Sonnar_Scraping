@@ -13,8 +13,8 @@
           <span class="hero-title__accent">Direto no WhatsApp.</span>
         </h1>
         <p class="hero-subtitle animate-fade-in-up stagger-2">
-          Monitoramos 16+ fontes em tempo real e enviamos só as oportunidades que
-          combinam com seu perfil. Sem duplicatas, sem ruído, sem caçar.
+          Monitoramos 17 plataformas de vagas continuamente e enviamos só as oportunidades
+          que combinam com seu stack. Sem duplicatas, sem ruído, sem caçar.
         </p>
         <div class="hero-ctas animate-fade-in-up stagger-3">
           <router-link
