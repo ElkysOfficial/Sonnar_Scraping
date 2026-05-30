@@ -298,6 +298,32 @@ export class JobsRepository {
   }
 
   /**
+   * Listagem paginada/filtrada para o sender (v3.10.18).
+   *
+   * Antes, GET /jobs devolvia TODAS as vagas (~68k -> 30MB JSON), causando
+   * OOM no wa-sender ao parsear. Agora aceitamos limit + since pra que o
+   * cliente carregue so o que precisa (default: 30 dias, 5000 vagas).
+   *
+   * Args:
+   *   limit:      maximo de linhas (default 5000, cap 50000).
+   *   since:      ISO timestamp - exclui vagas com created_at < since.
+   *
+   * Returns: array de entries (rowToEntry) no mesmo formato de listAll.
+   */
+  listPaged({ limit = 5000, since = null } = {}) {
+    const safeLimit = Math.max(1, Math.min(50000, Number(limit) || 5000))
+    let sql = "SELECT * FROM jobs"
+    const params = []
+    if (since) {
+      sql += " WHERE created_at >= ?"
+      params.push(since)
+    }
+    sql += " ORDER BY publication_date DESC, created_at DESC LIMIT ?"
+    params.push(safeLimit)
+    return this.db.prepare(sql).all(...params).map(rowToEntry)
+  }
+
+  /**
    * Pendentes para um canal (/jobs/pending?channel=X).
    *
    * ORDEM (v3.1.0): publication_date ASC = vagas mais antigas primeiro.
