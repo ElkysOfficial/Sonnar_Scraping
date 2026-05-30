@@ -467,5 +467,22 @@ def extract_responsibilities(
     if lang == "pt" and len(cleaned) <= 1200 and _has_action_noun_density(cleaned):
         return _strip_noise_prefix(cleaned) or None
 
-    # 5) Fallback: nada bate -> None
+    # 5) Fallback final (v3.10.12): primeiros ~600 chars da description
+    # limpa apos remover prefacio "Sobre empresa". Cobre vagas com prosa
+    # que nao casam com nenhum cabecalho mas onde os primeiros paragrafos
+    # ja descrevem o papel.
+    #
+    # Guard: se a description INTEIRA aparenta ser so apresentacao da
+    # empresa (texto curto comecando com cabecalho "Sobre nos"/"Who we are"/
+    # etc), NAO entrega nada — _strip_noise_prefix devolve vazio nesse caso.
+    stripped = _strip_noise_prefix(cleaned)
+    if stripped and len(stripped) >= 120:
+        # Pega primeiros 600 chars ate um corte natural (\n\n) quando existir
+        snippet = stripped[:600]
+        break_at = snippet.rfind("\n\n")
+        if break_at >= 200:
+            snippet = snippet[:break_at]
+        snippet = snippet.strip()
+        if snippet and len(snippet) >= 120:
+            return snippet
     return None
