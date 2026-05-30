@@ -81,14 +81,22 @@ module.exports = {
       autorestart: true,
       max_restarts: 10,
       restart_delay: 5000,
-      // v3.6.0: teto 500M -> 400M. Sem geracao de imagem (buffer base64
-      // de 80-200KB por delivery), o sender opera tipicamente em ~150-200MB.
-      // 400M = 2x acima do pico observado, ainda conservador.
-      max_memory_restart: "400M",
-      // v3.6.0: --max-old-space-size=384 forca V8 a fazer GC antes do
-      // teto do PM2, evitando picos de heap inteiro virar pressao no SO.
-      // Sinergiza com max_memory_restart=400M.
-      node_args: "--max-old-space-size=384",
+      // v3.10.17: teto 400M -> 1024M. OOM em loop observado em
+      // 2026-05-30: GET /jobs do core retornava ~68k vagas (~30MB
+      // JSON), e JSON.parse no V8 expande pra ~150MB de heap durante
+      // o parse. Com 384MB de --max-old-space-size + Baileys + cache
+      // VIP em memoria, estourava 512MB e PM2 matava em loop.
+      //
+      // 1024M tem folga 4x acima do pico de heap pos-parse e ainda
+      // mantem o sender em <15% da RAM total da VPS (8GB).
+      //
+      // ROOT CAUSE long-term (TODO): paginar GET /jobs no core, ou
+      // expor cursor-based scroll. Issue: docs/vault/13-issues/.
+      max_memory_restart: "1024M",
+      // v3.10.17: --max-old-space-size=896 forca GC antes do teto
+      // PM2 (1024M). Sinergiza com max_memory_restart=1024M deixando
+      // ~128M de margem pra metadados V8 e buffers nativos do Baileys.
+      node_args: "--max-old-space-size=896",
       env: { NODE_ENV: "production" },
       time: true,
     },
