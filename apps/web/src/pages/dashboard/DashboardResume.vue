@@ -44,7 +44,10 @@
     </div>
 
     <!-- Componente de upload (apenas Plus) -->
-    <ResumeUpload v-else-if="subscriber?.plan === 'plus'" />
+    <ResumeUpload
+      v-else-if="subscriber?.plan === 'plus' && subscriber?.id"
+      :subscriber-id="subscriber.id"
+    />
 
     <!-- Loading enquanto subscriber nao foi carregado -->
     <div v-else class="dresume-loading">Carregando…</div>
