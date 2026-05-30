@@ -246,8 +246,21 @@ function jobApiToDbShape(job) {
   }
 }
 
-async function fetchAllJobsFromCore() {
-  const { data } = await coreClient.get("/jobs")
+/**
+ * Busca vagas do core paginadas.
+ *
+ * v3.10.18: antes baixava todas as ~68k vagas em 1 request (~30MB JSON),
+ * estourando o heap V8 do wa-sender no JSON.parse. Agora aceita filtros
+ * que sao aplicados via SQL no core, devolvendo so o necessario.
+ *
+ * @param {object} opts
+ * @param {number} [opts.limit=5000]   Maximo de vagas (cap server-side 50000).
+ * @param {string} [opts.since]        ISO timestamp - exclui vagas mais antigas.
+ */
+async function fetchAllJobsFromCore({ limit = 5000, since = null } = {}) {
+  const params = { limit }
+  if (since) params.since = since
+  const { data } = await coreClient.get("/jobs", { params })
   return (Array.isArray(data) ? data : []).map(jobApiToDbShape)
 }
 
@@ -266,12 +279,17 @@ export async function getAllJobs(options = {}) {
     cursorId = options.cursorId
   }
 
-  let rows = await fetchAllJobsFromCore()
+  // v3.10.18: passa limit + createdAfter pro core (filtra via SQL).
+  // limit=0 era usado antes pra "sem limite" — convertemos pro cap maximo
+  // do core (50000). Default 5000 quando nao especificado.
+  const effectiveLimit = limit === 0 ? 50000 : (Number.isInteger(limit) ? limit : 5000)
+  let rows = await fetchAllJobsFromCore({
+    limit: effectiveLimit,
+    since: createdAfter || null,
+  })
 
-  if (createdAfter) {
-    rows = rows.filter((j) => (j.created_at || "") >= createdAfter)
-  }
-
+  // cursorCreatedAt/cursorId ainda eh aplicado client-side (keyset pagination
+  // para o admin/dashboard). Volume eh menor depois do limit do servidor.
   if (cursorCreatedAt && cursorId) {
     rows = rows.filter((j) => {
       const ts = j.created_at || ""
@@ -281,9 +299,6 @@ export async function getAllJobs(options = {}) {
     })
   }
 
-  if (Number.isInteger(limit)) {
-    rows = rows.slice(0, limit)
-  }
   return rows
 }
 
@@ -292,7 +307,10 @@ export async function getAllJobs(options = {}) {
  */
 export async function getJobsPage(options = {}) {
   const { limit = 50, cursorCreatedAt, cursorId, statusFilter } = options
-  let rows = await fetchAllJobsFromCore()
+  // v3.10.18: pede ao core uma janela maior que o limit para suportar o
+  // filtro de status client-side sem subbuscar varias vezes. 1000 vagas
+  // sempre cabem em <1MB JSON — sem risco de OOM.
+  let rows = await fetchAllJobsFromCore({ limit: Math.max(limit * 4, 1000) })
 
   if (cursorCreatedAt && cursorId) {
     rows = rows.filter((j) => {
@@ -325,7 +343,12 @@ export async function getJobsDelta(senderType, limit = 100) {
   const state = await getSenderState(senderType)
   const lastCreatedAt = state?.last_processed_created_at
 
-  let rows = await fetchAllJobsFromCore()
+  // v3.10.18: usa lastCreatedAt como `since` no servidor — delta de novas
+  // vagas costuma ser <100 por chamada, evitando baixar tudo.
+  let rows = await fetchAllJobsFromCore({
+    limit: Math.max(limit * 10, 1000),
+    since: lastCreatedAt || null,
+  })
   rows.sort((a, b) => {
     const ta = a.created_at || ""
     const tb = b.created_at || ""

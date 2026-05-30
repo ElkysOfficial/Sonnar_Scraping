@@ -260,10 +260,21 @@ app.post("/jobs/batch", jsonBatch, (req, res) => {
   }
 })
 
-// GET /jobs - todas as vagas (mais novas primeiro - ordem do listAll do repo).
-app.get("/jobs", (_req, res) => {
+// GET /jobs - vagas mais recentes (paginado por padrao).
+//
+// v3.10.18: antes devolvia TODAS as vagas (~68k -> 30MB JSON), causando
+// OOM no wa-sender ao parsear. Agora paginado:
+//   ?limit=N    maximo de vagas (default 5000, cap 50000)
+//   ?since=ISO  apenas vagas com created_at >= since
+//
+// Cliente que precisa de tudo pode passar limit=50000 explicitamente
+// (e nesse caso quem chama eh responsavel por nao estourar memoria).
+app.get("/jobs", (req, res) => {
   try {
-    const jobs = repo.listAll().map(entryToApiJob)
+    const jobs = repo.listPaged({
+      limit: req.query.limit,
+      since: req.query.since || null,
+    }).map(entryToApiJob)
     res.json(jobs)
   } catch (err) {
     console.error("[core] GET /jobs falhou:", err.message)
