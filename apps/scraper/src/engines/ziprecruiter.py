@@ -1,9 +1,28 @@
 """
 Engine ZipRecruiter UK - listing HTML paginado por stack.
 
-Fluxo simples: para cada stack do lote ativo, percorre 10 páginas do
-listing ``ziprecruiter.co.uk/jobs/search``. Sem fetch de detalhe - todas
-as informações vêm do card do listing.
+Para cada stack do lote ativo, percorre ate 10 paginas do listing
+``ziprecruiter.co.uk/jobs/search``. Sem fetch de detalhe - todas as
+informacoes vem do card do listing (`div.jobList-introWrap`).
+
+Layout do card (validado em 2026-05):
+
+    <div class="jobList-introWrap">
+      <div class="jobList-intro">
+        <a class="jobList-title job-link" href="...alertsclk.com/ekn/...">
+          <strong>{job_title}</strong>
+        </a>
+        <ul class="jobList-introMeta">
+          <li><i class="fa-building"></i>{company}</li>
+          <li><i class="fa-map-marker-alt"></i>{location}</li>  # ex: "London, ENG, GB"
+          <li><i class="fa-clock"></i>{posted_ago}</li>          # opcional
+        </ul>
+        <div class="jobList-description">{snippet}</div>
+      </div>
+    </div>
+
+O link de cada vaga e um redirect (alertsclk.com) - aceito como `job_url`
+canonico porque eh o destino real ao qual o usuario chegaria.
 """
 from __future__ import annotations
 
@@ -28,20 +47,19 @@ import logging
 logger = logging.getLogger("scraper.engine.ziprecruiter")
 
 
-# 2026-05-23 (v2.22.0): pipeline central de enriquecimento. ZipRecruiter
-# nao faz fetch de detalhe atualmente, entao description vem vazia e o
-# enrich vira no-op (lang=None, resp=None). Mantemos a chamada pra que
-# eventuais melhorias futuras (description-fetch) sejam beneficiadas.
-PARSER_VERSION = "ziprecruiter-2026.05.23"
+# v3.10.0 (2026-05): reescrita do parser apos mudanca de DOM do site.
+# Card do listing agora carrega description-snippet — passamos pelo
+# enrich_canonical pra extrair `responsibilities` e detectar idioma.
+PARSER_VERSION = "ziprecruiter-2026.05.30"
 
 
-# --- Sessão ---------------------------------------------------------------
+# --- Sessao ---------------------------------------------------------------
 
 _session = None
 
 
 def get_session():
-    """Retorna a sessão global, criando-a sob demanda (impersonate Chrome)."""
+    """Retorna a sessao global, criando-a sob demanda (impersonate Chrome)."""
     global _session
     if _session is None:
         _session = requests.Session(impersonate="chrome")
@@ -49,7 +67,7 @@ def get_session():
 
 
 def reset_session() -> None:
-    """Descarta a sessão atual (use após bloqueios em sequência)."""
+    """Descarta a sessao atual (use apos bloqueios em sequencia)."""
     global _session
     _session = None
 
@@ -57,11 +75,7 @@ def reset_session() -> None:
 # --- Helpers privados -----------------------------------------------------
 
 def _parse_relative_date(date_text: str) -> str:
-    """Converte datas relativas em inglês para ``DD/MM/YYYY``.
-
-    Aceita: ``today``/``just``/``now``, ``yesterday``, ``Xd``/``X days ago``,
-    ``Xw``/``X weeks ago``, ``Xm``/``X months ago``, ``X hours ago``.
-    """
+    """Converte datas relativas em ingles para ``DD/MM/YYYY``."""
     if not date_text:
         return ""
 
@@ -75,18 +89,15 @@ def _parse_relative_date(date_text: str) -> str:
 
     days_match = re.search(r"(\d+)\s*d(ays?)?(\s*ago)?", date_text)
     if days_match:
-        days = int(days_match.group(1))
-        return (today - timedelta(days=days)).strftime("%d/%m/%Y")
+        return (today - timedelta(days=int(days_match.group(1)))).strftime("%d/%m/%Y")
 
     weeks_match = re.search(r"(\d+)\s*w(eeks?)?(\s*ago)?", date_text)
     if weeks_match:
-        weeks = int(weeks_match.group(1))
-        return (today - timedelta(weeks=weeks)).strftime("%d/%m/%Y")
+        return (today - timedelta(weeks=int(weeks_match.group(1)))).strftime("%d/%m/%Y")
 
     months_match = re.search(r"(\d+)\s*m(onths?)?(\s*ago)?", date_text)
     if months_match:
-        months = int(months_match.group(1))
-        return (today - timedelta(days=months * 30)).strftime("%d/%m/%Y")
+        return (today - timedelta(days=int(months_match.group(1)) * 30)).strftime("%d/%m/%Y")
 
     hours_match = re.search(r"(\d+)\s*h(ours?)?(\s*ago)?", date_text)
     if hours_match:
@@ -95,54 +106,115 @@ def _parse_relative_date(date_text: str) -> str:
     return ""
 
 
-def _extract_publication_date(parent) -> str:
-    """Procura data de publicação no contexto do card.
-
-    Tenta primeiro ``<time datetime>``, depois texto com padrão ``X ago``.
-    """
-    if not parent:
+def _meta_value(meta_ul, icon_keyword: str) -> str:
+    """Retorna o texto do <li> cujo <i> contem ``icon_keyword`` no class."""
+    if not meta_ul:
         return ""
-
-    date_elem = parent.find("time") or parent.find(
-        "span",
-        class_=lambda x: x and ("date" in str(x).lower() or "posted" in str(x).lower() or "ago" in str(x).lower()),
-    )
-    if date_elem:
-        date_text = date_elem.get("datetime", "") or date_elem.get_text(strip=True)
-        if date_text:
-            if len(date_text) >= 10 and "-" in date_text:
-                date_raw = date_text[:10]
-                parts = date_raw.split("-")
-                if len(parts) == 3:
-                    return f"{parts[2]}/{parts[1]}/{parts[0]}"
-            return _parse_relative_date(date_text)
-
-    # Fallback: regex no texto inteiro do card
-    card_text = parent.get_text()
-    ago_match = re.search(r"(\d+\s*(?:d|day|hour|week|month)s?\s*ago)", card_text, re.I)
-    if ago_match:
-        return _parse_relative_date(ago_match.group(1))
-
+    for li in meta_ul.find_all("li"):
+        icon = li.find("i")
+        if not icon:
+            continue
+        classes = " ".join(icon.get("class", []))
+        if icon_keyword in classes:
+            text = li.get_text(" ", strip=True)
+            if text:
+                return text
     return ""
 
 
-# --- Função pública -------------------------------------------------------
+def _infer_work_type(title: str, location: str) -> str:
+    """Heuristica: 'remote'/'hybrid' no titulo ou location."""
+    blob = f"{title} {location}".lower()
+    if "remote" in blob:
+        return "Remoto"
+    if "hybrid" in blob:
+        return "Hibrido"
+    return "Presencial"
 
-async def get_ziprecruiter_jobs(on_job=None) -> list:
-    """Coleta vagas do ZipRecruiter UK paginando 10 páginas por stack.
+
+def _infer_regime(title: str) -> str:
+    """Heuristica por palavras-chave no titulo (default Full-time)."""
+    t = title.lower()
+    if "part-time" in t or "part time" in t:
+        return "Part-time"
+    if "contract" in t or "contractor" in t:
+        return "Contractor"
+    if "intern" in t or "internship" in t:
+        return "Internship"
+    return "Full-time"
+
+
+def parse_card(wrap, today: datetime | None = None) -> dict | None:
+    """Extrai os campos canonicos de um ``div.jobList-introWrap``.
 
     Args:
-        on_job: callback opcional ``async fn(parsed)`` invocado a cada vaga
-                emitida - usado pelo controller para persistir em streaming.
+        wrap: elemento BeautifulSoup do card.
+        today: data corrente injetada (usada como fallback de publication_date
+            quando o card nao expoe data). Util pra testes deterministicos.
 
     Returns:
-        Lista no formato canônico de 8 campos.
+        dict com chaves ``link``, ``title``, ``company``, ``location_raw``,
+        ``work_type``, ``hiring_regime``, ``salary``, ``publication_date``,
+        ``description``. ``None`` se o card nao tem titulo ou link.
     """
+    today = today or datetime.now()
+
+    title_a = wrap.find("a", class_="jobList-title")
+    if not title_a:
+        return None
+
+    link = title_a.get("href", "").strip()
+    if not link:
+        return None
+    if not link.startswith("http"):
+        link = f"https://www.ziprecruiter.co.uk{link}"
+
+    title = title_a.get_text(" ", strip=True)
+    if not title:
+        return None
+
+    meta = wrap.find("ul", class_="jobList-introMeta")
+    company = _meta_value(meta, "fa-building")
+    location_raw = _meta_value(meta, "fa-map-marker-alt")
+
+    # data publicacao: pode vir como <li> com fa-clock ou regex no <ul>
+    posted_text = _meta_value(meta, "fa-clock")
+    if not posted_text and meta:
+        ago = re.search(
+            r"(today|yesterday|\d+\s*(?:d|day|hour|h|week|w|month|mo)s?\s*ago)",
+            meta.get_text(" ", strip=True),
+            re.I,
+        )
+        if ago:
+            posted_text = ago.group(0)
+    publication_date = _parse_relative_date(posted_text) if posted_text else today.strftime("%d/%m/%Y")
+
+    description = ""
+    desc_el = wrap.find("div", class_="jobList-description")
+    if desc_el:
+        description = desc_el.get_text(" ", strip=True)
+
+    return {
+        "link": link,
+        "title": title,
+        "company": company,
+        "location_raw": location_raw,
+        "work_type": _infer_work_type(title, location_raw),
+        "hiring_regime": _infer_regime(title),
+        "salary": "",
+        "publication_date": publication_date,
+        "description": description,
+    }
+
+
+# --- Funcao publica -------------------------------------------------------
+
+async def get_ziprecruiter_jobs(on_job=None) -> list:
+    """Coleta vagas do ZipRecruiter UK paginando ate 10 paginas por stack."""
     jobs = []
     seen_links = set()
     session = get_session()
 
-    # ---- Checkpoint -----------------------------------------------------
     stacks_list = list(get_active_stacks())
     batch_key = get_active_batch_key()
     cursor = await progress.resume("ziprecruiter", batch_key) if batch_key else None
@@ -174,87 +246,43 @@ async def get_ziprecruiter_jobs(on_job=None) -> list:
             try:
                 url = f"https://www.ziprecruiter.co.uk/jobs/search?q={encoded}&l=&page={page}"
                 response = await fetch_sync(session, url, timeout=30)
-
                 if response is None or response.status_code != 200:
                     break
 
                 soup = BeautifulSoup(response.text, "html.parser")
-                job_titles = soup.find_all("a", class_="jobList-title")
-                if not job_titles:
+                wraps = soup.find_all("div", class_="jobList-introWrap")
+                if not wraps:
                     break
 
-                for title_elem in job_titles:
+                for wrap in wraps:
                     try:
-                        link = title_elem.get("href", "")
-                        if not link:
+                        parsed = parse_card(wrap)
+                        if not parsed:
                             continue
-                        if not link.startswith("http"):
-                            link = f"https://www.ziprecruiter.co.uk{link}"
-                        if link in seen_links:
+                        if parsed["link"] in seen_links:
                             continue
-                        seen_links.add(link)
-                        tracker.discover(link, engine="ziprecruiter")
+                        seen_links.add(parsed["link"])
+                        tracker.discover(parsed["link"], engine="ziprecruiter")
 
-                        job_title = title_elem.get_text(strip=True)
-                        if not job_title:
-                            continue
-
-                        # Sobe pro card pai pra capturar empresa/local/salário/data
-                        parent = (
-                            title_elem.find_parent("article")
-                            or title_elem.find_parent("div", class_=lambda x: x and "job" in str(x).lower())
-                        )
-
-                        company = ""
-                        if parent:
-                            company_elem = parent.find("a", class_=lambda x: x and "company" in str(x).lower())
-                            if company_elem:
-                                company = company_elem.get_text(strip=True)
-
-                        location_raw = ""
-                        if parent:
-                            location_elem = parent.find("span", class_=lambda x: x and "location" in str(x).lower())
-                            if location_elem:
-                                location_raw = location_elem.get_text(strip=True)
-
-                        # work_type baseado em palavra-chave no título/localização
-                        title_lower = job_title.lower()
-                        location_lower = location_raw.lower()
-                        if "remote" in title_lower or "remote" in location_lower:
-                            work_type = "Remoto"
-                            location = []
-                        elif "hybrid" in title_lower or "hybrid" in location_lower:
-                            work_type = "Híbrido"
-                            location = [location_raw] if location_raw else []
-                        else:
-                            work_type = "Presencial"
-                            location = [location_raw] if location_raw else []
-
-                        # Regime
-                        hiring_regime = "Full-time"
-                        if "part-time" in title_lower or "part time" in title_lower:
-                            hiring_regime = "Part-time"
-                        elif "contract" in title_lower:
-                            hiring_regime = "Contractor"
-                        elif "intern" in title_lower:
-                            hiring_regime = "Internship"
-
-                        # Salário
-                        salary = ""
-                        if parent:
-                            salary_elem = parent.find("span", class_=lambda x: x and "salary" in str(x).lower())
-                            if salary_elem:
-                                salary = salary_elem.get_text(strip=True)
-
-                        publication_date = _extract_publication_date(parent)
-
-                        job = [link, job_title, company, location, work_type,
-                               hiring_regime, salary, publication_date]
-                        # v3.6.0: skip vaga se enrichment falha — banco so contem PT.
+                        job = [
+                            parsed["link"],
+                            parsed["title"],
+                            parsed["company"],
+                            [parsed["location_raw"]] if parsed["location_raw"] else [],
+                            parsed["work_type"],
+                            parsed["hiring_regime"],
+                            parsed["salary"],
+                            parsed["publication_date"],
+                            [],  # skills — enrich nao adiciona; o vocab_match no controller cuida
+                            parsed["description"],
+                        ]
                         try:
                             job = await enrich_canonical(job, hint_lang="en")
                         except Exception as exc:
-                            logger.warning("[ziprecruiter] skip job=%s: enrichment falhou: %s", link, exc)
+                            logger.warning(
+                                "[ziprecruiter] skip job=%s: enrichment falhou: %s",
+                                parsed["link"], exc,
+                            )
                             continue
                         jobs.append(job)
                         if on_job is not None:
@@ -262,7 +290,6 @@ async def get_ziprecruiter_jobs(on_job=None) -> list:
                                 await on_job(job)
                             except Exception:
                                 pass
-
                     except Exception:
                         continue
 
