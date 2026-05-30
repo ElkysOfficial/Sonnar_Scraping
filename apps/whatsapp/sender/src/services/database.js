@@ -231,6 +231,13 @@ function jobApiToDbShape(job) {
     // skills/description vem do core e sao usados pelo card e pelo snapshot.
     skills: Array.isArray(job.skills) ? job.skills : [],
     description: job.description || "",
+    // v3.9.0 (FIX): responsibilities + description_lang estavam SUMINDO no
+    // jobApiToDbShape — o textBuilder nunca recebia o campo populado e o
+    // bloco "Responsabilidades" jamais aparecia nas mensagens, mesmo quando
+    // o scraper preenchia. Adicionados aqui pra preservar do core ate o
+    // textBuilder.
+    responsibilities: job.responsibilities || "",
+    description_lang: job.description_lang || null,
     created_at: job.created_at,
     updated_at: job.updated_at,
     status_discord: !!job.statuses?.discord,

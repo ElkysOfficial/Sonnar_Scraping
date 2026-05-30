@@ -132,7 +132,7 @@ test("formatJobMessage: contem todos os blocos esperados (vaga completa)", () =>
   // Salario destacado
   assert.match(out, /💰 \*R\$ 15\.000\*/)
   // Bloco Tecnologias
-  assert.match(out, /\*🧩 Tecnologias\*/)
+  assert.match(out, /\*💻 Tecnologias\*/)
   assert.match(out, /Node\.js {2}• {2}AWS {2}• {2}TypeScript/)
   // Bloco Responsabilidades com bullets
   assert.match(out, /\*📋 Responsabilidades\*/)
@@ -166,7 +166,7 @@ test("formatJobMessage: omite bloco Responsabilidades quando vazio", () => {
 test("formatJobMessage: omite Tecnologias quando skills vazias", () => {
   const job = { ...FIXED_JOB, skills: [] }
   const out = formatJobMessage(job, "x")
-  assert.doesNotMatch(out, /🧩 Tecnologias/)
+  assert.doesNotMatch(out, /💻 Tecnologias/)
 })
 
 test("formatJobMessage: omite 📍 quando location e 'Nao informado'", () => {
@@ -209,50 +209,55 @@ test("formatJobMessage: bloco Responsabilidades com bullets de quebra de linha",
 })
 
 // =====================================================
-// Plus #1 (v3.7.0): subscriberStack -> ✓/✗ por skill + match %
+// Plus #1 (v3.7.0): subscriberStack -> ✓/❌ por skill + match %
 // =====================================================
 
-test("Plus #1: subscriberStack marca skill compativel com ✓ e incompativel com ✗", () => {
+test("Plus #1: subscriberStack marca skill compativel com ✅ e incompativel com ✗", () => {
   const job = { ...FIXED_JOB, skills: ["Node.js", "AWS", "TypeScript"] }
   const out = formatJobMessage(job, "https://son.sh/v/x", {
     subscriberStack: ["node.js", "aws"]
   })
-  assert.match(out, /✓ Node\.js/)
-  assert.match(out, /✓ AWS/)
-  assert.match(out, /✗ TypeScript/)
-  // Skills separadas por ' · ' (em vez de ' • ' do fluxo legado)
-  assert.match(out, /✓ Node\.js {2}· {2}✓ AWS {2}· {2}✗ TypeScript/)
+  assert.match(out, /✅ Node\.js/)
+  assert.match(out, /✅ AWS/)
+  assert.match(out, /❌ TypeScript/)
+  // v3.9.0: skills agora aparecem em 2 colunas (3 espacos entre + \n entre linhas).
+  assert.match(out, /✅ Node\.js {2,5}✅ AWS\n❌ TypeScript/)
 })
 
-test("Plus #1: linha de sumario *Match: X de Y skills (Z%)* aparece com subscriberStack", () => {
+test("Plus #1: linha de sumario *Match: X de Y skills* NAO aparece (removida na v3.9.0)", () => {
   const job = { ...FIXED_JOB, skills: ["React", "Vue", "Svelte"] }
   const out = formatJobMessage(job, "x", { subscriberStack: ["react"] })
-  assert.match(out, /📊 \*Match:\* 1 de 3 skills \(33%\)/)
+  // v3.9.0: linha "Match: X de Y skills (Z%)" foi removida. Os ✅/❌ por skill ja comunicam.
+  assert.doesNotMatch(out, /📊 \*Match:/)
+  // Mas as skills marcadas ainda aparecem
+  assert.match(out, /✅ React/)
+  assert.match(out, /❌ Vue/)
+  assert.match(out, /❌ Svelte/)
 })
 
 test("Plus #1: 100% quando todas batem", () => {
   const job = { ...FIXED_JOB, skills: ["A", "B"] }
   const out = formatJobMessage(job, "x", { subscriberStack: ["a", "b", "c"] })
-  assert.match(out, /✓ A.+✓ B/s)
-  assert.match(out, /📊 \*Match:\* 2 de 2 skills \(100%\)/)
+  assert.match(out, /✅ A.+✅ B/s)
+  // v3.9.0: linha Match removida — emojis ✅ por skill ja comunicam
 })
 
 test("Plus #1: 0% quando nada bate", () => {
   const job = { ...FIXED_JOB, skills: ["X", "Y"] }
   const out = formatJobMessage(job, "x", { subscriberStack: ["q", "z"] })
-  assert.match(out, /✗ X/)
-  assert.match(out, /✗ Y/)
-  assert.match(out, /📊 \*Match:\* 0 de 2 skills \(0%\)/)
+  assert.match(out, /❌ X/)
+  assert.match(out, /❌ Y/)
+  // v3.9.0: linha Match removida
 })
 
 test("Plus #1: comparacao case-insensitive (TypeScript vs typescript)", () => {
   const job = { ...FIXED_JOB, skills: ["TypeScript", "JavaScript"] }
   const out = formatJobMessage(job, "x", { subscriberStack: ["TYPESCRIPT", "JavaScript"] })
-  assert.match(out, /✓ TypeScript/)
-  assert.match(out, /✓ JavaScript/)
+  assert.match(out, /✅ TypeScript/)
+  assert.match(out, /✅ JavaScript/)
 })
 
-test("Plus #1: sem subscriberStack -> bloco legado (sem ✓/✗ nem 📊)", () => {
+test("Plus #1: sem subscriberStack -> bloco legado (sem ✓/❌ nem 📊)", () => {
   const job = { ...FIXED_JOB, skills: ["A", "B"] }
   const out = formatJobMessage(job, "x")
   assert.doesNotMatch(out, /✓|✗/)
@@ -269,7 +274,7 @@ test("Plus #1: subscriberStack vazio -> fluxo legado", () => {
 test("Plus #1: skills vazio + subscriberStack -> omite bloco Tecnologias", () => {
   const job = { ...FIXED_JOB, skills: [] }
   const out = formatJobMessage(job, "x", { subscriberStack: ["react"] })
-  assert.doesNotMatch(out, /🧩 Tecnologias/)
+  assert.doesNotMatch(out, /💻 Tecnologias/)
   assert.doesNotMatch(out, /📊/)
 })
 
@@ -294,7 +299,7 @@ test("Plus #5: bloco aparece quando subscriberResume e passado", () => {
   assert.match(out, /\*🎯 Comparado com seu curriculo\*/)
 })
 
-test("Plus #5: skills do curriculo batem -> linha ✓ N de M", () => {
+test("Plus #5: skills do curriculo batem -> linha ✅ N de M", () => {
   const job = {
     ...FIXED_JOB,
     skills: ["Node.js", "Go", "AWS"],
@@ -306,7 +311,7 @@ test("Plus #5: skills do curriculo batem -> linha ✓ N de M", () => {
       seniority: null,
     },
   })
-  assert.match(out, /✓ Curriculo bate em 2 de 3 skills da vaga/)
+  assert.match(out, /✅ Curriculo bate em \*2 de 3\* skills/)
 })
 
 test("Plus #5: nenhuma skill bate -> linha ✗", () => {
@@ -318,10 +323,10 @@ test("Plus #5: nenhuma skill bate -> linha ✗", () => {
       seniority: null,
     },
   })
-  assert.match(out, /✗ Nenhuma skill da vaga aparece explicitamente no curriculo/)
+  assert.match(out, /❌ Nenhuma skill da vaga aparece explicitamente no curriculo/)
 })
 
-test("Plus #5: anos do curriculo >= exigido -> linha ✓ de anos", () => {
+test("Plus #5: anos do curriculo >= exigido -> linha ✅ de anos", () => {
   const job = {
     ...FIXED_JOB,
     description: "Buscamos pessoa com 3+ anos de experiencia em backend",
@@ -329,10 +334,10 @@ test("Plus #5: anos do curriculo >= exigido -> linha ✓ de anos", () => {
   const out = formatJobMessage(job, "x", {
     subscriberResume: { skills: [], yearsTotal: 5, seniority: null },
   })
-  assert.match(out, /✓ Vaga pede 3\+ anos — seu curriculo indica ~5 anos/)
+  assert.match(out, /✅ Vaga pede \*3\+ anos\* — seu curriculo indica \*~5 anos\*/)
 })
 
-test("Plus #5: anos do curriculo < exigido -> linha ⚠ com gap", () => {
+test("Plus #5: anos do curriculo < exigido -> linha ⚠️ com gap", () => {
   const job = {
     ...FIXED_JOB,
     description: "Necessario minimo 5 anos de experiencia",
@@ -340,7 +345,7 @@ test("Plus #5: anos do curriculo < exigido -> linha ⚠ com gap", () => {
   const out = formatJobMessage(job, "x", {
     subscriberResume: { skills: [], yearsTotal: 2, seniority: null },
   })
-  assert.match(out, /⚠ Vaga pede 5\+ anos — seu curriculo indica ~2 anos \(gap de 3\)/)
+  assert.match(out, /⚠️ Vaga pede \*5\+ anos\* — voce tem \*~2 anos\* \(gap de 3\)/)
 })
 
 test("Plus #5: senioridade bate -> linha ✓", () => {
@@ -348,7 +353,7 @@ test("Plus #5: senioridade bate -> linha ✓", () => {
   const out = formatJobMessage(job, "x", {
     subscriberResume: { skills: [], yearsTotal: null, seniority: "senior" },
   })
-  assert.match(out, /✓ Seu nivel \(senior\) bate com a vaga \(senior\)/)
+  assert.match(out, /✅ Seu nivel \(\*senior\*\) bate com a vaga/)
 })
 
 test("Plus #5: candidato pleno em vaga senior -> ⚠", () => {
@@ -356,15 +361,15 @@ test("Plus #5: candidato pleno em vaga senior -> ⚠", () => {
   const out = formatJobMessage(job, "x", {
     subscriberResume: { skills: [], yearsTotal: null, seniority: "pleno" },
   })
-  assert.match(out, /⚠ Vaga e senior — seu curriculo indica pleno/)
+  assert.match(out, /⚠️ Vaga e \*senior\* — seu curriculo indica \*pleno\*/)
 })
 
-test("Plus #5: candidato senior em vaga pleno -> ✓ overqualified", () => {
+test("Plus #5: candidato senior em vaga pleno -> ✅ overqualified", () => {
   const job = { ...FIXED_JOB, title: "Desenvolvedor Pleno", description: "" }
   const out = formatJobMessage(job, "x", {
     subscriberResume: { skills: [], yearsTotal: null, seniority: "senior" },
   })
-  assert.match(out, /✓ Vaga e pleno — voce ja esta senior/)
+  assert.match(out, /✅ Vaga e \*pleno\* — voce ja esta \*senior\*/)
 })
 
 test("Plus #5: sem subscriberResume -> bloco nao aparece", () => {
