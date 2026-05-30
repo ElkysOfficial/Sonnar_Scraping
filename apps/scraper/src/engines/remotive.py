@@ -26,8 +26,9 @@ import logging
 logger = logging.getLogger("scraper.engine.remotive")
 
 
-# 2026-05-23 (v2.22.0): pipeline central de enriquecimento. Remotive e EN.
-PARSER_VERSION = "remotive-2026.05.23"
+# v3.10.4 (2026-05-30): para de hardcodear location=[]. A API do
+# Remotive expoe `candidate_required_location` com pais/regiao da vaga.
+PARSER_VERSION = "remotive-2026.05.30"
 
 
 # --- Sessão ---------------------------------------------------------------
@@ -113,7 +114,11 @@ def _parse_job_item(item: dict) -> list | None:
         return None
 
     company = item.get("company_name", "")
-    location: list = []           # 100% remoto
+    # v3.10.4: a API entrega `candidate_required_location` com pais ou
+    # regiao da vaga ("Brazil", "USA", "Europe", "Worldwide"). Antes
+    # hardcodeavamos lista vazia.
+    location_raw = (item.get("candidate_required_location") or "").strip()
+    location = location_raw if location_raw else "Worldwide"
     work_type = "Remoto"
     hiring_regime = _extract_hiring_regime(item.get("job_type", ""))
     salary = item.get("salary", "")
