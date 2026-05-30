@@ -73,6 +73,33 @@ class TestForeignCountries:
         assert state is None
 
 
+class TestGermanLander:
+    """v3.10.3: CareerJet entrega "Cidade - Land" para vagas alemas.
+    Mapeia o Bundesland pra ISO 3166-2:DE-* (BY, BW, NW, ...)."""
+
+    @pytest.mark.parametrize("raw,expected", [
+        ("Stuttgart - Baden-Württemberg", ("BW", "DE")),
+        ("München - Bayern", ("BY", "DE")),
+        ("Köln - Nordrhein-Westfalen", ("NW", "DE")),
+        ("Dresden - Sachsen", ("SN", "DE")),
+        ("Magdeburg - Sachsen-Anhalt", ("ST", "DE")),
+        ("Erfurt - Thüringen", ("TH", "DE")),
+        ("Darmstadt - Hessen", ("HE", "DE")),
+        ("Konstanz - Baden-Württemberg", ("BW", "DE")),
+        ("Bad Tölz - Bayern", ("BY", "DE")),
+    ])
+    def test_cidade_land(self, raw, expected):
+        assert normalize_location(raw) == expected
+
+    @pytest.mark.parametrize("raw", [
+        "Berlin", "Hamburg", "Bremen",  # Stadtstaaten
+        "München", "Frankfurt", "Dresden", "Köln", "Düsseldorf",
+    ])
+    def test_cidade_alema_so(self, raw):
+        state, country = normalize_location(raw)
+        assert country == "DE"
+
+
 class TestUKSubdivisions:
     """v3.10.0: ZipRecruiter UK entrega 'Cidade, REGIAO, GB' — mapeia a
     subdivisao ISO 3166-2:GB-* pra state_code dedicado."""

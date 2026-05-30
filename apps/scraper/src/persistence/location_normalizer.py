@@ -160,6 +160,47 @@ COUNTRY_NAMES = {
     'angola': 'AO',
 }
 
+# Cantoes suicos — ISO 3166-2:CH-*. CareerJet entrega "Cidade - Cantao"
+# para vagas suicas (similares aos Lander alemaes).
+CH_CANTON_TO_CODE = {
+    'zurich': 'ZH', 'bern': 'BE', 'luzern': 'LU',
+    'uri': 'UR', 'schwyz': 'SZ', 'obwalden': 'OW', 'nidwalden': 'NW',
+    'glarus': 'GL', 'zug': 'ZG', 'freiburg': 'FR', 'fribourg': 'FR',
+    'solothurn': 'SO', 'basel-stadt': 'BS', 'basel stadt': 'BS',
+    'basel-landschaft': 'BL', 'basel landschaft': 'BL',
+    'schaffhausen': 'SH', 'appenzell ausserrhoden': 'AR',
+    'appenzell innerrhoden': 'AI', 'st gallen': 'SG', 'st. gallen': 'SG',
+    'graubunden': 'GR', 'grisons': 'GR',
+    'aargau': 'AG', 'thurgau': 'TG', 'tessin': 'TI', 'ticino': 'TI',
+    'waadt': 'VD', 'vaud': 'VD',
+    'wallis': 'VS', 'valais': 'VS',
+    'neuenburg': 'NE', 'neuchatel': 'NE',
+    'genf': 'GE', 'geneve': 'GE', 'geneva': 'GE',
+    'jura': 'JU',
+}
+
+# Estados federados alemaes (Bundeslander) — ISO 3166-2:DE-*. CareerJet
+# entrega "Cidade - Land" para vagas alemas.
+DE_LAND_TO_CODE = {
+    'baden-wurttemberg': 'BW', 'baden wurttemberg': 'BW',
+    'bayern': 'BY', 'bavaria': 'BY',
+    'berlin': 'BE',
+    'brandenburg': 'BB',
+    'bremen': 'HB',
+    'hamburg': 'HH',
+    'hessen': 'HE', 'hesse': 'HE',
+    'mecklenburg-vorpommern': 'MV', 'mecklenburg vorpommern': 'MV',
+    'niedersachsen': 'NI', 'lower saxony': 'NI',
+    'nordrhein-westfalen': 'NW', 'nordrhein westfalen': 'NW',
+    'north rhine-westphalia': 'NW',
+    'rheinland-pfalz': 'RP', 'rheinland pfalz': 'RP',
+    'saarland': 'SL',
+    'sachsen': 'SN', 'saxony': 'SN',
+    'sachsen-anhalt': 'ST', 'sachsen anhalt': 'ST',
+    'schleswig-holstein': 'SH', 'schleswig holstein': 'SH',
+    'thuringen': 'TH', 'thuringia': 'TH',
+}
+
 # Cidades US comuns que aparecem em listings sem "United States" explicito
 # (RemoteOK frequentemente entrega "Baltimore," ou "New York,"). Mapeia
 # direto para state_code US.
@@ -220,6 +261,24 @@ WORLD_CITY_TO_COUNTRY = {
     'tel aviv': 'IL', 'jerusalem': 'IL',
     'dubai': 'AE', 'abu dhabi': 'AE',
     'riyadh': 'SA',
+    # Cidades alemas (CareerJet eh majoritariamente DE)
+    'munchen': 'DE', 'munich': 'DE',
+    'koln': 'DE', 'cologne': 'DE',
+    'frankfurt': 'DE',
+    'stuttgart': 'DE',
+    'dresden': 'DE',
+    'leipzig': 'DE',
+    'dortmund': 'DE', 'essen': 'DE',
+    'dusseldorf': 'DE',
+    'hannover': 'DE',
+    'nurnberg': 'DE', 'nuremberg': 'DE',
+    'bremen': 'DE', 'hamburg': 'DE',
+    'mainz': 'DE', 'mannheim': 'DE', 'wiesbaden': 'DE',
+    'kiel': 'DE', 'lubeck': 'DE',
+    'erfurt': 'DE', 'magdeburg': 'DE',
+    'tubingen': 'DE', 'darmstadt': 'DE',
+    'koblenz': 'DE', 'augsburg': 'DE',
+    'bayreuth': 'DE', 'regensburg': 'DE',
     'tokyo': 'JP', 'osaka': 'JP', 'kyoto': 'JP',
     'seoul': 'KR', 'busan': 'KR',
     'beijing': 'CN', 'shanghai': 'CN', 'guangzhou': 'CN', 'shenzhen': 'CN',
@@ -577,6 +636,22 @@ def normalize_location(raw_location: str) -> Tuple[Optional[str], Optional[str]]
 
     if country:
         return None, country
+
+    # v3.10.3: Cidade - Land alemao ("Stuttgart - Baden-Wurttemberg",
+    # "Dresden - Sachsen"). CareerJet retorna assim para todas as vagas DE.
+    # Match no sufixo apos hifen pra evitar falso positivo com city contendo
+    # nome de Land (ex: "Frankfurt" sozinho ja eh detectado por outras rotas).
+    if country in (None, 'DE'):
+        for land_name, land_code in sorted(DE_LAND_TO_CODE.items(), key=lambda x: -len(x[0])):
+            # sufixo apos " - " ou final da string
+            if re.search(rf'(?:\s-\s|^){re.escape(land_name)}\s*$', normalized):
+                return land_code, 'DE'
+
+    # v3.10.3: Cidade - Cantao suico ("Aadorf - Thurgau", "Grusch - Graubunden").
+    if country in (None, 'CH'):
+        for canton_name, canton_code in sorted(CH_CANTON_TO_CODE.items(), key=lambda x: -len(x[0])):
+            if re.search(rf'(?:\s-\s|^){re.escape(canton_name)}\s*$', normalized):
+                return canton_code, 'CH'
 
     # v3.10.2: string igual a sigla ISO alpha-2 ("BR", "US", "DE"). WWR
     # frequentemente entrega "Headquarters: BR" / "Headquarters: US".
