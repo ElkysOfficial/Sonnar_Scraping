@@ -220,10 +220,13 @@ def _infer_regime_with_heuristics(
     if not enable_default:
         return ""
 
-    wt = (work_type or "").lower()
-    if wt in ("presencial", "híbrido", "hibrido"):
-        return "CLT"
-    return ""
+    # v3.10.8: default CLT pra qualquer work_type (incluindo Remoto). A
+    # maioria das vagas BR no Indeed eh CLT mesmo quando Remoto — antes
+    # ficavam com regime null pra preservar honestidade, mas a meta de
+    # 95% de cobertura por campo exige um default. Sinais explicitos de
+    # PJ/Estagio/Temporario/etc continuam tendo precedencia (camadas 1 e
+    # 2 acima).
+    return "CLT"
 
 
 # Tokens de país já presentes na string de localidade. Quando ``city.name``
