@@ -1,0 +1,1145 @@
+.NET
+.NET 5
+.NET 6
+.NET 7
+.NET 8
+.NET Core
+.NET MAUI
+12 Factor
+2FA
+3ds Max
+A/B Testing
+ABAC
+ABAP
+AI Engineer
+API
+API Gateway
+APIs
+ASP.NET
+ASP.NET Core
+ASR
+ATDD
+AWS
+AWS AppSync
+AWS Athena
+AWS Aurora
+AWS Bedrock
+AWS CloudFormation
+AWS CloudFront
+AWS CloudWatch
+AWS DMS
+AWS EC2
+AWS ECS
+AWS EKS
+AWS EMR
+AWS EventBridge
+AWS Fargate
+AWS Glue
+AWS IAM
+AWS KMS
+AWS Kinesis
+AWS Lambda
+AWS RDS
+AWS Redshift
+AWS Route 53
+AWS S3
+AWS SNS
+AWS SQS
+AWS SageMaker
+AWS Secrets Manager
+AWS Step Functions
+Active Directory
+ActiveMQ
+Actix
+Administrador de Banco de Dados
+Administrador de Redes
+Administrador de Sistemas
+Adobe XD
+AdonisJS
+Advanced Excel
+Agile
+Agile Coach
+Aiohttp
+Airflow
+Alibaba Cloud
+Allure
+Alpine.js
+Amazon Web Services
+Analista DevOps
+Analista Programador
+Analista de Dados
+Analista de Infraestrutura
+Analista de QA
+Analista de Seguranca
+Analista de Sistemas
+Analista de Suporte
+Analista de Testes
+Android
+Android SDK
+Android Studio
+Angular
+AngularJS
+Anomaly Detection
+Ansible
+Ant Design
+Anthropic
+Apache
+Apache Airflow
+Apache Beam
+Apache Camel
+Apache Druid
+Apache Flink
+Apache Hive
+Apache Hudi
+Apache Iceberg
+Apache Kafka
+Apache NiFi
+Apache Pinot
+Apache Pulsar
+Apache Spark
+Apache Storm
+Apache Superset
+Apex
+Apollo
+Apollo Server
+AppDynamics
+AppSec
+Appium
+ArangoDB
+Arduino
+ArgoCD
+Arquiteto de Software
+Arquitetura Hexagonal
+Aruba
+Asana
+Assembly
+AssertJ
+Astro
+AsyncAPI
+Attention
+Auth0
+AutoGen
+AutoML
+Automation Anywhere
+Avro
+Azure
+Azure AD
+Azure Active Directory
+Azure Boards
+Azure Data Factory
+Azure DevOps
+Azure Event Hub
+Azure Functions
+Azure ML
+Azure OpenAI
+Azure Pipelines
+Azure Repos
+Azure Service Bus
+Azure Synapse
+BCP
+BDD
+BERT
+BFF
+BGP
+BIG-IP
+BSC
+Babel
+Babylon.js
+Back-End
+Backbone
+Backbone.js
+Backend
+Backend Developer
+Backend for Frontend
+Backup
+Bacula
+Bamboo
+Bash
+Bazel
+Beam
+Beats
+Bedrock
+BigCommerce
+BigQuery
+Bitbucket
+Bitcoin
+Blender
+Blue Prism
+Blue Team
+Boomi
+Bootstrap
+BotCity
+Bottle
+BrowserStack
+Btrfs
+Bugsnag
+Buildah
+Buildkite
+Burp Suite
+C#
+C++
+CAN bus
+CCIE
+CCNA
+CCNP
+CDK
+CI/CD
+CIFS
+CNN
+COBIT
+COBOL
+CQRS
+CSS
+CSS3
+CTO
+CV
+Cacti
+Capacitor
+Capybara
+Carbon Black
+Cassandra
+CatBoost
+CentOS
+Chai
+Chakra UI
+Chart.js
+ChatGPT
+Check Point
+Checkmarx
+Chef
+Chroma
+Cibersseguranca
+Cientista de Dados
+CircleCI
+Cisco
+Citrix
+Claude
+Clean Architecture
+ClickHouse
+ClickUp
+Clojure
+Cloud Engineer
+Cloud Functions
+Cloud Native
+Cloud Run
+CloudFormation
+Cloudflare
+Cocos2d
+CodeIgniter
+Colab
+Combine
+Commvault
+Computer Vision
+Concourse
+Conda
+Confluence
+Consul
+Containerd
+Cordova
+CoreData
+Cosmos DB
+CouchDB
+Couchbase
+CrewAI
+Crossplane
+CrowdStrike
+Crystal
+Cucumber
+Cybersecurity
+Cypress
+D3
+D3.js
+DApp
+DB2
+DBA
+DCS
+DDD
+DHCP
+DLP
+DNS
+DRP
+Dagster
+Dapper
+Dart
+Dask
+Data Analyst
+Data Engineer
+Data Lake
+Data Pipeline
+Data Science
+Data Scientist
+Data Vault
+Data Warehouse
+Databricks
+Datadog
+Dataflow
+Dataproc
+DeFi
+Debian
+Deep Learning
+Delphi
+Delta Lake
+Desenvolvedor
+Desenvolvedor Back-End
+Desenvolvedor Front-End
+Desenvolvedor Full Stack
+Desenvolvedor Junior
+Desenvolvedor Mobile
+Desenvolvedor Pleno
+Desenvolvedor Senior
+Design Patterns
+Detox
+DevOps
+DevOps Engineer
+DevSecOps
+Diffusion Models
+DigitalOcean
+DirectX
+Disaster Recovery
+Discord
+Django
+Docker
+Domain Driven Design
+Domain-Driven Design
+Domo
+Draw.io
+Drogon
+Drone CI
+Druid
+Drupal
+Dynamics 365
+DynamoDB
+Dynatrace
+EC2
+ECS
+EDA
+EDR
+EIGRP
+EKS
+ELK
+ELK Stack
+ELT
+EMC
+ESBuild
+ESP32
+ESP8266
+ESXi
+ETL
+Echo Framework
+Edge Computing
+Elasticsearch
+Elixir
+Embedded Engineer
+Embeddings
+Ember
+Ember.js
+Emotion
+Engenheiro de Dados
+Engenheiro de Software
+Engenheiro de Testes
+Engineering Manager
+English Fluent
+Entity Framework
+Entra ID
+Envoy
+Enzyme
+Epicor
+Erlang
+Espanhol Avancado
+Espanhol Fluente
+Espresso
+Estagiario TI
+Ethereum
+Ethers.js
+Event Driven
+Event Sourcing
+Event-Driven
+Excel
+Expo
+Express
+Express.js
+Extreme Programming
+F#
+F5
+FAISS
+FaaS
+Falco
+FastAI
+FastAPI
+Fastify
+FaunaDB
+Fiber Go
+Figma
+Fine-tuning
+Firebase
+Firestore
+Firewall
+Fivetran
+Flask
+Flink
+Flutter
+Flux
+Fly.io
+FortiGate
+Fortran
+Foundry
+FreeRTOS
+Front-End
+Frontend
+Frontend Developer
+Full Stack Developer
+Full-Stack
+Fullstack
+Fullstack Developer
+GAN
+GANs
+GCP
+GDPR
+GPG
+GPO
+GPT
+GPT-4
+GPT-5
+Game Developer
+GameMaker
+Gatling
+Gatsby
+Gemini
+Gin Gonic
+Git
+GitHub
+GitHub Actions
+GitLab
+GitLab CI
+GitLab CI/CD
+GitOps
+Go
+Go Fiber
+Godot
+Golang
+Google Cloud
+Google Cloud Platform
+Google Colab
+Google Data Studio
+Gradle
+Grafana
+Grafana Tempo
+GraphQL
+Groovy
+Group Policy
+HAProxy
+HBase
+HDFS
+HIPAA
+HMI
+HSM
+HSRP
+HTML
+HTML5
+Hadoop
+Hanami
+Hapi
+Hardhat
+HashiCorp
+HashiCorp Vault
+Haskell
+Haystack
+Head of Engineering
+Helm
+Help Desk
+Helpdesk
+Heroku
+Hexagonal Architecture
+Hibernate
+Highcharts
+Hive
+Honeycomb
+Hudi
+Hugging Face
+HuggingFace
+Hyper-V
+IAM
+IBM Cloud
+IBM DB2
+IBM Storage
+IDS
+IPFS
+IPS
+IPv4
+IPv6
+ISO 27001
+ITIL
+Iceberg
+InVision
+Industria 4.0
+Industry 4.0
+InfluxDB
+InfoSec
+Infor
+Informatica
+Information Security
+Informix
+Ingles Avancado
+Ingles Fluente
+Ingles Intermediario
+Insomnia
+Integromat
+IoT
+Ionic
+Istio
+JAX
+JD Edwards
+JDBC
+JDE
+JMeter
+JPA
+JSON Schema
+JUnit
+JWT
+Jaeger
+JanusGraph
+Jasmine
+Java
+JavaScript
+Jenkins
+Jest
+Jetpack Compose
+Jira
+Joomla
+Julia
+Junior Developer
+Juniper
+Jupyter
+JupyterLab
+K8s
+KMM
+KMS
+KPIs
+KVM
+Kafka
+Kafka Connect
+Kafka Streams
+Kanban
+Karate
+Karate DSL
+Keras
+Keycloak
+Kibana
+Koa
+Kotlin
+Kotlin Multiplatform
+Kubeflow
+Kubernetes
+Kustomize
+LAN
+LESS
+LGPD
+LLM
+LLMs
+LLaMA
+LSTM
+Lakehouse
+Lambda
+LangChain
+LangGraph
+Laravel
+Lean
+Less
+LevelDB
+LightGBM
+Lightning
+Linear
+Linkerd
+Linode
+Linux
+Llama
+LlamaIndex
+LoRA
+Load Balancer
+LoadRunner
+Locust
+Logstash
+Loki
+Looker
+Looker Studio
+LoopBack
+Lua
+Lucidchart
+Luigi
+Lumen
+MATLAB
+MAUI
+MCP
+MFA
+ML
+ML Engineer
+MLOps
+MLOps Engineer
+MLflow
+MPLS
+MQTT
+MSSQL
+MUI
+MXNet
+Machine Learning
+Machine Learning Engineer
+Macros
+Magento
+Make.com
+MariaDB
+Material UI
+Matillion
+Maven
+Maya
+MediaPipe
+Memcached
+Mercurial
+Mermaid
+MessagePack
+Metabase
+Metal
+Metasploit
+MicroStrategy
+Micronaut
+Microservices
+Microservicos
+Microsoft Azure
+Microsoft Dynamics
+Microsoft SQL Server
+Microsoft Teams
+Microsservicos
+Microsserviços
+Mikrotik
+Milvus
+Mimir
+Miro
+Mistral
+MobX
+Mobile Developer
+Mocha
+Modbus
+Modin
+Monday.com
+MongoDB
+Monolithic
+Monolito
+Mosquitto
+MuleSoft
+Mural
+MySQL
+NAT
+NATS
+NFS
+NFT
+NIST
+NLP
+NLU
+Nagios
+NativeScript
+Neo4j
+Nessus
+Nest.js
+NestJS
+NetApp
+NetSuite
+Netlify
+Network Engineer
+New Relic
+NewSQL
+Next.js
+NextJS
+Nexus
+Nginx
+NiFi
+Nightwatch
+Nim
+Nmap
+NoSQL
+Node.js
+NodeJS
+Nomad
+Notion
+NuGet
+NumPy
+Nuxt
+Nuxt.js
+OAuth
+OAuth2
+OCI
+OCaml
+OIDC
+OKRs
+OLAP
+OLTP
+ONNX
+OPC UA
+OSPF
+OTel
+OWASP
+OWASP Top 10
+OWASP ZAP
+ObjectBox
+Objective-C
+Octopus Deploy
+Okta
+Onion Architecture
+OpenAI
+OpenAPI
+OpenCV
+OpenGL
+OpenID Connect
+OpenSearch
+OpenShift
+OpenStack
+OpenTelemetry
+OpenZeppelin
+Optuna
+Oracle
+Oracle Cloud
+Oracle Database
+Oracle EBS
+Oracle Fusion
+OrientDB
+Outbox Pattern
+PCI DSS
+PGP
+PHP
+PKI
+PL/SQL
+PLC
+PMBOK
+PRINCE2
+PRTG
+PWA
+Pact
+Palo Alto
+Pandas
+Parcel
+Pascal
+Penetration Testing
+Pentaho
+Pentest
+Pentesting
+PeopleSoft
+Perforce
+Perl
+Phaser
+Phoenix
+Pinecone
+Pinia
+Pinot
+Pipenv
+PixiJS
+PlanetScale
+PlantUML
+Platform Engineer
+Play Framework
+Playwright
+Podman
+Poetry
+Polars
+Polygon
+PostCSS
+PostgreSQL
+Postgres
+Postman
+Power Automate
+Power BI
+PowerShell
+Prefect
+Presto
+Principal Engineer
+Product Manager
+Product Owner
+Programador
+Prometheus
+Prompt Engineering
+Protheus
+Protobuf
+Protocol Buffers
+Proxmox
+Pub/Sub
+Pulsar
+Pulumi
+Puppet
+Puppeteer
+Purple Team
+PySpark
+PyTorch
+Python
+QA Analyst
+QA Engineer
+QLoRA
+Qdrant
+Qlik
+QlikSense
+QlikView
+QoS
+Quarkus
+QuestDB
+Qwik
+RAG
+RAID
+RBAC
+RDS
+REST
+REST API
+REST Assured
+RESTful
+RHEL
+RLHF
+RM TOTVS
+RNN
+RPA
+RS-232
+RS-485
+RSpec
+RTOS
+RUP
+RabbitMQ
+Rails
+Rancher
+Raspberry Pi
+Ray
+Ray Tune
+React
+React Native
+React Query
+React Testing Library
+React.js
+ReactJS
+Realm
+Recoil
+Recommender Systems
+Red Team
+RedHat
+Redash
+Redis
+Redshift
+Redux
+Redux Toolkit
+Reinforcement Learning
+Remix
+Render
+RethinkDB
+Riak
+Robot Framework
+Robotic Process Automation
+Rocket
+RocksDB
+Rollbar
+Rollup
+Ruby
+Ruby on Rails
+Rust
+RxJS
+RxSwift
+S/4HANA
+S3
+SAFe
+SAML
+SAP
+SAP ABAP
+SAP Ariba
+SAP BI
+SAP BTP
+SAP BW
+SAP Basis
+SAP CO
+SAP CPI
+SAP CRM
+SAP Concur
+SAP ECC
+SAP EWM
+SAP FI
+SAP Fiori
+SAP HANA
+SAP HCM
+SAP HR
+SAP IBP
+SAP MDG
+SAP MM
+SAP PM
+SAP PP
+SAP PS
+SAP QM
+SAP S/4HANA
+SAP SCM
+SAP SD
+SAP Solution Manager
+SAP SuccessFactors
+SAP TM
+SAP UI5
+SAP WM
+SASS
+SCADA
+SCSS
+SD-WAN
+SDET
+SIEM
+SMB
+SNS
+SOAP
+SOAR
+SOC
+SOC 2
+SOLID
+SOQL
+SOSL
+SQL
+SQL Server
+SQLAlchemy
+SQLite
+SQS
+SRE
+SSAS
+SSE
+SSIS
+SSL
+SSO
+SSRS
+STM32
+STP
+SVN
+SWR
+Saga Pattern
+Sage
+SageMaker
+Sails
+Salesforce
+SaltStack
+Sanic
+Sankhya
+Sauce Labs
+Scala
+Scikit-learn
+Scrum
+Scrum Master
+Scrumban
+ScyllaDB
+Security Analyst
+Security Engineer
+Seguranca da Informacao
+Selenium
+Semantic Kernel
+Senior Developer
+Senior Sistemas
+Sentry
+Serverless
+Service Desk
+Service Mesh
+ServiceNow
+Shell Script
+Shopify
+Sinatra
+Sinon
+Sisense
+Site Reliability Engineer
+Site Reliability Engineering
+Six Sigma
+Sketch
+Slack
+Slim
+Smart Contracts
+Snowflake
+Snyk
+Software Architect
+Software Architecture
+Software Developer
+Software Engineer
+Solana
+Solid.js
+SolidJS
+Solidity
+Solr
+Solutions Architect
+SonarQube
+Sophos
+Spanish Fluent
+Spark
+SpecFlow
+Spinnaker
+Splunk
+Spring
+Spring Boot
+Spring Cloud
+Spring Security
+Stable Diffusion
+Staff Engineer
+Star Schema
+Stimulus
+Stitch
+Storybook
+Strapi
+Styled Components
+Stylus
+Subversion
+Supabase
+Superset
+Suporte Tecnico
+Suporte de TI
+Svelte
+SvelteKit
+Swagger
+Swift
+SwiftUI
+Sybase
+Symfony
+Sysadmin
+System Administrator
+System Design
+T-SQL
+T5
+TCP/IP
+TDD
+TFLite
+TLS
+TOTVS
+TTS
+Tableau
+Tailwind
+Tailwind CSS
+Talend
+TanStack Query
+TeamCity
+Tech Lead
+Tech Recruiter
+Technical Lead
+Tecnico de Informatica
+Tecnico de TI
+Tekton
+TensorFlow
+TensorRT
+Terraform
+Tesseract
+Test Automation
+Test Engineer
+TestNG
+TestRail
+Testing Library
+Three.js
+Thrift
+Time Series
+TimescaleDB
+Tornado
+Traefik
+Trainee
+Transformers
+Travis CI
+Trello
+Trino
+Triton Inference Server
+Trivy
+Truffle
+Turbopack
+Twelve Factor
+TypeScript
+UIKit
+Ubuntu
+UiPath
+Unity
+Unix
+Unreal
+Unreal Engine
+VB.NET
+VBA
+VLAN
+VMware
+VP of Engineering
+VPN
+VRRP
+VTEX
+Vapor
+Vault
+Vector Database
+Vector Search
+Veeam
+Veracode
+Vercel
+Vert.x
+Vertex AI
+Viem
+VirtualBox
+Visual Basic
+Vite
+Vitess
+Vitest
+Vue
+Vue.js
+VueJS
+Vuex
+Vulkan
+W&B
+WAF
+WAN
+WASM
+WSDL
+Wagmi
+Waterfall
+Weaviate
+Web Components
+Web Developer
+Web3.js
+WebAssembly
+WebGL
+WebSocket
+WebSockets
+WebdriverIO
+Webpack
+Weights & Biases
+Whisper
+Windows Server
+Wireshark
+WooCommerce
+WordPress
+Workato
+Workday
+X.509
+XCTest
+XDR
+XGBoost
+XML
+XP
+Xamarin
+Xcode
+Xen
+Xray
+YAML
+Yarn
+Yii
+ZBrush
+ZFS
+Zabbix
+Zapier
+Zephyr
+Zephyr RTOS
+Zeplin
+Zero Trust
+ZeroMQ
+Zig
+Zipkin
+Zoom
+Zustand
+dbt
+dbt Core
+etcd
+fastai
+gRPC
+iOS
+iOS SDK
+iSCSI
+jQuery
+k6
+libGDX
+mTLS
+n8n
+nose
+npm
+pfSense
+pip
+pnpm
+pytest
+scikit-learn
+unittest
+vCenter
+vSphere

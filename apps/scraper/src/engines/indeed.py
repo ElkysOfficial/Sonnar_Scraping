@@ -1205,7 +1205,9 @@ async def get_indeed_jobs(on_job=None) -> list:
                 parsed = await enrich_canonical(parsed)
             except Exception as exc:
                 logger.warning("[indeed] skip job=%s: enrichment falhou: %s", parsed[0] if parsed else "?", exc)
-                continue
+                # v3.8.3 hotfix: estamos dentro da coroutine _resolve (sem loop).
+                # Skip = return (sai cedo). 'continue' era SyntaxError em runtime.
+                return
 
             jobs.append(parsed)
             if on_job is not None:

@@ -22,3 +22,6 @@ apps/whatsapp/**/assets/temp/
 
 # Cache local da Supabase CLI (gerado por `supabase link`/`supabase status`)
 supabase/.temp/
+
+# Dados pessoais (CVs reais usados em testes locais — NUNCA commitar)
+apps/whatsapp/sender/src/test/fixtures/real-resumes.json
