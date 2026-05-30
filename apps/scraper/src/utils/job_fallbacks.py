@@ -249,10 +249,20 @@ _REGIME_INDIVIDUAL_PATTERNS = [
 
 
 def _is_canonical_regime(text: str) -> bool:
-    """True se ``text`` ja eh um label canonico que nao precisa normalizar."""
-    canon = {"CLT", "PJ", "Cooperado", "CLT/PJ", "PJ/Cooperado",
-             "Estágio", "Aprendiz", "Trainee", "Temporário",
-             "Freelancer", "Autônomo", "Voluntário"}
+    """True se ``text`` ja eh um label canonico que nao precisa normalizar.
+
+    Inclui labels BR (CLT/PJ/Estagio/...) e EN (Full-time/Part-time/...) — engines
+    internacionais (RemoteOK, ZipRecruiter, WeWorkRemotely, LinkedIn EN) usam os
+    labels EN diretamente, e o refine nao deve apaga-los.
+    """
+    canon = {
+        # BR
+        "CLT", "PJ", "Cooperado", "CLT/PJ", "PJ/Cooperado",
+        "Estágio", "Aprendiz", "Trainee", "Temporário",
+        "Freelancer", "Autônomo", "Voluntário",
+        # EN (v3.10.1)
+        "Full-time", "Part-time", "Contractor", "Internship",
+    }
     return (text or "").strip() in canon
 
 
