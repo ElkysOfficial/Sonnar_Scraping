@@ -73,6 +73,21 @@ class TestForeignCountries:
         assert state is None
 
 
+class TestUKSubdivisions:
+    """v3.10.0: ZipRecruiter UK entrega 'Cidade, REGIAO, GB' — mapeia a
+    subdivisao ISO 3166-2:GB-* pra state_code dedicado."""
+
+    @pytest.mark.parametrize("raw,expected", [
+        ("London, ENG, GB", ("ENG", "GB")),
+        ("Edinburgh, SCT, GB", ("SCT", "GB")),
+        ("Cardiff, WLS, GB", ("WLS", "GB")),
+        ("Belfast, NIR, GB", ("NIR", "GB")),
+        ("manchester, eng, gb", ("ENG", "GB")),  # case-insensitive
+    ])
+    def test_uk_subdivision(self, raw, expected):
+        assert normalize_location(raw) == expected
+
+
 class TestEdgeCases:
     @pytest.mark.parametrize("raw", ["", "   ", None])
     def test_empty_inputs(self, raw):

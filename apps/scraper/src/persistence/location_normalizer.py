@@ -449,6 +449,14 @@ def normalize_location(raw_location: str) -> Tuple[Optional[str], Optional[str]]
         if uk_match:
             return None, 'GB'
 
+    # UK: formato ZipRecruiter "Cidade, REGIAO, GB" (ex: "London, ENG, GB",
+    # "Edinburgh, SCT, GB"). Mapeia subdivisao ISO 3166-2:GB-* (4 paises do UK)
+    # para state_code dedicado em vez de None.
+    if country in (None, 'GB'):
+        uk_subdiv = re.search(r',\s*(ENG|SCT|WLS|NIR)\s*,\s*GB\s*$', raw, re.I)
+        if uk_subdiv:
+            return uk_subdiv.group(1).upper(), 'GB'
+
     if country:
         return None, country
 
