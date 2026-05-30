@@ -62,14 +62,16 @@ module.exports = {
       autorestart: true,
       max_restarts: 10,
       restart_delay: 3000,
-      // v3.1.0: o core migrou de jobs.json para SQLite (better-sqlite3).
-      // Cada POST /jobs/batch agora vira INSERT/UPDATE pontual dentro de
-      // uma transacao, sem re-serializar o dict inteiro. Footprint real
-      // observado em testes: ~80-150MB de heap (vs ~700MB-1.4GB do JSON).
-      // 512M da folga > 3x acima do pico, evita falsos restarts.
-      // Em produçao, monitorar /health (campo "jobs") e elevar se passar
-      // de ~300MB sustentado.
-      max_memory_restart: "512M",
+      // v3.10.20: 512M -> 1024M. Banco cresceu pra 69k vagas e GET /jobs
+      // (mesmo paginado em 5000 no v3.10.18) ainda pode picar >512M durante
+      // o request (better-sqlite3 .all() retorna array completo, depois
+      // map(rowToEntry) cria outro array, depois Express stringify gera
+      // string gigante — todos em heap simultaneamente).
+      // Footprint estavel observado: ~80-300MB. Pico de request: ~400-800MB.
+      max_memory_restart: "1024M",
+      // v3.10.20: forca GC antes do PM2 teto. --max-old-space-size=896
+      // deixa ~128M de margem pros buffers nativos do better-sqlite3.
+      node_args: "--max-old-space-size=896",
       // v3.6.0: NODE_ENV=production explicito (express/etc otimizam).
       env: { NODE_ENV: "production" },
       time: true,

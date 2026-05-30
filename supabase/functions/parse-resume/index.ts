@@ -10,7 +10,7 @@
 //   6. Devolve { id, skills, yearsTotal, seniority, languages, textLength }
 //
 // Auth: usuario autenticado (JWT supabase). O subscriber_id e validado contra
-// o auth_user_id da tabela subscribers.
+// o user_id da tabela subscribers.
 //
 // Custo: zero LLM. Apenas CPU do Edge Function (Deno).
 
@@ -101,14 +101,14 @@ serve(async (req) => {
   // Valida que o subscriber pertence ao usuario autenticado
   const { data: sub, error: subErr } = await admin
     .from("subscribers")
-    .select("id, auth_user_id, plan")
+    .select("id, user_id, plan")
     .eq("id", body.subscriberId)
     .single();
 
   if (subErr || !sub) {
     return jsonResponse({ error: "subscriber_not_found" }, 404);
   }
-  if (sub.auth_user_id !== userData.user.id) {
+  if (sub.user_id !== userData.user.id) {
     return jsonResponse({ error: "forbidden" }, 403);
   }
   if (sub.plan !== "plus") {
