@@ -302,11 +302,27 @@ WORLD_CITY_TO_COUNTRY = {
     'auckland': 'NZ', 'wellington': 'NZ',
     'toronto': 'CA', 'vancouver': 'CA', 'montreal': 'CA', 'ottawa': 'CA',
     'calgary': 'CA',
-    'mexico city': 'MX', 'guadalajara': 'MX',
-    'buenos aires': 'AR',
-    'santiago': 'CL',
-    'bogota': 'CO', 'medellin': 'CO',
-    'lima': 'PE',
+    # Mexico (LinkedIn LATAM)
+    'mexico city': 'MX', 'cidade do mexico': 'MX',
+    'guadalajara': 'MX', 'monterrey': 'MX', 'puebla': 'MX',
+    'tijuana': 'MX', 'leon': 'MX', 'queretaro': 'MX',
+    'benito juarez': 'MX', 'azcapotzalco': 'MX', 'iztapalapa': 'MX',
+    'naucalpan': 'MX', 'merida': 'MX', 'cancun': 'MX',
+    # Argentina
+    'buenos aires': 'AR', 'cordoba': 'AR', 'rosario': 'AR',
+    'mendoza': 'AR', 'la plata': 'AR', 'mar del plata': 'AR',
+    'tucuman': 'AR', 'san miguel de tucuman': 'AR', 'salta': 'AR',
+    'santa fe': 'AR', 'neuquen': 'AR',
+    # Chile
+    'santiago': 'CL', 'valparaiso': 'CL', 'concepcion': 'CL',
+    'las condes': 'CL', 'antofagasta': 'CL', 'la serena': 'CL',
+    'temuco': 'CL', 'vina del mar': 'CL', 'providencia': 'CL',
+    # Colombia
+    'bogota': 'CO', 'medellin': 'CO', 'cali': 'CO',
+    'cartagena': 'CO', 'barranquilla': 'CO', 'bucaramanga': 'CO',
+    'pereira': 'CO', 'manizales': 'CO',
+    # Peru
+    'lima': 'PE', 'arequipa': 'PE', 'cusco': 'PE', 'trujillo': 'PE',
     'caracas': 'VE',
     'nassau': 'BS',
     'almaty': 'KZ', 'astana': 'KZ',
@@ -556,6 +572,29 @@ def _detect_uf(raw: str) -> Optional[str]:
     return None
 
 
+def _try_fix_mojibake(s: str) -> str:
+    """Tenta desfazer dupla codificacao UTF-8 -> latin-1 -> UTF-8.
+
+    String "México" gravada como bytes b'M\\xc3\\x83\\xc2\\xa9xico' eh o
+    classico erro do pipeline que decodificou UTF-8 como latin-1 antes de
+    re-encodar. O fix eh inverso: encode latin-1 + decode utf-8.
+
+    Retorna a string convertida quando deu certo (string diferente sem
+    chars de erro) ou a original caso contrario. Usado como fallback no
+    normalize_location quando a string original nao casa em nenhum mapa.
+    """
+    if not s:
+        return s
+    try:
+        candidate = s.encode("latin-1", errors="strict").decode("utf-8", errors="strict")
+    except (UnicodeEncodeError, UnicodeDecodeError):
+        return s
+    # so aceita o fix se removeu chars de erro (indicador de mojibake real)
+    if "Ã" in s and "Ã" not in candidate:
+        return candidate
+    return s
+
+
 def normalize_location(raw_location: str) -> Tuple[Optional[str], Optional[str]]:
     """
     Recebe uma string de localidade (ex: "Sao Paulo - SP") e devolve
@@ -697,6 +736,14 @@ def normalize_location(raw_location: str) -> Tuple[Optional[str], Optional[str]]
             sub_state, sub_country = normalize_location(token)
             if sub_country:
                 return sub_state, sub_country
+
+    # v3.10.5: tentativa final — strings antigas do banco com mojibake
+    # ("MÃ©xico" em vez de "México") nao casam em nenhum mapa. Aplica
+    # fix de dupla decodificacao e tenta de novo. So entra em strings que
+    # claramente tem mojibake (presenca de "Ã" sem "Ã" no resultado).
+    fixed = _try_fix_mojibake(raw)
+    if fixed != raw:
+        return normalize_location(fixed)
 
     # Vaga remota sem indicador de país: nao da pra atribuir
     return None, None
