@@ -78,8 +78,8 @@ export default {
           </svg>`
         },
         {
-          title: 'Alertas instantâneos',
-          description: 'Notificações em tempo real no Discord ou WhatsApp. Candidate-se antes da concorrência.',
+          title: 'Direto no seu WhatsApp',
+          description: 'Receba as vagas no privado, com marcadores ✅/❌ por skill e link curto pra aplicar.',
           icon: `<svg width="40" height="40" viewBox="0 0 40 40" fill="none">
             <path d="M20 8C14 8 10 12 10 18V24L8 28H32L30 24V18C30 12 26 8 20 8Z" stroke="var(--color-accent)" stroke-width="2"/>
             <path d="M16 28C16 30.2 17.8 32 20 32C22.2 32 24 30.2 24 28" stroke="var(--color-accent)" stroke-width="2"/>

@@ -112,23 +112,23 @@ const plans = [
     tier: 'free',
     name: 'Comunidade',
     price: 0,
-    tagline: 'Para acompanhar o ecossistema e trocar ideia com outros devs.',
+    tagline: 'Acompanhe o ecossistema e troque ideia com outros devs.',
     ctaLabel: 'Entrar grátis',
     featureGroups: [
       {
-        title: 'Comunidade',
+        title: 'O que tem',
         items: [
-          { label: 'Acesso ao Discord, WhatsApp e Telegram' },
+          { label: 'Acesso ao grupo público no WhatsApp' },
           { label: 'Vagas compartilhadas pela comunidade' },
-          { label: 'Networking com outros devs' }
+          { label: 'Newsletter ocasional com vagas em destaque' }
         ]
       },
       {
         title: 'Não inclui',
         items: [
-          { label: 'Canal exclusivo de vagas', kind: 'off' },
-          { label: 'Filtros automáticos por stack', kind: 'off' },
-          { label: 'Match score por vaga', kind: 'off' }
+          { label: 'Filtro de vagas pelo seu stack', kind: 'off' },
+          { label: 'Dashboard com seu histórico de vagas', kind: 'off' },
+          { label: 'Upload e análise de currículo', kind: 'off' }
         ]
       }
     ]
@@ -137,33 +137,42 @@ const plans = [
     tier: 'plus',
     name: 'Plus',
     price: 10,
-    tagline: 'Vagas no seu WhatsApp privado, com IA filtrando pelo seu perfil.',
+    tagline: 'Vagas no seu WhatsApp privado, filtradas pelo seu stack, com análise comparativa do seu currículo.',
     ctaLabel: 'Começar 7 dias grátis',
     badge: 'Mais Popular',
     featured: true,
     trial: '7 dias grátis · cancele quando quiser',
     featureGroups: [
       {
-        title: 'Entrega no privado',
+        title: 'Entrega no seu privado',
         items: [
-          { highlight: 'DM individual', label: 'no seu WhatsApp, sem ruído de grupo' },
-          { highlight: 'IA analisa', label: 'cada vaga e calcula o match com seu perfil' },
-          { highlight: 'Match score 0–100', label: 'em toda vaga recebida' },
-          { highlight: 'Tempo real', label: 'vagas filtradas chegam direto pra você' }
+          { highlight: 'DM individual', label: 'no WhatsApp — sem ruído de grupo' },
+          { highlight: 'Vagas filtradas', label: 'pelo seu stack declarado no perfil' },
+          { highlight: 'Match score 0–100', label: 'calculado por vaga' }
         ]
       },
       {
-        title: 'Não inclui',
+        title: 'Análise por vaga (na mensagem)',
         items: [
-          { label: 'Acesso ao grupo Pro (canais são separados)', kind: 'off' }
+          { highlight: '✅/❌ por skill', label: 'da vaga vs seu stack — sabe na hora o que falta' },
+          { highlight: 'Bloco de responsabilidades', label: 'extraído da descrição da vaga' },
+          { highlight: 'Detalhes completos', label: 'salário, modalidade, localidade, fonte' }
         ]
       },
       {
-        title: 'Em breve',
+        title: 'Upload de currículo (PDF/DOCX)',
         items: [
-          { highlight: 'Curadoria humana:', label: 'top 10 vagas semanais selecionadas', kind: 'soon' },
-          { highlight: 'Relatório semanal', label: 'do mercado por stack e senioridade', kind: 'soon' },
-          { label: 'Suporte prioritário no WhatsApp', kind: 'soon' }
+          { highlight: 'Parse automático', label: 'extrai skills, anos, senioridade e idiomas' },
+          { highlight: 'Comparativo CV × vaga', label: 'em cada mensagem: skills, anos e nível' },
+          { highlight: 'Histórico de versões', label: 'guarda CVs antigos quando você atualiza' }
+        ]
+      },
+      {
+        title: 'Em breve no Plus',
+        items: [
+          { highlight: 'Histórico de candidaturas', label: 'com lembrete pós-aplicação', kind: 'soon' },
+          { highlight: 'Estatísticas pessoais', label: 'no dashboard', kind: 'soon' },
+          { highlight: 'Consultoria LinkedIn', label: 'guia e templates de contato', kind: 'soon' }
         ]
       }
     ]
@@ -187,9 +196,9 @@ const plans = [
       {
         title: 'Não inclui',
         items: [
-          { label: 'Entrega no WhatsApp privado (Plus)', kind: 'off' },
-          { label: 'Filtro das vagas pelo seu perfil (Plus)', kind: 'off' },
-          { label: 'Match score por IA (Plus)', kind: 'off' }
+          { label: 'DM privada com vagas filtradas (Plus)', kind: 'off' },
+          { label: 'Marcadores ✅/❌ por skill (Plus)', kind: 'off' },
+          { label: 'Upload e análise de currículo (Plus)', kind: 'off' }
         ]
       }
     ]
