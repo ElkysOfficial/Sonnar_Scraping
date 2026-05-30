@@ -686,5 +686,17 @@ def normalize_location(raw_location: str) -> Tuple[Optional[str], Optional[str]]
     if iso_match and iso_match.group(1) in ISO_COUNTRY_CODES:
         return None, iso_match.group(1)
 
+    # v3.10.4: lista multi-regiao ("USA, Canada", "Americas, Europe, Israel").
+    # Tenta extrair o PRIMEIRO pais reconhecido. Cobre o
+    # `candidate_required_location` do Remotive.
+    if "," in raw or "/" in raw:
+        for token in re.split(r"[,/]", raw):
+            token = token.strip()
+            if not token:
+                continue
+            sub_state, sub_country = normalize_location(token)
+            if sub_country:
+                return sub_state, sub_country
+
     # Vaga remota sem indicador de país: nao da pra atribuir
     return None, None
