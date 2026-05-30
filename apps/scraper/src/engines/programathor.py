@@ -32,8 +32,41 @@ import logging
 logger = logging.getLogger("scraper.engine.programathor")
 
 
-# 2026-05-23 (v2.23.0): pipeline central. ProgramaThor e sempre PT.
-PARSER_VERSION = "programathor-2026.05.23"
+# v3.10.6 (2026-05-30): para de pegar streetAddress como location. Usa
+# locality + region (cidade + UF) com street so como ultimo recurso.
+PARSER_VERSION = "programathor-2026.05.30"
+
+
+def extract_location_from_address(address: dict | None) -> list[str]:
+    """Extrai [locality, region] do `address` JSON-LD do JobPosting.
+
+    Prioridade:
+        1. [addressLocality, addressRegion] quando ambos vem.
+        2. [addressLocality] sozinho.
+        3. [addressRegion] sozinho (raro).
+        4. parts[:2] do streetAddress como ultimo recurso ("Cidade, UF"
+           pode vir empacotado na rua em alguns JSON-LD).
+        5. [] vazio.
+
+    O engine antigo (v3.9.x) pegava streetAddress diretamente, gravando
+    "Rua Haiti - 30" no location_raw — inutil pro normalize_location.
+    """
+    if not isinstance(address, dict):
+        return []
+    locality = (address.get("addressLocality") or "").strip()
+    region = (address.get("addressRegion") or "").strip()
+    if locality and region:
+        return [locality, region]
+    if locality:
+        return [locality]
+    if region:
+        return [region]
+    street = (address.get("streetAddress") or "").strip()
+    if street and "," in street:
+        parts = [p.strip() for p in street.split(",") if p.strip()]
+        if parts:
+            return parts[:2]
+    return []
 
 
 # --- Sessão (padrão httpx compartilhado) ---------------------------------
@@ -197,26 +230,21 @@ async def refetch_one(url: str, *, client=None) -> list | None:
 
     job_location = data.get("jobLocation", {})
     address = job_location.get("address", {}) if isinstance(job_location, dict) else {}
-    locality = address.get("addressLocality", "") if isinstance(address, dict) else ""
-    street = address.get("streetAddress", "") if isinstance(address, dict) else ""
+    locality_lower = (address.get("addressLocality", "") or "").lower() if isinstance(address, dict) else ""
 
     job_location_type = data.get("jobLocationType", "")
     title_lower = job_title.lower()
-    locality_lower = locality.lower() if locality else ""
+
+    # v3.10.6: location SEMPRE do addressLocality + addressRegion (cidade
+    # + UF). streetAddress so se locality vazio E street tem virgula.
+    location = extract_location_from_address(address)
 
     if job_location_type == "TELECOMMUTE" or "remoto" in title_lower or "remoto" in locality_lower or "remote" in title_lower:
         work_type = "Remoto"
-        location = []
     elif "híbrido" in title_lower or "hibrido" in title_lower or "híbrido" in locality_lower:
         work_type = "Híbrido"
-        location = [street.split(",")[0].strip()] if street else []
     else:
         work_type = "Presencial"
-        if street:
-            parts = [p.strip() for p in street.split(",") if p.strip()]
-            location = parts[:2] if len(parts) >= 2 else parts
-        else:
-            location = []
 
     employment_type = data.get("employmentType", "")
     if isinstance(employment_type, list):
