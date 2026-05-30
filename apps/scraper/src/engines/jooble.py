@@ -223,7 +223,10 @@ def _extract_hiring_regime(title: str, job_type: str = "") -> str:
     if "full-time" in job_type_lower or "full_time" in job_type_lower or "integral" in job_type_lower:
         return "Full-time"
 
-    return ""
+    # v3.10.11: default CLT pra vagas BR sem sinal explicito. Jooble eh
+    # agregador BR e a maioria das vagas listadas eh CLT. Antes 72% das
+    # vagas ficavam com regime null.
+    return "CLT"
 
 
 def _extract_company(item: dict) -> str:
