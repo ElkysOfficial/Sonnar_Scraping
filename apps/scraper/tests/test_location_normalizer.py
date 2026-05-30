@@ -121,15 +121,28 @@ class TestEdgeCases:
         assert normalize_location(raw) == (None, None)
 
     @pytest.mark.parametrize("raw", [
+        "Home Office",  # nao explicitamente worldwide
+    ])
+    def test_remote_without_location_no_country(self, raw):
+        # tokens vagos que nao casam com nada -> (None, None)
+        assert normalize_location(raw) == (None, None)
+
+    @pytest.mark.parametrize("raw", [
         "Remote",
         "remoto",
-        "Home Office",
         "Anywhere",
         "Worldwide",
+        "Global",
+        "Anywhere in the World",
+        "LATAM",
+        "EMEA",
+        "Americas, Europe, Asia, Oceania",
     ])
-    def test_remote_without_location(self, raw):
-        # remoto puro não dá pra atribuir país
-        assert normalize_location(raw) == (None, None)
+    def test_worldwide_strings_return_ww(self, raw):
+        """v3.10.13: vagas explicitamente globais sao marcadas com country_code='WW'."""
+        state, country = normalize_location(raw)
+        assert country == "WW"
+        assert state is None
 
     def test_uf_takes_precedence_over_country_keyword(self):
         # mesmo com "Brasil" no texto, a UF é o que vale

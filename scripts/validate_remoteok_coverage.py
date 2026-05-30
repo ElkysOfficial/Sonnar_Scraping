@@ -30,6 +30,11 @@ for item in items:
     if isinstance(loc, list):
         loc = " - ".join(loc)
     state, country = normalize_location(loc or "")
+    # v3.10.13: simula o fallback WW que build_job_payload aplica para
+    # engines 100% remote (remoteok/wewr/remotive) quando location nao
+    # eh mapeavel.
+    if not country and loc:
+        country = "WW"
     parsed_jobs.append({
         "job_url": p[0], "title": p[1], "company": p[2],
         "location_raw": loc, "work_type": p[4], "hiring_regime": p[5],

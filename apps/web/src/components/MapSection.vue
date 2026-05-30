@@ -351,7 +351,11 @@ export default {
 
         if (!countryRes.error && Array.isArray(countryRes.data)) {
           this.jobsByCountry = countryRes.data.reduce((acc, row) => {
-            if (row.country_code) acc[row.country_code] = Number(row.count)
+            // 'WW' eh codigo customizado pra vagas Worldwide — nao plotamos
+            // no mapa (nao tem coordenada). Contagem fica fora do map view.
+            if (row.country_code && row.country_code !== 'WW') {
+              acc[row.country_code] = Number(row.count)
+            }
             return acc
           }, {})
         }

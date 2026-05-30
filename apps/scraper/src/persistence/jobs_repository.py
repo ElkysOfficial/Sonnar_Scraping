@@ -126,6 +126,13 @@ def _parse_date(value: str) -> Optional[str]:
     return None
 
 
+# v3.10.13: engines que so postam vagas 100% remote globais. Quando o
+# normalize_location nao consegue inferir country (cidade obscura,
+# mojibake, etc), assumimos 'WW' (Worldwide) — coerente com a natureza
+# do marketplace. Outras engines ficam com country=None nesses casos.
+_WORLDWIDE_REMOTE_ENGINES = {"remoteok", "weworkremotely", "remotive"}
+
+
 def build_job_payload(job_data: dict, source: Optional[str] = None) -> dict:
     """
     Constroi o dict canonico (formato Supabase) a partir do job extraido.
@@ -133,6 +140,10 @@ def build_job_payload(job_data: dict, source: Optional[str] = None) -> dict:
     """
     location_raw = (job_data.get('location') or '').strip() or None
     state_code, country_code = normalize_location(location_raw or '')
+    # v3.10.13: fallback WW para engines 100% remote quando normalize
+    # falha mesmo com location nao-vazio (cidade obscura, mojibake).
+    if not country_code and location_raw and source in _WORLDWIDE_REMOTE_ENGINES:
+        country_code = 'WW'
 
     salary_raw = job_data.get('salary') or None
     currency = _detect_currency(salary_raw or '')
