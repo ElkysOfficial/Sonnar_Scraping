@@ -333,6 +333,29 @@ def _build_location(raw: str) -> list:
     return parts[:2]
 
 
+def _infer_regime(title: str, description: str) -> str:
+    """Infere hiring_regime de palavras-chave PT/EN/DE.
+
+    CareerJet nao expoe regime estruturado. Default Full-time porque a
+    grande maioria das vagas listadas eh CLT/efetivo. Sinais explicitos
+    promovem pra Part-time/Internship/Contractor/Freelancer.
+    """
+    blob = f"{title or ''}\n{description or ''}".lower()
+    # Part-time
+    if re.search(r"\b(?:part[\s\-]?time|teilzeit|meio\s+per[íi]odo)\b", blob):
+        return "Part-time"
+    # Internship / estagio
+    if re.search(r"\b(?:intern(?:ship)?|praktikum|werkstudent|trainee|est[áa]gio|estagi[áa]rio)\b", blob):
+        return "Internship"
+    # Freelancer
+    if re.search(r"\b(?:freelanc(?:e|er)|freiberufler|aut[oô]nomo)\b", blob):
+        return "Freelancer"
+    # Contractor
+    if re.search(r"\b(?:contract(?:or)?|zeitarbeit|temp(?:or[áa]ri[oa])?)\b", blob):
+        return "Contractor"
+    return "Full-time"
+
+
 def _work_type(title: str, location: list) -> str:
     """Modalidade derivada do titulo + localidade.
 
@@ -493,10 +516,14 @@ async def get_careerjet_jobs(on_job=None) -> list:
             description = await asyncio.to_thread(translate_to_pt, description, src)
 
         work_type = _work_type(title, location)
+        # v3.10.3: regime inferido de palavras-chave PT/EN/DE.
+        # CareerJet majoritariamente DE — palavras como "Praktikum",
+        # "Werkstudent", "Teilzeit" preencheriam vazio antes.
+        hiring_regime = _infer_regime(title, description)
         skills = extract_skills(description) if description else []
         parsed = apply_description_fallbacks([
             url, title, company, location, work_type,
-            "", salary, publication_date,
+            hiring_regime, salary, publication_date,
             skills, description,
         ])
         # Pipeline central de enriquecimento (epico v3.0.0). description
