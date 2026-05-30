@@ -55,7 +55,7 @@ SKILLS_BY_CATEGORY: Dict[str, List[str]] = {
     "Front-End": [
         "React", "React.js", "ReactJS",
         "Angular", "AngularJS",
-        "Vue", "Vue.js", "VueJS",
+        "Vue", "Vue.js", "VueJS", "Vuex", "Pinia",
         "Next.js", "NextJS",
         "Nuxt", "Nuxt.js",
         "Svelte", "SvelteKit",
@@ -105,10 +105,21 @@ SKILLS_BY_CATEGORY: Dict[str, List[str]] = {
         "React Native", "Flutter",
         "Xamarin", "Ionic", "Capacitor", "Cordova", "NativeScript",
         "SwiftUI", "Jetpack Compose", "Kotlin Multiplatform", "KMM",
+        "Combine", "RxSwift", "CoreData",
         "Android", "Android SDK", "Android Studio",
         "iOS", "iOS SDK", "Xcode",
         "Objective-C", "UIKit", "Realm", "ObjectBox",
         "Expo", "Firebase",
+    ],
+    # ---------------------------------------------------------------
+    # Blockchain / Web3
+    # ---------------------------------------------------------------
+    "Blockchain": [
+        "Ethereum", "Bitcoin", "Polygon", "Solana", "BSC",
+        "Hardhat", "Truffle", "Foundry",
+        "Web3.js", "Ethers.js", "Viem", "Wagmi",
+        "Smart Contracts", "DApp", "NFT", "DeFi",
+        "OpenZeppelin", "IPFS",
     ],
     # ---------------------------------------------------------------
     # Banco de Dados
