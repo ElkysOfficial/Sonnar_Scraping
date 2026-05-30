@@ -572,6 +572,34 @@ def _detect_uf(raw: str) -> Optional[str]:
     return None
 
 
+# v3.10.13: codigo customizado pra vagas explicitamente globais
+# ("Worldwide", "Anywhere", "Anywhere in the World", multi-continent puro).
+# Nao eh ISO 3166-1 alpha-2 — front-end deve renderizar como "Mundial".
+WORLDWIDE_CODE = "WW"
+
+# Strings que sinalizam vaga global SEM ancoragem geografica. Match contra
+# a string inteira normalizada (lowercase, sem acentos), depois de strip.
+_WORLDWIDE_STRINGS = {
+    "worldwide", "anywhere", "anywhere in the world", "global", "globally",
+    "remote", "remote worldwide", "remoto", "any location",
+    "everywhere", "any country",
+    # multi-continente puro (sem pais especifico em nenhum token)
+    "americas, europe, asia, oceania",
+    "americas, europe, asia",
+    "americas and europe",
+    "global remote", "fully remote",
+    # regioes multi-pais sem ancoragem em pais especifico
+    "latam", "latin america", "america latina",
+    "emea", "apac", "europe", "africa", "asia",
+    "north america", "south america",
+}
+
+
+def _is_worldwide_string(normalized: str) -> bool:
+    """True quando a string normalizada eh exatamente um sinal de vaga global."""
+    return normalized in _WORLDWIDE_STRINGS
+
+
 def _try_fix_mojibake(s: str) -> str:
     """Tenta desfazer dupla codificacao UTF-8 -> latin-1 -> UTF-8.
 
@@ -620,6 +648,13 @@ def normalize_location(raw_location: str) -> Tuple[Optional[str], Optional[str]]
         return None, None
 
     normalized = _normalize(raw)
+
+    # v3.10.13: vaga explicitamente global ("Worldwide", "Anywhere",
+    # "Anywhere in the World", multi-continent puro). Retorna codigo
+    # customizado 'WW' (nao-ISO) pra distinguir de NULL — front-end
+    # renderiza como "Mundial".
+    if _is_worldwide_string(normalized):
+        return None, WORLDWIDE_CODE
 
     # Detecta país primeiro (info mais confiável quando vier explícita)
     country = _detect_country(normalized)

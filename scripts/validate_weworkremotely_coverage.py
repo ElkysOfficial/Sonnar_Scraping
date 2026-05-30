@@ -24,6 +24,9 @@ for url in RSS_FEEDS[:4]:  # 4 feeds = amostra ampla
             continue
         loc = p[3] if isinstance(p[3], str) else (" - ".join(p[3]) if p[3] else "")
         state, country = normalize_location(loc)
+        # v3.10.13: simula fallback WW para engines 100% remote.
+        if not country and loc:
+            country = "WW"
         parsed_jobs.append({
             "job_url": p[0], "title": p[1], "company": p[2],
             "location_raw": loc, "work_type": p[4], "hiring_regime": p[5],

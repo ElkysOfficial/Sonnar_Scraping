@@ -42,7 +42,10 @@ async function fetchAll() {
     }, {})
 
     jobsByCountry.value = (countryRes.data ?? []).reduce((acc, row) => {
-      if (row.country_code) acc[row.country_code] = Number(row.count)
+      // 'WW' eh code customizado pra Worldwide — fora do mapa.
+      if (row.country_code && row.country_code !== 'WW') {
+        acc[row.country_code] = Number(row.count)
+      }
       return acc
     }, {})
 
