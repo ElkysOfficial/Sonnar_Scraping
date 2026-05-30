@@ -17,6 +17,7 @@ sem agregar dado. ADR-006 (redução de carga na VPS).
 from __future__ import annotations
 
 import asyncio
+import os
 from typing import Optional
 
 from playwright.async_api import async_playwright, Browser, BrowserContext, Route
@@ -39,6 +40,22 @@ _lock = asyncio.Lock()
 _pw = None
 _browser: Optional[Browser] = None
 _context: Optional[BrowserContext] = None
+
+# v3.10.19: semaforo GLOBAL de pages simultaneas no browser. Antes do
+# patch, indeed (Semaphore 2) e simplyhired (Semaphore 5) podiam ter ate
+# 7 pages Playwright abertas concorrentes — pico de CPU 127% num VPS de
+# 2 cores. Default 1 (serializa todas as chamadas Playwright). Configuravel
+# via BROWSER_FETCH_CONCURRENCY pra restaurar paralelismo se preciso.
+_PAGE_CONCURRENCY = max(1, int(os.getenv("BROWSER_FETCH_CONCURRENCY", "1")))
+_page_semaphore: Optional[asyncio.Semaphore] = None
+
+
+def _get_page_semaphore() -> asyncio.Semaphore:
+    """Lazy-init do semaforo dentro do event loop."""
+    global _page_semaphore
+    if _page_semaphore is None:
+        _page_semaphore = asyncio.Semaphore(_PAGE_CONCURRENCY)
+    return _page_semaphore
 
 
 async def _block_heavy_resources(route: Route) -> None:
@@ -93,24 +110,28 @@ async def fetch_html(
     timeout_ms: int = 20000,
     wait_selector: Optional[str] = None,
 ) -> Optional[str]:
-    """Busca uma URL e devolve o HTML renderizado. None se falhar."""
-    ctx = await _ensure_browser()
-    page = await ctx.new_page()
-    try:
-        await page.goto(url, wait_until=wait_until, timeout=timeout_ms)
-        if wait_selector:
+    """Busca uma URL e devolve o HTML renderizado. None se falhar.
+
+    v3.10.19: serializado por _page_semaphore (default 1 page por vez).
+    """
+    async with _get_page_semaphore():
+        ctx = await _ensure_browser()
+        page = await ctx.new_page()
+        try:
+            await page.goto(url, wait_until=wait_until, timeout=timeout_ms)
+            if wait_selector:
+                try:
+                    await page.wait_for_selector(wait_selector, timeout=timeout_ms)
+                except Exception:
+                    pass
+            return await page.content()
+        except Exception:
+            return None
+        finally:
             try:
-                await page.wait_for_selector(wait_selector, timeout=timeout_ms)
+                await page.close()
             except Exception:
                 pass
-        return await page.content()
-    except Exception:
-        return None
-    finally:
-        try:
-            await page.close()
-        except Exception:
-            pass
 
 
 async def close_browser() -> None:

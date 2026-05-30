@@ -68,8 +68,16 @@ logger = logging.getLogger("scraper.controller")
 # todas as stacks acontece ao longo do dia (104 batches × 2h pausa).
 BATCH_SIZE = int(os.getenv("BATCH_SIZE", "2"))
 BATCH_INTERVAL_SECONDS = int(os.getenv("BATCH_INTERVAL_SECONDS", "7200"))  # 2h
-# 2 vCPUs => 2 engines paralelas. Atual default era 3 e levava à contenção.
-MAX_CONCURRENT_ENGINES = int(os.getenv("MAX_CONCURRENT_ENGINES", "2"))
+# v3.10.19: 2 vCPUs -> 1 engine de cada vez. Antes (2) duas engines pesadas
+# (indeed + simplyhired com Playwright) podiam rodar concorrente, somando
+# >100% de CPU. Serializa, com cada engine consumindo no maximo 50-60% de
+# 1 core. Meta acordada com o user: pico <=50%, fora pico <=35%.
+MAX_CONCURRENT_ENGINES = int(os.getenv("MAX_CONCURRENT_ENGINES", "1"))
+# v3.10.19: pausa entre CICLOS completos (119 batches finalizados). Antes
+# o loop reiniciava imediato, mantendo CPU em pico mesmo apos terminar a
+# varredura. 1800s (30min) deixa a VM esfriar e dilui o pico medio de
+# CPU pela metade. Meta: <=50% pico, <=35% media.
+CYCLE_SLEEP_SECONDS = int(os.getenv("CYCLE_SLEEP_SECONDS", "1800"))
 METRICS_FLUSH_INTERVAL_S = float(os.getenv("METRICS_FLUSH_INTERVAL_S", "30"))
 
 # Tipo do callback: ``async fn(job_data: dict, engine: str) -> None``.
@@ -629,6 +637,15 @@ async def scrape_jobs() -> None:
                 await progress.clear_cycle_idx()
                 logger.info("cycle_complete")
                 set_active_batch(None)
+
+                # v3.10.19: dorme antes de iniciar o proximo ciclo. Sem
+                # esse sleep o scraper recomecava imediato, mantendo CPU
+                # em pico continuo.
+                if CYCLE_SLEEP_SECONDS > 0:
+                    logger.info("cycle_sleep", extra={
+                        "seconds": CYCLE_SLEEP_SECONDS,
+                    })
+                    await asyncio.sleep(CYCLE_SLEEP_SECONDS)
     finally:
         for t in (metrics_task, tracker_task, progress_task,
                   core_flush_task, revalidator_task):
