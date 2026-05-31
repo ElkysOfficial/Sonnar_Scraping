@@ -13,12 +13,13 @@
 
 import "dotenv/config"
 import { infoLog, successLog, warningLog, errorLog } from "../utils/logger.js"
-import { JOB_GROUP_ID, JOB_SEND_INTERVAL } from "../config.js"
+import { JOB_GROUP_ID, JOB_SEND_INTERVAL, GROUP_SEND_AS_IMAGE } from "../config.js"
 import { getCurrentSocket, isCurrentSocketReady } from "../utils/socketManager.js"
 import { getSenderState, updateSenderState } from "./database.js"
 import { fetchPendingJobs, markJobStatus } from "./coreClient.js"
 import { extractJobDataFromEmbed, resolveEmbedPayload, formatJobMessage } from "./textBuilder.js"
 import { shortenUrl } from "./urlShortener.js"
+import { isImageSendingEnabled, sendJobAsImage } from "./imageCardSender.js"
 
 const FIXED_INTERVAL = JOB_SEND_INTERVAL || 5 * 60 * 1000
 
@@ -91,8 +92,12 @@ async function buildNextJobMessage(deps = defaultDeps) {
 
   try {
     const shortUrl = await deps.shortenUrl(jobData.url)
+    // text = versao completa (fallback se imagem falhar)
+    // textCompact = versao enxuta usada como caption da imagem (grupo nao
+    // recebe match — audiencia heterogenea)
     const text = formatJobMessage(jobData, shortUrl)
-    return { jobId: jobData.id || job.id || null, text }
+    const textCompact = formatJobMessage(jobData, shortUrl, { compact: true })
+    return { jobId: jobData.id || job.id || null, text, textCompact, jobData }
   } catch (err) {
     errorLog(`[CARD] Erro ao montar mensagem: ${err.message}`)
     return null
@@ -106,6 +111,20 @@ async function sendJobMessage(message, deps = defaultDeps) {
       warningLog("[CARD] Connection closed. Waiting for reconnection.")
       return false
     }
+
+    // v3.10.31: tenta imagem + caption enxuto. Em falha cai pro texto puro.
+    if (GROUP_SEND_AS_IMAGE && isImageSendingEnabled() && message.jobData) {
+      try {
+        const ok = await sendJobAsImage(deps.jobGroupId, message.jobData, {
+          caption: message.textCompact || message.text,
+          socket,
+        })
+        if (ok) return true
+      } catch (err) {
+        warningLog(`[CARD] Falha no envio como imagem, caindo pra texto: ${err.message}`)
+      }
+    }
+
     await socket.sendMessage(deps.jobGroupId, { text: message.text })
     return true
   } catch (error) {

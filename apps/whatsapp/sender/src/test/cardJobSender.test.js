@@ -95,7 +95,8 @@ test("buildNextJobMessage: monta mensagem completa quando ha vaga", async () => 
   assert.match(result.text, /\*Backend Dev\*/)
   assert.match(result.text, /💰 \*R\$ 12\.000\*/)
   assert.match(result.text, /🔗 \*Ver a vaga:\* https:\/\/son\.sh\/v\/\d+/)
-  assert.match(result.text, /via LinkedIn/)
+  // v3.10.31: rodape mudou de "via [source]" para "Vaga capturada em"
+  assert.match(result.text, /_Vaga capturada em /)
   assert.equal(calls.shortenUrl.length, 1)
   assert.equal(calls.shortenUrl[0].url, SAMPLE_JOB.job_url)
 })

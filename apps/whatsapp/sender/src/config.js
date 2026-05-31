@@ -109,6 +109,11 @@ export const ELKYS_SUPABASE_SERVICE_KEY = process.env.ELKYS_SUPABASE_SERVICE_KEY
 // Quando false, o bot ignora mensagens recebidas (comportamento pre-v3.10.23).
 export const HUMAN_HANDOVER_ENABLED = readBoolean(process.env.HUMAN_HANDOVER_ENABLED, true)
 
+// v3.10.31: quando true, vagas postadas no grupo geral (JOB_GROUP_ID) vao
+// como imagem + caption enxuto. Em qualquer falha de render, faz fallback
+// para texto puro. Custo de render fica na Supabase Edge — zero CPU na VPS.
+export const GROUP_SEND_AS_IMAGE = readBoolean(process.env.GROUP_SEND_AS_IMAGE, true)
+
 // Diretório dos comandos
 export const COMMANDS_DIR = path.join(__dirname, "commands")
 
