@@ -1,394 +1,524 @@
 /**
- * menuRouter — fluxos conversacionais do bot Elkys + Sonnar.
+ * menuRouter — fluxos conversacionais Elkys + Sonnar (v3.10.30)
  *
- * Estrutura em arvore:
- *   root                    → menu Elkys (5 opcoes)
- *     ├── orcamento         → coleta info + abre atendimento
- *     ├── reuniao           → coleta disponibilidade + abre atendimento
- *     ├── sonnar            → submenu Sonnar
- *     │     ├── assinar     → escolhe Grupo ou Personalizadas
- *     │     ├── guia        → abre atendimento (precisa conversa pra montar)
- *     │     └── consultoria → abre atendimento (Plus only)
- *     ├── parceria          → coleta info + abre atendimento
- *     └── atendente         → abre atendimento direto
+ * Padrao "Apple": textos limpos, hierarquia clara, sem decoracao emoji
+ * excessiva. Numeracao no menu mas reconhece texto livre via
+ * intentDetector.
  *
- * Cada handler retorna:
- *   { reply: string, nextMenu: string, transition?: 'human'|'awaiting_rating' }
+ * Estados do menuRouter:
+ *   - root                 menu Elkys raiz (6 opcoes)
+ *   - coleta_orcamento     coletando descricao do projeto
+ *   - coleta_reuniao       coletando dados pra reuniao
+ *   - menu_pagamento       escolha PIX vs Boleto
+ *   - pagamento_pix        mostrou CNPJ, espera confirmacao
+ *   - pagamento_boleto     informou que sera enviado, modo humano
+ *   - coleta_parceria      coletando dados de parceria
+ *   - coleta_atendente     coletando duvida inicial
+ *   - sonnar               submenu Sonnar (Assinar, Guia, Consultoria)
+ *   - sonnar_assinar       Grupo vs Personalizado
+ *   - closing_check        "conseguiu resolver?"
  *
- * Quando `transition === 'human'`, o orchestrator (humanHandover) cuida de:
- *   - criar ticket
- *   - mudar mode pra 'human'
- *   - notificar admins
+ * Transicoes pra atendimento humano:
+ *   - opcao 1 (orcamento)        apos coleta_orcamento + closing_check
+ *   - opcao 2 (reuniao)          apos coleta_reuniao + closing_check
+ *   - opcao 3.2 (boleto)         direto, modo humano
+ *   - opcao 3.1 (pix)            apos confirmacao do cliente
+ *   - opcao 4 (parceria)         apos coleta_parceria + closing_check
+ *   - opcao 6 (atendente)        apos coleta_atendente
+ *   - guia (Pro/Plus)            direto
+ *   - consultoria (Plus)         direto
  */
 
-const SEP = "─".repeat(28)
+import {
+  detectIntent,
+  detectPaymentChoice,
+  detectClosingChoice,
+  detectYesNo,
+  isBackCommand,
+  isGreeting,
+  normalize,
+} from "./intentDetector.js"
 
-// ─── Menu raiz: Elkys ───────────────────────────────────────────────
+const PIX_CNPJ = "64.095.868/0001-03"
 
-const ROOT_MENU_TEXT =
-  `*ELKYS* ⚙️\n` +
-  `_Software, automação e produtos digitais._\n\n` +
-  `Construímos tecnologia que faz negócio crescer — de sistemas sob ` +
-  `medida a automações que devolvem horas do seu dia.\n\n` +
-  `🌐 https://elkys.com.br\n` +
-  `${SEP}\n` +
-  `*Como podemos te ajudar?*\n\n` +
-  `1️⃣  💼  *Orçamento*\n` +
-  `Uma proposta sob medida para o seu projeto.\n\n` +
-  `2️⃣  📅  *Reunião*\n` +
-  `Converse com nosso time, sem compromisso.\n\n` +
-  `3️⃣  🚀  *Sonnar — Vagas de tecnologia*\n` +
-  `Vagas de TI direto no seu WhatsApp.\n\n` +
-  `4️⃣  🤝  *Seja parceiro*\n` +
-  `Indique projetos e cresça com a gente.\n\n` +
-  `5️⃣  💬  *Conversar com um atendente*\n` +
-  `Um humano vai te responder em breve.\n` +
-  `${SEP}\n` +
+// ──────────────────────────────────────────────────────────────────────
+// Textos (padrao Apple — limpos, organizados, sem excesso)
+// ──────────────────────────────────────────────────────────────────────
+
+const ROOT_MENU =
+  `*Elkys*\n` +
+  `Software, automação e produtos digitais.\n\n` +
+  `elkys.com.br\n\n` +
+  `Como podemos te ajudar?\n\n` +
+  `*1.* Orçamento\n` +
+  `*2.* Agendar reunião\n` +
+  `*3.* Boleto ou Pix\n` +
+  `*4.* Seja parceiro\n` +
+  `*5.* Sonnar — Vagas de tecnologia\n` +
+  `*6.* Falar com atendente\n\n` +
   `_Responda com o número da opção._`
 
-// ─── Submenu Sonnar ─────────────────────────────────────────────────
-
-const SONNAR_MENU_TEXT =
-  `*SONNAR* 🚀\n` +
-  `_Sua próxima vaga de tecnologia, sem garimpar._\n\n` +
-  `O Sonnar varre as principais plataformas de vagas, filtra o que ` +
-  `combina com o seu perfil e entrega no WhatsApp — você não precisa ` +
-  `procurar.\n\n` +
-  `*Por que usar o Sonnar*\n` +
-  `• 🎯 Vagas que batem com sua stack e senioridade\n` +
-  `• ⚡ Você recebe assim que a vaga é publicada\n` +
-  `• 🧭 Filtro por área, modalidade e localização\n` +
-  `• 📲 Tudo no WhatsApp — sem app, sem login\n\n` +
-  `🌐 https://sonnarjobs.com.br\n` +
-  `${SEP}\n` +
-  `*O que você quer fazer?*\n\n` +
-  `1️⃣  ✍️  *Assinar*\n` +
-  `Começar a receber vagas hoje.\n\n` +
-  `2️⃣  📕  *Guia do Candidato*  _(Pro e Plus)_\n` +
-  `Material personalizado pra você se posicionar melhor.\n\n` +
-  `3️⃣  🎯  *Consultoria de LinkedIn e Currículo*  _(Plus)_\n` +
-  `O time entra no seu perfil e otimiza junto com você.\n\n` +
-  `0️⃣  ↩️  *Voltar ao menu principal*\n` +
-  `${SEP}\n` +
-  `_Responda com o número da opção._`
-
-// ─── Submenu Assinar ────────────────────────────────────────────────
-
-const SONNAR_ASSINAR_TEXT =
-  `*Como você quer receber as vagas?*\n\n` +
-  `1️⃣  👥  *Grupo de vagas*\n` +
-  `As vagas do dia em um grupo exclusivo no WhatsApp.\n\n` +
-  `2️⃣  🎯  *Vagas personalizadas*\n` +
-  `Só o que combina com o seu perfil, no privado.\n\n` +
-  `🌐 Conheça os planos: https://sonnarjobs.com.br\n` +
-  `${SEP}\n` +
-  `_Responda com o número • ou *voltar*._`
-
-const SONNAR_ASSINAR_LINK =
-  `🔗 *Vamos te direcionar pra começar:*\n` +
-  `https://sonnarjobs.com.br/cadastro\n\n` +
-  `Após o cadastro, configure seu perfil de busca e suas vagas começam ` +
-  `a chegar automaticamente.\n\n` +
-  `Quer que um atendente te ajude com o cadastro? Responda *atendente*.\n\n` +
+const NOT_UNDERSTOOD =
+  `Não consegui entender. Tente novamente:\n\n` +
+  `• Responda com o *número* da opção (1 a 6)\n` +
+  `• Ou escreva o que precisa (ex.: orçamento, pagamento, vagas)\n\n` +
   `_Digite *menu* a qualquer momento pra voltar._`
 
-// ─── Mensagens de transicao pra atendimento ─────────────────────────
+const ORCAMENTO_COLETA =
+  `*Orçamento personalizado*\n\n` +
+  `Para preparar uma proposta sob medida, me conta um pouco do projeto. ` +
+  `Pode responder tudo numa mensagem só:\n\n` +
+  `• O que você quer construir ou resolver\n` +
+  `• Quem vai usar e quantos usuários\n` +
+  `• Prazo desejado\n` +
+  `• Orçamento estimado (se já tem em mente)\n` +
+  `• Referências ou links úteis\n\n` +
+  `_Texto, por favor. Sem áudio._`
 
-const TRANSITION_HUMAN = {
-  generic: (name) =>
-    `Recebi! 💬\n\n` +
-    `Um atendente vai te responder em breve por aqui mesmo. ` +
-    `Pode ficar à vontade pra mandar todos os detalhes que quiser ` +
-    `enquanto isso — vamos te chamar em poucos minutos.\n\n` +
-    `_O atendimento automático está pausado até finalizarmos sua solicitação._`,
+const REUNIAO_COLETA =
+  `*Agendar reunião*\n\n` +
+  `Reunião online (Google Meet), gratuita e sem compromisso. Me passe:\n\n` +
+  `• Seu nome completo\n` +
+  `• Empresa (se tiver)\n` +
+  `• Três horários que funcionam pra você\n` +
+  `• Resumo do que quer conversar`
 
-  orcamento:
-    `🧾 Vamos preparar um orçamento sob medida pra você.\n\n` +
-    `Pra agilizar, descreva (pode ser em uma mensagem só):\n\n` +
-    `• 🎯 O que você quer construir / resolver\n` +
-    `• 🗓️ Prazo ideal\n` +
-    `• 💰 Orçamento estimado (se já tem em mente)\n` +
-    `• 🔗 Referências ou links úteis\n\n` +
-    `Em até *24h úteis* um especialista da Elkys vai te responder com ` +
-    `próximos passos.\n\n` +
-    `_O atendimento automático está pausado até finalizarmos._`,
+const PARCERIA_COLETA =
+  `*Programa de parceiros Elkys*\n\n` +
+  `Pra entender a oportunidade, me conta:\n\n` +
+  `• Seu nome e empresa\n` +
+  `• Que tipo de parceria você imagina\n` +
+  `   Indicação · Co-criação · White label · Outra\n` +
+  `• Volume estimado de projetos por mês\n` +
+  `• Sua área de atuação principal`
 
-  reuniao:
-    `📅 Bora marcar essa conversa.\n\n` +
-    `Manda pra gente:\n\n` +
-    `• 👤 Seu nome completo\n` +
-    `• 🏢 Empresa (se tiver)\n` +
-    `• ⏰ 3 horários que funcionam pra você (data e período)\n` +
-    `• 💬 Resumo do que quer conversar\n\n` +
-    `A reunião é online (Google Meet), sem compromisso. ` +
-    `Confirmamos por aqui em até *24h úteis*.\n\n` +
-    `_O atendimento automático está pausado até finalizarmos._`,
+const ATENDENTE_COLETA =
+  `*Atendimento humano*\n\n` +
+  `Pra agilizar, me conta em uma mensagem sua dúvida ou o que precisa.\n\n` +
+  `_Texto, por favor. Sem áudio._`
 
-  parceria:
-    `🤝 Bem-vindo ao programa de parceiros Elkys!\n\n` +
-    `Conta pra gente:\n\n` +
-    `• 👤 Seu nome e empresa\n` +
-    `• 💼 Como você imagina a parceria (indicação, co-criação, white label, ...)\n` +
-    `• 📊 Volume estimado de projetos/mês\n\n` +
-    `Vamos te chamar em até *24h úteis* pra alinhar próximos passos.\n\n` +
-    `_O atendimento automático está pausado até finalizarmos._`,
+const PAGAMENTO_MENU =
+  `*Pagamento*\n\n` +
+  `Como você prefere pagar?\n\n` +
+  `*1.* Pix\n` +
+  `*2.* Boleto bancário\n\n` +
+  `_Responda com o número._`
 
-  sonnar_guia:
-    `📕 Pra montar um guia que faça sentido, precisamos te conhecer um ` +
-    `pouquinho.\n\n` +
-    `Conta rapidinho:\n\n` +
-    `• 👤 Seu nome\n` +
-    `• 💼 Cargo / área que você quer trabalhar\n` +
-    `• 📊 Anos de experiência\n` +
-    `• 🎯 3 empresas/tipos de vaga que você está mirando\n\n` +
-    `O time vai te chamar em até *24h* pra alinhar e gerar o guia ` +
-    `personalizado.\n\n` +
-    `_O atendimento automático está pausado até finalizarmos._`,
+const PAGAMENTO_PIX = (cnpj) =>
+  `*Pix Elkys*\n\n` +
+  `*CNPJ:* ${cnpj}\n` +
+  `*Beneficiário:* ELKYS\n\n` +
+  `Após pagar, me confirma por aqui que valido com o financeiro ` +
+  `e libero o comprovante e nota fiscal.`
 
-  sonnar_consultoria:
-    `🎯 Consultoria personalizada de LinkedIn + Currículo.\n\n` +
-    `O Lucelho (fundador da Sonnar) entra na sua tela com você e ` +
-    `otimiza tudo juntos — pra área específica que você quer trabalhar.\n\n` +
-    `Pra agendar, manda:\n\n` +
-    `• 👤 Seu nome\n` +
-    `• 🔗 URL do seu LinkedIn\n` +
-    `• 🎯 Foco: qual área/vaga você está mirando\n` +
-    `• ⏰ 3 horários que funcionam pra você\n\n` +
-    `_O atendimento automático está pausado até finalizarmos._`,
-}
+const PAGAMENTO_BOLETO =
+  `*Boleto*\n\n` +
+  `Em instantes vou te enviar o boleto por *email* e por *WhatsApp* aqui mesmo.\n\n` +
+  `Se precisar de algo enquanto isso, é só responder por aqui.`
+
+// Closing check após coletas
+const CLOSING_CHECK = (afterTopic = "isso") =>
+  `Recebi! Vou repassar pro time.\n\n` +
+  `Como você prefere seguir?\n\n` +
+  `*1.* Falar com um atendente agora\n` +
+  `*2.* Aguardar nosso retorno\n\n` +
+  `_Em até 24 horas úteis te chamamos por aqui._`
+
+// Submenu Sonnar (mantém similar ao atual mas com formatação Apple)
+const SONNAR_MENU =
+  `*Sonnar*\n` +
+  `Sua próxima vaga de tecnologia, sem garimpar.\n\n` +
+  `sonnarjobs.com.br\n\n` +
+  `*Por que usar*\n` +
+  `• Vagas que batem com sua stack e senioridade\n` +
+  `• Recebe assim que a vaga é publicada\n` +
+  `• Filtro por área, modalidade e localização\n` +
+  `• Tudo no WhatsApp — sem app, sem login\n\n` +
+  `O que você quer fazer?\n\n` +
+  `*1.* Assinar\n` +
+  `*2.* Guia do candidato  _(Pro e Plus)_\n` +
+  `*3.* Consultoria LinkedIn e Currículo  _(Plus)_\n` +
+  `*0.* Voltar ao menu principal\n\n` +
+  `_Responda com o número da opção._`
+
+const SONNAR_ASSINAR_MENU =
+  `*Como você quer receber as vagas?*\n\n` +
+  `*1.* Grupo de vagas  — as vagas do dia em um grupo exclusivo\n` +
+  `*2.* Vagas personalizadas  — só o que combina com seu perfil, no privado\n\n` +
+  `Mais sobre os planos: sonnarjobs.com.br\n\n` +
+  `_Responda com o número • ou *voltar*._`
+
+const SONNAR_ASSINAR_GRUPO =
+  `*Grupo de vagas*\n\n` +
+  `Pra entrar no grupo exclusivo, escolha um plano (Pro ou Plus) ` +
+  `e siga o link de convite enviado após o cadastro.\n\n` +
+  `sonnarjobs.com.br/cadastro\n\n` +
+  `Precisa de ajuda? Responda *atendente*.\n\n` +
+  `_Digite *menu* pra voltar._`
+
+const SONNAR_ASSINAR_PRIVADO =
+  `*Vagas personalizadas*\n\n` +
+  `Plano *Plus* — só o que combina com seu stack, senioridade, ` +
+  `modalidade e localização, no seu privado.\n\n` +
+  `sonnarjobs.com.br/cadastro\n\n` +
+  `Precisa de ajuda? Responda *atendente*.\n\n` +
+  `_Digite *menu* pra voltar._`
 
 const PLAN_NOT_ELIGIBLE = {
   guia: (planLabel) =>
-    `🔒 O *Guia do Candidato* é exclusivo dos planos *Pro* e *Plus*.\n\n` +
+    `O *Guia do Candidato* é exclusivo dos planos *Pro* e *Plus*.\n\n` +
     `Você está no plano *${planLabel || "Comunidade"}* hoje. ` +
-    `Faz upgrade que destravamos tudo:\n\n` +
-    `🌐 https://sonnarjobs.com.br/dashboard/configuracoes?tab=assinatura\n\n` +
+    `Faça upgrade que destravamos tudo:\n\n` +
+    `sonnarjobs.com.br/dashboard/configuracoes?tab=assinatura\n\n` +
     `_Digite *menu* pra voltar._`,
-
   consultoria: (planLabel) =>
-    `🔒 A *Consultoria de LinkedIn e Currículo* é exclusiva do plano *Plus*.\n\n` +
-    `Você está no plano *${planLabel || "Comunidade"}* hoje. ` +
-    `O Plus inclui:\n\n` +
-    `• Vagas filtradas no seu privado\n` +
-    `• ✅/❌ por skill em cada vaga\n` +
-    `• Upload e análise de CV (PDF/DOCX)\n` +
-    `• Consultoria humana de LinkedIn + CV\n\n` +
-    `🌐 https://sonnarjobs.com.br/dashboard/configuracoes?tab=assinatura\n\n` +
+    `A *Consultoria de LinkedIn e Currículo* é exclusiva do plano *Plus*.\n\n` +
+    `Você está no plano *${planLabel || "Comunidade"}* hoje.\n\n` +
+    `sonnarjobs.com.br/dashboard/configuracoes?tab=assinatura\n\n` +
     `_Digite *menu* pra voltar._`,
 }
 
-// ─── Helpers de input ───────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────────────────
+// Helpers
+// ──────────────────────────────────────────────────────────────────────
 
-function normalize(text) {
-  return (text || "").trim().toLowerCase()
+function planLabel(plan) {
+  if (plan === "plus") return "Plus"
+  if (plan === "pro") return "Pro"
+  return "Comunidade"
 }
-
-function isBackCommand(text) {
-  const t = normalize(text)
-  return t === "voltar" || t === "menu" || t === "sair" || t === "inicio" || t === "início" || t === "0"
-}
-
-// ─── API principal: routeMessage ───────────────────────────────────
 
 /**
- * Decide a resposta do bot para uma mensagem recebida.
+ * Constroi a transition pra humano com mensagem original + categoria.
+ */
+function makeHumanTransition(opts) {
+  return {
+    type: "human",
+    category: opts.category || "outro",
+    priority: opts.priority || "media",
+    subject: opts.subject,
+    notify: opts.notify,
+    keepClosingMessage: opts.keepClosingMessage,
+  }
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// API: routeMessage
+// ──────────────────────────────────────────────────────────────────────
+
+/**
+ * Decide a proxima acao do bot com base no estado da conversa.
+ *
+ * Estados aqui processados:
+ *   root, coleta_*, menu_pagamento, pagamento_pix, sonnar*, closing_check
+ *
+ * Em coleta_*, a mensagem do cliente vira o conteudo do ticket.
  *
  * @param {Object} opts
- * @param {string} opts.text     Texto cru do cliente
- * @param {string} opts.currentMenu  estado atual (root, sonnar, ...)
- * @param {Object} opts.contact  Resultado de lookupContact
- * @returns {{reply: string, nextMenu: string, transition?: {type: 'human', category: string, priority: string, subject: string}, askName?: boolean}}
+ * @returns {{
+ *   reply: string,
+ *   nextMenu: string,
+ *   transition?: object,
+ *   collectedMessage?: string,   // texto que vai virar body do ticket
+ *   pixCNPJ?: string,            // sinaliza copia pra cliente
+ * }}
  */
-export function routeMessage({ text, currentMenu, contact }) {
-  const norm = normalize(text)
-
-  // Comandos universais
+export function routeMessage({ text, currentMenu, contact, context = {} }) {
+  // Comando global pra voltar ao menu raiz
   if (isBackCommand(text) && currentMenu !== "root") {
-    return { reply: ROOT_MENU_TEXT, nextMenu: "root" }
-  }
-  if (norm === "menu" || norm === "inicio" || norm === "início") {
-    return { reply: ROOT_MENU_TEXT, nextMenu: "root" }
+    return { reply: ROOT_MENU, nextMenu: "root" }
   }
 
   switch (currentMenu) {
     case "root":
     default:
-      return handleRoot(norm, contact)
+      return handleRoot(text, contact)
+    case "menu_pagamento":
+      return handleMenuPagamento(text)
+    case "pagamento_pix":
+      return handlePagamentoPixWait(text)
+    case "coleta_orcamento":
+      return handleColeta(text, "orcamento")
+    case "coleta_reuniao":
+      return handleColeta(text, "reuniao")
+    case "coleta_parceria":
+      return handleColeta(text, "parceria")
+    case "coleta_atendente":
+      return handleColeta(text, "atendente")
+    case "closing_check":
+      return handleClosingCheck(text, context)
     case "sonnar":
-      return handleSonnar(norm, contact)
+      return handleSonnar(text, contact)
     case "sonnar_assinar":
-      return handleSonnarAssinar(norm)
+      return handleSonnarAssinar(text)
   }
 }
 
-/**
- * Retorna o texto do menu raiz — usado pra "primeira mensagem do bot".
- */
 export function getRootMenuText() {
-  return ROOT_MENU_TEXT
+  return ROOT_MENU
 }
 
-// ─── Handlers ───────────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────────────────
+// Handler: menu raiz
+// ──────────────────────────────────────────────────────────────────────
 
-function handleRoot(norm, contact) {
-  switch (norm) {
-    case "1":
+function handleRoot(text, contact) {
+  if (isGreeting(text)) {
+    return { reply: ROOT_MENU, nextMenu: "root" }
+  }
+
+  const intent = detectIntent(text)
+  switch (intent) {
     case "orcamento":
-    case "orçamento":
-      return {
-        reply: TRANSITION_HUMAN.orcamento,
-        nextMenu: "human",
-        transition: {
-          type: "human",
-          category: "outro",
-          priority: "media",
-          subject: "Orçamento (WhatsApp)",
-          notify: "💼 *Orçamento solicitado*",
-        },
-      }
-    case "2":
+      return { reply: ORCAMENTO_COLETA, nextMenu: "coleta_orcamento" }
     case "reuniao":
-    case "reunião":
-      return {
-        reply: TRANSITION_HUMAN.reuniao,
-        nextMenu: "human",
-        transition: {
-          type: "human",
-          category: "outro",
-          priority: "media",
-          subject: "Agendamento de reunião (WhatsApp)",
-          notify: "📅 *Reunião solicitada*",
-        },
-      }
-    case "3":
-    case "sonnar":
-      return { reply: SONNAR_MENU_TEXT, nextMenu: "sonnar" }
-    case "4":
+      return { reply: REUNIAO_COLETA, nextMenu: "coleta_reuniao" }
+    case "pagamento":
+      return { reply: PAGAMENTO_MENU, nextMenu: "menu_pagamento" }
     case "parceria":
-    case "parceiro":
-      return {
-        reply: TRANSITION_HUMAN.parceria,
-        nextMenu: "human",
-        transition: {
-          type: "human",
-          category: "outro",
-          priority: "media",
-          subject: "Programa de parceiros (WhatsApp)",
-          notify: "🤝 *Parceria solicitada*",
-        },
-      }
-    case "5":
+      return { reply: PARCERIA_COLETA, nextMenu: "coleta_parceria" }
+    case "sonnar":
+      return { reply: SONNAR_MENU, nextMenu: "sonnar" }
     case "atendente":
-    case "atendimento":
-    case "humano":
-    case "falar":
-      return {
-        reply: TRANSITION_HUMAN.generic(contact?.displayName),
-        nextMenu: "human",
-        transition: {
-          type: "human",
-          category: "duvida",
-          priority: "media",
-          subject: "Atendimento solicitado (WhatsApp)",
-          notify: "💬 *Cliente solicitou atendente*",
-        },
-      }
+      return { reply: ATENDENTE_COLETA, nextMenu: "coleta_atendente" }
+    case "voltar":
+      return { reply: ROOT_MENU, nextMenu: "root" }
     default:
-      // Primeira interacao ou input invalido: mostra menu
-      return { reply: ROOT_MENU_TEXT, nextMenu: "root" }
+      // Sem intent reconhecido — mostra orientacao
+      return { reply: NOT_UNDERSTOOD, nextMenu: "root" }
   }
 }
 
-function handleSonnar(norm, contact) {
-  switch (norm) {
-    case "1":
-    case "assinar":
-      return { reply: SONNAR_ASSINAR_TEXT, nextMenu: "sonnar_assinar" }
+// ──────────────────────────────────────────────────────────────────────
+// Handler: menu pagamento (PIX vs Boleto)
+// ──────────────────────────────────────────────────────────────────────
 
-    case "2":
-    case "guia": {
-      const plan = contact?.subscriberPlan
-      if (plan !== "pro" && plan !== "plus") {
-        return {
-          reply: PLAN_NOT_ELIGIBLE.guia(planLabel(plan)),
-          nextMenu: "sonnar",
-        }
-      }
-      return {
-        reply: TRANSITION_HUMAN.sonnar_guia,
-        nextMenu: "human",
-        transition: {
-          type: "human",
-          category: "outro",
-          priority: "media",
-          subject: "Guia do Candidato (Sonnar)",
-          notify: `📕 *Guia do Candidato solicitado* (${plan})`,
-        },
-      }
+function handleMenuPagamento(text) {
+  const choice = detectPaymentChoice(text)
+  if (choice === "pix") {
+    return {
+      reply: PAGAMENTO_PIX(PIX_CNPJ),
+      nextMenu: "pagamento_pix",
+      pixCNPJ: PIX_CNPJ,
     }
-
-    case "3":
-    case "consultoria": {
-      const plan = contact?.subscriberPlan
-      if (plan !== "plus") {
-        return {
-          reply: PLAN_NOT_ELIGIBLE.consultoria(planLabel(plan)),
-          nextMenu: "sonnar",
-        }
-      }
-      return {
-        reply: TRANSITION_HUMAN.sonnar_consultoria,
-        nextMenu: "human",
-        transition: {
-          type: "human",
-          category: "outro",
-          priority: "alta",
-          subject: "Consultoria LinkedIn + CV (Sonnar Plus)",
-          notify: "🎯 *Consultoria solicitada* (Plus)",
-        },
-      }
+  }
+  if (choice === "boleto") {
+    // Boleto entra DIRETO em modo humano — admin envia manualmente.
+    return {
+      reply: PAGAMENTO_BOLETO,
+      nextMenu: "human",
+      transition: makeHumanTransition({
+        category: "financeiro",
+        priority: "alta",
+        subject: "Solicitação de boleto (WhatsApp)",
+        notify: "📄 *Boleto solicitado*  — cliente aguardando envio por email + WhatsApp",
+        keepClosingMessage: true,
+      }),
+      collectedMessage: "Cliente solicitou BOLETO via WhatsApp. Enviar boleto por email e por aqui.",
     }
-
-    default:
-      return { reply: SONNAR_MENU_TEXT, nextMenu: "sonnar" }
+  }
+  return {
+    reply: `Não entendi. Responda *1* pra Pix ou *2* pra Boleto.\n\n_Digite *menu* pra voltar._`,
+    nextMenu: "menu_pagamento",
   }
 }
 
-function handleSonnarAssinar(norm) {
-  switch (norm) {
-    case "1":
-    case "grupo":
-      return {
-        reply:
-          `👥 *Grupo de vagas*\n\n` +
-          `Pra entrar no grupo exclusivo, escolha um plano (Pro ou Plus) ` +
-          `e siga o link de convite enviado após o cadastro:\n\n` +
-          `🌐 https://sonnarjobs.com.br/cadastro\n\n` +
-          `Quer ajuda? Responda *atendente*.\n\n` +
-          `_Digite *menu* pra voltar._`,
-        nextMenu: "sonnar_assinar",
-      }
-    case "2":
-    case "personalizadas":
-    case "privado":
-      return {
-        reply:
-          `🎯 *Vagas personalizadas*\n\n` +
-          `Plano *Plus* — receba só o que combina com seu stack, ` +
-          `senioridade, modalidade e localização, no seu privado.\n\n` +
-          `🌐 https://sonnarjobs.com.br/cadastro\n\n` +
-          `Quer ajuda? Responda *atendente*.\n\n` +
-          `_Digite *menu* pra voltar._`,
-        nextMenu: "sonnar_assinar",
-      }
-    default:
-      return { reply: SONNAR_ASSINAR_TEXT, nextMenu: "sonnar_assinar" }
+// ──────────────────────────────────────────────────────────────────────
+// Handler: pix aguardando confirmacao
+// ──────────────────────────────────────────────────────────────────────
+
+function handlePagamentoPixWait(text) {
+  // Qualquer texto aqui eh tratado como confirmacao/duvida do cliente
+  // Vai pra humano com nota do que cliente disse
+  return {
+    reply:
+      `Recebi! Vou validar com o financeiro e te confirmo aqui.\n\n` +
+      `Após confirmação, envio o comprovante e nota fiscal.`,
+    nextMenu: "human",
+    transition: makeHumanTransition({
+      category: "financeiro",
+      priority: "alta",
+      subject: "Confirmação de Pix (WhatsApp)",
+      notify: "💸 *Pix realizado*  — cliente confirmou pagamento, validar e enviar NF",
+      keepClosingMessage: true,
+    }),
+    collectedMessage: text,
   }
 }
 
-function planLabel(plan) {
-  if (plan === "plus") return "Plus"
-  if (plan === "pro") return "Pro"
-  if (plan === "free") return "Comunidade"
-  return "Comunidade"
+// ──────────────────────────────────────────────────────────────────────
+// Handler: coletas (orcamento, reuniao, parceria, atendente)
+// ──────────────────────────────────────────────────────────────────────
+
+const COLETA_LABELS = {
+  orcamento:  { subject: "Orçamento (WhatsApp)",            notify: "💼 *Orçamento solicitado*",     category: "outro" },
+  reuniao:    { subject: "Agendamento de reunião",          notify: "📅 *Reunião solicitada*",        category: "outro" },
+  parceria:   { subject: "Programa de parceiros",           notify: "🤝 *Parceria solicitada*",       category: "outro" },
+  atendente:  { subject: "Atendimento (WhatsApp)",          notify: "💬 *Atendente solicitado*",      category: "duvida" },
+}
+
+function handleColeta(text, topic) {
+  const collected = (text || "").trim()
+  // Cliente digitou algo curto/menu? Mostra menu
+  const norm = normalize(collected)
+  if (isBackCommand(collected) || norm === "voltar") {
+    return { reply: ROOT_MENU, nextMenu: "root" }
+  }
+  if (collected.length < 5) {
+    // Muito curto — pede pra elaborar
+    return {
+      reply:
+        `Pode dar mais detalhes? Quanto mais informação, mais rápido o atendimento.\n\n` +
+        `_Digite *menu* pra cancelar._`,
+      nextMenu: `coleta_${topic}`,
+    }
+  }
+
+  // Recebeu a mensagem. Pergunta o closing_check.
+  return {
+    reply: CLOSING_CHECK(topic),
+    nextMenu: "closing_check",
+    collectedMessage: collected,
+    // contextPatch propagado pelo incomingHandler — guarda quem disparou
+    contextPatch: {
+      coleta_topic: topic,
+      coleta_message: collected,
+    },
+  }
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Handler: closing_check
+// ──────────────────────────────────────────────────────────────────────
+
+function handleClosingCheck(text, context) {
+  const choice = detectClosingChoice(text)
+  const topic = context?.coleta_topic || "atendente"
+  const labels = COLETA_LABELS[topic] || COLETA_LABELS.atendente
+  const collected = context?.coleta_message || ""
+
+  if (choice === "atendente") {
+    return {
+      reply:
+        `Perfeito. Um atendente vai te responder em instantes por aqui mesmo.\n\n` +
+        `_Atendimento automático pausado._`,
+      nextMenu: "human",
+      transition: makeHumanTransition({
+        ...labels,
+        priority: "alta",
+        keepClosingMessage: true,
+      }),
+      collectedMessage: collected,
+    }
+  }
+
+  if (choice === "ok") {
+    return {
+      reply:
+        `Beleza! Em até *24 horas úteis* nosso time entra em contato por aqui.\n\n` +
+        `Se preferir adiantar, responda *atendente* a qualquer momento.\n\n` +
+        `_Atendimento automático pausado até finalizarmos._`,
+      nextMenu: "human",
+      transition: makeHumanTransition({
+        ...labels,
+        priority: "media",
+        keepClosingMessage: true,
+      }),
+      collectedMessage: collected,
+    }
+  }
+
+  // Cliente digitou outra coisa — repete a pergunta
+  return {
+    reply:
+      `Como prefere seguir?\n\n` +
+      `*1.* Falar com atendente agora\n` +
+      `*2.* Aguardar retorno (até 24h úteis)`,
+    nextMenu: "closing_check",
+  }
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Handler: Sonnar (mesmo do antigo mas reformatado)
+// ──────────────────────────────────────────────────────────────────────
+
+function handleSonnar(text, contact) {
+  const norm = normalize(text)
+  const num = norm.match(/^([0-3])\b/)?.[1]
+
+  if (num === "0" || norm === "voltar") {
+    return { reply: ROOT_MENU, nextMenu: "root" }
+  }
+
+  // 1. Assinar
+  if (num === "1" || /\bassinar\b/.test(norm)) {
+    return { reply: SONNAR_ASSINAR_MENU, nextMenu: "sonnar_assinar" }
+  }
+
+  // 2. Guia (Pro/Plus)
+  if (num === "2" || /\bguia\b/.test(norm)) {
+    const plan = contact?.subscriberPlan
+    if (plan !== "pro" && plan !== "plus") {
+      return { reply: PLAN_NOT_ELIGIBLE.guia(planLabel(plan)), nextMenu: "sonnar" }
+    }
+    return {
+      reply:
+        `*Guia do candidato*\n\n` +
+        `Para montar um guia que faça sentido pra você, vamos agendar uma conversa rápida.\n\n` +
+        `Me conta:\n` +
+        `• Seu nome\n` +
+        `• Cargo / área que quer trabalhar\n` +
+        `• Anos de experiência\n` +
+        `• 3 empresas ou tipos de vaga que você está mirando\n\n` +
+        `Em até 24h te chamamos pra alinhar e gerar o material personalizado.`,
+      nextMenu: "coleta_orcamento", // reusa coleta + closing
+      contextPatch: { coleta_topic: "atendente" },
+    }
+  }
+
+  // 3. Consultoria (Plus)
+  if (num === "3" || /\bconsultoria\b/.test(norm)) {
+    const plan = contact?.subscriberPlan
+    if (plan !== "plus") {
+      return { reply: PLAN_NOT_ELIGIBLE.consultoria(planLabel(plan)), nextMenu: "sonnar" }
+    }
+    return {
+      reply:
+        `*Consultoria LinkedIn + Currículo*\n\n` +
+        `O Lucelho entra na sua tela e otimiza tudo junto com você, pra área que ` +
+        `quer trabalhar.\n\n` +
+        `Pra agendar, me passa:\n` +
+        `• Seu nome\n` +
+        `• URL do seu LinkedIn\n` +
+        `• Foco: qual área/vaga você está mirando\n` +
+        `• 3 horários que funcionam pra você`,
+      nextMenu: "coleta_atendente",
+    }
+  }
+
+  return { reply: SONNAR_MENU, nextMenu: "sonnar" }
+}
+
+function handleSonnarAssinar(text) {
+  const norm = normalize(text)
+  const num = norm.match(/^([0-2])\b/)?.[1]
+  if (num === "0" || norm === "voltar") {
+    return { reply: SONNAR_MENU, nextMenu: "sonnar" }
+  }
+  if (num === "1" || /\bgrupo\b/.test(norm)) {
+    return { reply: SONNAR_ASSINAR_GRUPO, nextMenu: "sonnar_assinar" }
+  }
+  if (num === "2" || /\bpersonalizada/.test(norm) || /\bprivado\b/.test(norm)) {
+    return { reply: SONNAR_ASSINAR_PRIVADO, nextMenu: "sonnar_assinar" }
+  }
+  return { reply: SONNAR_ASSINAR_MENU, nextMenu: "sonnar_assinar" }
+}
+
+// Exporta constantes pra testes
+export const _internals = {
+  ROOT_MENU,
+  ORCAMENTO_COLETA,
+  PIX_CNPJ,
+  PAGAMENTO_PIX,
+  CLOSING_CHECK,
 }

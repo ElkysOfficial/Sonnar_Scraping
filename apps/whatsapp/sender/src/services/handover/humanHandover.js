@@ -48,20 +48,29 @@ import {
   saveRating,
 } from "./ticketManager.js"
 
-const RATING_PROMPT =
-  `🙏 *Atendimento encerrado!*\n\n` +
-  `Como foi sua experiência? Responda com um número:\n\n` +
-  `1️⃣  Péssimo\n` +
-  `2️⃣  Ruim\n` +
-  `3️⃣  Razoável\n` +
-  `4️⃣  Bom\n` +
-  `5️⃣  Excelente\n\n` +
-  `Sua avaliação ajuda muito a melhorarmos o atendimento. 🙌`
+const GOOGLE_REVIEW_URL = "https://g.page/r/CYRKlvyrnr5DEBM/review"
 
-const RATING_THANK_YOU =
-  `Obrigado pelo retorno! 💙\n\n` +
-  `Se precisar de algo mais, digite *menu* a qualquer momento.\n` +
-  `Bom resto do dia!`
+const RATING_PROMPT =
+  `*Atendimento encerrado*\n\n` +
+  `Como foi sua experiência? Responda com um número de 1 a 5:\n\n` +
+  `*1.* Péssimo\n` +
+  `*2.* Ruim\n` +
+  `*3.* Razoável\n` +
+  `*4.* Bom\n` +
+  `*5.* Excelente\n\n` +
+  `Sua avaliação nos ajuda muito.`
+
+const RATING_THANK_YOU_LOW =
+  `Obrigado pelo retorno.\n\n` +
+  `Vamos usar esse feedback pra melhorar o atendimento. ` +
+  `Se precisar de algo mais, digite *menu* a qualquer momento.`
+
+const RATING_THANK_YOU_HIGH = (stars) =>
+  `Obrigado pelo retorno! ${stars}\n\n` +
+  `Como sua experiência foi muito boa, faz a gente um favor?\n` +
+  `Deixa uma estrelinha pra Elkys no Google — leva 10 segundos:\n\n` +
+  `${GOOGLE_REVIEW_URL}\n\n` +
+  `Vai ajudar muito a aparecermos pra mais gente. 🙏`
 
 /**
  * Inicia o modo humano para um cliente — chamado quando o menuRouter
@@ -321,8 +330,14 @@ export async function processRatingResponse({ jid, text, conversation, socket })
     active_ticket_id: null,
   })
 
+  // v3.10.30: nota >=4 ganha CTA pro Google review
+  const stars = "⭐".repeat(num)
+  const thankYou = num >= 4
+    ? RATING_THANK_YOU_HIGH(stars)
+    : RATING_THANK_YOU_LOW
+
   try {
-    await socket.sendMessage(jid, { text: RATING_THANK_YOU })
+    await socket.sendMessage(jid, { text: thankYou })
   } catch (err) {
     errorLog(`[handover] thank-you falhou: ${err.message}`)
   }
@@ -330,11 +345,12 @@ export async function processRatingResponse({ jid, text, conversation, socket })
   // Notifica admins com o rating
   const phone = jidToPhone(jid)
   const name = conversation?.display_name || `+${phone}`
-  const stars = "⭐".repeat(num) + "☆".repeat(5 - num)
+  const adminStars = "⭐".repeat(num) + "☆".repeat(5 - num)
+  const cta = num >= 4 ? " · CTA Google review enviado" : ""
   const summary =
     `📊 *Avaliação recebida*\n` +
     `Cliente: ${name} (+${phone})\n` +
-    `Nota: ${num}/5  ${stars}`
+    `Nota: ${num}/5  ${adminStars}${cta}`
   await sendToAdmins(socket, summary)
 
   return { saved: true, rating: num }

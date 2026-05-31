@@ -168,7 +168,11 @@ export async function handleIncomingMessage({ webMessage, socket }) {
       text,
       currentMenu: conv.current_menu || "root",
       contact: { ...contact, ...{ subscriberPlan: contact.subscriberPlan || conv.subscriber_plan } },
+      context: conv?.context || {},
     })
+
+    // v3.10.30: salva contextPatch (acumula info coletada nas etapas)
+    const contextPatch = route.contextPatch || null
 
     // Transicao pra atendimento humano
     if (route.transition?.type === "human") {
@@ -179,18 +183,29 @@ export async function handleIncomingMessage({ webMessage, socket }) {
       } catch (err) {
         errorLog(`[incomingHandler] preface reply falhou: ${err.message}`)
       }
+      // v3.10.30: route.collectedMessage vira o body do ticket
+      // (mensagem original que o cliente escreveu nas etapas de coleta).
+      // Fallback: usa o texto da mensagem atual.
+      const firstMessageForTicket =
+        route.collectedMessage
+        || conv?.context?.coleta_message
+        || text
       await startHumanHandover({
         jid,
         contact,
         transition: route.transition,
-        lastMessage: text,
+        lastMessage: firstMessageForTicket,
         socket,
       })
       return { handled: true }
     }
 
     // Resposta normal de menu (atualiza estado + envia)
-    await upsertConversation(jid, { current_menu: route.nextMenu })
+    const upsertPayload = { current_menu: route.nextMenu }
+    if (contextPatch) {
+      upsertPayload.context = { ...(conv?.context || {}), ...contextPatch }
+    }
+    await upsertConversation(jid, upsertPayload)
     try {
       await socket.sendMessage(jid, { text: route.reply })
       await recordBotReply(jid)
