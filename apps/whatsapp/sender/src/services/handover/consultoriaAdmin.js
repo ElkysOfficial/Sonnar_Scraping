@@ -1,5 +1,5 @@
 /**
- * consultoriaAdmin (v3.10.32) — handlers dos comandos /consultoria.
+ * consultoriaAdmin (v3.10.32) - handlers dos comandos /consultoria.
  *
  * Comandos:
  *   /consultoria abertos                       Lista pedidos pending/scheduled
@@ -86,7 +86,7 @@ export async function listOpenConsultorias() {
   for (const r of data) {
     const name = r.subscriber?.name || r.subscriber?.email || "Cliente"
     const id8 = r.id.slice(0, 8)
-    lines.push(`*${id8}* — ${STATUS_LABEL[r.status] || r.status}`)
+    lines.push(`*${id8}* - ${STATUS_LABEL[r.status] || r.status}`)
     lines.push(`👤 ${name}`)
     if (r.status === "scheduled" && r.scheduled_at) {
       lines.push(`📅 ${formatScheduledAt(r.scheduled_at)}`)
@@ -104,7 +104,7 @@ export async function listOpenConsultorias() {
 export async function viewConsultoria(idPrefix) {
   const id = await resolveRequestId(idPrefix)
   if (!id) return `❌ Pedido *${idPrefix}* nao encontrado.`
-  if (id === "AMBIGUOUS") return `❌ Prefixo *${idPrefix}* ambiguo — use mais caracteres.`
+  if (id === "AMBIGUOUS") return `❌ Prefixo *${idPrefix}* ambiguo - use mais caracteres.`
 
   const supa = getSonnarClient()
   const { data, error } = await supa
@@ -130,7 +130,7 @@ export async function viewConsultoria(idPrefix) {
   lines.push("")
   lines.push(`*LinkedIn:* ${data.linkedin_url}`)
   if (data.vaga_alvo_url) lines.push(`*Vaga-alvo:* ${data.vaga_alvo_url}`)
-  if (data.cv_file_path) lines.push(`*CV:* arquivo anexado (${data.cv_file_name || "—"})`)
+  if (data.cv_file_path) lines.push(`*CV:* arquivo anexado (${data.cv_file_name || "-"})`)
   lines.push("")
   lines.push(`*Objetivo:*`)
   lines.push(data.objetivo)

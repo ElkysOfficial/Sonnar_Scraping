@@ -2,7 +2,7 @@
  * Monta a mensagem de texto puro enviada como vaga no WhatsApp.
  *
  * Substituiu o pipeline antigo de imagem (`sonnar-wa-formatter` rodando
- * @napi-rs/canvas) na v3.6.0 — a entrega virou texto-only para zerar custo
+ * @napi-rs/canvas) na v3.6.0 - a entrega virou texto-only para zerar custo
  * de CPU/RAM da rasterizacao (ADR-006). Toda informacao que antes vivia
  * no card 1080x1080 (salario, fonte, data, modalidade, location) agora
  * aparece no proprio texto.
@@ -25,7 +25,7 @@ function separateSalaryNote(rawSalary) {
   const salaryText = rawSalary ? rawSalary.toString().trim() : ""
   if (!salaryText) return { salary: "", salaryNote: "" }
 
-  const match = salaryText.match(/(com base no glassdoor[\s:–—-]*)/i)
+  const match = salaryText.match(/(com base no glassdoor[\s:–-]*)/i)
   if (match) {
     const note = match[0].trim()
     const remainder = salaryText.replace(match[0], "").trim()
@@ -187,21 +187,26 @@ function appendResumeBreakdown(out, jobData, resume) {
 
   if (strong.length === 0 && gaps.length === 0) return
 
+  // v3.10.35: limita a 4 pontos fortes + 3 gaps pra nao virar muralha de
+  // texto. Acima disso, vira ruido visual e desmotiva.
+  const visibleStrong = strong.slice(0, 4)
+  const visibleGaps = gaps.slice(0, 3)
+
   const SEP = "━━━━━━━━━━━━━━━━━━━━"
   out.push("")
   out.push(SEP)
   out.push("*🎯 Match com seu perfil*")
 
-  if (strong.length > 0) {
+  if (visibleStrong.length > 0) {
     out.push("")
     out.push("🟢 *Pontos fortes*")
-    for (const s of strong) out.push(`✅ ${s}`)
+    for (const s of visibleStrong) out.push(`✅ ${s}`)
   }
 
-  if (gaps.length > 0) {
+  if (visibleGaps.length > 0) {
     out.push("")
     out.push("🟡 *Para destacar*")
-    for (const g of gaps) out.push(`⚠️ ${g}`)
+    for (const g of visibleGaps) out.push(`⚠️ ${g}`)
   }
 }
 
@@ -212,7 +217,7 @@ function appendResumeBreakdown(out, jobData, resume) {
  * cliente tem. Skills que o cliente nao tem aparecem em texto normal (sem
  * ❌) pra evitar tom punitivo / desmotivacao.
  *
- * Limita a 6 itens por categoria — se passar, adiciona "+N". Ordena ✅
+ * Limita a 6 itens por categoria - se passar, adiciona "+N". Ordena ✅
  * primeiro pra dar destaque ao que o cliente ja domina.
  */
 function appendCategorizedStack(out, skills, subscriberStack) {
@@ -308,7 +313,7 @@ function appendResponsibilitiesBlock(out, text) {
  *
  * v3.9.0 (redesign visual): emojis ✅/❌/⚠️ unificados, separadores horizontais
  * pra organizar blocos, hierarquia de typography mais clara, linha "Match: X
- * de Y skills (Z%)" REMOVIDA (informacao redundante — cada skill marcada
+ * de Y skills (Z%)" REMOVIDA (informacao redundante - cada skill marcada
  * individualmente ja comunica isso visualmente).
  *
  * @param {object} jobData - dados normalizados da vaga
@@ -322,7 +327,7 @@ function formatJobMessage(jobData, shortUrl, options = {}) {
   const SEP = "━━━━━━━━━━━━━━━━━━━━"
   const compact = options.compact === true
 
-  // ─── CABECALHO (omitido em compact — vai na imagem) ───
+  // ─── CABECALHO (omitido em compact - vai na imagem) ───
   if (!compact) {
     out.push(`*${jobData.title}*`)
     if (jobData.company) out.push(`🏢 _${jobData.company}_`)
@@ -340,13 +345,13 @@ function formatJobMessage(jobData, shortUrl, options = {}) {
     }
   }
 
-  // ─── BLOCO: STACK CATEGORIZADA (omitido em compact — vai na imagem) ───
+  // ─── BLOCO: STACK CATEGORIZADA (omitido em compact - vai na imagem) ───
   const skills = Array.isArray(jobData.skills) ? jobData.skills : []
   if (!compact && skills.length) {
     appendCategorizedStack(out, skills, options.subscriberStack)
   }
 
-  // ─── BLOCO: RESPONSABILIDADES (SEMPRE — info nao cabe na imagem) ───
+  // ─── BLOCO: RESPONSABILIDADES (SEMPRE - info nao cabe na imagem) ───
   const preExtracted = (jobData.responsibilities || "").toString().trim()
   if (preExtracted) {
     if (compact) {

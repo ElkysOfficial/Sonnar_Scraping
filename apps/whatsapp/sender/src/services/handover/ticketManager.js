@@ -1,9 +1,9 @@
 /**
- * ticketManager — cria/atualiza tickets de atendimento no banco Elkys.
+ * ticketManager - cria/atualiza tickets de atendimento no banco Elkys.
  *
  * Sempre que um cliente entra em modo humano, criamos um support_ticket
  * com source='whatsapp'. As mensagens trocadas (cliente <-> admins) ficam
- * em ticket_messages — historico completo.
+ * em ticket_messages - historico completo.
  *
  * Quando o admin encerra com /encerrar, ticket vai pra 'resolvido' e a
  * conversa entra em mode='awaiting_rating' (bot pede nota 1-5).
@@ -102,7 +102,7 @@ export async function addTicketMessage(ticketId, senderRole, body, authorName = 
 }
 
 /**
- * Marca first_response_at no ticket — usado pra calcular SLA.
+ * Marca first_response_at no ticket - usado pra calcular SLA.
  * Idempotente: so atualiza se for null.
  *
  * Tambem move status 'aberto' -> 'em_andamento' pra satisfazer a check

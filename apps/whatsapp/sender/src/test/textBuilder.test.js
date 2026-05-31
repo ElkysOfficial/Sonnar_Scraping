@@ -327,7 +327,7 @@ test("Plus #5: skills faltantes aparecem em Para destacar", () => {
     },
   })
   assert.match(out, /🟡 \*Para destacar\*/)
-  assert.match(out, /⚠️ Faltam: Go, Rust/)
+  assert.match(out, /⚠️ Estude: Go, Rust/)
 })
 
 test("Plus #5: anos do curriculo >= exigido -> entra em Pontos fortes", () => {
@@ -349,7 +349,7 @@ test("Plus #5: anos do curriculo < exigido -> gap em Para destacar", () => {
   const out = formatJobMessage(job, "x", {
     subscriberResume: { skills: [], yearsTotal: 2, seniority: null },
   })
-  assert.match(out, /⚠️ Vaga pede 5\+ anos — você tem ~2 \(gap de 3\)/)
+  assert.match(out, /⚠️ Vaga pede 5\+ anos\. Voce tem ~2 \(faltam 3\)/)
 })
 
 test("Plus #5: senioridade bate -> Pontos fortes", () => {
@@ -365,7 +365,7 @@ test("Plus #5: candidato pleno em vaga senior -> gap", () => {
   const out = formatJobMessage(job, "x", {
     subscriberResume: { skills: [], yearsTotal: null, seniority: "pleno" },
   })
-  assert.match(out, /⚠️ Vaga é senior — seu nível indica pleno/)
+  assert.match(out, /⚠️ Vaga e senior, seu nivel indica pleno/)
 })
 
 test("Plus #5: candidato senior em vaga pleno -> overqualified", () => {
@@ -373,7 +373,7 @@ test("Plus #5: candidato senior em vaga pleno -> overqualified", () => {
   const out = formatJobMessage(job, "x", {
     subscriberResume: { skills: [], yearsTotal: null, seniority: "senior" },
   })
-  assert.match(out, /✅ Você é senior — vaga pede pleno/)
+  assert.match(out, /✅ Voce e senior, vaga pede pleno/)
 })
 
 test("Plus #5: score numerico NUNCA aparece no texto WhatsApp", () => {
