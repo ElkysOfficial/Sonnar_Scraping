@@ -12,7 +12,7 @@
  *   /notas <fone> <texto>      Adiciona nota interna no ticket
  *   /ajuda                     Lista comandos disponiveis
  */
-import { ADMIN_PHONES, ADMIN_LIDS } from "../../config.js"
+import { ADMIN_PHONES, ADMIN_LIDS, NOTIFY_PHONES, NOTIFY_LIDS } from "../../config.js"
 import { errorLog, successLog } from "../../utils/logger.js"
 import { jidToPhone, phoneToJid, isAdminJid as _isAdminJid } from "./lookupContact.js"
 import {
@@ -290,20 +290,30 @@ async function handleList({ jid, socket }) {
 
 async function handleMyLid({ jid, socket }) {
   const phone = jidToPhone(jid)
-  const inAdmins = ADMIN_LIDS.includes(jid)
-  const inPhones = ADMIN_PHONES.includes(phone)
-  const status = (inAdmins || inPhones)
-    ? "✅ Voce JA esta cadastrado como admin"
-    : "⚠️ Voce ainda NAO eh admin"
+  const isAdmin = ADMIN_LIDS.includes(jid) || ADMIN_PHONES.includes(phone)
+  const isNotify = NOTIFY_LIDS.includes(jid) || NOTIFY_PHONES.includes(phone)
+
+  let status
+  if (isAdmin) {
+    status = "✅ *ADMIN* — voce pode usar /r, /encerrar, etc"
+  } else if (isNotify) {
+    status = "🔔 *NOTIFY* — voce recebe notificacoes mas nao pode dar comandos"
+  } else {
+    status = "⚠️ Voce nao esta cadastrado como admin nem notify"
+  }
 
   const msg =
     `🆔 *Seu LID atual:*\n\n` +
     `\`${jid}\`\n\n` +
     `*Dígitos:* ${phone || "(sem dígitos)"}\n\n` +
     status + `\n\n` +
-    `Pra adicionar este LID como admin, edite o .env do sender:\n` +
-    `\`ADMIN_LIDS=${jid}${ADMIN_LIDS.length ? "," + ADMIN_LIDS.filter(l => l !== jid).join(",") : ""}\`\n\n` +
-    `Depois \`pm2 restart sonnar-wa-sender --update-env\`.`
+    `*Pra cadastrar este LID:*\n\n` +
+    `Como ADMIN (poder de comando):\n` +
+    `\`ADMIN_LIDS=${jid}\`\n\n` +
+    `Como NOTIFY (so recebe notificacao):\n` +
+    `\`NOTIFY_LIDS=${jid}\`\n\n` +
+    `Edite \`apps/whatsapp/sender/.env\` e rode\n` +
+    `\`pm2 restart sonnar-wa-sender --update-env\``
   await socket.sendMessage(jid, { text: msg })
 }
 
