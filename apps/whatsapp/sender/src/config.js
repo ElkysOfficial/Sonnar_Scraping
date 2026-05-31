@@ -55,34 +55,49 @@ export const OWNER_LID = "120152280592452@lid"
 // v3.10.23 — Atendimento humano via WhatsApp
 // ═══════════════════════════════════════════════════════════════════
 
-// Telefones admin (recebem notificacoes de atendimento + podem responder
-// clientes via comando /r). Lista separada por virgula em ADMIN_PHONES.
-// Os numeros devem estar em formato internacional sem +/espacos
-// (ex: "553198478235,5511970891588")
+// ─── ADMIN: quem pode EMITIR comandos (/r, /encerrar, /iniciar, ...) ─
 //
-// IMPORTANTE: hoje WhatsApp usa LID (@lid) por privacidade, entao o
-// match por phone aqui so funciona em mensagens MUITO antigas (formato
-// @s.whatsapp.net). O match real eh feito por ADMIN_LIDS — descubra
-// o LID de cada admin com /meulid no bot.
-export const ADMIN_PHONES = (process.env.ADMIN_PHONES || "553198478235,5511970891588")
+// Admin = poder de comando. NAO confundir com "notify recipient" — o
+// admin Sempre recebe notificacoes, mas pode haver mais gente
+// recebendo notificacoes que NAO eh admin (ver NOTIFY_PHONES abaixo).
+//
+// v3.10.27: a partir desta versao o admin DEFAULT eh apenas Lucelho.
+// O segundo numero (5511970891588) virou RECEPTOR de notificacoes
+// (em NOTIFY_PHONES), sem poder de comando.
+export const ADMIN_PHONES = (process.env.ADMIN_PHONES || "5531984728235")
   .split(",")
   .map((s) => s.trim().replace(/\D/g, ""))
   .filter((s) => s.length >= 10)
 
-// v3.10.26: WhatsApp migrou pra LID (@lid) por privacidade. Mensagens
-// diretas vem com remoteJid em formato LID (ex: "120152280592452@lid"),
-// nao mais com o numero E.164. Precisamos comparar contra LIDs tambem.
-//
-// Como descobrir o LID de cada admin:
-//   - Pede pro admin mandar "/meulid" pro bot — bot responde com o LID
-//   - Adiciona o valor no ADMIN_LIDS (separado por virgula)
-//
-// OWNER_LID ja eh adicionado automaticamente como admin.
+// WhatsApp migrou pra LID (@lid) por privacidade. Mensagens diretas
+// vem com remoteJid em LID — precisamos comparar contra LIDs tambem.
+// OWNER_LID eh sempre adicionado automaticamente como admin.
 export const ADMIN_LIDS = (process.env.ADMIN_LIDS || "")
   .split(",")
   .map((s) => s.trim())
   .filter((s) => s.length > 0)
   .concat(OWNER_LID ? [OWNER_LID] : [])
+
+// ─── NOTIFY: quem RECEBE notificacoes (atendimento, rating, etc) ────
+//
+// Todo admin recebe (lista mesclada com ADMIN_PHONES/LIDS abaixo),
+// mas tambem podemos incluir aqui pessoas que SO recebem (sem poder
+// de comando). Util pra alertar um time/socio que ainda nao opera.
+export const NOTIFY_PHONES = Array.from(new Set(
+  (process.env.NOTIFY_PHONES || "5531984728235,5511970891588")
+    .split(",")
+    .map((s) => s.trim().replace(/\D/g, ""))
+    .filter((s) => s.length >= 10)
+    .concat(ADMIN_PHONES)
+))
+
+export const NOTIFY_LIDS = Array.from(new Set(
+  (process.env.NOTIFY_LIDS || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0)
+    .concat(ADMIN_LIDS)
+))
 
 // Banco da Elkys (cross-DB). Tabela whatsapp_conversations + support_tickets
 // + leads moram aqui. Sonnar continua usando o proprio Supabase pra vagas/

@@ -31,7 +31,7 @@
  *      - Conversa volta a mode='bot', menu='root'
  *      - Notifica admins com a nota recebida
  */
-import { ADMIN_PHONES, BOT_NAME } from "../../config.js"
+import { ADMIN_PHONES, NOTIFY_PHONES, NOTIFY_LIDS, BOT_NAME } from "../../config.js"
 import { errorLog, infoLog, successLog } from "../../utils/logger.js"
 import { phoneToJid, jidToPhone } from "./lookupContact.js"
 import {
@@ -195,12 +195,15 @@ export async function adminReplyToClient({ targetJid, text, authorPhone, socket 
     await addTicketMessage(conv.active_ticket_id, "admin", text, authorPhone)
   }
 
-  // Espelha pros OUTROS admins (nao pro que mandou)
-  const otherAdmins = ADMIN_PHONES.filter((p) => p !== authorPhone)
+  // Espelha pros OUTROS notificados (nao pro que mandou).
+  // v3.10.27: usa NOTIFY (admin + notify recipients), nao so ADMIN.
+  // Pessoas que SO recebem notificacao tambem veem as respostas que o
+  // admin manda — util pra acompanhamento por socio/equipe.
+  const otherNotify = NOTIFY_PHONES.filter((p) => p !== authorPhone)
   const phone = jidToPhone(targetJid)
   const name = conv?.display_name || `+${phone}`
   const mirror = `✅ *${authorPhone.slice(-4)} → ${name}*\n_+${phone}_\n\n${text}`
-  for (const adm of otherAdmins) {
+  for (const adm of otherNotify) {
     const jid = phoneToJid(adm)
     if (!jid) continue
     try {
@@ -366,18 +369,29 @@ async function notifyAdminsNewTicket({ contact, ticket, transitionLabel, firstMe
 }
 
 /**
- * Envia uma mensagem pra todos os admins em paralelo (best-effort).
+ * Envia uma mensagem pra todos os destinatarios de notificacao em
+ * paralelo (best-effort).
+ *
+ * v3.10.27: dispara para NOTIFY_PHONES (numeros @s.whatsapp.net) E
+ * NOTIFY_LIDS (LIDs @lid). Garante alcance mesmo apos a migracao de
+ * WhatsApp pra LID, e suporta separacao admin vs notify recipient.
  */
 async function sendToAdmins(socket, text) {
   if (!socket?.sendMessage) return
+  const targets = new Set()
+  for (const phone of NOTIFY_PHONES) {
+    const jid = phoneToJid(phone)
+    if (jid) targets.add(jid)
+  }
+  for (const lid of NOTIFY_LIDS) {
+    if (lid) targets.add(lid)
+  }
   await Promise.all(
-    ADMIN_PHONES.map(async (phone) => {
-      const jid = phoneToJid(phone)
-      if (!jid) return
+    Array.from(targets).map(async (target) => {
       try {
-        await socket.sendMessage(jid, { text })
+        await socket.sendMessage(target, { text })
       } catch (err) {
-        errorLog(`[handover] notify admin ${phone} falhou: ${err.message}`)
+        errorLog(`[handover] notify ${target} falhou: ${err.message}`)
       }
     }),
   )
