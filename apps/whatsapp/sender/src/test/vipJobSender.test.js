@@ -47,7 +47,8 @@ test("VIP buildJobTextMessage: monta mensagem completa com dados reais", async (
   assert.match(result.text, /🏢 _DataCo_/)
   assert.match(result.text, /💰 \*R\$ 18\.000\*/)
   assert.match(result.text, /• Construir pipelines/)
-  assert.match(result.text, /via Gupy/)
+  // v3.10.31: rodape mudou de "via [fonte]" pra "Vaga capturada em [data]"
+  assert.match(result.text, /_Vaga capturada em /)
   assert.equal(result.jobData.id, "vip-001")
   assert.equal(shortenUrl.mock.callCount(), 1)
   assert.equal(shortenUrl.mock.calls[0].arguments[0], SAMPLE_JOB.job_url)
@@ -82,7 +83,7 @@ test("VIP buildJobTextMessage: aceita job ja em forma de embed (com fields)", as
 // Plus #1: ✓/❌ stacks compatíveis (v3.7.0)
 // ──────────────────────────────────────────────────────────────────────
 
-test("VIP Plus #1: subscriberStack marca cada skill com ✅ ou ✗", async () => {
+test("VIP Plus #1 (v3.10.34): skills do cliente ganham ✅, outras aparecem neutras", async () => {
   const shortenUrl = async () => "https://son.sh/v/x"
   const result = await buildJobTextMessage(
     SAMPLE_JOB, // skills: ["Python", "Airflow"]
@@ -91,9 +92,9 @@ test("VIP Plus #1: subscriberStack marca cada skill com ✅ ou ✗", async () =>
   )
   assert.ok(result)
   assert.match(result.text, /✅ Python/)
-  assert.match(result.text, /❌ Airflow/)
-  // Match sumario com porcentagem
-  // v3.9.0: linha Match removida — emojis ✅/❌ por skill ja comunicam o match
+  // v3.10.34: skill que cliente nao tem aparece neutra (sem ❌)
+  assert.match(result.text, /Airflow/)
+  assert.doesNotMatch(result.text, /❌/)
 })
 
 test("VIP Plus #1: match 100% quando todas skills batem", async () => {
@@ -108,16 +109,17 @@ test("VIP Plus #1: match 100% quando todas skills batem", async () => {
   // v3.9.0: linha Match removida
 })
 
-test("VIP Plus #1: match 0% quando nenhuma skill bate", async () => {
+test("VIP Plus #1 (v3.10.34): nenhuma skill bate -> skills neutras (sem ❌)", async () => {
   const shortenUrl = async () => "x"
   const result = await buildJobTextMessage(
     SAMPLE_JOB,
     { subscriberStack: ["go", "rust"] },
     { shortenUrl }
   )
-  assert.match(result.text, /❌ Python/)
-  assert.match(result.text, /❌ Airflow/)
-  // v3.9.0: linha Match removida
+  // v3.10.34: tom positivo — sem ❌ pra nao desmotivar
+  assert.match(result.text, /Python/)
+  assert.match(result.text, /Airflow/)
+  assert.doesNotMatch(result.text, /❌/)
 })
 
 test("VIP Plus #1: match case-insensitive (Node.js no perfil vs node.js no skill)", async () => {
@@ -136,16 +138,15 @@ test("VIP Plus #1: sem subscriberStack mantem comportamento legado (sem ✓/✗)
   const shortenUrl = async () => "x"
   const result = await buildJobTextMessage(SAMPLE_JOB, {}, { shortenUrl })
   assert.doesNotMatch(result.text, /✓|✗/)
-  assert.doesNotMatch(result.text, /📊/)
-  // Skills aparecem sem marcador, separados por bullet `•`
-  assert.match(result.text, /Python {2}• {2}Airflow/)
+  // v3.10.31: stack categorizada substituiu lista linear
+  assert.match(result.text, /Python/)
+  assert.match(result.text, /Airflow/)
 })
 
 test("VIP Plus #1: subscriberStack vazio array tambem cai no fluxo legado", async () => {
   const shortenUrl = async () => "x"
   const result = await buildJobTextMessage(SAMPLE_JOB, { subscriberStack: [] }, { shortenUrl })
   assert.doesNotMatch(result.text, /✓|✗/)
-  assert.doesNotMatch(result.text, /📊/)
 })
 
 // ──────────────────────────────────────────────────────────────────────

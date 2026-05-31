@@ -213,26 +213,28 @@ test("formatJobMessage: bloco Responsabilidades com bullets de quebra de linha",
 // Plus #1 (v3.7.0): subscriberStack -> ✓/❌ por skill + match %
 // =====================================================
 
-test("Plus #1: subscriberStack marca skill compativel com ✅ e incompativel com ❌", () => {
+test("Plus #1 (v3.10.34): skills do cliente ganham ✅, outras aparecem neutras", () => {
   const job = { ...FIXED_JOB, skills: ["Node.js", "AWS", "TypeScript"] }
   const out = formatJobMessage(job, "https://son.sh/v/x", {
     subscriberStack: ["node.js", "aws"]
   })
-  // v3.10.31: skills agora agrupadas por categoria (Backend, Cloud, Frontend, ...)
+  // Skills que cliente tem -> destaque ✅
   assert.match(out, /✅ Node\.js/)
   assert.match(out, /✅ AWS/)
-  assert.match(out, /❌ TypeScript/)
+  // Skill que cliente nao tem -> aparece neutra (sem ❌, sem ✅)
+  assert.match(out, /TypeScript/)
+  assert.doesNotMatch(out, /❌/)
 })
 
 test("Plus #1: linha de sumario *Match: X de Y skills* NAO aparece (removida na v3.9.0)", () => {
   const job = { ...FIXED_JOB, skills: ["React", "Vue", "Svelte"] }
   const out = formatJobMessage(job, "x", { subscriberStack: ["react"] })
-  // v3.9.0: linha "Match: X de Y skills (Z%)" foi removida. Os ✅/❌ por skill ja comunicam.
   assert.doesNotMatch(out, /📊 \*Match:/)
-  // Mas as skills marcadas ainda aparecem
+  // v3.10.34: skill que cliente tem ganha ✅; skills que nao tem aparecem neutras
   assert.match(out, /✅ React/)
-  assert.match(out, /❌ Vue/)
-  assert.match(out, /❌ Svelte/)
+  assert.match(out, /Vue/)
+  assert.match(out, /Svelte/)
+  assert.doesNotMatch(out, /❌/)
 })
 
 test("Plus #1: 100% quando todas batem", () => {
@@ -242,12 +244,12 @@ test("Plus #1: 100% quando todas batem", () => {
   // v3.9.0: linha Match removida — emojis ✅ por skill ja comunicam
 })
 
-test("Plus #1: 0% quando nada bate", () => {
+test("Plus #1: nenhuma skill bate -> aparecem todas neutras (sem ❌)", () => {
   const job = { ...FIXED_JOB, skills: ["X", "Y"] }
   const out = formatJobMessage(job, "x", { subscriberStack: ["q", "z"] })
-  assert.match(out, /❌ X/)
-  assert.match(out, /❌ Y/)
-  // v3.9.0: linha Match removida
+  // v3.10.34: tom neutro — skills aparecem sem decoracao negativa
+  assert.match(out, /X.+Y/s)
+  assert.doesNotMatch(out, /❌/)
 })
 
 test("Plus #1: comparacao case-insensitive (TypeScript vs typescript)", () => {
@@ -473,6 +475,21 @@ test("v3.10.31: skills sem categoria conhecida vao em 'Outras'", () => {
   const job = { ...FIXED_JOB, skills: ["XPTO", "FooBar"] }
   const out = formatJobMessage(job, "x")
   assert.match(out, /🔧 \*Outras\*.*XPTO.*FooBar/)
+})
+
+test("v3.10.34: cada categoria mostra no maximo 6 skills (resto vira +N)", () => {
+  const job = { ...FIXED_JOB, skills: ["A", "B", "C", "D", "E", "F", "G", "H"] }
+  const out = formatJobMessage(job, "x")
+  assert.match(out, /\*\+2\*/)
+})
+
+test("v3.10.34: skills do cliente vem primeiro (ordenadas pra dar destaque)", () => {
+  const job = { ...FIXED_JOB, skills: ["React", "Vue", "Angular"] }
+  const out = formatJobMessage(job, "x", { subscriberStack: ["angular"] })
+  // ✅ Angular aparece ANTES das outras (Vue, React)
+  const idxAngular = out.indexOf("Angular")
+  const idxReact = out.indexOf("React")
+  assert.ok(idxAngular >= 0 && idxAngular < idxReact, "skill do cliente deve vir primeiro")
 })
 
 test("formatJobMessage: 1 separador ';' nao quebra em bullets (paragrafo unico)", () => {

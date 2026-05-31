@@ -207,7 +207,13 @@ function appendResumeBreakdown(out, jobData, resume) {
 
 /**
  * Bloco de stack categorizada (Backend / Frontend / Cloud / etc).
- * Quando subscriberStack e passado, anota ✅/❌ em cada skill.
+ *
+ * Quando subscriberStack e passado, marca com ✅ APENAS as skills que o
+ * cliente tem. Skills que o cliente nao tem aparecem em texto normal (sem
+ * ❌) pra evitar tom punitivo / desmotivacao.
+ *
+ * Limita a 6 itens por categoria — se passar, adiciona "+N". Ordena ✅
+ * primeiro pra dar destaque ao que o cliente ja domina.
  */
 function appendCategorizedStack(out, skills, subscriberStack) {
   if (!Array.isArray(skills) || skills.length === 0) return
@@ -225,12 +231,26 @@ function appendCategorizedStack(out, skills, subscriberStack) {
     : null
 
   const norm = (s) => String(s).toLowerCase().trim()
+  const MAX_PER_CATEGORY = 6
 
   for (const cat of categories) {
-    const items = stackSet
-      ? cat.items.map((s) => `${stackSet.has(norm(s)) ? "✅" : "❌"} ${s}`)
-      : cat.items
-    out.push(`${cat.emoji} *${cat.label}*  ${items.join(" · ")}`)
+    let items
+    if (stackSet) {
+      // Skills que cliente tem -> "✅ X"; resto -> "X" (texto neutro)
+      const owned = []
+      const others = []
+      for (const s of cat.items) {
+        if (stackSet.has(norm(s))) owned.push(`✅ ${s}`)
+        else others.push(s)
+      }
+      items = [...owned, ...others]
+    } else {
+      items = cat.items
+    }
+    const truncated = items.length > MAX_PER_CATEGORY
+    const visible = truncated ? items.slice(0, MAX_PER_CATEGORY) : items
+    const suffix = truncated ? `  *+${items.length - MAX_PER_CATEGORY}*` : ""
+    out.push(`${cat.emoji} *${cat.label}*  ${visible.join(" · ")}${suffix}`)
   }
 }
 

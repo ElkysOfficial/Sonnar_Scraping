@@ -1946,11 +1946,20 @@ export async function buildJobTextMessage(job, options = {}, deps = { shortenUrl
 
   try {
     const shortUrl = await deps.shortenUrl(jobData.url)
+    // text = versao completa (fallback se imagem falhar)
+    // textCompact = caption enxuto (sem titulo/empresa/salario/stack — ja
+    // estao na imagem). Match block continua aparecendo se subscriberResume
+    // foi passado.
     const text = formatJobTextMessage(jobData, shortUrl, {
       subscriberStack: options.subscriberStack,
       subscriberResume: options.subscriberResume,
     })
-    return { text, jobData }
+    const textCompact = formatJobTextMessage(jobData, shortUrl, {
+      subscriberStack: options.subscriberStack,
+      subscriberResume: options.subscriberResume,
+      compact: true,
+    })
+    return { text, textCompact, jobData }
   } catch (err) {
     errorLog(`[VIP] Erro ao montar mensagem da vaga: ${err.message}`)
     return null
@@ -1979,7 +1988,8 @@ export async function sendJobMessage(jid, jobId, payload, socket, deps = { delay
     // existente — politica "primeira tentativa imagem, segunda texto".
     if (isImageSendingEnabled() && payload.jobData) {
       const ok = await sendJobAsImage(jid, payload.jobData, {
-        caption: payload.text,
+        // v3.10.34: caption enxuto pra nao duplicar info da imagem
+        caption: payload.textCompact || payload.text,
         socket,
         delay: () => deps.delay(TIMEOUT_IN_MILLISECONDS_BY_EVENT),
       })
