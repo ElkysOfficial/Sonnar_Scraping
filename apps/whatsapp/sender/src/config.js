@@ -64,6 +64,21 @@ export const ADMIN_PHONES = (process.env.ADMIN_PHONES || "553199838235,551197089
   .map((s) => s.trim().replace(/\D/g, ""))
   .filter((s) => s.length >= 10)
 
+// v3.10.26: WhatsApp migrou pra LID (@lid) por privacidade. Mensagens
+// diretas vem com remoteJid em formato LID (ex: "120152280592452@lid"),
+// nao mais com o numero E.164. Precisamos comparar contra LIDs tambem.
+//
+// Como descobrir o LID de cada admin:
+//   - Pede pro admin mandar "/meulid" pro bot — bot responde com o LID
+//   - Adiciona o valor no ADMIN_LIDS (separado por virgula)
+//
+// OWNER_LID ja eh adicionado automaticamente como admin.
+export const ADMIN_LIDS = (process.env.ADMIN_LIDS || "")
+  .split(",")
+  .map((s) => s.trim())
+  .filter((s) => s.length > 0)
+  .concat(OWNER_LID ? [OWNER_LID] : [])
+
 // Banco da Elkys (cross-DB). Tabela whatsapp_conversations + support_tickets
 // + leads moram aqui. Sonnar continua usando o proprio Supabase pra vagas/
 // assinantes — so consultamos pra identificar assinantes nas conversas.

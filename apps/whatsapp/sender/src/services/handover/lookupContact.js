@@ -11,16 +11,44 @@
  */
 import { getSonnarClient } from "./sonnarClient.js"
 import { getElkysClient } from "./elkysClient.js"
-import { ADMIN_PHONES } from "../../config.js"
+import { ADMIN_PHONES, ADMIN_LIDS } from "../../config.js"
 import { errorLog } from "../../utils/logger.js"
 
 /**
  * Extrai o numero (so digitos) de um JID do WhatsApp.
  * "5511999999999@s.whatsapp.net" -> "5511999999999"
+ *
+ * IMPORTANTE: a partir da migracao LID, JIDs como "120152280592452@lid"
+ * NAO representam o numero de telefone — sao identificadores opacos.
+ * isAdminJid checa LIDs separadamente; este helper continua devolvendo
+ * digitos crus pra compatibilidade com codigo legado.
  */
 export function jidToPhone(jid) {
   if (!jid) return ""
   return jid.replace(/@.*$/, "").replace(/\D/g, "")
+}
+
+/**
+ * Verifica se o JID corresponde a um admin.
+ *
+ * Aceita:
+ *   - JIDs com phone (ex: 5511999999999@s.whatsapp.net)
+ *     → compara digitos contra ADMIN_PHONES
+ *   - JIDs com LID (ex: 120152280592452@lid)
+ *     → compara JID completo contra ADMIN_LIDS (inclui OWNER_LID)
+ *
+ * v3.10.26: aceita LID porque WhatsApp passou a usar @lid por privacidade.
+ */
+export function isAdminJid(jid) {
+  if (!jid) return false
+  // 1. Match por LID (@lid)
+  if (ADMIN_LIDS.includes(jid)) return true
+  // 2. Match por numero (@s.whatsapp.net)
+  if (jid.includes("@s.whatsapp.net")) {
+    const phone = jidToPhone(jid)
+    if (ADMIN_PHONES.includes(phone)) return true
+  }
+  return false
 }
 
 /**
@@ -64,12 +92,12 @@ export async function lookupContact(jid) {
     email: null,
   }
 
-  if (!phone) return base
-
-  // 1. Admin? (verificacao local — nao precisa de DB)
-  if (ADMIN_PHONES.includes(phone)) {
+  // 1. Admin? (verificacao local — funciona com phone OU LID)
+  if (isAdminJid(jid)) {
     return { ...base, identifiedAs: "admin", displayName: "Admin" }
   }
+
+  if (!phone) return base
 
   // 2 + 3. Busca em paralelo nos dois bancos
   const [elkysResult, sonnarResult] = await Promise.allSettled([
