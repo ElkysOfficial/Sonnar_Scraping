@@ -60,7 +60,7 @@ create policy "subscriber_select_own_consultoria"
   on public.consultoria_requests for select
   using (
     subscriber_id in (
-      select id from public.subscribers where auth_user_id = auth.uid()
+      select id from public.subscribers where user_id = auth.uid()
     )
   );
 
@@ -68,7 +68,7 @@ create policy "subscriber_insert_own_consultoria"
   on public.consultoria_requests for insert
   with check (
     subscriber_id in (
-      select id from public.subscribers where auth_user_id = auth.uid()
+      select id from public.subscribers where user_id = auth.uid()
     )
   );
 
@@ -87,7 +87,7 @@ create policy "consultoria_cv_owner_read"
   using (
     bucket_id = 'consultoria-cvs'
     and (storage.foldername(name))[1] in (
-      select id::text from public.subscribers where auth_user_id = auth.uid()
+      select id::text from public.subscribers where user_id = auth.uid()
     )
   );
 
@@ -96,7 +96,7 @@ create policy "consultoria_cv_owner_insert"
   with check (
     bucket_id = 'consultoria-cvs'
     and (storage.foldername(name))[1] in (
-      select id::text from public.subscribers where auth_user_id = auth.uid()
+      select id::text from public.subscribers where user_id = auth.uid()
     )
   );
 
