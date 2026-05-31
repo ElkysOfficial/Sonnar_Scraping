@@ -25,3 +25,5 @@ supabase/.temp/
 
 # Dados pessoais (CVs reais usados em testes locais — NUNCA commitar)
 apps/whatsapp/sender/src/test/fixtures/real-resumes.json
+tmp/
+Template_Vagas_New*.png
