@@ -33,6 +33,7 @@ import { extractStack } from "./jobDistributor.js"
 import { getVipSubscribers, getVipSubscriber } from "../utils/database.js"
 import { getCurrentSocket, isCurrentSocketReady } from "../utils/socketManager.js"
 import { getAllJobs, runFullCleanup } from "./database.js"
+import { isImageSendingEnabled, sendJobAsImage } from "./imageCardSender.js"
 import {
   canSendToSubscriber,
   wasJobSentRecently,
@@ -1972,6 +1973,24 @@ export async function sendJobMessage(jid, jobId, payload, socket, deps = { delay
   }
 
   try {
+    // v3.10.21: quando VIP_SEND_AS_IMAGE=true, tenta enviar como imagem
+    // (PNG gerado na Supabase Edge — zero CPU na VPS). Em qualquer falha
+    // de render/download/sendMessage, faz fallback para o texto puro
+    // existente — politica "primeira tentativa imagem, segunda texto".
+    if (isImageSendingEnabled() && payload.jobData) {
+      const ok = await sendJobAsImage(jid, payload.jobData, {
+        caption: payload.text,
+        socket,
+        delay: () => deps.delay(TIMEOUT_IN_MILLISECONDS_BY_EVENT),
+      })
+      if (ok) {
+        const timestamp = new Date().toISOString()
+        successLog(`[VIP] Job ${jobId} sent (image) to ${jid} at ${timestamp}`)
+        return true
+      }
+      // cai pro fallback de texto
+    }
+
     await deps.delay(TIMEOUT_IN_MILLISECONDS_BY_EVENT)
     await socket.sendMessage(jid, { text: payload.text })
     const timestamp = new Date().toISOString()
