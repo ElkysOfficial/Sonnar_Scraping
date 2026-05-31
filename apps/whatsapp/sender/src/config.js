@@ -51,6 +51,29 @@ export const BOT_LID = "220676074017018@lid"
 // Troque o <prefixo> pelo prefixo do bot (ex: /meu-lid).
 export const OWNER_LID = "120152280592452@lid"
 
+// ═══════════════════════════════════════════════════════════════════
+// v3.10.23 — Atendimento humano via WhatsApp
+// ═══════════════════════════════════════════════════════════════════
+
+// Telefones admin (recebem notificacoes de atendimento + podem responder
+// clientes via comando /r). Lista separada por virgula em ADMIN_PHONES.
+// Os numeros devem estar em formato internacional sem +/espacos
+// (ex: "553199838235,5511970891588")
+export const ADMIN_PHONES = (process.env.ADMIN_PHONES || "553199838235,5511970891588")
+  .split(",")
+  .map((s) => s.trim().replace(/\D/g, ""))
+  .filter((s) => s.length >= 10)
+
+// Banco da Elkys (cross-DB). Tabela whatsapp_conversations + support_tickets
+// + leads moram aqui. Sonnar continua usando o proprio Supabase pra vagas/
+// assinantes — so consultamos pra identificar assinantes nas conversas.
+export const ELKYS_SUPABASE_URL = process.env.ELKYS_SUPABASE_URL || "https://njubtnsgtjcfmbnvjuqr.supabase.co"
+export const ELKYS_SUPABASE_SERVICE_KEY = process.env.ELKYS_SUPABASE_SERVICE_KEY || ""
+
+// Permite desligar o atendimento humano sem deploy (rollback rapido).
+// Quando false, o bot ignora mensagens recebidas (comportamento pre-v3.10.23).
+export const HUMAN_HANDOVER_ENABLED = readBoolean(process.env.HUMAN_HANDOVER_ENABLED, true)
+
 // Diretório dos comandos
 export const COMMANDS_DIR = path.join(__dirname, "commands")
 

@@ -1,0 +1,296 @@
+/**
+ * adminCommands — parser e handlers dos comandos admin.
+ *
+ * Comandos suportados (so funcionam dos numeros em ADMIN_PHONES):
+ *
+ *   /r <fone> <mensagem>       Responde o cliente
+ *   /responder <fone> <msg>    Alias longo de /r
+ *   /encerrar <fone>           Encerra atendimento + pede rating
+ *   /iniciar <fone>            Forca modo humano (sem cliente pedir)
+ *   /status <fone>             Mostra estado atual da conversa
+ *   /abertos                   Lista todos atendimentos abertos
+ *   /notas <fone> <texto>      Adiciona nota interna no ticket
+ *   /ajuda                     Lista comandos disponiveis
+ */
+import { ADMIN_PHONES } from "../../config.js"
+import { errorLog, successLog } from "../../utils/logger.js"
+import { jidToPhone, phoneToJid } from "./lookupContact.js"
+import {
+  adminReplyToClient,
+  closeHumanHandover,
+  startHumanHandover,
+} from "./humanHandover.js"
+import {
+  getConversation,
+  listOpenConversations,
+  upsertConversation,
+} from "./conversationState.js"
+import { appendInternalNote } from "./ticketManager.js"
+import { lookupContact } from "./lookupContact.js"
+
+const HELP_TEXT =
+  `📚 *Comandos admin*\n\n` +
+  `\`/r <fone> <msg>\`\n` +
+  `Responde o cliente. Ex: \`/r 5511999999999 olá!\`\n\n` +
+  `\`/encerrar <fone>\`\n` +
+  `Encerra atendimento e pede avaliação 1-5.\n\n` +
+  `\`/iniciar <fone>\`\n` +
+  `Inicia atendimento sem cliente pedir.\n\n` +
+  `\`/status <fone>\`\n` +
+  `Mostra estado atual da conversa.\n\n` +
+  `\`/abertos\`\n` +
+  `Lista todos os atendimentos em aberto.\n\n` +
+  `\`/notas <fone> <texto>\`\n` +
+  `Adiciona nota interna no ticket (só admins veem).\n\n` +
+  `\`/ajuda\`\n` +
+  `Mostra esta lista.`
+
+/**
+ * Verifica se um JID corresponde a um numero admin.
+ */
+export function isAdminJid(jid) {
+  const phone = jidToPhone(jid)
+  return ADMIN_PHONES.includes(phone)
+}
+
+/**
+ * Tenta interpretar uma mensagem como comando admin.
+ * Retorna `{ handled: true }` quando processou (mesmo que tenha
+ * respondido com erro). Retorna `{ handled: false }` se nao for comando.
+ *
+ * @returns {Promise<{ handled: boolean }>}
+ */
+export async function tryHandleAdminCommand({ jid, text, socket }) {
+  if (!isAdminJid(jid)) return { handled: false }
+  const raw = (text || "").trim()
+  if (!raw.startsWith("/")) return { handled: false }
+
+  const [head, ...rest] = raw.split(/\s+/)
+  const cmd = head.toLowerCase()
+  const args = rest
+
+  const authorPhone = jidToPhone(jid)
+
+  try {
+    switch (cmd) {
+      case "/ajuda":
+      case "/help":
+        await socket.sendMessage(jid, { text: HELP_TEXT })
+        return { handled: true }
+
+      case "/r":
+      case "/responder":
+        await handleReply({ jid, args, authorPhone, socket })
+        return { handled: true }
+
+      case "/encerrar":
+      case "/close":
+        await handleClose({ jid, args, authorPhone, socket })
+        return { handled: true }
+
+      case "/iniciar":
+      case "/open":
+        await handleStart({ jid, args, authorPhone, socket })
+        return { handled: true }
+
+      case "/status":
+        await handleStatus({ jid, args, socket })
+        return { handled: true }
+
+      case "/abertos":
+      case "/list":
+        await handleList({ jid, socket })
+        return { handled: true }
+
+      case "/notas":
+      case "/note":
+        await handleNote({ jid, args, authorPhone, socket })
+        return { handled: true }
+
+      default:
+        // Comando desconhecido — mostra ajuda
+        await socket.sendMessage(jid, {
+          text: `❓ Comando *${cmd}* não reconhecido.\n\n${HELP_TEXT}`,
+        })
+        return { handled: true }
+    }
+  } catch (err) {
+    errorLog(`[adminCommands] ${cmd} falhou: ${err.message}`)
+    await socket.sendMessage(jid, {
+      text: `❌ Erro ao processar ${cmd}: ${err.message}`,
+    })
+    return { handled: true }
+  }
+}
+
+// ─── Handlers ───────────────────────────────────────────────────────
+
+async function handleReply({ jid, args, authorPhone, socket }) {
+  if (args.length < 2) {
+    await socket.sendMessage(jid, {
+      text: `⚠️ Uso: \`/r <fone> <mensagem>\`\nEx: \`/r 5511999999999 olá!\``,
+    })
+    return
+  }
+  const targetPhone = args[0].replace(/\D/g, "")
+  const text = args.slice(1).join(" ")
+  const targetJid = phoneToJid(targetPhone)
+  if (!targetJid) {
+    await socket.sendMessage(jid, { text: `❌ Número inválido: ${args[0]}` })
+    return
+  }
+
+  const conv = await getConversation(targetJid)
+  if (!conv || conv.mode !== "human") {
+    await socket.sendMessage(jid, {
+      text:
+        `⚠️ Cliente +${targetPhone} não está em atendimento humano.\n\n` +
+        `Use \`/iniciar ${targetPhone}\` pra começar um.`,
+    })
+    return
+  }
+
+  const ok = await adminReplyToClient({
+    targetJid,
+    text,
+    authorPhone,
+    socket,
+  })
+  if (ok) {
+    await socket.sendMessage(jid, {
+      text: `✅ Enviado pra +${targetPhone}`,
+    })
+  }
+}
+
+async function handleClose({ jid, args, authorPhone, socket }) {
+  if (args.length < 1) {
+    await socket.sendMessage(jid, {
+      text: `⚠️ Uso: \`/encerrar <fone>\``,
+    })
+    return
+  }
+  const targetPhone = args[0].replace(/\D/g, "")
+  const targetJid = phoneToJid(targetPhone)
+  if (!targetJid) {
+    await socket.sendMessage(jid, { text: `❌ Número inválido: ${args[0]}` })
+    return
+  }
+  const conv = await getConversation(targetJid)
+  if (!conv || conv.mode !== "human") {
+    await socket.sendMessage(jid, {
+      text: `⚠️ Cliente +${targetPhone} não está em atendimento humano.`,
+    })
+    return
+  }
+  await closeHumanHandover({ targetJid, closedByPhone: authorPhone, socket })
+}
+
+async function handleStart({ jid, args, authorPhone, socket }) {
+  if (args.length < 1) {
+    await socket.sendMessage(jid, {
+      text: `⚠️ Uso: \`/iniciar <fone>\``,
+    })
+    return
+  }
+  const targetPhone = args[0].replace(/\D/g, "")
+  const targetJid = phoneToJid(targetPhone)
+  if (!targetJid) {
+    await socket.sendMessage(jid, { text: `❌ Número inválido: ${args[0]}` })
+    return
+  }
+  const contact = await lookupContact(targetJid)
+  await startHumanHandover({
+    jid: targetJid,
+    contact,
+    transition: {
+      type: "human",
+      category: "duvida",
+      priority: "media",
+      subject: "Atendimento iniciado pelo admin",
+      notify: "👤 *Atendimento iniciado por admin*",
+    },
+    lastMessage: `Atendimento iniciado por +${authorPhone}`,
+    socket,
+  })
+  await socket.sendMessage(jid, {
+    text: `✅ Atendimento iniciado pra +${targetPhone}\n\nUse \`/r ${targetPhone} <mensagem>\` pra falar.`,
+  })
+}
+
+async function handleStatus({ jid, args, socket }) {
+  if (args.length < 1) {
+    await socket.sendMessage(jid, { text: `⚠️ Uso: \`/status <fone>\`` })
+    return
+  }
+  const targetPhone = args[0].replace(/\D/g, "")
+  const targetJid = phoneToJid(targetPhone)
+  if (!targetJid) {
+    await socket.sendMessage(jid, { text: `❌ Número inválido: ${args[0]}` })
+    return
+  }
+  const conv = await getConversation(targetJid)
+  if (!conv) {
+    await socket.sendMessage(jid, {
+      text: `📭 Nenhuma conversa encontrada pra +${targetPhone}.`,
+    })
+    return
+  }
+  const lastMsg = conv.last_message_text
+    ? `\n_Última msg: "${conv.last_message_text.slice(0, 80)}"_`
+    : ""
+  const summary =
+    `📋 *Status — +${targetPhone}*\n\n` +
+    `*Modo:* ${conv.mode}\n` +
+    `*Menu:* ${conv.current_menu}\n` +
+    `*Tipo:* ${conv.identified_as}\n` +
+    `*Nome:* ${conv.display_name || "—"}\n` +
+    `*Ticket:* ${conv.active_ticket_id ? conv.active_ticket_id.slice(0, 8) : "—"}\n` +
+    `*Plano Sonnar:* ${conv.subscriber_plan || "—"}` +
+    lastMsg
+  await socket.sendMessage(jid, { text: summary })
+}
+
+async function handleList({ jid, socket }) {
+  const open = await listOpenConversations()
+  if (!open.length) {
+    await socket.sendMessage(jid, {
+      text: `📭 Nenhum atendimento em aberto agora.`,
+    })
+    return
+  }
+  const lines = open.slice(0, 20).map((c) => {
+    const phone = jidToPhone(c.jid)
+    const name = c.display_name || `+${phone}`
+    const lastMin = c.last_message_at
+      ? Math.round((Date.now() - new Date(c.last_message_at).getTime()) / 60000)
+      : "?"
+    return `• ${name}  _(+${phone}, ${lastMin}min)_`
+  })
+  await socket.sendMessage(jid, {
+    text: `📬 *Atendimentos abertos (${open.length})*\n\n${lines.join("\n")}`,
+  })
+}
+
+async function handleNote({ jid, args, authorPhone, socket }) {
+  if (args.length < 2) {
+    await socket.sendMessage(jid, {
+      text: `⚠️ Uso: \`/notas <fone> <texto>\``,
+    })
+    return
+  }
+  const targetPhone = args[0].replace(/\D/g, "")
+  const note = args.slice(1).join(" ")
+  const targetJid = phoneToJid(targetPhone)
+  const conv = await getConversation(targetJid)
+  if (!conv?.active_ticket_id) {
+    await socket.sendMessage(jid, {
+      text: `⚠️ Cliente +${targetPhone} não tem ticket aberto.`,
+    })
+    return
+  }
+  const ok = await appendInternalNote(conv.active_ticket_id, note, authorPhone)
+  if (ok) {
+    await socket.sendMessage(jid, { text: `✅ Nota salva no ticket.` })
+  }
+}

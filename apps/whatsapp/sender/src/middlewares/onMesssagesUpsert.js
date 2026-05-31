@@ -19,6 +19,7 @@ import { errorLog, infoLog, warningLog } from "../utils/logger.js";
 import { customMiddleware } from "./customMiddleware.js";
 import { messageHandler } from "./messageHandler.js";
 import { onGroupParticipantsUpdate } from "./onGroupParticipantsUpdate.js";
+import { handleIncomingMessage } from "../services/handover/incomingHandler.js";
 
 // Dedup por id da mensagem — protege contra processamento duplicado
 // (ex.: um socket antigo ainda emitindo durante uma reconexao).
@@ -83,6 +84,21 @@ export async function onMessagesUpsert({ socket, messages, startProcess }) {
 
       if (webMessage?.message) {
         await messageHandler(socket, webMessage);
+      }
+
+      // v3.10.23: handover humano (menus Elkys+Sonnar + tickets + admin /r).
+      // Roda ANTES do dynamicCommand: se a mensagem foi atendida pelo handover
+      // (menu, modo humano, comando admin), pulamos o fluxo legado para nao
+      // executar comandos antigos por engano. Em qualquer falha interna,
+      // handleIncomingMessage devolve { handled: false } e cai no fluxo legado.
+      try {
+        const handoverResult = await handleIncomingMessage({ webMessage, socket });
+        if (handoverResult.handled) {
+          continue;
+        }
+      } catch (err) {
+        errorLog(`[handover] falha nao capturada: ${err.message}`);
+        // segue pro fluxo legado
       }
 
       if (isAtLeastMinutesInPast(timestamp)) {
