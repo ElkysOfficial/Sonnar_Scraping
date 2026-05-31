@@ -13,7 +13,8 @@
  */
 import { HUMAN_HANDOVER_ENABLED } from "../../config.js"
 import { errorLog, infoLog } from "../../utils/logger.js"
-import { tryHandleAdminCommand, isAdminJid } from "./adminCommands.js"
+import { tryHandleAdminCommand } from "./adminCommands.js"
+import { isAdminJid } from "./lookupContact.js"
 import {
   getConversation,
   upsertConversation,

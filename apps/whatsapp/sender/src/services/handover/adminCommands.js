@@ -12,9 +12,9 @@
  *   /notas <fone> <texto>      Adiciona nota interna no ticket
  *   /ajuda                     Lista comandos disponiveis
  */
-import { ADMIN_PHONES } from "../../config.js"
+import { ADMIN_PHONES, ADMIN_LIDS } from "../../config.js"
 import { errorLog, successLog } from "../../utils/logger.js"
-import { jidToPhone, phoneToJid } from "./lookupContact.js"
+import { jidToPhone, phoneToJid, isAdminJid as _isAdminJid } from "./lookupContact.js"
 import {
   adminReplyToClient,
   closeHumanHandover,
@@ -42,15 +42,17 @@ const HELP_TEXT =
   `Lista todos os atendimentos em aberto.\n\n` +
   `\`/notas <fone> <texto>\`\n` +
   `Adiciona nota interna no ticket (só admins veem).\n\n` +
+  `\`/meulid\`\n` +
+  `Mostra seu LID atual (pra configurar ADMIN_LIDS).\n\n` +
   `\`/ajuda\`\n` +
   `Mostra esta lista.`
 
 /**
- * Verifica se um JID corresponde a um numero admin.
+ * Verifica se um JID corresponde a admin (phone OU LID).
+ * v3.10.26: agora aceita LID além de phone.
  */
 export function isAdminJid(jid) {
-  const phone = jidToPhone(jid)
-  return ADMIN_PHONES.includes(phone)
+  return _isAdminJid(jid)
 }
 
 /**
@@ -61,13 +63,22 @@ export function isAdminJid(jid) {
  * @returns {Promise<{ handled: boolean }>}
  */
 export async function tryHandleAdminCommand({ jid, text, socket }) {
-  if (!isAdminJid(jid)) return { handled: false }
   const raw = (text || "").trim()
   if (!raw.startsWith("/")) return { handled: false }
 
   const [head, ...rest] = raw.split(/\s+/)
   const cmd = head.toLowerCase()
   const args = rest
+
+  // v3.10.26: /meulid funciona pra QUALQUER usuario (precisa pra
+  // descobrir o LID antes mesmo de virar admin). Demais comandos
+  // exigem admin.
+  if (cmd === "/meulid" || cmd === "/mylid") {
+    await handleMyLid({ jid, socket })
+    return { handled: true }
+  }
+
+  if (!isAdminJid(jid)) return { handled: false }
 
   const authorPhone = jidToPhone(jid)
 
@@ -105,6 +116,11 @@ export async function tryHandleAdminCommand({ jid, text, socket }) {
       case "/notas":
       case "/note":
         await handleNote({ jid, args, authorPhone, socket })
+        return { handled: true }
+
+      case "/meulid":
+      case "/mylid":
+        await handleMyLid({ jid, socket })
         return { handled: true }
 
       default:
@@ -270,6 +286,25 @@ async function handleList({ jid, socket }) {
   await socket.sendMessage(jid, {
     text: `📬 *Atendimentos abertos (${open.length})*\n\n${lines.join("\n")}`,
   })
+}
+
+async function handleMyLid({ jid, socket }) {
+  const phone = jidToPhone(jid)
+  const inAdmins = ADMIN_LIDS.includes(jid)
+  const inPhones = ADMIN_PHONES.includes(phone)
+  const status = (inAdmins || inPhones)
+    ? "✅ Voce JA esta cadastrado como admin"
+    : "⚠️ Voce ainda NAO eh admin"
+
+  const msg =
+    `🆔 *Seu LID atual:*\n\n` +
+    `\`${jid}\`\n\n` +
+    `*Dígitos:* ${phone || "(sem dígitos)"}\n\n` +
+    status + `\n\n` +
+    `Pra adicionar este LID como admin, edite o .env do sender:\n` +
+    `\`ADMIN_LIDS=${jid}${ADMIN_LIDS.length ? "," + ADMIN_LIDS.filter(l => l !== jid).join(",") : ""}\`\n\n` +
+    `Depois \`pm2 restart sonnar-wa-sender --update-env\`.`
+  await socket.sendMessage(jid, { text: msg })
 }
 
 async function handleNote({ jid, args, authorPhone, socket }) {
