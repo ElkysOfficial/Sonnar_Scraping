@@ -50,7 +50,11 @@ export async function onMessagesUpsert({ socket, messages, startProcess }) {
     const botLidClean = BOT_LID.replace("@lid", "").replace("@s.whatsapp.net", "");
     const userLidClean = userLid?.replace(/:[0-9][0-9]|:[0-9]/g, "").replace("@lid", "").replace("@s.whatsapp.net", "") || "";
     
-    if (userLidClean === botLidClean || webMessage.key?.fromMe) {
+    // v3.10.25: mensagens fromMe NAO sao ignoradas de cara — podem ser
+    // resposta humana enviada DIRETO pelo numero do bot (WhatsApp Web/
+    // celular). O handover identifica isso. So pulamos mensagens que
+    // vieram do propio BOT_LID dentro de um grupo (auto-loops).
+    if (userLidClean === botLidClean) {
       continue;
     }
 
@@ -99,6 +103,14 @@ export async function onMessagesUpsert({ socket, messages, startProcess }) {
       } catch (err) {
         errorLog(`[handover] falha nao capturada: ${err.message}`);
         // segue pro fluxo legado
+      }
+
+      // v3.10.25: mensagens fromMe NUNCA viram comando legado. Mesmo
+      // que o handover devolva handled=false (ex.: feature flag desligada),
+      // nao queremos que dynamicCommand interprete "/r 5511... ola"
+      // mandado pelo proprio numero do bot como comando do takeshi-bot.
+      if (webMessage.key?.fromMe) {
+        continue;
       }
 
       if (isAtLeastMinutesInPast(timestamp)) {

@@ -215,6 +215,42 @@ export async function adminReplyToClient({ targetJid, text, authorPhone, socket 
 }
 
 /**
+ * Admin respondeu DIRETO pelo numero do bot (WhatsApp Web/celular do
+ * proprio numero). A mensagem ja foi para o cliente porque foi enviada
+ * fora do Baileys — aqui so registramos no historico e marcamos SLA.
+ *
+ * Usado em complemento ao /r: a mensagem foi enviada manualmente, mas
+ * a gente quer rastrear pra dashboard/metricas.
+ *
+ * @param {Object} opts
+ * @param {string} opts.targetJid  cliente destinatario
+ * @param {string} opts.text       texto enviado
+ * @param {Object} opts.conversation  estado da conversa
+ */
+export async function recordDirectAdminReply({ targetJid, text, conversation }) {
+  if (!conversation?.active_ticket_id) return false
+
+  // Marca first_response_at se ainda nao tinha
+  await markFirstResponse(conversation.active_ticket_id)
+
+  // Salva no historico
+  await addTicketMessage(
+    conversation.active_ticket_id,
+    "admin",
+    text,
+    "direct@bot", // marca que veio direto pelo numero do bot
+  )
+
+  // Atualiza last_bot_reply_at na conversa pra estatisticas
+  await upsertConversation(targetJid, {
+    last_bot_reply_at: new Date().toISOString(),
+  })
+
+  infoLog(`[handover] admin (direto pelo bot) -> ${targetJid}: ${text.slice(0, 60)}`)
+  return true
+}
+
+/**
  * Encerra atendimento humano. Bot envia pedido de rating pro cliente
  * e marca ticket como resolvido. Conversa entra em awaiting_rating.
  */
