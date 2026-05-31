@@ -112,67 +112,23 @@ const plans = [
     tier: 'free',
     name: 'Comunidade',
     price: 0,
-    tagline: 'Acompanhe o ecossistema e troque ideia com outros devs.',
+    tagline: 'Acompanhe o ecossistema e participe da troca entre devs.',
     ctaLabel: 'Entrar grátis',
     featureGroups: [
       {
         title: 'O que tem',
         items: [
-          { label: 'Acesso ao grupo público no WhatsApp' },
-          { label: 'Vagas compartilhadas pela comunidade' },
-          { label: 'Newsletter ocasional com vagas em destaque' }
+          { label: 'Acesso ao grupo público da Comunidade no WhatsApp' },
+          { label: 'Vagas compartilhadas livremente pelos membros' },
+          { label: 'Conta no portal pra atualizar dados básicos' }
         ]
       },
       {
-        title: 'Não inclui',
+        title: 'O que não tem',
         items: [
-          { label: 'Filtro de vagas pelo seu stack', kind: 'off' },
-          { label: 'Dashboard com seu histórico de vagas', kind: 'off' },
-          { label: 'Upload e análise de currículo', kind: 'off' }
-        ]
-      }
-    ]
-  },
-  {
-    tier: 'plus',
-    name: 'Plus',
-    price: 10,
-    tagline: 'Vagas no seu WhatsApp privado, filtradas pelo seu stack, com análise comparativa do seu currículo.',
-    ctaLabel: 'Começar 7 dias grátis',
-    badge: 'Mais Popular',
-    featured: true,
-    trial: '7 dias grátis · cancele quando quiser',
-    featureGroups: [
-      {
-        title: 'Entrega no seu privado',
-        items: [
-          { highlight: 'DM individual', label: 'no WhatsApp — sem ruído de grupo' },
-          { highlight: 'Vagas filtradas', label: 'pelo seu stack declarado no perfil' },
-          { highlight: 'Match score 0–100', label: 'calculado por vaga' }
-        ]
-      },
-      {
-        title: 'Análise por vaga (na mensagem)',
-        items: [
-          { highlight: '✅/❌ por skill', label: 'da vaga vs seu stack — sabe na hora o que falta' },
-          { highlight: 'Bloco de responsabilidades', label: 'extraído da descrição da vaga' },
-          { highlight: 'Detalhes completos', label: 'salário, modalidade, localidade, fonte' }
-        ]
-      },
-      {
-        title: 'Upload de currículo (PDF/DOCX)',
-        items: [
-          { highlight: 'Parse automático', label: 'extrai skills, anos, senioridade e idiomas' },
-          { highlight: 'Comparativo CV × vaga', label: 'em cada mensagem: skills, anos e nível' },
-          { highlight: 'Histórico de versões', label: 'guarda CVs antigos quando você atualiza' }
-        ]
-      },
-      {
-        title: 'Em breve no Plus',
-        items: [
-          { highlight: 'Histórico de candidaturas', label: 'com lembrete pós-aplicação', kind: 'soon' },
-          { highlight: 'Estatísticas pessoais', label: 'no dashboard', kind: 'soon' },
-          { highlight: 'Consultoria LinkedIn', label: 'guia e templates de contato', kind: 'soon' }
+          { label: 'Grupo Pro com vagas raspadas e curadas', kind: 'off' },
+          { label: 'DM privada filtrada pelo seu perfil', kind: 'off' },
+          { label: 'Análise de currículo e consultoria 1-1', kind: 'off' }
         ]
       }
     ]
@@ -181,24 +137,65 @@ const plans = [
     tier: 'pro',
     name: 'Pro',
     price: 5,
-    tagline: 'Grupo exclusivo no WhatsApp com todas as vagas de TI.',
+    tagline: 'Grupo exclusivo no WhatsApp com vagas de TI raspadas e organizadas pra você.',
     ctaLabel: 'Começar 7 dias grátis',
     trial: '7 dias grátis · cancele quando quiser',
     featureGroups: [
       {
         title: 'Entrega no grupo',
         items: [
-          { highlight: 'Grupo exclusivo Pro', label: 'no WhatsApp (separado da Comunidade)' },
-          { highlight: 'Todas as vagas de TI', label: 'das principais plataformas' },
+          { highlight: 'Grupo exclusivo Pro', label: 'no WhatsApp, separado da Comunidade' },
+          { highlight: 'Vagas raspadas', label: 'das principais plataformas (LinkedIn, Indeed, Vagas, BNE, Catho, Gupy e outras)' },
+          { highlight: 'Card visual', label: 'com título, empresa, localidade, modalidade, tecnologias, responsabilidades e link' },
           { label: 'Sem duplicatas, sem ruído' }
         ]
       },
       {
-        title: 'Não inclui',
+        title: 'O que não tem',
         items: [
-          { label: 'DM privada com vagas filtradas (Plus)', kind: 'off' },
-          { label: 'Marcadores ✅/❌ por skill (Plus)', kind: 'off' },
-          { label: 'Upload e análise de currículo (Plus)', kind: 'off' }
+          { label: 'DM privada com vagas filtradas pelo seu stack', kind: 'off' },
+          { label: 'Análise do seu currículo na mensagem de cada vaga', kind: 'off' },
+          { label: 'Consultoria humana 1-1 de LinkedIn e CV', kind: 'off' }
+        ]
+      }
+    ]
+  },
+  {
+    tier: 'plus',
+    name: 'Plus',
+    price: 10,
+    tagline: 'Tudo do Pro + DM privada filtrada pelo seu perfil, análise do seu CV e consultoria humana.',
+    ctaLabel: 'Começar 7 dias grátis',
+    badge: 'Mais Popular',
+    featured: true,
+    trial: '7 dias grátis · cancele quando quiser',
+    featureGroups: [
+      {
+        title: 'Tudo do Pro, e mais',
+        items: [
+          { highlight: 'DM individual', label: 'no WhatsApp, sem ruído de grupo' },
+          { highlight: 'Vagas filtradas', label: 'pelo seu stack e senioridade' }
+        ]
+      },
+      {
+        title: 'Análise CV vs vaga (no card da DM)',
+        items: [
+          { highlight: 'Pontos fortes', label: 'o que do seu perfil bate com a vaga' },
+          { highlight: 'Para destacar', label: 'o que vale reforçar no CV pra esta vaga específica' }
+        ]
+      },
+      {
+        title: 'Upload de currículo (PDF ou DOCX)',
+        items: [
+          { highlight: 'Parse automático', label: 'extrai skills, anos de experiência, senioridade e idiomas' },
+          { highlight: 'Histórico de versões', label: 'guarda CVs antigos quando você atualiza' }
+        ]
+      },
+      {
+        title: 'Consultoria humana 1-1',
+        items: [
+          { highlight: 'Revisão de LinkedIn e CV', label: 'agendamento pelo dashboard, conversa pelo WhatsApp' },
+          { highlight: 'Sem inteligência artificial', label: 'quem revisa é nossa equipe' }
         ]
       }
     ]

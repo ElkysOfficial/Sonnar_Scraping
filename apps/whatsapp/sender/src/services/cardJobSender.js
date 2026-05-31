@@ -92,11 +92,13 @@ async function buildNextJobMessage(deps = defaultDeps) {
 
   try {
     const shortUrl = await deps.shortenUrl(jobData.url)
-    // text = versao completa (fallback se imagem falhar)
-    // textCompact = versao enxuta usada como caption da imagem (grupo nao
-    // recebe match — audiencia heterogenea)
-    const text = formatJobMessage(jobData, shortUrl)
-    const textCompact = formatJobMessage(jobData, shortUrl, { compact: true })
+    // v3.10.36: grupo Pro usa formato LITE - simples e direto.
+    //   text = fallback de texto puro (sem imagem)
+    //   textCompact = caption quando vai com imagem
+    // Ambos usam o modo lite (sem salario, sem match, sem responsabilidades,
+    // sem rodape de data). Audiencia do grupo eh heterogenea.
+    const text = formatJobMessage(jobData, shortUrl, { lite: true })
+    const textCompact = formatJobMessage(jobData, shortUrl, { lite: true })
     return { jobId: jobData.id || job.id || null, text, textCompact, jobData }
   } catch (err) {
     errorLog(`[CARD] Erro ao montar mensagem: ${err.message}`)

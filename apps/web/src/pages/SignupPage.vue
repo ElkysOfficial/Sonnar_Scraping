@@ -768,7 +768,7 @@ const planOptions = [
     tier: 'plus' as const,
     label: 'Plus',
     price: 'R$ 10/mês',
-    tagline: 'A IA seleciona as vagas alinhadas ao seu perfil.',
+    tagline: 'Vagas no privado filtradas pelo seu perfil + análise do seu CV.',
     featured: true,
     trial: true
   },
