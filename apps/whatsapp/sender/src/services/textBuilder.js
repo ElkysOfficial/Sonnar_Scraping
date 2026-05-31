@@ -326,6 +326,41 @@ function formatJobMessage(jobData, shortUrl, options = {}) {
   const out = []
   const SEP = "━━━━━━━━━━━━━━━━━━━━"
   const compact = options.compact === true
+  const lite = options.lite === true
+
+  // ─── MODO LITE (v3.10.36): formato simples pro grupo Pro ───
+  // Inclui: titulo + empresa + local + modalidade + tecnologias (linha) +
+  // responsabilidades + link + data. Omite: salario, match (audiencia
+  // heterogenea), stack categorizada (visual mais pesado).
+  if (lite) {
+    out.push(`*${jobData.title}*`)
+    if (jobData.company) out.push(`🏢 _${jobData.company}_`)
+    if (jobData.location && jobData.location !== "Nao informado") {
+      out.push(`📍 ${jobData.location}`)
+    }
+    if (jobData.workType && jobData.workType !== "Nao informado") {
+      out.push(`💼 ${jobData.workType}`)
+    }
+    const liteSkills = Array.isArray(jobData.skills) ? jobData.skills : []
+    if (liteSkills.length) {
+      out.push("")
+      out.push("*🧩 Tecnologias*")
+      out.push(liteSkills.join("  •  "))
+    }
+    const liteResps = (jobData.responsibilities || "").toString().trim()
+    if (liteResps) {
+      out.push("")
+      out.push("*📋 Responsabilidades*")
+      out.push("")
+      appendResponsibilitiesBlock(out, liteResps)
+    }
+    out.push("")
+    out.push(`🔗 *Ver a vaga:* ${shortUrl}`)
+    if (jobData.date) {
+      out.push(`_Vaga capturada em ${jobData.date}_`)
+    }
+    return out.join("\n")
+  }
 
   // ─── CABECALHO (omitido em compact - vai na imagem) ───
   if (!compact) {

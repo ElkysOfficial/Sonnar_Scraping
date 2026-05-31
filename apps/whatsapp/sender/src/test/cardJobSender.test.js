@@ -87,15 +87,16 @@ test("buildNextJobMessage: retorna null quando nao ha vagas pendentes", async ()
   assert.equal(calls.fetchPendingJobs[0].limit, 1)
 })
 
-test("buildNextJobMessage: monta mensagem completa quando ha vaga", async () => {
+test("buildNextJobMessage: monta mensagem lite (grupo Pro v3.10.36)", async () => {
   const { deps, calls } = makeDeps({ pendingJobs: [SAMPLE_JOB] })
   const result = await buildNextJobMessage(deps)
   assert.ok(result)
   assert.equal(result.jobId, "job-123")
   assert.match(result.text, /\*Backend Dev\*/)
-  assert.match(result.text, /💰 \*R\$ 12\.000\*/)
+  // v3.10.36: grupo Pro usa modo lite - sem salario
+  assert.doesNotMatch(result.text, /💰/)
+  assert.match(result.text, /\*🧩 Tecnologias\*/)
   assert.match(result.text, /🔗 \*Ver a vaga:\* https:\/\/son\.sh\/v\/\d+/)
-  // v3.10.31: rodape mudou de "via [source]" para "Vaga capturada em"
   assert.match(result.text, /_Vaga capturada em /)
   assert.equal(calls.shortenUrl.length, 1)
   assert.equal(calls.shortenUrl[0].url, SAMPLE_JOB.job_url)

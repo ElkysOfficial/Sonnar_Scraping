@@ -373,7 +373,7 @@ const canChangePlan = computed(() =>
 
 // ----- O que o plano inclui -----
 // Fonte de verdade: apps/whatsapp/sender/src/utils/database.js
-//  - Plus: envio privado (DM) com filtro de IA pelo perfil
+//  - Plus: envio privado (DM) com filtro automatico pelo perfil + analise CV
 //  - Pro:  acesso ao grupo exclusivo do WhatsApp, todas as vagas de TI
 //  - Free: nada do bot, só canais publicos da Comunidade
 const planFeatures = computed<string[]>(() => {
@@ -381,9 +381,9 @@ const planFeatures = computed<string[]>(() => {
   if (p === 'plus') {
     return [
       'Vagas no seu WhatsApp privado (DM individual)',
-      'IA analisa e filtra cada vaga pelo seu perfil',
-      'Match score individual por vaga (0–100)',
-      'Prioridade no recebimento das vagas novas',
+      'Filtro automático pelo seu stack e senioridade',
+      'Análise CV vs vaga em cada mensagem (pontos fortes e o que destacar)',
+      'Consultoria humana 1-1 de LinkedIn e CV (agendamento pelo dashboard)',
       'Sem duplicatas e sem ruído'
     ]
   }
@@ -402,7 +402,7 @@ const planFeatures = computed<string[]>(() => {
 
 const includesCopy = computed(() => {
   const p = subscriber.value?.plan
-  if (p === 'plus') return 'Você recebe no privado, com curadoria por IA do que combina com seu perfil.'
+  if (p === 'plus') return 'Você recebe no privado, com curadoria automática pelo seu perfil + análise do seu CV em cada vaga.'
   if (p === 'pro') return 'Todas as vagas de TI no grupo exclusivo Pro, sem filtro personalizado.'
   return 'Faça upgrade para receber vagas direto no WhatsApp.'
 })
@@ -457,9 +457,9 @@ const PLUS_OPTION = (action: 'checkout' | 'change', ctaLabel: string, sub: strin
   ctaLabel,
   features: [
     'Vagas direto no seu WhatsApp privado (DM)',
-    'IA filtra cada vaga pelo seu perfil',
-    'Match score 0–100 por vaga',
-    'Prioridade no recebimento, sem ruído do grupo'
+    'Filtro automático pelo seu stack e senioridade',
+    'Análise CV vs vaga (pontos fortes e o que destacar)',
+    'Consultoria humana 1-1 de LinkedIn e CV'
   ],
   action
 })
@@ -525,10 +525,10 @@ async function onChoose(option: PlanOption) {
       title: 'Fazer upgrade para o Plus?',
       subtitle: 'A mudança é imediata.',
       tone: 'info',
-      lead: 'Você sai do <strong>grupo Pro</strong> e passa a receber as vagas no <strong>seu WhatsApp privado</strong>, filtradas pela IA conforme seu perfil.',
+      lead: 'Você sai do <strong>grupo Pro</strong> e passa a receber as vagas no <strong>seu WhatsApp privado</strong>, filtradas pelo seu stack e senioridade.',
       bullets: [
-        'Vagas filtradas pelo seu perfil, com match score 0–100',
-        'Recebimento no seu WhatsApp privado (não no grupo)',
+        'Vagas filtradas pelo seu perfil + análise CV vs vaga em cada mensagem',
+        'Consultoria humana 1-1 de LinkedIn e CV',
         'Você paga só a diferença prorateada do mês atual'
       ],
       confirmLabel: 'Sim, fazer upgrade',
@@ -544,9 +544,9 @@ async function onChoose(option: PlanOption) {
       title: 'Trocar para o plano Pro?',
       subtitle: `A mudança vira efetiva em ${when}.`,
       tone: 'warning',
-      lead: 'Você está fazendo um downgrade. <strong>Você deixa de receber as vagas no seu WhatsApp privado e passa a receber no grupo exclusivo Pro</strong>, com todas as vagas de TI, sem filtro pelo seu perfil e sem match score por IA.',
+      lead: 'Você está fazendo um downgrade. <strong>Você deixa de receber as vagas no seu WhatsApp privado e passa a receber no grupo exclusivo Pro</strong>, com todas as vagas de TI, sem filtro pelo seu perfil e sem análise do seu CV.',
       bullets: [
-        `Você continua no Plus (privado + IA) até ${when}`,
+        `Você continua no Plus (privado + análise do seu CV) até ${when}`,
         'A partir dessa data você entra no grupo Pro do WhatsApp',
         'Pode reverter a qualquer momento antes da data'
       ],
@@ -627,7 +627,7 @@ async function onCancel() {
   const planFriendly = planLabel.value
   const isPlus = subscriber.value?.plan === 'plus'
   const channelNow = isPlus
-    ? 'no seu WhatsApp privado, com IA filtrando pelo seu perfil'
+    ? 'no seu WhatsApp privado, filtrado pelo seu stack e senioridade'
     : 'no grupo Pro do WhatsApp, com todas as vagas de TI'
   const ok = await askConfirmation({
     title: 'Cancelar sua assinatura?',

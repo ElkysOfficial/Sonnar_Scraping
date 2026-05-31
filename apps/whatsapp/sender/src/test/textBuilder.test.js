@@ -477,6 +477,32 @@ test("v3.10.31: skills sem categoria conhecida vao em 'Outras'", () => {
   assert.match(out, /🔧 \*Outras\*.*XPTO.*FooBar/)
 })
 
+test("v3.10.36: modo lite (grupo Pro) - cabecalho + tecnologias + responsabilidades + link + data", () => {
+  const out = formatJobMessage(FIXED_JOB, "https://son.sh/v/abc", { lite: true })
+  assert.match(out, /\*Senior Backend Developer\*/)
+  assert.match(out, /🏢 _Acme Corp_/)
+  assert.match(out, /📍 Sao Paulo - SP/)
+  assert.match(out, /💼 Remoto/)
+  // Tecnologias em linha unica (sem categoria)
+  assert.match(out, /\*🧩 Tecnologias\*/)
+  assert.match(out, /Node\.js {2}• {2}AWS {2}• {2}TypeScript/)
+  // Responsabilidades + link + data presentes
+  assert.match(out, /\*📋 Responsabilidades\*/)
+  assert.match(out, /• Desenvolver APIs/)
+  assert.match(out, /🔗 \*Ver a vaga:\* https:\/\/son\.sh\/v\/abc/)
+  assert.match(out, /_Vaga capturada em 28\/05\/2026_/)
+  // OMITIDOS no lite: salario, match, stack categorizada
+  assert.doesNotMatch(out, /💰/)
+  assert.doesNotMatch(out, /Match com/)
+  assert.doesNotMatch(out, /Stack da vaga/)
+})
+
+test("v3.10.36: modo lite omite localizacao 'Nao informado'", () => {
+  const job = { ...FIXED_JOB, location: "Nao informado" }
+  const out = formatJobMessage(job, "x", { lite: true })
+  assert.doesNotMatch(out, /📍 Nao informado/)
+})
+
 test("v3.10.34: cada categoria mostra no maximo 6 skills (resto vira +N)", () => {
   const job = { ...FIXED_JOB, skills: ["A", "B", "C", "D", "E", "F", "G", "H"] }
   const out = formatJobMessage(job, "x")
