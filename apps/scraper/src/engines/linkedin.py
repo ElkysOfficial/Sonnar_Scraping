@@ -744,11 +744,17 @@ async def _fetch_detail(seed: dict, sem: asyncio.Semaphore, client) -> dict:
     ou retries esgotados), retornamos seed apenas - o controller já sabe
     que enriquecimento eh best-effort.
     """
+    # v3.10.28: description_lang DEFAULT 'pt' (LinkedIn BR/LATAM eh
+    # majoritariamente PT). Antes era None e quando a vaga vinha sem
+    # description, o core rejeitava com 422 ("Vagas sem
+    # description_lang nao sao aceitas"). Loop infinito de 1547 vagas
+    # reenfileiradas observado em 31/05 15:21. enrich_canonical
+    # sobrescreve quando detecta outro idioma.
     out = {
         "title": "",
         "company": "",
         "description": "",
-        "description_lang": None,
+        "description_lang": "pt",
         "responsibilities": None,
         "skills": [],
         "salary": "",

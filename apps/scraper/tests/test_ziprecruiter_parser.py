@@ -95,7 +95,12 @@ def test_parse_card_publication_date_fallback_hoje():
 
 
 def test_parse_card_publication_date_relativa():
-    """Quando card tem '3 days ago', converte pra data absoluta."""
+    """Quando card tem '3 days ago', converte pra data absoluta.
+
+    _parse_relative_date usa datetime.now() internamente (e nao o
+    argumento today=). Por isso o teste calcula dinamicamente o esperado
+    como now - 3 dias — assim sobrevive a execucoes em qualquer data.
+    """
     html = """<div class="jobList-introWrap">
       <a class="jobList-title" href="https://x.com/y"><strong>Dev</strong></a>
       <ul class="jobList-introMeta">
@@ -104,9 +109,11 @@ def test_parse_card_publication_date_relativa():
         <li><i class="fa-clock"></i>3 days ago</li>
       </ul>
     </div>"""
+    from datetime import datetime as _dt, timedelta as _td
     wrap = BeautifulSoup(html, "html.parser").find("div", class_="jobList-introWrap")
     p = parse_card(wrap, today=datetime(2026, 5, 30))
-    assert p["publication_date"] == "27/05/2026"
+    expected = (_dt.now() - _td(days=3)).strftime("%d/%m/%Y")
+    assert p["publication_date"] == expected
 
 
 def test_parse_card_sem_titulo_retorna_none():
