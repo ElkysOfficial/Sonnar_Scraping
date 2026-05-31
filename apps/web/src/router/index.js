@@ -11,8 +11,7 @@ const PaymentPendingPage = () => import('../pages/PaymentPendingPage.vue')
 const PaymentConfirmingPage = () => import('../pages/PaymentConfirmingPage.vue')
 const DashboardLayout = () => import('../pages/dashboard/DashboardLayout.vue')
 const DashboardJobs = () => import('../pages/dashboard/DashboardJobs.vue')
-const DashboardResume = () => import('../pages/dashboard/DashboardResume.vue')
-const DashboardConsultoria = () => import('../pages/dashboard/DashboardConsultoria.vue')
+const DashboardPerfilCarreira = () => import('../pages/dashboard/DashboardPerfilCarreira.vue')
 const DashboardSettings = () => import('../pages/dashboard/DashboardSettings.vue')
 const AdminLayout = () => import('../pages/AdminLayout.vue')
 const AdminDashboard = () => import('../pages/AdminDashboard.vue')
@@ -67,17 +66,14 @@ const routes = [
         meta: { title: 'Vagas pra você', subtitle: 'Filtradas pelo seu perfil de busca.' }
       },
       {
-        path: 'curriculo',
-        name: 'DashboardResume',
-        component: DashboardResume,
-        meta: { title: 'Currículo', subtitle: 'Anexe seu CV para personalizar as vagas recebidas.' }
+        path: 'perfil',
+        name: 'DashboardPerfilCarreira',
+        component: DashboardPerfilCarreira,
+        meta: { title: 'Perfil de carreira', subtitle: 'Seu currículo + consultoria de LinkedIn e CV.' }
       },
-      {
-        path: 'consultoria',
-        name: 'DashboardConsultoria',
-        component: DashboardConsultoria,
-        meta: { title: 'Consultoria', subtitle: 'Atendimento individual de LinkedIn e currículo.' }
-      },
+      // Legados: redirecionam pra pagina unificada (v3.10.38)
+      { path: 'curriculo', redirect: '/dashboard/perfil' },
+      { path: 'consultoria', redirect: '/dashboard/perfil' },
       {
         path: 'assinatura',
         redirect: '/dashboard/configuracoes?tab=assinatura'
