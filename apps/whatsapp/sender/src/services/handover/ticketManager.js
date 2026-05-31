@@ -104,14 +104,36 @@ export async function addTicketMessage(ticketId, senderRole, body, authorName = 
 /**
  * Marca first_response_at no ticket — usado pra calcular SLA.
  * Idempotente: so atualiza se for null.
+ *
+ * Tambem move status 'aberto' -> 'em_andamento' pra satisfazer a check
+ * constraint `tickets_first_response_check`:
+ *   (first_response_at IS NULL) OR (status <> 'aberto')
+ *
+ * Se o ticket ja estava em outro status (em_andamento/resolvido/fechado),
+ * apenas grava o first_response_at sem mexer no status.
  */
 export async function markFirstResponse(ticketId) {
   const supa = getElkysClient()
   if (!supa || !ticketId) return false
   try {
+    // Le status atual pra decidir se precisa promover pra em_andamento
+    const { data: current, error: readErr } = await supa
+      .from("support_tickets")
+      .select("status, first_response_at")
+      .eq("id", ticketId)
+      .maybeSingle()
+    if (readErr) {
+      errorLog(`[ticketManager.firstResponse] read: ${readErr.message}`)
+      return false
+    }
+    if (!current || current.first_response_at) return false // ja respondeu
+
+    const patch = { first_response_at: new Date().toISOString() }
+    if (current.status === "aberto") patch.status = "em_andamento"
+
     const { error } = await supa
       .from("support_tickets")
-      .update({ first_response_at: new Date().toISOString() })
+      .update(patch)
       .eq("id", ticketId)
       .is("first_response_at", null)
     if (error) {
