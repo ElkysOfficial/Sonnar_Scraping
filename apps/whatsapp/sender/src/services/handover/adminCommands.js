@@ -27,6 +27,7 @@ import {
 } from "./conversationState.js"
 import { appendInternalNote } from "./ticketManager.js"
 import { lookupContact } from "./lookupContact.js"
+import { handleConsultoriaCommand } from "./consultoriaAdmin.js"
 
 const HELP_TEXT =
   `📚 *Comandos admin*\n\n` +
@@ -44,6 +45,10 @@ const HELP_TEXT =
   `Adiciona nota interna no ticket (só admins veem).\n\n` +
   `\`/meulid\`\n` +
   `Mostra seu LID atual (pra configurar ADMIN_LIDS).\n\n` +
+  `\`/consultoria abertos\`\n` +
+  `Lista pedidos de consultoria pendentes/agendados.\n\n` +
+  `\`/consultoria <id> ver|agendar|concluir|cancelar\`\n` +
+  `Gerencia um pedido. Agendar usa formato DD/MM HH:MM.\n\n` +
   `\`/ajuda\`\n` +
   `Mostra esta lista.`
 
@@ -121,6 +126,10 @@ export async function tryHandleAdminCommand({ jid, text, socket }) {
       case "/meulid":
       case "/mylid":
         await handleMyLid({ jid, socket })
+        return { handled: true }
+
+      case "/consultoria":
+        await handleConsultoriaCommand({ args, socket, jid })
         return { handled: true }
 
       default:
