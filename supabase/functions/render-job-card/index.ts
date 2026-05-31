@@ -112,6 +112,57 @@ interface JobCardData {
   source?: string;
 }
 
+// Logo SONNAR — radar SVG embutido (3 aneis + ponta com bolinha) + tagline
+function buildBrand() {
+  return {
+    type: "div",
+    props: {
+      style: { display: "flex", alignItems: "center", gap: 16 },
+      children: [
+        // Radar SVG
+        {
+          type: "svg",
+          props: {
+            width: 80,
+            height: 80,
+            viewBox: "0 0 100 100",
+            children: [
+              { type: "circle", props: { cx: 50, cy: 50, r: 44, fill: "none", stroke: "#FFFFFF", strokeWidth: 2.5, opacity: 0.95 } },
+              { type: "circle", props: { cx: 50, cy: 50, r: 30, fill: "none", stroke: "#FFFFFF", strokeWidth: 2.5, opacity: 0.7 } },
+              { type: "circle", props: { cx: 50, cy: 50, r: 14, fill: "none", stroke: "#FFFFFF", strokeWidth: 2.5, opacity: 0.45 } },
+              { type: "line", props: { x1: 50, y1: 50, x2: 80, y2: 30, stroke: "#FFFFFF", strokeWidth: 2.5 } },
+              { type: "circle", props: { cx: 80, cy: 30, r: 5, fill: "#FFFFFF" } },
+            ],
+          },
+        },
+        // SONNAR + tagline empilhados
+        {
+          type: "div",
+          props: {
+            style: { display: "flex", flexDirection: "column", justifyContent: "center" },
+            children: [
+              {
+                type: "div",
+                props: {
+                  style: { fontSize: 44, fontWeight: 700, color: "#FFFFFF", letterSpacing: 3, lineHeight: 1 },
+                  children: "SONNAR",
+                },
+              },
+              {
+                type: "div",
+                props: {
+                  style: { fontSize: 14, fontWeight: 500, color: "rgba(255,255,255,0.82)", letterSpacing: 4, marginTop: 6 },
+                  children: "VAGAS DO SEU STACK",
+                },
+              },
+            ],
+          },
+        },
+      ],
+    },
+  };
+}
+
 function buildCardJSX(job: JobCardData) {
   const title = truncate(job.job_title || "Vaga sem título", 110);
   const titleSize = pickTitleSize(title);
@@ -134,8 +185,9 @@ function buildCardJSX(job: JobCardData) {
         display: "flex",
         flexDirection: "column",
         padding: 72,
+        // Azul vibrante do template (#2563eb topo -> #1e3a8a base)
         background:
-          "linear-gradient(135deg, #061520 0%, #0A2540 55%, #0D4880 100%)",
+          "linear-gradient(180deg, #2563EB 0%, #1D4ED8 45%, #1E40AF 75%, #1E3A8A 100%)",
         color: "#FFFFFF",
         fontFamily: "Inter",
       },
@@ -147,60 +199,24 @@ function buildCardJSX(job: JobCardData) {
             style: {
               display: "flex",
               justifyContent: "space-between",
-              alignItems: "center",
-              marginBottom: 48,
+              alignItems: "flex-start",
+              marginBottom: 80,
             },
             children: [
-              // Brand
-              {
-                type: "div",
-                props: {
-                  style: { display: "flex", alignItems: "center", gap: 12 },
-                  children: [
-                    {
-                      type: "div",
-                      props: {
-                        style: {
-                          width: 36, height: 36, borderRadius: 18,
-                          background:
-                            "linear-gradient(135deg, #FFFFFF 0%, #C5E1FF 100%)",
-                          color: "#061520",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          fontSize: 22,
-                          fontWeight: 700,
-                        },
-                        children: "S",
-                      },
-                    },
-                    {
-                      type: "div",
-                      props: {
-                        style: {
-                          fontSize: 26,
-                          fontWeight: 700,
-                          letterSpacing: 2,
-                        },
-                        children: "SONNAR",
-                      },
-                    },
-                  ],
-                },
-              },
-              // Mode label
+              buildBrand(),
               modeLabel
                 ? {
                   type: "div",
                   props: {
                     style: {
-                      padding: "10px 16px",
-                      background: "rgba(0,0,0,0.25)",
-                      border: "1px solid rgba(255,255,255,0.08)",
-                      borderRadius: 12,
-                      fontSize: 18,
+                      padding: "12px 20px",
+                      background: "rgba(255,255,255,0.12)",
+                      border: "1px solid rgba(255,255,255,0.20)",
+                      borderRadius: 999,
+                      fontSize: 20,
                       fontWeight: 600,
-                      color: "#60A5FA",
+                      color: "#FFFFFF",
+                      marginTop: 18,
                     },
                     children: modeLabel,
                   },
@@ -217,8 +233,8 @@ function buildCardJSX(job: JobCardData) {
             style: {
               fontSize: titleSize,
               fontWeight: 700,
-              lineHeight: 1.1,
-              marginBottom: 24,
+              lineHeight: 1.08,
+              marginBottom: 28,
               color: "#FFFFFF",
             },
             children: title,
@@ -231,10 +247,10 @@ function buildCardJSX(job: JobCardData) {
             type: "div",
             props: {
               style: {
-                fontSize: 28,
+                fontSize: 32,
                 fontWeight: 500,
-                color: "rgba(255,255,255,0.85)",
-                marginBottom: 16,
+                color: "rgba(255,255,255,0.92)",
+                marginBottom: 18,
               },
               children: company,
             },
@@ -247,12 +263,9 @@ function buildCardJSX(job: JobCardData) {
             type: "div",
             props: {
               style: {
-                fontSize: 22,
-                color: "rgba(255,255,255,0.65)",
-                marginBottom: 32,
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
+                fontSize: 24,
+                color: "rgba(255,255,255,0.78)",
+                marginBottom: 40,
               },
               children: location,
             },
@@ -260,10 +273,7 @@ function buildCardJSX(job: JobCardData) {
           : null,
 
         // ─── Spacer flex ───
-        {
-          type: "div",
-          props: { style: { flex: 1 } },
-        },
+        { type: "div", props: { style: { flex: 1 } } },
 
         // ─── Salary block ───
         salary
@@ -271,11 +281,11 @@ function buildCardJSX(job: JobCardData) {
             type: "div",
             props: {
               style: {
-                padding: "18px 22px",
-                background: "rgba(0,0,0,0.25)",
-                border: "1px solid rgba(255,255,255,0.10)",
-                borderRadius: 16,
-                marginBottom: 28,
+                padding: "22px 28px",
+                background: "rgba(255,255,255,0.10)",
+                border: "1px solid rgba(255,255,255,0.18)",
+                borderRadius: 18,
+                marginBottom: 32,
                 display: "flex",
                 flexDirection: "column",
                 alignSelf: "flex-start",
@@ -285,9 +295,10 @@ function buildCardJSX(job: JobCardData) {
                   type: "div",
                   props: {
                     style: {
-                      fontSize: 16,
-                      color: "rgba(255,255,255,0.65)",
-                      marginBottom: 6,
+                      fontSize: 17,
+                      color: "rgba(255,255,255,0.75)",
+                      marginBottom: 8,
+                      letterSpacing: 0.5,
                     },
                     children: "Faixa salarial",
                   },
@@ -295,7 +306,7 @@ function buildCardJSX(job: JobCardData) {
                 {
                   type: "div",
                   props: {
-                    style: { fontSize: 32, fontWeight: 700 },
+                    style: { fontSize: 36, fontWeight: 700, color: "#FFFFFF" },
                     children: salary,
                   },
                 },
@@ -312,19 +323,20 @@ function buildCardJSX(job: JobCardData) {
               style: {
                 display: "flex",
                 flexWrap: "wrap",
-                gap: 10,
-                marginBottom: 28,
+                gap: 12,
+                marginBottom: 32,
               },
               children: skills.map((s) => ({
                 type: "div",
                 props: {
                   style: {
-                    padding: "8px 14px",
-                    background: "rgba(255,255,255,0.06)",
-                    border: "1px solid rgba(255,255,255,0.10)",
-                    borderRadius: 10,
-                    fontSize: 18,
+                    padding: "10px 18px",
+                    background: "rgba(255,255,255,0.14)",
+                    border: "1px solid rgba(255,255,255,0.22)",
+                    borderRadius: 12,
+                    fontSize: 20,
                     fontWeight: 500,
+                    color: "#FFFFFF",
                   },
                   children: s,
                 },
@@ -338,12 +350,15 @@ function buildCardJSX(job: JobCardData) {
           type: "div",
           props: {
             style: {
-              fontSize: 16,
-              color: "rgba(255,255,255,0.45)",
-              borderTop: "1px solid rgba(255,255,255,0.08)",
-              paddingTop: 18,
+              fontSize: 18,
+              color: "rgba(255,255,255,0.65)",
+              borderTop: "1px solid rgba(255,255,255,0.18)",
+              paddingTop: 22,
+              letterSpacing: 0.5,
             },
-            children: job.source ? `via ${job.source}` : "sonnarjobs.com.br",
+            children: job.source
+              ? `sonnarjobs.com.br  ·  via ${job.source}`
+              : "sonnarjobs.com.br",
           },
         },
       ].filter(Boolean),
