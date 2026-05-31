@@ -58,8 +58,13 @@ export const OWNER_LID = "120152280592452@lid"
 // Telefones admin (recebem notificacoes de atendimento + podem responder
 // clientes via comando /r). Lista separada por virgula em ADMIN_PHONES.
 // Os numeros devem estar em formato internacional sem +/espacos
-// (ex: "553199838235,5511970891588")
-export const ADMIN_PHONES = (process.env.ADMIN_PHONES || "553199838235,5511970891588")
+// (ex: "553198478235,5511970891588")
+//
+// IMPORTANTE: hoje WhatsApp usa LID (@lid) por privacidade, entao o
+// match por phone aqui so funciona em mensagens MUITO antigas (formato
+// @s.whatsapp.net). O match real eh feito por ADMIN_LIDS — descubra
+// o LID de cada admin com /meulid no bot.
+export const ADMIN_PHONES = (process.env.ADMIN_PHONES || "553198478235,5511970891588")
   .split(",")
   .map((s) => s.trim().replace(/\D/g, ""))
   .filter((s) => s.length >= 10)
