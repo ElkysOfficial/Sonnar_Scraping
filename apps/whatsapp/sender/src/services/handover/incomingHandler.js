@@ -23,10 +23,12 @@ import {
 import {
   forwardClientMessageToAdmins,
   processRatingResponse,
+  recordDirectAdminReply,
   startHumanHandover,
 } from "./humanHandover.js"
 import { lookupContact } from "./lookupContact.js"
 import { routeMessage, getRootMenuText } from "./menuRouter.js"
+import { wasSentByBot, wrapSocketSend } from "./outboundTracker.js"
 
 /**
  * Extrai texto util do webMessage do Baileys.
@@ -65,11 +67,36 @@ export async function handleIncomingMessage({ webMessage, socket }) {
     const jid = webMessage?.key?.remoteJid
     if (!jid) return { handled: false }
 
+    // Garante que socket.sendMessage esta wrappado pra distinguir
+    // mensagens fromMe do bot vs admins humanos. Idempotente.
+    wrapSocketSend(socket)
+
     // Ignora mensagens de grupo (atendimento eh so 1-1)
     if (jid.endsWith("@g.us")) return { handled: false }
 
     const text = extractMessageText(webMessage).trim()
     if (!text) return { handled: false }
+
+    // ── Mensagem fromMe: ou eh o bot enviando (codigo) ou admin
+    //    respondendo DIRETO pelo numero do bot (WhatsApp Web/celular)
+    if (webMessage?.key?.fromMe) {
+      const msgId = webMessage?.key?.id
+      if (wasSentByBot(msgId)) {
+        // Foi o codigo do bot que enviou — pula pra nao duplicar registro
+        return { handled: true }
+      }
+      // Veio do WhatsApp Web/App do mesmo numero (humano respondendo direto)
+      const conv = await getConversation(jid)
+      if (conv?.mode === "human") {
+        await recordDirectAdminReply({
+          targetJid: jid,
+          text,
+          conversation: conv,
+        })
+      }
+      // Em qualquer caso, mensagem fromMe nao gera resposta automatica
+      return { handled: true }
+    }
 
     // 1. Admin? tenta processar como comando
     if (isAdminJid(jid)) {
