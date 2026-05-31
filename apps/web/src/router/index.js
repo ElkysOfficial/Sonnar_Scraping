@@ -12,6 +12,7 @@ const PaymentConfirmingPage = () => import('../pages/PaymentConfirmingPage.vue')
 const DashboardLayout = () => import('../pages/dashboard/DashboardLayout.vue')
 const DashboardJobs = () => import('../pages/dashboard/DashboardJobs.vue')
 const DashboardResume = () => import('../pages/dashboard/DashboardResume.vue')
+const DashboardConsultoria = () => import('../pages/dashboard/DashboardConsultoria.vue')
 const DashboardSettings = () => import('../pages/dashboard/DashboardSettings.vue')
 const AdminLayout = () => import('../pages/AdminLayout.vue')
 const AdminDashboard = () => import('../pages/AdminDashboard.vue')
@@ -70,6 +71,12 @@ const routes = [
         name: 'DashboardResume',
         component: DashboardResume,
         meta: { title: 'Currículo', subtitle: 'Anexe seu CV para personalizar as vagas recebidas.' }
+      },
+      {
+        path: 'consultoria',
+        name: 'DashboardConsultoria',
+        component: DashboardConsultoria,
+        meta: { title: 'Consultoria', subtitle: 'Atendimento individual de LinkedIn e currículo.' }
       },
       {
         path: 'assinatura',
