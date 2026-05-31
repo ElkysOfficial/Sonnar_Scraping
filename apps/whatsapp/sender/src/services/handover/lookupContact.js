@@ -14,6 +14,8 @@ import { getElkysClient } from "./elkysClient.js"
 import { ADMIN_PHONES, ADMIN_LIDS } from "../../config.js"
 import { errorLog } from "../../utils/logger.js"
 
+// getElkysClient eh re-exportado abaixo via resolveTargetJid.
+
 /**
  * Extrai o numero (so digitos) de um JID do WhatsApp.
  * "5511999999999@s.whatsapp.net" -> "5511999999999"
@@ -54,12 +56,80 @@ export function isAdminJid(jid) {
 /**
  * Normaliza um telefone para JID do WhatsApp.
  * Aceita formatos variados. Retorna null se invalido.
+ *
+ * IMPORTANTE: WhatsApp moderno usa @lid pra mensagens diretas. Use
+ * resolveTargetJid (async, busca no banco) quando precisar do JID
+ * REAL de um cliente — phoneToJid eh fallback pra phones brasileiros
+ * conhecidos (admins) que ainda tem registro @s.whatsapp.net.
  */
 export function phoneToJid(phone) {
   const digits = (phone || "").replace(/\D/g, "")
   if (digits.length < 10) return null
   const full = digits.length <= 11 ? `55${digits}` : digits
   return `${full}@s.whatsapp.net`
+}
+
+/**
+ * Resolve o JID REAL de um cliente a partir de um input do admin.
+ *
+ * Comportamentos:
+ *   1. Input ja eh um JID completo (@lid ou @s.whatsapp.net): usa direto.
+ *   2. Input eh so digitos: busca em whatsapp_conversations.jid pra encontrar
+ *      o JID atual do cliente (pode ser LID — qualquer numero alto eh LID).
+ *      Prioriza a conversa MAIS RECENTE.
+ *   3. Nada encontrado: fallback para phoneToJid (@s.whatsapp.net) so se
+ *      tiver entre 10 e 13 digitos (formato phone brasileiro).
+ *
+ * @param {string} input
+ * @returns {Promise<string|null>}
+ */
+export async function resolveTargetJid(input) {
+  const raw = (input || "").trim()
+  if (!raw) return null
+
+  // 1. Ja eh JID completo
+  if (raw.includes("@s.whatsapp.net") || raw.includes("@lid") || raw.includes("@g.us")) {
+    return raw
+  }
+
+  const digits = raw.replace(/\D/g, "")
+  if (!digits) return null
+
+  // 2. Busca conversa real no banco — match pelos digitos como prefixo do JID
+  const supa = getElkysClient()
+  if (supa) {
+    try {
+      // Tenta exato primeiro (jid comeca com esses digitos seguido de @)
+      const { data: exact } = await supa
+        .from("whatsapp_conversations")
+        .select("jid, last_message_at")
+        .ilike("jid", `${digits}@%`)
+        .order("last_message_at", { ascending: false, nullsFirst: false })
+        .limit(1)
+        .maybeSingle()
+      if (exact?.jid) return exact.jid
+
+      // Tenta sufixo (caso o admin tenha digitado so os 11 ultimos digitos)
+      const { data: suffix } = await supa
+        .from("whatsapp_conversations")
+        .select("jid, last_message_at")
+        .ilike("jid", `%${digits}@%`)
+        .order("last_message_at", { ascending: false, nullsFirst: false })
+        .limit(1)
+        .maybeSingle()
+      if (suffix?.jid) return suffix.jid
+    } catch (err) {
+      errorLog(`[resolveTargetJid] busca falhou: ${err.message}`)
+    }
+  }
+
+  // 3. Fallback: phone brasileiro tradicional @s.whatsapp.net
+  if (digits.length >= 10 && digits.length <= 13) {
+    return phoneToJid(digits)
+  }
+
+  // Nada encontrado e nao parece phone valido
+  return null
 }
 
 /**

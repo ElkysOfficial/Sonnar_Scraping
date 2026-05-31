@@ -14,7 +14,7 @@
  */
 import { ADMIN_PHONES, ADMIN_LIDS, NOTIFY_PHONES, NOTIFY_LIDS } from "../../config.js"
 import { errorLog, successLog } from "../../utils/logger.js"
-import { jidToPhone, phoneToJid, isAdminJid as _isAdminJid } from "./lookupContact.js"
+import { jidToPhone, phoneToJid, isAdminJid as _isAdminJid, resolveTargetJid } from "./lookupContact.js"
 import {
   adminReplyToClient,
   closeHumanHandover,
@@ -148,20 +148,27 @@ async function handleReply({ jid, args, authorPhone, socket }) {
     })
     return
   }
-  const targetPhone = args[0].replace(/\D/g, "")
+  const targetInput = args[0]
   const text = args.slice(1).join(" ")
-  const targetJid = phoneToJid(targetPhone)
+  // v3.10.29: usa resolveTargetJid (async, busca no banco) ao inves de
+  // phoneToJid cego. Necessario porque WhatsApp usa @lid e o admin nao
+  // sabe se o cliente esta em @lid ou @s.whatsapp.net.
+  const targetJid = await resolveTargetJid(targetInput)
   if (!targetJid) {
-    await socket.sendMessage(jid, { text: `❌ Número inválido: ${args[0]}` })
+    await socket.sendMessage(jid, {
+      text: `❌ Cliente *${targetInput}* não encontrado.\n\n` +
+        `Verifique se o cliente já mandou alguma mensagem pro bot.`,
+    })
     return
   }
+  const targetPhone = jidToPhone(targetJid)
 
   const conv = await getConversation(targetJid)
   if (!conv || conv.mode !== "human") {
     await socket.sendMessage(jid, {
       text:
-        `⚠️ Cliente +${targetPhone} não está em atendimento humano.\n\n` +
-        `Use \`/iniciar ${targetPhone}\` pra começar um.`,
+        `⚠️ Cliente *${targetInput}* não está em atendimento humano.\n\n` +
+        `Use \`/iniciar ${targetInput}\` pra começar um.`,
     })
     return
   }
@@ -174,7 +181,11 @@ async function handleReply({ jid, args, authorPhone, socket }) {
   })
   if (ok) {
     await socket.sendMessage(jid, {
-      text: `✅ Enviado pra +${targetPhone}`,
+      text: `✅ Enviado pra ${conv.display_name || `+${targetPhone}`}`,
+    })
+  } else {
+    await socket.sendMessage(jid, {
+      text: `❌ Falhou ao enviar pra ${conv.display_name || `+${targetPhone}`}. Veja logs do bot.`,
     })
   }
 }
@@ -186,16 +197,18 @@ async function handleClose({ jid, args, authorPhone, socket }) {
     })
     return
   }
-  const targetPhone = args[0].replace(/\D/g, "")
-  const targetJid = phoneToJid(targetPhone)
+  const targetInput = args[0]
+  const targetJid = await resolveTargetJid(targetInput)
   if (!targetJid) {
-    await socket.sendMessage(jid, { text: `❌ Número inválido: ${args[0]}` })
+    await socket.sendMessage(jid, {
+      text: `❌ Cliente *${targetInput}* não encontrado.`,
+    })
     return
   }
   const conv = await getConversation(targetJid)
   if (!conv || conv.mode !== "human") {
     await socket.sendMessage(jid, {
-      text: `⚠️ Cliente +${targetPhone} não está em atendimento humano.`,
+      text: `⚠️ Cliente *${targetInput}* não está em atendimento humano.`,
     })
     return
   }
@@ -209,12 +222,16 @@ async function handleStart({ jid, args, authorPhone, socket }) {
     })
     return
   }
-  const targetPhone = args[0].replace(/\D/g, "")
-  const targetJid = phoneToJid(targetPhone)
+  const targetInput = args[0]
+  const targetJid = await resolveTargetJid(targetInput)
   if (!targetJid) {
-    await socket.sendMessage(jid, { text: `❌ Número inválido: ${args[0]}` })
+    await socket.sendMessage(jid, {
+      text: `❌ Cliente *${targetInput}* não encontrado.\n\n` +
+        `Cliente precisa ter mandado pelo menos uma mensagem pro bot antes.`,
+    })
     return
   }
+  const targetPhone = jidToPhone(targetJid)
   const contact = await lookupContact(targetJid)
   await startHumanHandover({
     jid: targetJid,
@@ -229,8 +246,24 @@ async function handleStart({ jid, args, authorPhone, socket }) {
     lastMessage: `Atendimento iniciado por +${authorPhone}`,
     socket,
   })
+
+  // v3.10.29: avisa o CLIENTE que um atendente vai responder.
+  // Antes o /iniciar so notificava admins — cliente ficava sem feedback.
+  try {
+    await socket.sendMessage(targetJid, {
+      text:
+        `💬 *Atendimento iniciado*\n\n` +
+        `Um atendente humano vai te responder por aqui em instantes. ` +
+        `Pode mandar suas dúvidas que vamos te ajudar.`,
+    })
+  } catch (err) {
+    errorLog(`[handleStart] aviso ao cliente falhou: ${err.message}`)
+  }
+
   await socket.sendMessage(jid, {
-    text: `✅ Atendimento iniciado pra +${targetPhone}\n\nUse \`/r ${targetPhone} <mensagem>\` pra falar.`,
+    text:
+      `✅ Atendimento iniciado pra ${contact.displayName} (+${targetPhone})\n\n` +
+      `Use \`/r ${targetPhone} <mensagem>\` pra falar.`,
   })
 }
 
@@ -239,12 +272,13 @@ async function handleStatus({ jid, args, socket }) {
     await socket.sendMessage(jid, { text: `⚠️ Uso: \`/status <fone>\`` })
     return
   }
-  const targetPhone = args[0].replace(/\D/g, "")
-  const targetJid = phoneToJid(targetPhone)
+  const targetInput = args[0]
+  const targetJid = await resolveTargetJid(targetInput)
   if (!targetJid) {
-    await socket.sendMessage(jid, { text: `❌ Número inválido: ${args[0]}` })
+    await socket.sendMessage(jid, { text: `❌ Cliente *${targetInput}* não encontrado.` })
     return
   }
+  const targetPhone = jidToPhone(targetJid)
   const conv = await getConversation(targetJid)
   if (!conv) {
     await socket.sendMessage(jid, {
@@ -324,13 +358,17 @@ async function handleNote({ jid, args, authorPhone, socket }) {
     })
     return
   }
-  const targetPhone = args[0].replace(/\D/g, "")
+  const targetInput = args[0]
   const note = args.slice(1).join(" ")
-  const targetJid = phoneToJid(targetPhone)
+  const targetJid = await resolveTargetJid(targetInput)
+  if (!targetJid) {
+    await socket.sendMessage(jid, { text: `❌ Cliente *${targetInput}* não encontrado.` })
+    return
+  }
   const conv = await getConversation(targetJid)
   if (!conv?.active_ticket_id) {
     await socket.sendMessage(jid, {
-      text: `⚠️ Cliente +${targetPhone} não tem ticket aberto.`,
+      text: `⚠️ Cliente *${targetInput}* não tem ticket aberto.`,
     })
     return
   }
