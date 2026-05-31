@@ -48,7 +48,7 @@ const PIX_CNPJ = "64.095.868/0001-03"
 const ROOT_MENU =
   `*Elkys*\n` +
   `Software, automação e produtos digitais.\n\n` +
-  `elkys.com.br\n\n` +
+  `https://elkys.com.br\n\n` +
   `Como podemos te ajudar?\n\n` +
   `*1.* Orçamento\n` +
   `*2.* Agendar reunião\n` +
@@ -128,7 +128,7 @@ const CLOSING_CHECK = (afterTopic = "isso") =>
 const SONNAR_MENU =
   `*Sonnar*\n` +
   `Sua próxima vaga de tecnologia, sem garimpar.\n\n` +
-  `sonnarjobs.com.br\n\n` +
+  `https://sonnarjobs.com.br\n\n` +
   `*Por que usar*\n` +
   `• Vagas que batem com sua stack e senioridade\n` +
   `• Recebe assim que a vaga é publicada\n` +
@@ -145,14 +145,14 @@ const SONNAR_ASSINAR_MENU =
   `*Como você quer receber as vagas?*\n\n` +
   `*1.* Grupo de vagas  — as vagas do dia em um grupo exclusivo\n` +
   `*2.* Vagas personalizadas  — só o que combina com seu perfil, no privado\n\n` +
-  `Mais sobre os planos: sonnarjobs.com.br\n\n` +
+  `Mais sobre os planos: https://sonnarjobs.com.br\n\n` +
   `_Responda com o número • ou *voltar*._`
 
 const SONNAR_ASSINAR_GRUPO =
   `*Grupo de vagas*\n\n` +
   `Pra entrar no grupo exclusivo, escolha um plano (Pro ou Plus) ` +
   `e siga o link de convite enviado após o cadastro.\n\n` +
-  `sonnarjobs.com.br/cadastro\n\n` +
+  `https://sonnarjobs.com.br/cadastro\n\n` +
   `Precisa de ajuda? Responda *atendente*.\n\n` +
   `_Digite *menu* pra voltar._`
 
@@ -160,7 +160,7 @@ const SONNAR_ASSINAR_PRIVADO =
   `*Vagas personalizadas*\n\n` +
   `Plano *Plus* — só o que combina com seu stack, senioridade, ` +
   `modalidade e localização, no seu privado.\n\n` +
-  `sonnarjobs.com.br/cadastro\n\n` +
+  `https://sonnarjobs.com.br/cadastro\n\n` +
   `Precisa de ajuda? Responda *atendente*.\n\n` +
   `_Digite *menu* pra voltar._`
 
@@ -169,12 +169,12 @@ const PLAN_NOT_ELIGIBLE = {
     `O *Guia do Candidato* é exclusivo dos planos *Pro* e *Plus*.\n\n` +
     `Você está no plano *${planLabel || "Comunidade"}* hoje. ` +
     `Faça upgrade que destravamos tudo:\n\n` +
-    `sonnarjobs.com.br/dashboard/configuracoes?tab=assinatura\n\n` +
+    `https://sonnarjobs.com.br/dashboard/configuracoes?tab=assinatura\n\n` +
     `_Digite *menu* pra voltar._`,
   consultoria: (planLabel) =>
     `A *Consultoria de LinkedIn e Currículo* é exclusiva do plano *Plus*.\n\n` +
     `Você está no plano *${planLabel || "Comunidade"}* hoje.\n\n` +
-    `sonnarjobs.com.br/dashboard/configuracoes?tab=assinatura\n\n` +
+    `https://sonnarjobs.com.br/dashboard/configuracoes?tab=assinatura\n\n` +
     `_Digite *menu* pra voltar._`,
 }
 

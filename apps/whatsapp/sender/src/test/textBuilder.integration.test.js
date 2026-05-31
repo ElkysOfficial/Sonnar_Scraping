@@ -60,11 +60,14 @@ test("integration: vaga linkedin completa tem todos os blocos esperados", async 
   assert.match(text, /📍 Sao Paulo - SP/)
   assert.match(text, /💼 Remoto/)
   assert.match(text, /💰 \*R\$ 12\.000 a R\$ 18\.000\*/)
-  assert.match(text, /\*💻 Tecnologias\*/)
-  assert.match(text, /Node\.js.+TypeScript.+AWS.+PostgreSQL.+Docker/)
+  // v3.10.31: bloco "Stack da vaga" categorizado em Backend/Cloud/etc
+  assert.match(text, /\*Stack da vaga\*/)
+  assert.match(text, /Node\.js/)
+  assert.match(text, /AWS/)
   assert.match(text, /\*📋 Responsabilidades\*/)
   assert.match(text, /• Desenvolver e manter APIs em Node\.js/)
-  assert.match(text, /via LinkedIn/)
+  // v3.10.31: rodape "Vaga capturada em [data]" no lugar de "via [fonte]"
+  assert.match(text, /_Vaga capturada em /)
 })
 
 test("integration: gupy sem salario nao tem linha 💰", async () => {
@@ -75,7 +78,8 @@ test("integration: gupy sem salario nao tem linha 💰", async () => {
   const text = formatJobMessage(data, fakeShortUrl(job.job_url))
 
   assert.doesNotMatch(text, /💰/)
-  assert.match(text, /via Gupy/)
+  // v3.10.31: rodape mudou
+  assert.match(text, /_Vaga capturada em /)
   // Paragrafo unico de responsibilities (sem `;`) — sem bullets
   const respSection = text.split("*📋 Responsabilidades*")[1]
   assert.ok(respSection && !respSection.includes("• "), "paragrafo unico nao deve virar bullets")
@@ -90,7 +94,7 @@ test("integration: bne com location 'Nao informado' omite linha 📍", async () 
 
   assert.doesNotMatch(text, /📍 Nao informado/)
   assert.doesNotMatch(text, /💼 Nao informado/)
-  assert.doesNotMatch(text, /💻 Tecnologias/)
+  assert.doesNotMatch(text, /Stack da vaga/)
   assert.doesNotMatch(text, /📋 Responsabilidades/)
   assert.match(text, /💰 \*R\$ 5\.000\*/)
 })
@@ -103,7 +107,8 @@ test("integration: indeed com glassdoor separa salaryNote", async () => {
   const text = formatJobMessage(data, fakeShortUrl(job.job_url))
 
   assert.match(text, /💰 \*R\$ 8\.000\* _\(com base no Glassdoor\)_/)
-  assert.match(text, /via Indeed/)
+  // v3.10.31: "via [source]" removido — agora "Vaga capturada em"
+  assert.match(text, /_Vaga capturada em /)
 })
 
 test("integration: remoteok com bullets - quebra em linhas vira • limpo", async () => {
@@ -133,8 +138,8 @@ test("integration: vaga minima (so titulo) ainda produz mensagem valida", async 
   // Resto dos blocos opcionais nao deve aparecer
   assert.doesNotMatch(text, /💰|📍|💼|🧩|📋/)
   assert.match(text, /🔗 \*Ver a vaga:\*/)
-  // Source vira "via Sonar" quando URL vazia
-  assert.match(text, /_via Sonar · /)
+  // v3.10.31: rodape com data de captura
+  assert.match(text, /_Vaga capturada em /)
 })
 
 test("integration: titulo muito longo nao corrompe a saida", async () => {
@@ -162,13 +167,13 @@ test("integration: caracteres especiais em company nao quebram markdown", async 
   assert.match(text, /🏢 _Empresa S\/A — Filial Brasil \(LTDA\.\)_/)
 })
 
-test("integration: url desconhecida cai em 'via Sonar'", async () => {
+test("integration: rodape mostra data de captura (v3.10.31)", async () => {
   const jobs = await loadFixtures()
   const job = jobs.find((j) => j.id === "unknown-source")
   const embed = resolveEmbedPayload(job)
   const data = extractJobDataFromEmbed(embed)
   const text = formatJobMessage(data, fakeShortUrl(job.job_url))
 
-  // Hostname desconhecido vira "via Siteinexistente" (capitalized do primeiro segmento)
-  assert.match(text, /_via Siteinexistente · /)
+  // v3.10.31: "via [source]" foi substituido por "Vaga capturada em [data]"
+  assert.match(text, /_Vaga capturada em /)
 })

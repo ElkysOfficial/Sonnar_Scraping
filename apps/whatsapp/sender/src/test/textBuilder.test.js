@@ -131,9 +131,10 @@ test("formatJobMessage: contem todos os blocos esperados (vaga completa)", () =>
   assert.match(out, /💼 Remoto/)
   // Salario destacado
   assert.match(out, /💰 \*R\$ 15\.000\*/)
-  // Bloco Tecnologias
-  assert.match(out, /\*💻 Tecnologias\*/)
-  assert.match(out, /Node\.js {2}• {2}AWS {2}• {2}TypeScript/)
+  // Bloco Stack (v3.10.31: categorizada)
+  assert.match(out, /\*Stack da vaga\*/)
+  assert.match(out, /Backend.*Node\.js/)
+  assert.match(out, /Cloud.*AWS/)
   // Bloco Responsabilidades com bullets
   assert.match(out, /\*📋 Responsabilidades\*/)
   assert.match(out, /• Desenvolver APIs/)
@@ -141,8 +142,8 @@ test("formatJobMessage: contem todos os blocos esperados (vaga completa)", () =>
   assert.match(out, /• Mentoria/)
   // Link encurtado
   assert.match(out, /🔗 \*Ver a vaga:\* https:\/\/son\.sh\/v\/abc/)
-  // Rodape com fonte + data
-  assert.match(out, /_via LinkedIn · 28\/05\/2026 14:30_/)
+  // Rodape v3.10.31: "Vaga capturada em [data]"
+  assert.match(out, /_Vaga capturada em 28\/05\/2026_/)
 })
 
 test("formatJobMessage: omite linha 💰 quando salario vazio", () => {
@@ -163,10 +164,10 @@ test("formatJobMessage: omite bloco Responsabilidades quando vazio", () => {
   assert.doesNotMatch(out, /📋 Responsabilidades/)
 })
 
-test("formatJobMessage: omite Tecnologias quando skills vazias", () => {
+test("formatJobMessage: omite Stack quando skills vazias", () => {
   const job = { ...FIXED_JOB, skills: [] }
   const out = formatJobMessage(job, "x")
-  assert.doesNotMatch(out, /💻 Tecnologias/)
+  assert.doesNotMatch(out, /Stack da vaga/)
 })
 
 test("formatJobMessage: omite 📍 quando location e 'Nao informado'", () => {
@@ -212,16 +213,15 @@ test("formatJobMessage: bloco Responsabilidades com bullets de quebra de linha",
 // Plus #1 (v3.7.0): subscriberStack -> ✓/❌ por skill + match %
 // =====================================================
 
-test("Plus #1: subscriberStack marca skill compativel com ✅ e incompativel com ✗", () => {
+test("Plus #1: subscriberStack marca skill compativel com ✅ e incompativel com ❌", () => {
   const job = { ...FIXED_JOB, skills: ["Node.js", "AWS", "TypeScript"] }
   const out = formatJobMessage(job, "https://son.sh/v/x", {
     subscriberStack: ["node.js", "aws"]
   })
+  // v3.10.31: skills agora agrupadas por categoria (Backend, Cloud, Frontend, ...)
   assert.match(out, /✅ Node\.js/)
   assert.match(out, /✅ AWS/)
   assert.match(out, /❌ TypeScript/)
-  // v3.9.0: skills agora aparecem em 2 colunas (3 espacos entre + \n entre linhas).
-  assert.match(out, /✅ Node\.js {2,5}✅ AWS\n❌ TypeScript/)
 })
 
 test("Plus #1: linha de sumario *Match: X de Y skills* NAO aparece (removida na v3.9.0)", () => {
@@ -257,12 +257,12 @@ test("Plus #1: comparacao case-insensitive (TypeScript vs typescript)", () => {
   assert.match(out, /✅ JavaScript/)
 })
 
-test("Plus #1: sem subscriberStack -> bloco legado (sem ✓/❌ nem 📊)", () => {
+test("Plus #1: sem subscriberStack -> bloco categorizado sem ✅/❌", () => {
   const job = { ...FIXED_JOB, skills: ["A", "B"] }
   const out = formatJobMessage(job, "x")
-  assert.doesNotMatch(out, /✓|✗/)
-  assert.doesNotMatch(out, /📊/)
-  assert.match(out, /A {2}• {2}B/)
+  assert.doesNotMatch(out, /✓|✗|📊/)
+  // v3.10.31: skills sem categoria conhecida caem em "Outras"
+  assert.match(out, /A · B|Outras.+A.+B/)
 })
 
 test("Plus #1: subscriberStack vazio -> fluxo legado", () => {
@@ -271,10 +271,10 @@ test("Plus #1: subscriberStack vazio -> fluxo legado", () => {
   assert.doesNotMatch(out, /✓|✗|📊/)
 })
 
-test("Plus #1: skills vazio + subscriberStack -> omite bloco Tecnologias", () => {
+test("Plus #1: skills vazio + subscriberStack -> omite bloco Stack", () => {
   const job = { ...FIXED_JOB, skills: [] }
   const out = formatJobMessage(job, "x", { subscriberStack: ["react"] })
-  assert.doesNotMatch(out, /💻 Tecnologias/)
+  assert.doesNotMatch(out, /Stack da vaga/)
   assert.doesNotMatch(out, /📊/)
 })
 
@@ -282,7 +282,7 @@ test("Plus #1: skills vazio + subscriberStack -> omite bloco Tecnologias", () =>
 // Plus #5 (v3.8.x): subscriberResume -> bloco "🎯 Comparado com seu curriculo"
 // =====================================================
 
-test("Plus #5: bloco aparece quando subscriberResume e passado", () => {
+test("Plus #5 (v3.10.31): bloco Match aparece quando subscriberResume e passado", () => {
   const job = {
     ...FIXED_JOB,
     title: "Senior Backend Developer",
@@ -296,10 +296,11 @@ test("Plus #5: bloco aparece quando subscriberResume e passado", () => {
       seniority: "senior",
     },
   })
-  assert.match(out, /\*🎯 Comparado com seu curriculo\*/)
+  assert.match(out, /\*🎯 Match com seu perfil\*/)
+  assert.match(out, /🟢 \*Pontos fortes\*/)
 })
 
-test("Plus #5: skills do curriculo batem -> linha ✅ N de M", () => {
+test("Plus #5: skills do curriculo batem -> aparece em Pontos fortes", () => {
   const job = {
     ...FIXED_JOB,
     skills: ["Node.js", "Go", "AWS"],
@@ -311,10 +312,10 @@ test("Plus #5: skills do curriculo batem -> linha ✅ N de M", () => {
       seniority: null,
     },
   })
-  assert.match(out, /✅ Curriculo bate em \*2 de 3\* skills/)
+  assert.match(out, /✅ 2 de 3 skills batem/)
 })
 
-test("Plus #5: nenhuma skill bate -> linha ✗", () => {
+test("Plus #5: skills faltantes aparecem em Para destacar", () => {
   const job = { ...FIXED_JOB, skills: ["Go", "Rust"] }
   const out = formatJobMessage(job, "x", {
     subscriberResume: {
@@ -323,10 +324,11 @@ test("Plus #5: nenhuma skill bate -> linha ✗", () => {
       seniority: null,
     },
   })
-  assert.match(out, /❌ Nenhuma skill da vaga aparece explicitamente no curriculo/)
+  assert.match(out, /🟡 \*Para destacar\*/)
+  assert.match(out, /⚠️ Faltam: Go, Rust/)
 })
 
-test("Plus #5: anos do curriculo >= exigido -> linha ✅ de anos", () => {
+test("Plus #5: anos do curriculo >= exigido -> entra em Pontos fortes", () => {
   const job = {
     ...FIXED_JOB,
     description: "Buscamos pessoa com 3+ anos de experiencia em backend",
@@ -334,10 +336,10 @@ test("Plus #5: anos do curriculo >= exigido -> linha ✅ de anos", () => {
   const out = formatJobMessage(job, "x", {
     subscriberResume: { skills: [], yearsTotal: 5, seniority: null },
   })
-  assert.match(out, /✅ Vaga pede \*3\+ anos\* — seu curriculo indica \*~5 anos\*/)
+  assert.match(out, /✅ 5 anos de experiência \(vaga pede 3\+\)/)
 })
 
-test("Plus #5: anos do curriculo < exigido -> linha ⚠️ com gap", () => {
+test("Plus #5: anos do curriculo < exigido -> gap em Para destacar", () => {
   const job = {
     ...FIXED_JOB,
     description: "Necessario minimo 5 anos de experiencia",
@@ -345,45 +347,70 @@ test("Plus #5: anos do curriculo < exigido -> linha ⚠️ com gap", () => {
   const out = formatJobMessage(job, "x", {
     subscriberResume: { skills: [], yearsTotal: 2, seniority: null },
   })
-  assert.match(out, /⚠️ Vaga pede \*5\+ anos\* — voce tem \*~2 anos\* \(gap de 3\)/)
+  assert.match(out, /⚠️ Vaga pede 5\+ anos — você tem ~2 \(gap de 3\)/)
 })
 
-test("Plus #5: senioridade bate -> linha ✓", () => {
+test("Plus #5: senioridade bate -> Pontos fortes", () => {
   const job = { ...FIXED_JOB, title: "Senior Backend Engineer", description: "" }
   const out = formatJobMessage(job, "x", {
     subscriberResume: { skills: [], yearsTotal: null, seniority: "senior" },
   })
-  assert.match(out, /✅ Seu nivel \(\*senior\*\) bate com a vaga/)
+  assert.match(out, /✅ Senioridade senior bate com a vaga/)
 })
 
-test("Plus #5: candidato pleno em vaga senior -> ⚠", () => {
+test("Plus #5: candidato pleno em vaga senior -> gap", () => {
   const job = { ...FIXED_JOB, title: "Senior Developer", description: "" }
   const out = formatJobMessage(job, "x", {
     subscriberResume: { skills: [], yearsTotal: null, seniority: "pleno" },
   })
-  assert.match(out, /⚠️ Vaga e \*senior\* — seu curriculo indica \*pleno\*/)
+  assert.match(out, /⚠️ Vaga é senior — seu nível indica pleno/)
 })
 
-test("Plus #5: candidato senior em vaga pleno -> ✅ overqualified", () => {
+test("Plus #5: candidato senior em vaga pleno -> overqualified", () => {
   const job = { ...FIXED_JOB, title: "Desenvolvedor Pleno", description: "" }
   const out = formatJobMessage(job, "x", {
     subscriberResume: { skills: [], yearsTotal: null, seniority: "senior" },
   })
-  assert.match(out, /✅ Vaga e \*pleno\* — voce ja esta \*senior\*/)
+  assert.match(out, /✅ Você é senior — vaga pede pleno/)
+})
+
+test("Plus #5: score numerico NUNCA aparece no texto WhatsApp", () => {
+  const job = {
+    ...FIXED_JOB,
+    title: "Senior Backend Developer",
+    description: "5+ anos Node.js",
+    skills: ["Node.js"],
+  }
+  const out = formatJobMessage(job, "x", {
+    subscriberResume: {
+      skills: ["Node.js"],
+      yearsTotal: 6,
+      seniority: "senior",
+    },
+  })
+  // v3.10.31: score 0-100 fica apenas no dashboard. WhatsApp nunca exibe.
+  assert.doesNotMatch(out, /\b\d{1,3}\/100\b/)
+  assert.doesNotMatch(out, /Score:/i)
 })
 
 test("Plus #5: sem subscriberResume -> bloco nao aparece", () => {
   const job = { ...FIXED_JOB, title: "Senior Dev", description: "5+ anos" }
   const out = formatJobMessage(job, "x")
-  assert.doesNotMatch(out, /🎯 Comparado com seu curriculo/)
+  assert.doesNotMatch(out, /🎯 Match com seu perfil/)
 })
 
-test("Plus #5: resume sem dados relevantes -> bloco nao aparece (lines vazias)", () => {
-  const job = { ...FIXED_JOB, title: "Dev Junior", description: "Vaga aberta", skills: [] }
+test("Plus #5: resume sem dados relevantes -> bloco nao aparece", () => {
+  const job = {
+    ...FIXED_JOB,
+    title: "Dev Junior",
+    description: "Vaga aberta",
+    skills: [],
+    responsibilities: "",
+  }
   const out = formatJobMessage(job, "x", {
     subscriberResume: { skills: [], yearsTotal: null, seniority: null },
   })
-  assert.doesNotMatch(out, /🎯 Comparado com seu curriculo/)
+  assert.doesNotMatch(out, /🎯 Match com seu perfil/)
 })
 
 // =====================================================
@@ -410,10 +437,42 @@ test("end-to-end: job do core vira mensagem completa", () => {
   assert.match(out, /\*Full Stack Engineer\*/)
   assert.match(out, /🏢 _TechCo_/)
   assert.match(out, /💰 \*R\$ 10\.000 - R\$ 14\.000\*/)
-  assert.match(out, /via Gupy/)
+  // v3.10.31: "via Gupy" foi substituido por "Vaga capturada em [data]"
+  assert.match(out, /_Vaga capturada em/)
   assert.match(out, /• Desenvolver features novas/)
   assert.match(out, /• Manter codigo legado/)
   assert.match(out, /• Code reviews/)
+})
+
+// =====================================================
+// v3.10.31: modo compact (caption de imagem) + stack categorizada
+// =====================================================
+
+test("v3.10.31: modo compact omite titulo, empresa, salario e stack (vai na imagem)", () => {
+  const out = formatJobMessage(FIXED_JOB, "https://son.sh/v/abc", { compact: true })
+  // Header completo NAO aparece (esta na imagem)
+  assert.doesNotMatch(out, /\*Desenvolvedor Pleno\*/)
+  assert.doesNotMatch(out, /🏢 _Acme Corp_/)
+  assert.doesNotMatch(out, /💰/)
+  assert.doesNotMatch(out, /Stack da vaga/)
+  // Responsabilidades + link continuam (info que NAO cabe na imagem)
+  assert.match(out, /\*📋 Responsabilidades\*/)
+  assert.match(out, /🔗 \*Ver a vaga:\* https:\/\/son\.sh\/v\/abc/)
+  assert.match(out, /_Vaga capturada em 28\/05\/2026_/)
+})
+
+test("v3.10.31: stack categorizada agrupa por Backend/Frontend/Cloud", () => {
+  const job = { ...FIXED_JOB, skills: ["Node.js", "Django", "React", "Vue", "AWS", "Docker"] }
+  const out = formatJobMessage(job, "x")
+  assert.match(out, /⚙️ \*Backend\*.*Node\.js.*Django/)
+  assert.match(out, /🖥️ \*Frontend\*.*React.*Vue/)
+  assert.match(out, /☁️ \*Cloud & DevOps\*.*AWS.*Docker/)
+})
+
+test("v3.10.31: skills sem categoria conhecida vao em 'Outras'", () => {
+  const job = { ...FIXED_JOB, skills: ["XPTO", "FooBar"] }
+  const out = formatJobMessage(job, "x")
+  assert.match(out, /🔧 \*Outras\*.*XPTO.*FooBar/)
 })
 
 test("formatJobMessage: 1 separador ';' nao quebra em bullets (paragrafo unico)", () => {

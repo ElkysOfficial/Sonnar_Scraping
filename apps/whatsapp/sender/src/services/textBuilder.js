@@ -175,62 +175,63 @@ function extractJobDataFromEmbed(embed) {
 import {
   extractJobRequirements,
   compareSeniority,
+  categorizeSkills,
 } from "./jobRequirementsParser.js"
+import { calculateMatch } from "./matchCalculator.js"
 
 function appendResumeBreakdown(out, jobData, resume) {
   if (!resume) return
 
-  const lines = []
-  const norm = (s) => String(s || "").toLowerCase().trim()
-  const resumeSkillsSet = new Set(
-    (Array.isArray(resume.skills) ? resume.skills : []).map(norm).filter(Boolean)
-  )
+  const match = calculateMatch(jobData, resume)
+  const { strong, gaps } = match
 
-  // Skills da vaga vs curriculo
-  const jobSkills = Array.isArray(jobData.skills) ? jobData.skills : []
-  if (jobSkills.length && resumeSkillsSet.size) {
-    const inResume = jobSkills.filter((s) => resumeSkillsSet.has(norm(s))).length
-    if (inResume > 0) {
-      lines.push(`✅ Curriculo bate em *${inResume} de ${jobSkills.length}* skills da vaga`)
-    } else {
-      lines.push(`❌ Nenhuma skill da vaga aparece explicitamente no curriculo`)
-    }
-  }
-
-  // Anos exigidos vs anos do curriculo
-  const reqs = extractJobRequirements(jobData)
-  if (reqs.yearsRequired != null) {
-    const has = resume.yearsTotal
-    if (has != null) {
-      if (has >= reqs.yearsRequired) {
-        lines.push(`✅ Vaga pede *${reqs.yearsRequired}+ anos* — seu curriculo indica *~${has} anos*`)
-      } else {
-        const gap = reqs.yearsRequired - has
-        lines.push(`⚠️ Vaga pede *${reqs.yearsRequired}+ anos* — voce tem *~${has} anos* (gap de ${gap})`)
-      }
-    }
-  }
-
-  // Senioridade
-  if (reqs.seniorityRequired && resume.seniority) {
-    const cmp = compareSeniority(resume.seniority, reqs.seniorityRequired)
-    if (cmp === "match") {
-      lines.push(`✅ Seu nivel (*${resume.seniority}*) bate com a vaga`)
-    } else if (cmp === "under") {
-      lines.push(`⚠️ Vaga e *${reqs.seniorityRequired}* — seu curriculo indica *${resume.seniority}*`)
-    } else if (cmp === "over") {
-      lines.push(`✅ Vaga e *${reqs.seniorityRequired}* — voce ja esta *${resume.seniority}*`)
-    }
-  }
-
-  if (lines.length === 0) return
+  if (strong.length === 0 && gaps.length === 0) return
 
   const SEP = "━━━━━━━━━━━━━━━━━━━━"
   out.push("")
   out.push(SEP)
-  out.push("*🎯 Comparado com seu curriculo*")
+  out.push("*🎯 Match com seu perfil*")
+
+  if (strong.length > 0) {
+    out.push("")
+    out.push("🟢 *Pontos fortes*")
+    for (const s of strong) out.push(`✅ ${s}`)
+  }
+
+  if (gaps.length > 0) {
+    out.push("")
+    out.push("🟡 *Para destacar*")
+    for (const g of gaps) out.push(`⚠️ ${g}`)
+  }
+}
+
+/**
+ * Bloco de stack categorizada (Backend / Frontend / Cloud / etc).
+ * Quando subscriberStack e passado, anota ✅/❌ em cada skill.
+ */
+function appendCategorizedStack(out, skills, subscriberStack) {
+  if (!Array.isArray(skills) || skills.length === 0) return
+  const SEP = "━━━━━━━━━━━━━━━━━━━━"
+  const categories = categorizeSkills(skills)
+  if (categories.length === 0) return
+
   out.push("")
-  for (const l of lines) out.push(l)
+  out.push(SEP)
+  out.push("*Stack da vaga*")
+  out.push("")
+
+  const stackSet = Array.isArray(subscriberStack) && subscriberStack.length > 0
+    ? new Set(subscriberStack.map((s) => String(s).toLowerCase().trim()).filter(Boolean))
+    : null
+
+  const norm = (s) => String(s).toLowerCase().trim()
+
+  for (const cat of categories) {
+    const items = stackSet
+      ? cat.items.map((s) => `${stackSet.has(norm(s)) ? "✅" : "❌"} ${s}`)
+      : cat.items
+    out.push(`${cat.emoji} *${cat.label}*  ${items.join(" · ")}`)
+  }
 }
 
 // =====================================================
@@ -299,79 +300,59 @@ function appendResponsibilitiesBlock(out, text) {
 function formatJobMessage(jobData, shortUrl, options = {}) {
   const out = []
   const SEP = "━━━━━━━━━━━━━━━━━━━━"
+  const compact = options.compact === true
 
-  // ─── CABECALHO: titulo + metadados essenciais ───
-  out.push(`*${jobData.title}*`)
-  if (jobData.company) out.push(`🏢 _${jobData.company}_`)
-  if (jobData.location && jobData.location !== "Nao informado") {
-    out.push(`📍 ${jobData.location}`)
-  }
-  if (jobData.workType && jobData.workType !== "Nao informado") {
-    out.push(`💼 ${jobData.workType}`)
-  }
-  if (jobData.salary) {
-    const salaryLine = jobData.salaryNote
-      ? `💰 *${jobData.salary}* _(${jobData.salaryNote})_`
-      : `💰 *${jobData.salary}*`
-    out.push(salaryLine)
-  }
-
-  // ─── BLOCO: TECNOLOGIAS ───
-  const skills = Array.isArray(jobData.skills) ? jobData.skills : []
-  const subscriberStack = Array.isArray(options.subscriberStack) ? options.subscriberStack : []
-  if (skills.length) {
-    out.push("")
-    out.push(SEP)
-    out.push("*💻 Tecnologias*")
-    out.push("")
-    if (subscriberStack.length) {
-      // ✅ no stack do assinante, ❌ nao esta. Match case-insensitive.
-      const stackSet = new Set(
-        subscriberStack.map((s) => String(s).toLowerCase().trim()).filter(Boolean)
-      )
-      const normalize = (s) => String(s).toLowerCase().trim()
-      const marked = skills.map((skill) => {
-        const has = stackSet.has(normalize(skill))
-        return `${has ? "✅" : "❌"} ${skill}`
-      })
-      // 2 colunas visuais por linha — fica mais limpo no chat
-      for (let i = 0; i < marked.length; i += 2) {
-        out.push(marked.slice(i, i + 2).join("   "))
-      }
-    } else {
-      out.push(skills.join("  •  "))
+  // ─── CABECALHO (omitido em compact — vai na imagem) ───
+  if (!compact) {
+    out.push(`*${jobData.title}*`)
+    if (jobData.company) out.push(`🏢 _${jobData.company}_`)
+    if (jobData.location && jobData.location !== "Nao informado") {
+      out.push(`📍 ${jobData.location}`)
+    }
+    if (jobData.workType && jobData.workType !== "Nao informado") {
+      out.push(`💼 ${jobData.workType}`)
+    }
+    if (jobData.salary) {
+      const salaryLine = jobData.salaryNote
+        ? `💰 *${jobData.salary}* _(${jobData.salaryNote})_`
+        : `💰 *${jobData.salary}*`
+      out.push(salaryLine)
     }
   }
 
-  // ─── BLOCO: RESPONSABILIDADES ───
-  // v3.9.0: agora aparece consistentemente porque o fix do jobApiToDbShape
-  // em database.js parou de descartar `responsibilities` no caminho core
-  // -> sender.
+  // ─── BLOCO: STACK CATEGORIZADA (omitido em compact — vai na imagem) ───
+  const skills = Array.isArray(jobData.skills) ? jobData.skills : []
+  if (!compact && skills.length) {
+    appendCategorizedStack(out, skills, options.subscriberStack)
+  }
+
+  // ─── BLOCO: RESPONSABILIDADES (SEMPRE — info nao cabe na imagem) ───
   const preExtracted = (jobData.responsibilities || "").toString().trim()
   if (preExtracted) {
-    out.push("")
-    out.push(SEP)
-    out.push("*📋 Responsabilidades*")
+    if (compact) {
+      out.push("*📋 Responsabilidades*")
+    } else {
+      out.push("")
+      out.push(SEP)
+      out.push("*📋 Responsabilidades*")
+    }
     out.push("")
     appendResponsibilitiesBlock(out, preExtracted)
   }
 
-  // ─── BLOCO: COMPARACAO COM CURRICULO (Plus #5) ───
+  // ─── BLOCO: COMPARACAO COM CURRICULO (apenas privado/Plus) ───
   if (options.subscriberResume) {
     appendResumeBreakdown(out, jobData, options.subscriberResume)
   }
 
-  // ─── RODAPE: link + fonte ───
+  // ─── RODAPE: link + data de captura ───
   out.push("")
   out.push(SEP)
   out.push("")
   out.push(`🔗 *Ver a vaga:* ${shortUrl}`)
 
-  const dateTime = jobData.date && jobData.time
-    ? `${jobData.date} ${jobData.time}`
-    : jobData.date || jobData.time || ""
-  if (jobData.source || dateTime) {
-    out.push(`_${[jobData.source, dateTime].filter(Boolean).join(" · ")}_`)
+  if (jobData.date) {
+    out.push(`_Vaga capturada em ${jobData.date}_`)
   }
 
   return out.join("\n")
