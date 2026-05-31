@@ -1,5 +1,5 @@
 /**
- * menuRouter — fluxos conversacionais Elkys + Sonnar (v3.10.30)
+ * menuRouter - fluxos conversacionais Elkys + Sonnar (v3.10.30)
  *
  * Padrao "Apple": textos limpos, hierarquia clara, sem decoracao emoji
  * excessiva. Numeracao no menu mas reconhece texto livre via
@@ -42,7 +42,7 @@ import {
 const PIX_CNPJ = "64.095.868/0001-03"
 
 // ──────────────────────────────────────────────────────────────────────
-// Textos (padrao Apple — limpos, organizados, sem excesso)
+// Textos (padrao Apple - limpos, organizados, sem excesso)
 // ──────────────────────────────────────────────────────────────────────
 
 const ROOT_MENU =
@@ -54,7 +54,7 @@ const ROOT_MENU =
   `*2.* Agendar reunião\n` +
   `*3.* Boleto ou Pix\n` +
   `*4.* Seja parceiro\n` +
-  `*5.* Sonnar — Vagas de tecnologia\n` +
+  `*5.* Sonnar - Vagas de tecnologia\n` +
   `*6.* Falar com atendente\n\n` +
   `_Responda com o número da opção._`
 
@@ -133,7 +133,7 @@ const SONNAR_MENU =
   `• Vagas que batem com sua stack e senioridade\n` +
   `• Recebe assim que a vaga é publicada\n` +
   `• Filtro por área, modalidade e localização\n` +
-  `• Tudo no WhatsApp — sem app, sem login\n\n` +
+  `• Tudo no WhatsApp - sem app, sem login\n\n` +
   `O que você quer fazer?\n\n` +
   `*1.* Assinar\n` +
   `*2.* Guia do candidato  _(Pro e Plus)_\n` +
@@ -143,8 +143,8 @@ const SONNAR_MENU =
 
 const SONNAR_ASSINAR_MENU =
   `*Como você quer receber as vagas?*\n\n` +
-  `*1.* Grupo de vagas  — as vagas do dia em um grupo exclusivo\n` +
-  `*2.* Vagas personalizadas  — só o que combina com seu perfil, no privado\n\n` +
+  `*1.* Grupo de vagas  - as vagas do dia em um grupo exclusivo\n` +
+  `*2.* Vagas personalizadas  - só o que combina com seu perfil, no privado\n\n` +
   `Mais sobre os planos: https://sonnarjobs.com.br\n\n` +
   `_Responda com o número • ou *voltar*._`
 
@@ -158,7 +158,7 @@ const SONNAR_ASSINAR_GRUPO =
 
 const SONNAR_ASSINAR_PRIVADO =
   `*Vagas personalizadas*\n\n` +
-  `Plano *Plus* — só o que combina com seu stack, senioridade, ` +
+  `Plano *Plus* - só o que combina com seu stack, senioridade, ` +
   `modalidade e localização, no seu privado.\n\n` +
   `https://sonnarjobs.com.br/cadastro\n\n` +
   `Precisa de ajuda? Responda *atendente*.\n\n` +
@@ -284,7 +284,7 @@ function handleRoot(text, contact) {
     case "voltar":
       return { reply: ROOT_MENU, nextMenu: "root" }
     default:
-      // Sem intent reconhecido — mostra orientacao
+      // Sem intent reconhecido - mostra orientacao
       return { reply: NOT_UNDERSTOOD, nextMenu: "root" }
   }
 }
@@ -303,7 +303,7 @@ function handleMenuPagamento(text) {
     }
   }
   if (choice === "boleto") {
-    // Boleto entra DIRETO em modo humano — admin envia manualmente.
+    // Boleto entra DIRETO em modo humano - admin envia manualmente.
     return {
       reply: PAGAMENTO_BOLETO,
       nextMenu: "human",
@@ -311,7 +311,7 @@ function handleMenuPagamento(text) {
         category: "financeiro",
         priority: "alta",
         subject: "Solicitação de boleto (WhatsApp)",
-        notify: "📄 *Boleto solicitado*  — cliente aguardando envio por email + WhatsApp",
+        notify: "📄 *Boleto solicitado*  - cliente aguardando envio por email + WhatsApp",
         keepClosingMessage: true,
       }),
       collectedMessage: "Cliente solicitou BOLETO via WhatsApp. Enviar boleto por email e por aqui.",
@@ -339,7 +339,7 @@ function handlePagamentoPixWait(text) {
       category: "financeiro",
       priority: "alta",
       subject: "Confirmação de Pix (WhatsApp)",
-      notify: "💸 *Pix realizado*  — cliente confirmou pagamento, validar e enviar NF",
+      notify: "💸 *Pix realizado*  - cliente confirmou pagamento, validar e enviar NF",
       keepClosingMessage: true,
     }),
     collectedMessage: text,
@@ -365,7 +365,7 @@ function handleColeta(text, topic) {
     return { reply: ROOT_MENU, nextMenu: "root" }
   }
   if (collected.length < 5) {
-    // Muito curto — pede pra elaborar
+    // Muito curto - pede pra elaborar
     return {
       reply:
         `Pode dar mais detalhes? Quanto mais informação, mais rápido o atendimento.\n\n` +
@@ -379,7 +379,7 @@ function handleColeta(text, topic) {
     reply: CLOSING_CHECK(topic),
     nextMenu: "closing_check",
     collectedMessage: collected,
-    // contextPatch propagado pelo incomingHandler — guarda quem disparou
+    // contextPatch propagado pelo incomingHandler - guarda quem disparou
     contextPatch: {
       coleta_topic: topic,
       coleta_message: collected,
@@ -428,7 +428,7 @@ function handleClosingCheck(text, context) {
     }
   }
 
-  // Cliente digitou outra coisa — repete a pergunta
+  // Cliente digitou outra coisa - repete a pergunta
   return {
     reply:
       `Como prefere seguir?\n\n` +

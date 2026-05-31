@@ -47,14 +47,25 @@ test("calculateMatch: senioridade overqualified vira ponto forte", () => {
   const job = { ...baseJob, title: "Desenvolvedor Pleno", description: "" }
   const resume = { skills: [], yearsTotal: null, seniority: "senior" }
   const r = calculateMatch(job, resume)
-  assert.ok(r.strong.some((s) => /Você é senior/.test(s)))
+  assert.ok(r.strong.some((s) => /Voce e senior/.test(s)))
 })
 
 test("calculateMatch: skill faltante entra em gaps", () => {
   const job = { ...baseJob, skills: ["Node.js", "Kubernetes", "Terraform"] }
   const resume = { skills: ["Node.js"] }
   const r = calculateMatch(job, resume)
-  assert.ok(r.gaps.some((g) => g.includes("Kubernetes")))
+  assert.ok(r.gaps.some((g) => /Estude|Vale estudar/.test(g) && g.includes("Kubernetes")))
+})
+
+test("calculateMatch: muitas skills faltantes -> NAO mostra contagem desmotivadora", () => {
+  const job = { ...baseJob, skills: ["Python", "A", "B", "C", "D", "E", "F", "G", "H", "I", "J"] }
+  // Resume tem 1 skill da vaga (Python) e nada das outras 10 -> missing.length = 10
+  const resume = { skills: ["Python"] }
+  const r = calculateMatch(job, resume)
+  // v3.10.35: NAO deve dizer "Faltam 10 skills" (desmotivador)
+  assert.ok(!r.gaps.some((g) => /Faltam \d+ skills/.test(g)))
+  // Deve sugerir estudo das 3 primeiras
+  assert.ok(r.gaps.some((g) => /Vale estudar/.test(g)))
 })
 
 test("calculateMatch: idioma exigido sem match -> gap", () => {

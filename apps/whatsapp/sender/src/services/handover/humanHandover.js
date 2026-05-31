@@ -1,5 +1,5 @@
 /**
- * humanHandover — orquestrador do atendimento humano.
+ * humanHandover - orquestrador do atendimento humano.
  *
  * Responsabilidades:
  *   1. Quando cliente solicita atendimento (menu transition='human'):
@@ -16,7 +16,7 @@
  *
  *   3. Quando cliente manda mensagem durante atendimento:
  *      - Encaminha pra TODOS os admins com formato:
- *        💬 +5511XXX — texto
+ *        💬 +5511XXX - texto
  *      - NÃO responde nada pro cliente (bot calado)
  *      - Salva em ticket_messages como sender_role='client'
  *
@@ -68,12 +68,12 @@ const RATING_THANK_YOU_LOW =
 const RATING_THANK_YOU_HIGH = (stars) =>
   `Obrigado pelo retorno! ${stars}\n\n` +
   `Como sua experiência foi muito boa, faz a gente um favor?\n` +
-  `Deixa uma estrelinha pra Elkys no Google — leva 10 segundos:\n\n` +
+  `Deixa uma estrelinha pra Elkys no Google - leva 10 segundos:\n\n` +
   `${GOOGLE_REVIEW_URL}\n\n` +
   `Vai ajudar muito a aparecermos pra mais gente. 🙏`
 
 /**
- * Inicia o modo humano para um cliente — chamado quando o menuRouter
+ * Inicia o modo humano para um cliente - chamado quando o menuRouter
  * retorna transition='human'.
  *
  * @param {Object} opts
@@ -207,7 +207,7 @@ export async function adminReplyToClient({ targetJid, text, authorPhone, socket 
   // Espelha pros OUTROS notificados (nao pro que mandou).
   // v3.10.27: usa NOTIFY (admin + notify recipients), nao so ADMIN.
   // Pessoas que SO recebem notificacao tambem veem as respostas que o
-  // admin manda — util pra acompanhamento por socio/equipe.
+  // admin manda - util pra acompanhamento por socio/equipe.
   const otherNotify = NOTIFY_PHONES.filter((p) => p !== authorPhone)
   const phone = jidToPhone(targetJid)
   const name = conv?.display_name || `+${phone}`
@@ -218,7 +218,7 @@ export async function adminReplyToClient({ targetJid, text, authorPhone, socket 
     try {
       await socket.sendMessage(jid, { text: mirror })
     } catch (err) {
-      // best-effort — nao quebra fluxo
+      // best-effort - nao quebra fluxo
       errorLog(`[handover] mirror falhou pra ${adm}: ${err.message}`)
     }
   }
@@ -229,7 +229,7 @@ export async function adminReplyToClient({ targetJid, text, authorPhone, socket 
 /**
  * Admin respondeu DIRETO pelo numero do bot (WhatsApp Web/celular do
  * proprio numero). A mensagem ja foi para o cliente porque foi enviada
- * fora do Baileys — aqui so registramos no historico e marcamos SLA.
+ * fora do Baileys - aqui so registramos no historico e marcamos SLA.
  *
  * Usado em complemento ao /r: a mensagem foi enviada manualmente, mas
  * a gente quer rastrear pra dashboard/metricas.
@@ -305,7 +305,7 @@ export async function closeHumanHandover({ targetJid, closedByPhone, socket }) {
 export async function processRatingResponse({ jid, text, conversation, socket }) {
   const num = Number((text || "").trim().match(/[1-5]/)?.[0])
   if (!num || num < 1 || num > 5) {
-    // Cliente nao mandou nota — pede de novo
+    // Cliente nao mandou nota - pede de novo
     try {
       await socket.sendMessage(jid, {
         text:

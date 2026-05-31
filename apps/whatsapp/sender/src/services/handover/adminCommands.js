@@ -1,5 +1,5 @@
 /**
- * adminCommands — parser e handlers dos comandos admin.
+ * adminCommands - parser e handlers dos comandos admin.
  *
  * Comandos suportados (so funcionam dos numeros em ADMIN_PHONES):
  *
@@ -133,7 +133,7 @@ export async function tryHandleAdminCommand({ jid, text, socket }) {
         return { handled: true }
 
       default:
-        // Comando desconhecido — mostra ajuda
+        // Comando desconhecido - mostra ajuda
         await socket.sendMessage(jid, {
           text: `❓ Comando *${cmd}* não reconhecido.\n\n${HELP_TEXT}`,
         })
@@ -257,7 +257,7 @@ async function handleStart({ jid, args, authorPhone, socket }) {
   })
 
   // v3.10.29: avisa o CLIENTE que um atendente vai responder.
-  // Antes o /iniciar so notificava admins — cliente ficava sem feedback.
+  // Antes o /iniciar so notificava admins - cliente ficava sem feedback.
   try {
     await socket.sendMessage(targetJid, {
       text:
@@ -299,13 +299,13 @@ async function handleStatus({ jid, args, socket }) {
     ? `\n_Última msg: "${conv.last_message_text.slice(0, 80)}"_`
     : ""
   const summary =
-    `📋 *Status — +${targetPhone}*\n\n` +
+    `📋 *Status - +${targetPhone}*\n\n` +
     `*Modo:* ${conv.mode}\n` +
     `*Menu:* ${conv.current_menu}\n` +
     `*Tipo:* ${conv.identified_as}\n` +
-    `*Nome:* ${conv.display_name || "—"}\n` +
-    `*Ticket:* ${conv.active_ticket_id ? conv.active_ticket_id.slice(0, 8) : "—"}\n` +
-    `*Plano Sonnar:* ${conv.subscriber_plan || "—"}` +
+    `*Nome:* ${conv.display_name || "-"}\n` +
+    `*Ticket:* ${conv.active_ticket_id ? conv.active_ticket_id.slice(0, 8) : "-"}\n` +
+    `*Plano Sonnar:* ${conv.subscriber_plan || "-"}` +
     lastMsg
   await socket.sendMessage(jid, { text: summary })
 }
@@ -338,9 +338,9 @@ async function handleMyLid({ jid, socket }) {
 
   let status
   if (isAdmin) {
-    status = "✅ *ADMIN* — voce pode usar /r, /encerrar, etc"
+    status = "✅ *ADMIN* - voce pode usar /r, /encerrar, etc"
   } else if (isNotify) {
-    status = "🔔 *NOTIFY* — voce recebe notificacoes mas nao pode dar comandos"
+    status = "🔔 *NOTIFY* - voce recebe notificacoes mas nao pode dar comandos"
   } else {
     status = "⚠️ Voce nao esta cadastrado como admin nem notify"
   }

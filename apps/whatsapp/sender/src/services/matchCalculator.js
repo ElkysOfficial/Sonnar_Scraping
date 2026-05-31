@@ -86,10 +86,14 @@ export function calculateMatch(jobData, resume) {
       strong.push(`${matched.length} de ${jobSkills.length} skills batem (${matched.slice(0, 4).join(", ")})`)
     }
     const missing = jobSkills.filter((s) => !resumeSkillSet.has(norm(s)))
-    if (missing.length > 0 && missing.length <= 4) {
-      gaps.push(`Faltam: ${missing.join(", ")}`)
-    } else if (missing.length > 4) {
-      gaps.push(`Faltam ${missing.length} skills (ex.: ${missing.slice(0, 3).join(", ")})`)
+    // v3.10.35: ate 3 skills faltantes -> lista. Acima disso, NAO mostra
+    // contagem (era desmotivador "Faltam 20 skills"). Em vez disso, sugere
+    // estudar as 3 mais relevantes (top 3 do array, que vem ordenado por
+    // relevancia do scraper).
+    if (missing.length > 0 && missing.length <= 3) {
+      gaps.push(`Estude: ${missing.join(", ")}`)
+    } else if (missing.length > 3) {
+      gaps.push(`Vale estudar: ${missing.slice(0, 3).join(", ")}`)
     }
   } else {
     dim.hardSkills = null
@@ -105,7 +109,7 @@ export function calculateMatch(jobData, resume) {
       const ratio = resume.yearsTotal / reqs.yearsRequired
       dim.years = Math.round(ratio * 100)
       const gap = reqs.yearsRequired - resume.yearsTotal
-      gaps.push(`Vaga pede ${reqs.yearsRequired}+ anos — você tem ~${resume.yearsTotal} (gap de ${gap})`)
+      gaps.push(`Vaga pede ${reqs.yearsRequired}+ anos. Voce tem ~${resume.yearsTotal} (faltam ${gap})`)
     }
   } else {
     dim.years = null
@@ -119,11 +123,11 @@ export function calculateMatch(jobData, resume) {
       if (cmp === "match") {
         strong.push(`Senioridade ${resume.seniority} bate com a vaga`)
       } else {
-        strong.push(`Você é ${resume.seniority} — vaga pede ${reqs.seniorityRequired}`)
+        strong.push(`Voce e ${resume.seniority}, vaga pede ${reqs.seniorityRequired}`)
       }
     } else {
       dim.seniority = 50
-      gaps.push(`Vaga é ${reqs.seniorityRequired} — seu nível indica ${resume.seniority}`)
+      gaps.push(`Vaga e ${reqs.seniorityRequired}, seu nivel indica ${resume.seniority}`)
     }
   } else {
     dim.seniority = null
@@ -144,12 +148,12 @@ export function calculateMatch(jobData, resume) {
       const missing = jobSofts.filter((k) => !resumeSofts.has(k))
       if (missing.length > 0) {
         const labels = missing.map((k) => SOFT_SKILL_LABEL[k] || k).slice(0, 3)
-        gaps.push(`Reforce no CV: ${labels.join(", ")}`)
+        gaps.push(`Vaga valoriza ${labels.join(", ")}. Destaque no CV`)
       }
     } else {
       dim.softSkills = 0
       const labels = jobSofts.map((k) => SOFT_SKILL_LABEL[k] || k).slice(0, 3)
-      gaps.push(`Vaga pede ${labels.join(", ")} — destaque no CV`)
+      gaps.push(`Vaga valoriza ${labels.join(", ")}. Destaque no CV`)
     }
   } else {
     dim.softSkills = null
@@ -175,7 +179,7 @@ export function calculateMatch(jobData, resume) {
   if (jobLangs.length > 0) {
     if (resumeLangs.size > 0) {
       const matched = jobLangs.filter((l) => {
-        // resume guarda 'ingles avancado', 'ingles', etc — match parcial
+        // resume guarda 'ingles avancado', 'ingles', etc - match parcial
         return Array.from(resumeLangs).some((r) => r.includes(l.replace(/_.*/, "")))
       })
       const pct = matched.length / jobLangs.length
