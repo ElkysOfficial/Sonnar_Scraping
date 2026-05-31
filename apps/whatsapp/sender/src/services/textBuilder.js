@@ -179,6 +179,30 @@ import {
 } from "./jobRequirementsParser.js"
 import { calculateMatch } from "./matchCalculator.js"
 
+/**
+ * Bloco de match no modo lite (Plus): sem separadores ━ pesados, sem
+ * cabecalho "Match com seu perfil". So as duas listas curtas (Pontos
+ * fortes + Para destacar). Limitado a 4 fortes e 2 gaps pra ficar enxuto.
+ *
+ * Pontos fortes: SOMENTE positivos (matchCalculator.strong[] ja garante).
+ */
+function appendLiteMatchBlock(out, jobData, resume) {
+  const match = calculateMatch(jobData, resume)
+  const visibleStrong = match.strong.slice(0, 4)
+  const visibleGaps = match.gaps.slice(0, 2)
+
+  if (visibleStrong.length > 0) {
+    out.push("")
+    out.push("🟢 *Pontos fortes*")
+    for (const s of visibleStrong) out.push(`✅ ${s}`)
+  }
+  if (visibleGaps.length > 0) {
+    out.push("")
+    out.push("🟡 *Para destacar*")
+    for (const g of visibleGaps) out.push(`⚠️ ${g}`)
+  }
+}
+
 function appendResumeBreakdown(out, jobData, resume) {
   if (!resume) return
 
@@ -328,10 +352,14 @@ function formatJobMessage(jobData, shortUrl, options = {}) {
   const compact = options.compact === true
   const lite = options.lite === true
 
-  // ─── MODO LITE (v3.10.36): formato simples pro grupo Pro ───
-  // Inclui: titulo + empresa + local + modalidade + tecnologias (linha) +
-  // responsabilidades + link + data. Omite: salario, match (audiencia
-  // heterogenea), stack categorizada (visual mais pesado).
+  // ─── MODO LITE (v3.10.36+): formato simples usado por Pro e Plus ───
+  // Layout base: titulo + empresa + local + modalidade + tecnologias (linha) +
+  // responsabilidades + link. Omite: salario, stack categorizada.
+  //
+  // Variantes:
+  //   - SEM subscriberResume (Pro)   : rodape com "Vaga capturada em [data]"
+  //   - COM subscriberResume (Plus)  : bloco match (Pontos fortes / Para
+  //                                    destacar) + CTA de consultoria
   if (lite) {
     out.push(`*${jobData.title}*`)
     if (jobData.company) out.push(`🏢 _${jobData.company}_`)
@@ -354,9 +382,18 @@ function formatJobMessage(jobData, shortUrl, options = {}) {
       out.push("")
       appendResponsibilitiesBlock(out, liteResps)
     }
+
+    // v3.10.37: Plus tem bloco de match + CTA consultoria
+    const hasResume = !!options.subscriberResume
+    if (hasResume) {
+      appendLiteMatchBlock(out, jobData, options.subscriberResume)
+    }
+
     out.push("")
     out.push(`🔗 *Ver a vaga:* ${shortUrl}`)
-    if (jobData.date) {
+    if (hasResume) {
+      out.push(`📝 *Solicite já sua consultoria de currículo e LinkedIn: https://sonnarjobs.com.br*`)
+    } else if (jobData.date) {
       out.push(`_Vaga capturada em ${jobData.date}_`)
     }
     return out.join("\n")

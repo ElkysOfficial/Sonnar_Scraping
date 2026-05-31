@@ -503,6 +503,38 @@ test("v3.10.36: modo lite omite localizacao 'Nao informado'", () => {
   assert.doesNotMatch(out, /📍 Nao informado/)
 })
 
+test("v3.10.37: lite + subscriberResume (Plus) - inclui match + CTA consultoria", () => {
+  const job = {
+    ...FIXED_JOB,
+    title: "Senior Backend Developer",
+    description: "Buscamos Senior com 5+ anos de experiencia",
+  }
+  const out = formatJobMessage(job, "https://son.sh/v/abc", {
+    lite: true,
+    subscriberResume: {
+      skills: ["Node.js", "AWS"],
+      yearsTotal: 6,
+      seniority: "senior",
+    },
+  })
+  // Layout lite preservado
+  assert.match(out, /\*🧩 Tecnologias\*/)
+  assert.match(out, /\*📋 Responsabilidades\*/)
+  // Match block estilo lite (sem separadores ━ pesados)
+  assert.match(out, /🟢 \*Pontos fortes\*/)
+  assert.doesNotMatch(out, /\*🎯 Match com seu perfil\*/)
+  // CTA consultoria substitui o rodape de "Vaga capturada em"
+  assert.match(out, /📝 \*Solicite já sua consultoria de currículo e LinkedIn: https:\/\/sonnarjobs\.com\.br\*/)
+  assert.doesNotMatch(out, /Vaga capturada em/)
+})
+
+test("v3.10.37: lite SEM subscriberResume (Pro) - mantem rodape de data, sem CTA", () => {
+  const out = formatJobMessage(FIXED_JOB, "x", { lite: true })
+  assert.doesNotMatch(out, /Pontos fortes/)
+  assert.doesNotMatch(out, /Solicite/)
+  assert.match(out, /_Vaga capturada em 28\/05\/2026_/)
+})
+
 test("v3.10.34: cada categoria mostra no maximo 6 skills (resto vira +N)", () => {
   const job = { ...FIXED_JOB, skills: ["A", "B", "C", "D", "E", "F", "G", "H"] }
   const out = formatJobMessage(job, "x")

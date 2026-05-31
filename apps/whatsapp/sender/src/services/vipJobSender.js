@@ -1946,20 +1946,15 @@ export async function buildJobTextMessage(job, options = {}, deps = { shortenUrl
 
   try {
     const shortUrl = await deps.shortenUrl(jobData.url)
-    // text = versao completa (fallback se imagem falhar)
-    // textCompact = caption enxuto (sem titulo/empresa/salario/stack — ja
-    // estao na imagem). Match block continua aparecendo se subscriberResume
-    // foi passado.
+    // v3.10.37: VIP usa modo lite com subscriberResume.
+    // Layout: titulo + empresa + local + modalidade + tecnologias linear +
+    // responsabilidades + match (Pontos fortes / Para destacar) + link +
+    // CTA consultoria. text e caption sao iguais.
     const text = formatJobTextMessage(jobData, shortUrl, {
-      subscriberStack: options.subscriberStack,
+      lite: true,
       subscriberResume: options.subscriberResume,
     })
-    const textCompact = formatJobTextMessage(jobData, shortUrl, {
-      subscriberStack: options.subscriberStack,
-      subscriberResume: options.subscriberResume,
-      compact: true,
-    })
-    return { text, textCompact, jobData }
+    return { text, textCompact: text, jobData }
   } catch (err) {
     errorLog(`[VIP] Erro ao montar mensagem da vaga: ${err.message}`)
     return null

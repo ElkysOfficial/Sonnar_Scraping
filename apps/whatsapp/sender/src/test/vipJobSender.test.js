@@ -45,9 +45,11 @@ test("VIP buildJobTextMessage: monta mensagem completa com dados reais", async (
   assert.ok(typeof result.text === "string" && result.text.length > 0)
   assert.match(result.text, /\*Senior Data Engineer\*/)
   assert.match(result.text, /🏢 _DataCo_/)
-  assert.match(result.text, /💰 \*R\$ 18\.000\*/)
+  // v3.10.37: VIP usa modo lite (sem salario, sem stack categorizada)
+  assert.doesNotMatch(result.text, /💰/)
+  assert.match(result.text, /\*🧩 Tecnologias\*/)
   assert.match(result.text, /• Construir pipelines/)
-  // v3.10.31: rodape mudou de "via [fonte]" pra "Vaga capturada em [data]"
+  // Sem subscriberResume: rodape com data (nao tem CTA consultoria)
   assert.match(result.text, /_Vaga capturada em /)
   assert.equal(result.jobData.id, "vip-001")
   assert.equal(shortenUrl.mock.callCount(), 1)
@@ -76,71 +78,43 @@ test("VIP buildJobTextMessage: aceita job ja em forma de embed (com fields)", as
   assert.ok(result)
   assert.match(result.text, /\*Embed Direto\*/)
   assert.match(result.text, /🏢 _EmbedCo_/)
-  assert.match(result.text, /💰 \*R\$ 9\.000\*/)
+  // v3.10.37: VIP em modo lite nao mostra salario
+  assert.doesNotMatch(result.text, /💰/)
 })
 
 // ──────────────────────────────────────────────────────────────────────
-// Plus #1: ✓/❌ stacks compatíveis (v3.7.0)
+// v3.10.37: VIP modo lite com subscriberResume (Plus)
 // ──────────────────────────────────────────────────────────────────────
 
-test("VIP Plus #1 (v3.10.34): skills do cliente ganham ✅, outras aparecem neutras", async () => {
+test("VIP Plus (v3.10.37): subscriberResume traz bloco match + CTA consultoria", async () => {
   const shortenUrl = async () => "https://son.sh/v/x"
   const result = await buildJobTextMessage(
-    SAMPLE_JOB, // skills: ["Python", "Airflow"]
-    { subscriberStack: ["python", "kubernetes"] },
-    { shortenUrl }
-  )
-  assert.ok(result)
-  assert.match(result.text, /✅ Python/)
-  // v3.10.34: skill que cliente nao tem aparece neutra (sem ❌)
-  assert.match(result.text, /Airflow/)
-  assert.doesNotMatch(result.text, /❌/)
-})
-
-test("VIP Plus #1: match 100% quando todas skills batem", async () => {
-  const shortenUrl = async () => "x"
-  const result = await buildJobTextMessage(
     SAMPLE_JOB,
-    { subscriberStack: ["python", "airflow"] },
+    {
+      subscriberResume: {
+        skills: ["Python", "AWS"],
+        yearsTotal: 6,
+        seniority: "senior",
+      },
+    },
     { shortenUrl }
   )
-  assert.match(result.text, /✅ Python/)
-  assert.match(result.text, /✅ Airflow/)
-  // v3.9.0: linha Match removida
+  // Tecnologias em linha
+  assert.match(result.text, /\*🧩 Tecnologias\*/)
+  // Match block (Pontos fortes pelo menos)
+  assert.match(result.text, /🟢 \*Pontos fortes\*/)
+  // CTA consultoria no final
+  assert.match(result.text, /📝 \*Solicite já sua consultoria/)
+  assert.match(result.text, /sonnarjobs\.com\.br/)
+  // Sem rodape de data (substituido pelo CTA)
+  assert.doesNotMatch(result.text, /Vaga capturada em/)
 })
 
-test("VIP Plus #1 (v3.10.34): nenhuma skill bate -> skills neutras (sem ❌)", async () => {
-  const shortenUrl = async () => "x"
-  const result = await buildJobTextMessage(
-    SAMPLE_JOB,
-    { subscriberStack: ["go", "rust"] },
-    { shortenUrl }
-  )
-  // v3.10.34: tom positivo — sem ❌ pra nao desmotivar
-  assert.match(result.text, /Python/)
-  assert.match(result.text, /Airflow/)
-  assert.doesNotMatch(result.text, /❌/)
-})
-
-test("VIP Plus #1: match case-insensitive (Node.js no perfil vs node.js no skill)", async () => {
-  const shortenUrl = async () => "x"
-  const result = await buildJobTextMessage(
-    { ...SAMPLE_JOB, skills: ["Node.js", "React"] },
-    { subscriberStack: ["NODE.JS", "react"] },
-    { shortenUrl }
-  )
-  assert.match(result.text, /✅ Node\.js/)
-  assert.match(result.text, /✅ React/)
-  // v3.9.0: linha Match removida
-})
-
-test("VIP Plus #1: sem subscriberStack mantem comportamento legado (sem ✓/✗)", async () => {
+test("VIP Plus: sem subscriberResume nao mostra match nem CTA consultoria", async () => {
   const shortenUrl = async () => "x"
   const result = await buildJobTextMessage(SAMPLE_JOB, {}, { shortenUrl })
-  assert.doesNotMatch(result.text, /✓|✗/)
-  // v3.10.31: stack categorizada substituiu lista linear
-  assert.match(result.text, /Python/)
-  assert.match(result.text, /Airflow/)
+  assert.doesNotMatch(result.text, /Pontos fortes/)
+  assert.doesNotMatch(result.text, /Solicite já sua consultoria/)
 })
 
 test("VIP Plus #1: subscriberStack vazio array tambem cai no fluxo legado", async () => {
@@ -247,7 +221,9 @@ test("VIP integracao: build + send entrega mensagem completa pelo socket", async
   const sentText = socket.sendMessage.mock.calls[0].arguments[1].text
   assert.match(sentText, /\*Senior Data Engineer\*/)
   assert.match(sentText, /🏢 _DataCo_/)
-  assert.match(sentText, /💰 \*R\$ 18\.000\*/)
+  // v3.10.37: lite mode sem salario
+  assert.doesNotMatch(sentText, /💰/)
+  assert.match(sentText, /\*🧩 Tecnologias\*/)
   assert.match(sentText, /• Construir pipelines/)
   assert.match(sentText, /🔗 \*Ver a vaga:\*/)
 })
